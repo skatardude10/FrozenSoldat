@@ -455,53 +455,82 @@
         </div>
         
         <!-- Tab content: PLAY -->
-        <div id="tab-play" class="tab-content active">
-            <p>Tactical Top-Down Weapon Physics Simulator.</p>
-            <div style="margin: 15px 0;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">OPERATION MODE:</label><br>
-                <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px;">
-                    <button id="btn-mode-1p" class="active-mode" onclick="game.setMode(1)">1 Player (Solo Ops)</button>
-                    <button id="btn-mode-2p" onclick="game.setMode(2)">2 Player (Co-op Strike)</button>
-                </div>
-            </div>
+        <div id="tab-play" class="tab-content active" style="max-width: 700px; margin: 0 auto;">
+            <p style="margin: 5px 0 10px 0; font-size: 12px;">Tactical Top-Down Weapon Physics Simulator.</p>
             
-            <div style="margin: 15px 0;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">TESTING SANDBOX MODE:</label><br>
-                <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px;">
-                    <button id="btn-sandbox-no" class="active-mode" onclick="game.setTestingMode(false)">OFF (Normal Wave Ops)</button>
-                    <button id="btn-sandbox-yes" onclick="game.setTestingMode(true)">ON (God Mode & Pickups)</button>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">OPERATION MODE:</label>
+                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                    <button id="btn-mode-1p" class="active-mode" onclick="game.setMode(1)" style="font-size: 11px; padding: 5px 10px; margin: 0;">1 Player (Solo Ops)</button>
+                    <button id="btn-mode-2p" onclick="game.setMode(2)" style="font-size: 11px; padding: 5px 10px; margin: 0;">2 Player (Co-op Strike)</button>
                 </div>
             </div>
 
-            <div style="margin: 15px 0;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">DIFFICULTY RATING:</label><br>
-                <div style="display: flex; justify-content: center; gap: 8px; margin-top: 8px;">
-                    <button id="btn-diff-easy" onclick="game.setDifficulty('easy')">Easy (2.0x)</button>
-                    <button id="btn-diff-medium" onclick="game.setDifficulty('medium')">Medium (1.5x)</button>
-                    <button id="btn-diff-hard" class="active-mode" onclick="game.setDifficulty('hard')">Hard (1.0x)</button>
-                    <button id="btn-diff-legendary" onclick="game.setDifficulty('legendary')">Legendary (0.75x)</button>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">TESTING SANDBOX MODE:</label>
+                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                    <button id="btn-sandbox-no" class="active-mode" onclick="game.setTestingMode(false)" style="font-size: 11px; padding: 5px 10px; margin: 0;">OFF (Normal Wave Ops)</button>
+                    <button id="btn-sandbox-yes" onclick="game.setTestingMode(true)" style="font-size: 11px; padding: 5px 10px; margin: 0;">ON (God Mode & Pickups)</button>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">STARTING FUNDS:</label>
+                <div style="display: flex; gap: 6px; justify-content: flex-start; align-items: center; flex-grow: 1;">
+                    <button id="btn-cash-down" onclick="game.adjustStartingCash(-1000)" style="font-size: 11px; padding: 5px 10px; margin: 0;">[-</button>
+                    <span id="lbl-starting-cash" style="font-weight: bold; color: var(--green); font-size: 12px; min-width: 60px; text-align: center;">[$0]</span>
+                    <button id="btn-cash-up" onclick="game.adjustStartingCash(1000)" style="font-size: 11px; padding: 5px 10px; margin: 0;">+]</button>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">FRIENDLY FIRE:</label>
+                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                    <button id="btn-ff-off" onclick="game.setFriendlyFireMode('off')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: OFF</button>
+                    <button id="btn-ff-standard" class="active-mode" onclick="game.setFriendlyFireMode('standard')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: STANDARD</button>
+                    <button id="btn-ff-hardcore" onclick="game.setFriendlyFireMode('hardcore')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: HARDCORE</button>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">ENVIRONMENT:</label>
+                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                    <button id="btn-env-day" class="active-mode" onclick="game.setNightMode(false)" style="font-size: 11px; padding: 5px 10px; margin: 0;">DAY</button>
+                    <button id="btn-env-night" onclick="game.setNightMode(true)" style="font-size: 11px; padding: 5px 10px; margin: 0;">NIGHT</button>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">DIFFICULTY RATING:</label>
+                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                    <button id="btn-diff-easy" onclick="game.setDifficulty('easy')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Easy (2.0x)</button>
+                    <button id="btn-diff-medium" onclick="game.setDifficulty('medium')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Medium (1.5x)</button>
+                    <button id="btn-diff-hard" class="active-mode" onclick="game.setDifficulty('hard')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Hard (1.0x)</button>
+                    <button id="btn-diff-legendary" onclick="game.setDifficulty('legendary')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Legendary (0.75x)</button>
                 </div>
             </div>
             
-            <div style="margin: 15px 0; max-width: 400px; margin-left: auto; margin-right: auto;">
-                <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px;">
-                    <label>GAME SPEED:</label>
-                    <span id="lbl-time-scale">1.0x</span>
-                </div>
-                <input type="range" id="sld-time-scale" min="0.5" max="1.5" step="0.1" value="1.0" style="width: 100%; cursor: pointer;" oninput="game.setTimeScale(parseFloat(this.value))">
-            </div>
-            
-            <div style="margin: 15px 0;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">TOUCH INTERFACE:</label><br>
-                <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px;">
-                    <button id="btn-touch-auto" class="active-mode" onclick="game.setTouchMode('auto')">Auto-Detect</button>
-                    <button id="btn-touch-on" onclick="game.setTouchMode('on')">Force On</button>
-                    <button id="btn-touch-off" onclick="game.setTouchMode('off')">Force Off</button>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">GAME SPEED:</label>
+                <div style="display: flex; align-items: center; gap: 10px; flex-grow: 1;">
+                    <input type="range" id="sld-time-scale" min="0.5" max="1.5" step="0.1" value="1.0" style="flex-grow: 1; cursor: pointer; height: 4px; margin: 0;" oninput="game.setTimeScale(parseFloat(this.value))">
+                    <span id="lbl-time-scale" style="font-weight: bold; color: var(--text-color); font-size: 11px; min-width: 35px; text-align: right;">1.0x</span>
                 </div>
             </div>
             
-            <button id="btn-start" style="border-color: var(--green); color: var(--green); font-size: 16px; padding: 10px 20px; width: 75%; margin-top: 5px;">INITIALIZE PERIMETER SYSTEM</button>
-            <button id="btn-exit" style="border-color: var(--red); color: var(--red); font-size: 16px; padding: 10px 20px; width: 75%; margin-top: 10px;">EXIT TO DESKTOP</button>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">TOUCH INTERFACE:</label>
+                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                    <button id="btn-touch-auto" class="active-mode" onclick="game.setTouchMode('auto')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Auto-Detect</button>
+                    <button id="btn-touch-on" onclick="game.setTouchMode('on')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Force On</button>
+                    <button id="btn-touch-off" onclick="game.setTouchMode('off')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Force Off</button>
+                </div>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 12px;">
+                <button id="btn-start" style="border-color: var(--green); color: var(--green); font-size: 14px; padding: 8px 16px; width: 85%; margin: 0;">INITIALIZE PERIMETER SYSTEM</button>
+                <button id="btn-exit" style="border-color: var(--red); color: var(--red); font-size: 14px; padding: 8px 16px; width: 85%; margin: 0;">EXIT TO DESKTOP</button>
+            </div>
         </div>
         
         <!-- Tab content: CONTROLS -->
@@ -3809,26 +3838,32 @@ class Bullet {
                 if (ent.dead) continue;
                 
                 let canHit = false;
-                 if (this.isNeutral) {
-                    canHit = true; 
+                let bulletOwner = this.owner;
+                if (!bulletOwner && this.isPlayerBullet && typeof this.isPlayerBullet === 'object') {
+                    bulletOwner = this.isPlayerBullet;
+                }
+                
+                if (ent === bulletOwner) {
+                    canHit = false;
+                } else if (this.isNeutral) {
+                    canHit = true;
                 } else if (this.isPlayerBullet) {
-                    if (ent !== this.isPlayerBullet) {
-                        if (ent instanceof FPVDrone || ent instanceof RobotDog) {
+                    let isTargetAlly = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof FPVDrone || ent instanceof MiniDrone);
+                    let isTargetEnemy = (ent instanceof Enemy);
+                    
+                    if (isTargetEnemy) {
+                        canHit = true;
+                    } else if (isTargetAlly) {
+                        if (game.friendlyFireMode === 'off') {
                             canHit = false;
-                        } else if ((!(ent instanceof Player) && !(ent instanceof AutoTurret) && !(ent instanceof RobotDog)) || (game.friendlyFire && (ent instanceof Player))) {
-                            if (this.owner instanceof RobotDog && ent instanceof Player) {
-                                canHit = false;
-                            } else {
-                                canHit = true;
-                            }
+                        } else if (game.friendlyFireMode === 'standard') {
+                            canHit = (bulletOwner instanceof Player && ent instanceof Player);
+                        } else if (game.friendlyFireMode === 'hardcore') {
+                            canHit = true;
                         }
                     }
                 } else {
-                    if (ent instanceof Player || ent instanceof AutoTurret || ent instanceof FPVDrone || ent instanceof RobotDog) canHit = true; 
-                }
-                
-                if (this.owner instanceof AutoTurret && ent instanceof Player) {
-                    canHit = false;
+                    canHit = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof FPVDrone || ent instanceof MiniDrone);
                 }
                 
                 if (!canHit) continue;
@@ -4326,9 +4361,20 @@ class FPVDrone {
         game.screenShake = Math.max(game.screenShake, 50);
         
         let blastRadius = 300; 
-        let entities = [game.player];
-        if (game.isTwoPlayer && game.player2) entities.push(game.player2);
-        entities.push(...game.enemies);
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.drone) entities.push(game.drone);
+        }
         
         for (let ent of entities) {
             if (!ent || ent.dead) continue;
@@ -5793,7 +5839,20 @@ class ShrapnelGrenade {
         game.screenShake = Math.max(game.screenShake, 35);
         
         let blastRadius = 180;
-        let entities = [game.player, ...game.enemies];
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.drone) entities.push(game.drone);
+        }
         for (let ent of entities) {
             if (ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -5970,7 +6029,20 @@ class TripMine {
             return true;
         }
 
-        let entities = [game.player, ...game.enemies];
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.drone) entities.push(game.drone);
+        }
         for (let ent of entities) {
             if (ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -5986,7 +6058,20 @@ class TripMine {
         game.screenShake = Math.max(game.screenShake, 30);
         
         let blastRadius = 140;
-        let entities = [game.player, ...game.enemies];
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.drone) entities.push(game.drone);
+        }
         for (let ent of entities) {
             if (ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -6040,8 +6125,29 @@ class Item {
         this.x = x; this.y = y; this.type = type; 
         this.r = 8;
         this.t = 0;
+        this.vx = 0;
+        this.vy = 0;
     }
-    update(dt) { this.t += dt; }
+    update(dt, activePlayers) {
+        this.t += dt;
+        if (activePlayers) {
+            for (let p of activePlayers) {
+                if (p.dead) continue;
+                let dx = p.x - this.x;
+                let dy = p.y - this.y;
+                let dist = Math.hypot(dx, dy);
+                if (dist < 60 && dist > 0) {
+                    let pullForce = 800;
+                    this.vx += (dx / dist) * pullForce * dt;
+                    this.vy += (dy / dist) * pullForce * dt;
+                }
+            }
+        }
+        this.vx *= Math.pow(0.01, dt);
+        this.vy *= Math.pow(0.01, dt);
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+    }
     draw(ctx, cam) {
         let scx = this.x - cam.x;
         let scy = this.y - cam.y;
@@ -6163,10 +6269,16 @@ class Game {
         this.roundWinDelay = 0;
         this.winFlashIntensity = 0;
         this.prepTimer = 0;
+        this.startingCash = 0;
+        this.friendlyFireMode = 'standard';
+        this.nightMode = false;
         this.saveData = {
             movementScheme: 'player',
             highScores: [],
-            timeScale: 1.0
+            timeScale: 1.0,
+            startingCash: 0,
+            friendlyFireMode: 'standard',
+            nightMode: false
         };
         
         this.movementScheme = 'player'; 
@@ -6757,6 +6869,9 @@ class Game {
             play: [
                 ['btn-mode-1p', 'btn-mode-2p'],
                 ['btn-sandbox-no', 'btn-sandbox-yes'],
+                ['btn-cash-down', 'btn-cash-up'],
+                ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore'],
+                ['btn-env-day', 'btn-env-night'],
                 ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
                 ['sld-time-scale'],
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
@@ -6920,6 +7035,9 @@ class Game {
             play: [
                 ['btn-mode-1p', 'btn-mode-2p'],
                 ['btn-sandbox-no', 'btn-sandbox-yes'],
+                ['btn-cash-down', 'btn-cash-up'],
+                ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore'],
+                ['btn-env-day', 'btn-env-night'],
                 ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
                 ['sld-time-scale'],
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
@@ -6954,6 +7072,40 @@ class Game {
         if (targetElement) {
             targetElement.classList.add('focused-btn');
         }
+    }
+
+    adjustStartingCash(delta) {
+        this.startingCash = Math.max(0, Math.min(10000, this.startingCash + delta));
+        let lbl = document.getElementById('lbl-starting-cash');
+        if (lbl) {
+            lbl.textContent = `[$${this.startingCash.toLocaleString()}]`;
+        }
+        this.saveGameData();
+    }
+
+    setFriendlyFireMode(mode) {
+        this.friendlyFireMode = mode;
+        const modes = ['off', 'standard', 'hardcore'];
+        modes.forEach(m => {
+            let btn = document.getElementById(`btn-ff-${m}`);
+            if (btn) {
+                if (m === mode) {
+                    btn.classList.add('active-mode');
+                } else {
+                    btn.classList.remove('active-mode');
+                }
+            }
+        });
+        this.saveGameData();
+    }
+
+    setNightMode(enabled) {
+        this.nightMode = enabled;
+        let btnDay = document.getElementById('btn-env-day');
+        let btnNight = document.getElementById('btn-env-night');
+        if (btnDay) btnDay.classList.toggle('active-mode', !enabled);
+        if (btnNight) btnNight.classList.toggle('active-mode', enabled);
+        this.saveGameData();
     }
 
     handleDeathMenuNavigation(gpList) {
@@ -7482,7 +7634,6 @@ class Game {
         this.camera = new Camera();
         this.map = new MapGen(this.mapW, this.mapH);
         
-        this.friendlyFire = true;
         this.p1Ready = false;
         this.p2Ready = false;
         if (this.isTwoPlayer) {
@@ -7556,6 +7707,9 @@ class Game {
                 it.isSandbox = true;
                 this.items.push(it);
             });
+        } else {
+            this.player.cash = this.startingCash;
+            if (this.player2) this.player2.cash = this.startingCash;
         }
         
         this.wave = 1;
@@ -8005,7 +8159,7 @@ class Game {
 
         for (let i = this.items.length - 1; i >= 0; i--) {
             let it = this.items[i];
-            it.update(dt);
+            it.update(dt, activePlayers);
             
             for (let p of activePlayers) {
                 if (Math.hypot(p.x - it.x, p.y - it.y) < p.r + it.r) {
@@ -8697,6 +8851,25 @@ class Game {
             this.setTimeScale(1.0);
         }
         this.setScheme(this.movementScheme);
+
+        if (this.saveData.startingCash !== undefined) {
+            this.startingCash = this.saveData.startingCash;
+        } else {
+            this.startingCash = 0;
+        }
+        this.adjustStartingCash(0);
+
+        if (this.saveData.friendlyFireMode !== undefined) {
+            this.setFriendlyFireMode(this.saveData.friendlyFireMode);
+        } else {
+            this.setFriendlyFireMode('standard');
+        }
+
+        if (this.saveData.nightMode !== undefined) {
+            this.setNightMode(this.saveData.nightMode);
+        } else {
+            this.setNightMode(false);
+        }
     }
 
     saveGameData() {
@@ -8704,6 +8877,9 @@ class Game {
             this.saveData.movementScheme = this.movementScheme;
             this.saveData.difficultyMode = this.difficultyMode;
             this.saveData.timeScale = this.timeScale;
+            this.saveData.startingCash = this.startingCash;
+            this.saveData.friendlyFireMode = this.friendlyFireMode;
+            this.saveData.nightMode = this.nightMode;
             localStorage.setItem('frozensoldat_save', JSON.stringify(this.saveData));
         } catch(e) {
             console.error("Failed to save data:", e);
@@ -9143,7 +9319,88 @@ class Game {
             this.drone.draw(this.ctx, cam);
         }
 
+        if (this.nightMode) {
+            if (!this.nightCanvas) {
+                this.nightCanvas = document.createElement('canvas');
+                this.nightCtx = this.nightCanvas.getContext('2d');
+            }
+            if (this.nightCanvas.width !== viewportW || this.nightCanvas.height !== viewportH) {
+                this.nightCanvas.width = viewportW;
+                this.nightCanvas.height = viewportH;
+            }
 
+            let nightCtx = this.nightCtx;
+            nightCtx.globalCompositeOperation = 'source-over';
+            nightCtx.clearRect(0, 0, viewportW, viewportH);
+
+            // Fill with dark overlay
+            nightCtx.fillStyle = 'rgba(0, 4, 12, 0.98)';
+            nightCtx.fillRect(0, 0, viewportW, viewportH);
+
+            // Set composite operation to cut out light
+            nightCtx.globalCompositeOperation = 'destination-out';
+
+            let matrix = this.ctx.getTransform();
+            let activePlayersForLight = [this.player];
+            if (this.isTwoPlayer && this.player2 && !this.player2.dead) {
+                activePlayersForLight.push(this.player2);
+            }
+
+            for (let p of activePlayersForLight) {
+                // Get player position in screen space using the context transformation matrix
+                let wx = p.x - cam.x;
+                let wy = p.y - cam.y;
+                let sx = wx * matrix.a + wy * matrix.c + matrix.e;
+                let sy = wx * matrix.b + wy * matrix.d + matrix.f;
+
+                // Player position relative to the left of this viewport's screen space
+                let px = isPlayer2 ? (sx - viewportW) : sx;
+                let py = sy;
+
+                // Flashlight and ambient glow dimensions scaled by camera zoom
+                let ambientRadius = 90 * cam.zoom;
+                let coneRadius = 1600 * cam.zoom;
+
+                // Draw soft ambient circle (fully bright close-up around the player, then fades out rapidly)
+                let brightRadius = 24 * cam.zoom; // Double player size
+                let ambientGrad = nightCtx.createRadialGradient(px, py, 0, px, py, ambientRadius);
+                ambientGrad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
+                ambientGrad.addColorStop(Math.min(1.0, brightRadius / ambientRadius), 'rgba(0, 0, 0, 1.0)');
+                ambientGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.4)');
+                ambientGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+                
+                nightCtx.fillStyle = ambientGrad;
+                nightCtx.beginPath();
+                nightCtx.arc(px, py, ambientRadius, 0, Math.PI * 2);
+                nightCtx.fill();
+
+                // Draw twice as wide flashlight cone (original: Math.PI / 2.2)
+                let coneAngle = Math.PI / 2.2;
+                let startAngle = p.angle - coneAngle / 2;
+                let endAngle = p.angle + coneAngle / 2;
+
+                let flashlightGrad = nightCtx.createRadialGradient(px, py, 0, px, py, coneRadius);
+                flashlightGrad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
+                flashlightGrad.addColorStop(0.1, 'rgba(0, 0, 0, 1.0)');
+                flashlightGrad.addColorStop(0.3, 'rgba(0, 0, 0, 0.75)');
+                flashlightGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.2)');
+                flashlightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+                nightCtx.fillStyle = flashlightGrad;
+                nightCtx.beginPath();
+                nightCtx.moveTo(px, py);
+                nightCtx.arc(px, py, coneRadius, startAngle, endAngle);
+                nightCtx.closePath();
+                nightCtx.fill();
+            }
+
+            // Draw the offscreen overlay on the main viewport in screen-space
+            this.ctx.save();
+            this.ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform to screen space
+            let drawX = isPlayer2 ? viewportW : 0;
+            this.ctx.drawImage(this.nightCanvas, drawX, 0);
+            this.ctx.restore();
+        }
 
         this.ctx.restore();
     }
