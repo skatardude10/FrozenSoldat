@@ -785,6 +785,64 @@
 </div>
 
 <script>
+class PriorityQueue {
+    constructor(compare) {
+        this.heap = [];
+        this.compare = compare || ((a, b) => a - b);
+    }
+    push(item) {
+        this.heap.push(item);
+        this.up(this.heap.length - 1);
+    }
+    pop() {
+        if (this.isEmpty()) return null;
+        const top = this.heap[0];
+        const bottom = this.heap.pop();
+        if (this.heap.length > 0) {
+            this.heap[0] = bottom;
+            this.down(0);
+        }
+        return top;
+    }
+    isEmpty() {
+        return this.heap.length === 0;
+    }
+    up(i) {
+        while (i > 0) {
+            const p = (i - 1) >> 1;
+            if (this.compare(this.heap[i], this.heap[p]) < 0) {
+                const tmp = this.heap[i];
+                this.heap[i] = this.heap[p];
+                this.heap[p] = tmp;
+                i = p;
+            } else {
+                break;
+            }
+        }
+    }
+    down(i) {
+        const len = this.heap.length;
+        while ((i << 1) + 1 < len) {
+            let left = (i << 1) + 1;
+            let right = left + 1;
+            let best = i;
+            if (this.compare(this.heap[left], this.heap[best]) < 0) {
+                best = left;
+            }
+            if (right < len && this.compare(this.heap[right], this.heap[best]) < 0) {
+                best = right;
+            }
+            if (best !== i) {
+                const tmp = this.heap[i];
+                this.heap[i] = this.heap[best];
+                this.heap[best] = tmp;
+                i = best;
+            } else {
+                break;
+            }
+        }
+    }
+}
 var game = null;
 
 function setHtml(id, val) {
@@ -850,9 +908,9 @@ function useRightItem(player) {
                 player.hunterSwarmCount--;
                 game.miniDrones.push(new MiniDrone(player.x, player.y, player, activeCount));
                 audio.playPickup('weapon');
-                game.floatingTexts.push(new FloatingText(player.x, player.y - 15, "SWARM DRONE DEPLOYED", '#39ff14', 1.2));
+                game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, "SWARM DRONE DEPLOYED", '#39ff14', 1.2));
             } else {
-                game.floatingTexts.push(new FloatingText(player.x, player.y - 15, "MAX ACTIVE DRONES REACHED", '#ff2a5f', 1.2));
+                game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, "MAX ACTIVE DRONES REACHED", '#ff2a5f', 1.2));
             }
         }
     }
@@ -868,7 +926,7 @@ function interactPickUpItem(player) {
             game.drone.stopAudio();
             game.drone = null;
             audio.playPickup('weapon');
-            game.floatingTexts.push(new FloatingText(player.x, player.y - 15, "FPV DRONE RETRIEVED", '#ffd700', 1.2));
+            game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, "FPV DRONE RETRIEVED", '#ffd700', 1.2));
             return;
         }
     }
@@ -881,7 +939,7 @@ function interactPickUpItem(player) {
                 player.barriersInventory.push({ hp: bar.hp, maxHp: bar.maxHp, isMKII: bar.isMKII || false });
                 game.barriers.splice(i, 1);
                 audio.playPickup('weapon');
-                game.floatingTexts.push(new FloatingText(player.x, player.y - 15, `BARRIER RETRIEVED (${Math.round(bar.hp)}HP)`, '#00e5ff', 1.2));
+                game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, `BARRIER RETRIEVED (${Math.round(bar.hp)}HP)`, '#00e5ff', 1.2));
                 return;
             }
         }
@@ -895,7 +953,7 @@ function interactPickUpItem(player) {
                     player.turretsInventory.push({ hp: tur.hp, maxHp: tur.maxHp, isMKII: tur.isMKII || false });
                     game.turrets.splice(i, 1);
                     audio.playPickup('weapon');
-                    game.floatingTexts.push(new FloatingText(player.x, player.y - 15, `TURRET RETRIEVED (${Math.round(tur.hp)}HP)`, '#ffea00', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, `TURRET RETRIEVED (${Math.round(tur.hp)}HP)`, '#ffea00', 1.2));
                     return;
                 }
             }
@@ -910,7 +968,7 @@ function interactPickUpItem(player) {
                     player.dogsInventory.push({ hp: dog.hp, upgraded: dog.upgraded || false });
                     game.dogs.splice(i, 1);
                     audio.playPickup('weapon');
-                    game.floatingTexts.push(new FloatingText(player.x, player.y - 15, `SPOT ROBOT RETRIEVED (${Math.round(dog.hp)}HP)`, '#ffffff', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, `SPOT ROBOT RETRIEVED (${Math.round(dog.hp)}HP)`, '#ffffff', 1.2));
                     return;
                 }
             }
@@ -918,8 +976,65 @@ function interactPickUpItem(player) {
     }
 }
 
+function getHUDSelectorStateKey(player, suffix) {
+    if (!player) return '';
+    let activeDog = game.dogs ? game.dogs.find(d => d.owner === player && !d.dead) : null;
+    
+    let droneStatus = 'NONE';
+    if (game.drone && !game.drone.dead && game.drone.pilot === player) {
+        droneStatus = game.drone.isPiloted ? 'FLYING' : 'PLACED';
+    } else if (player.dronesCount > 0) {
+        droneStatus = 'READY';
+    }
+    
+    let dogStatus = 'NONE';
+    if (activeDog) {
+        dogStatus = activeDog.waypoint ? 'WAYPOINT' : 'FIELD';
+    } else if (player.dogsCount > 0) {
+        dogStatus = 'READY';
+    }
+
+    let activeSwarmCount = game.miniDrones ? game.miniDrones.filter(md => md.owner === player && !md.dead).length : 0;
+    
+    let ammoState = player.inventory.map(w => {
+        let wKey = w.name.toLowerCase();
+        return `${wKey}:${player.ammo[wKey]}:${player.maxAmmo[wKey]}:${player.ammoTypes[wKey]}`;
+    }).join(',');
+    
+    return [
+        suffix,
+        player.leftSelectIdx,
+        player.rightSelectIdx,
+        player.weaponIdx,
+        droneStatus,
+        player.dronesCount,
+        dogStatus,
+        player.dogsCount,
+        player.dogUpgraded,
+        player.hunterSwarmCount,
+        activeSwarmCount,
+        player.medpacks,
+        player.energyDrinks,
+        player.grenades,
+        player.mines,
+        player.barriersCount,
+        player.barrierUpgraded,
+        player.turretsCount,
+        player.pistolHP,
+        ammoState
+    ].join('|');
+}
+
 function renderHUDSelectors(player, suffix) {
     if (!player) return;
+    
+    if (typeof game !== 'undefined' && game && game.hudState) {
+        let key = getHUDSelectorStateKey(player, suffix);
+        if (game.hudState['selectorState_' + suffix] === key) {
+            return;
+        }
+        game.hudState['selectorState_' + suffix] = key;
+    }
     
     let leftTrack = document.getElementById('left-track-' + suffix);
     if (leftTrack) {
@@ -1076,6 +1191,8 @@ class AudioEngine {
         this.musicGain = null;
         this.musicFilter = null;
         this.lastExplosionTime = 0;
+        this.bakedBuffers = {};
+        this.isBaking = false;
     }
     
     init() {
@@ -1131,46 +1248,280 @@ class AudioEngine {
         return buffer;
     }
 
-    playShoot(type) {
-        if (!this.ctx) return;
-        const noise = this.ctx.createBufferSource();
-        noise.buffer = this.noiseBuffer;
-        const filter = this.ctx.createBiquadFilter();
-        const gain = this.ctx.createGain();
+    async bakeSound(name, duration, setupFn) {
+        const sampleRate = this.ctx.sampleRate;
+        const offlineCtx = new OfflineAudioContext(1, sampleRate * duration, sampleRate);
+        setupFn(offlineCtx);
+        const buffer = await offlineCtx.startRendering();
+        this.bakedBuffers[name] = buffer;
+    }
 
-        filter.type = 'lowpass';
-        if (type === 'Pistol') { filter.frequency.value = 2500; gain.gain.setValueAtTime(0.7, this.ctx.currentTime); }
-        else if (type === 'Shotgun') { filter.frequency.value = 850; gain.gain.setValueAtTime(1.2, this.ctx.currentTime); }
-        else if (type === 'SMG') { filter.frequency.value = 3400; gain.gain.setValueAtTime(0.4, this.ctx.currentTime); }
-        else if (type === 'LMG') { filter.frequency.value = 1400; gain.gain.setValueAtTime(0.9, this.ctx.currentTime); }
-        else if (type === 'Sniper') { filter.frequency.value = 450; gain.gain.setValueAtTime(1.8, this.ctx.currentTime); }
-        else if (type === 'M1A') { filter.frequency.value = 1100; gain.gain.setValueAtTime(1.1, this.ctx.currentTime); }
+    async bakeSounds() {
+        if (this.isBaking || Object.keys(this.bakedBuffers).length > 0) return;
+        this.isBaking = true;
+        this.init();
+
+        try {
+            const promises = [];
+            
+            // 1. Shoot sounds (duration 0.5s)
+            const shootSpecs = {
+                'Pistol': { freq: 2500, gain: 0.7, ramp: 0.18 },
+                'Shotgun': { freq: 850, gain: 1.2, ramp: 0.18 },
+                'SMG': { freq: 3400, gain: 0.4, ramp: 0.18 },
+                'LMG': { freq: 1400, gain: 0.9, ramp: 0.18 },
+                'Sniper': { freq: 450, gain: 1.8, ramp: 0.35 },
+                'M1A': { freq: 1100, gain: 1.1, ramp: 0.26 }
+            };
+            for (let type in shootSpecs) {
+                let spec = shootSpecs[type];
+                promises.push(this.bakeSound('shoot_' + type, 0.5, (offlineCtx) => {
+                    const noise = offlineCtx.createBufferSource();
+                    noise.buffer = this.noiseBuffer;
+                    const filter = offlineCtx.createBiquadFilter();
+                    const gain = offlineCtx.createGain();
+                    
+                    filter.type = 'lowpass';
+                    filter.frequency.value = spec.freq;
+                    gain.gain.setValueAtTime(spec.gain, 0);
+                    gain.gain.exponentialRampToValueAtTime(0.01, spec.ramp);
+                    
+                    noise.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(offlineCtx.destination);
+                    noise.start(0);
+                }));
+            }
+
+            // 2. Ricochet (duration 0.15s)
+            promises.push(this.bakeSound('ricochet', 0.15, (offlineCtx) => {
+                const osc = offlineCtx.createOscillator();
+                const gain = offlineCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1400, 0);
+                osc.frequency.exponentialRampToValueAtTime(3200, 0.08);
+                
+                gain.gain.setValueAtTime(0.12, 0);
+                gain.gain.exponentialRampToValueAtTime(0.01, 0.08);
+                
+                osc.connect(gain);
+                gain.connect(offlineCtx.destination);
+                osc.start(0);
+            }));
+
+            // 3. Explosion (duration 1.0s)
+            promises.push(this.bakeSound('explosion', 1.0, (offlineCtx) => {
+                let finalVolume = 0.3; // volumeScale = 1.0
+                const osc = offlineCtx.createOscillator();
+                const oscGain = offlineCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(160, 0);
+                osc.frequency.exponentialRampToValueAtTime(10, 0.5);
+                oscGain.gain.setValueAtTime(1.5 * finalVolume, 0);
+                oscGain.gain.exponentialRampToValueAtTime(0.01 * finalVolume, 0.5);
+                
+                osc.connect(oscGain);
+                oscGain.connect(offlineCtx.destination);
+                osc.start(0);
+
+                const noise = offlineCtx.createBufferSource();
+                noise.buffer = this.noiseBuffer;
+                const filter = offlineCtx.createBiquadFilter();
+                const noiseGain = offlineCtx.createGain();
+                filter.type = 'lowpass';
+                filter.frequency.value = 600;
+                noiseGain.gain.setValueAtTime(1.8 * finalVolume, 0);
+                noiseGain.gain.exponentialRampToValueAtTime(0.01 * finalVolume, 0.6);
+                
+                noise.connect(filter);
+                filter.connect(noiseGain);
+                noiseGain.connect(offlineCtx.destination);
+                noise.start(0);
+            }));
+
+            // 4. Mini Explosion (duration 0.5s)
+            promises.push(this.bakeSound('miniExplosion', 0.5, (offlineCtx) => {
+                const osc = offlineCtx.createOscillator();
+                const oscGain = offlineCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(320, 0);
+                osc.frequency.exponentialRampToValueAtTime(30, 0.25);
+                oscGain.gain.setValueAtTime(0.6, 0);
+                oscGain.gain.exponentialRampToValueAtTime(0.01, 0.25);
+                
+                osc.connect(oscGain);
+                oscGain.connect(offlineCtx.destination);
+                osc.start(0);
+
+                const noise = offlineCtx.createBufferSource();
+                noise.buffer = this.noiseBuffer;
+                const filter = offlineCtx.createBiquadFilter();
+                const noiseGain = offlineCtx.createGain();
+                filter.type = 'lowpass';
+                filter.frequency.value = 800;
+                noiseGain.gain.setValueAtTime(0.8, 0);
+                noiseGain.gain.exponentialRampToValueAtTime(0.01, 0.3);
+                
+                noise.connect(filter);
+                filter.connect(noiseGain);
+                noiseGain.connect(offlineCtx.destination);
+                noise.start(0);
+            }));
+
+            // 5. Hit (duration 0.2s)
+            promises.push(this.bakeSound('hit', 0.2, (offlineCtx) => {
+                const osc = offlineCtx.createOscillator();
+                const gain = offlineCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(110, 0);
+                osc.frequency.exponentialRampToValueAtTime(25, 0.12);
+                
+                gain.gain.setValueAtTime(0.25, 0);
+                gain.gain.exponentialRampToValueAtTime(0.01, 0.12);
+                
+                osc.connect(gain);
+                gain.connect(offlineCtx.destination);
+                osc.start(0);
+            }));
+
+            // 6. Pickup money (duration 0.15s)
+            promises.push(this.bakeSound('pickup_money', 0.15, (offlineCtx) => {
+                const osc = offlineCtx.createOscillator();
+                const gain = offlineCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1000, 0);
+                osc.frequency.linearRampToValueAtTime(1500, 0.08);
+                
+                gain.gain.setValueAtTime(0.15, 0);
+                gain.gain.linearRampToValueAtTime(0.01, 0.08);
+                
+                osc.connect(gain);
+                gain.connect(offlineCtx.destination);
+                osc.start(0);
+            }));
+
+            // 7. Pickup weapon (duration 0.15s)
+            promises.push(this.bakeSound('pickup_weapon', 0.15, (offlineCtx) => {
+                const osc = offlineCtx.createOscillator();
+                const gain = offlineCtx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(350, 0);
+                osc.frequency.linearRampToValueAtTime(550, 0.08);
+                
+                gain.gain.setValueAtTime(0.15, 0);
+                gain.gain.linearRampToValueAtTime(0.01, 0.08);
+                
+                osc.connect(gain);
+                gain.connect(offlineCtx.destination);
+                osc.start(0);
+            }));
+
+            // 8. Tadah (duration 1.0s)
+            promises.push(this.bakeSound('tadah', 1.0, (offlineCtx) => {
+                let osc1 = offlineCtx.createOscillator();
+                let osc2 = offlineCtx.createOscillator();
+                let gain1 = offlineCtx.createGain();
+                let gain2 = offlineCtx.createGain();
+                
+                osc1.type = 'triangle';
+                osc2.type = 'triangle';
+                
+                osc1.frequency.setValueAtTime(523.25, 0);
+                osc2.frequency.setValueAtTime(659.25, 0);
+                gain1.gain.setValueAtTime(0.3, 0);
+                gain1.gain.setValueAtTime(0.3, 0.12);
+                gain1.gain.exponentialRampToValueAtTime(0.01, 0.15);
+                
+                osc1.frequency.setValueAtTime(783.99, 0.16);
+                osc2.frequency.setValueAtTime(1046.50, 0.16);
+                gain2.gain.setValueAtTime(0, 0);
+                gain2.gain.setValueAtTime(0.35, 0.16);
+                gain2.gain.exponentialRampToValueAtTime(0.01, 0.9);
+                
+                osc1.connect(gain1);
+                gain1.connect(offlineCtx.destination);
+                osc2.connect(gain2);
+                gain2.connect(offlineCtx.destination);
+                
+                osc1.start(0);
+                osc2.start(0);
+            }));
+
+            // 9. Footstep (duration 0.2s)
+            promises.push(this.bakeSound('footstep', 0.2, (offlineCtx) => {
+                const osc = offlineCtx.createOscillator();
+                const gain = offlineCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(65, 0);
+                osc.frequency.exponentialRampToValueAtTime(10, 0.12);
+                
+                gain.gain.setValueAtTime(0.22, 0);
+                gain.gain.exponentialRampToValueAtTime(0.005, 0.12);
+                
+                osc.connect(gain);
+                gain.connect(offlineCtx.destination);
+                osc.start(0);
+            }));
+
+            // 10. Flashbang bang (duration 0.5s)
+            promises.push(this.bakeSound('flashbangBang', 0.5, (offlineCtx) => {
+                const bangOsc = offlineCtx.createOscillator();
+                const bangGain = offlineCtx.createGain();
+                bangOsc.type = 'triangle';
+                bangOsc.frequency.setValueAtTime(120, 0);
+                bangOsc.frequency.exponentialRampToValueAtTime(10, 0.25);
+                bangGain.gain.setValueAtTime(0.8, 0);
+                bangGain.gain.exponentialRampToValueAtTime(0.01, 0.25);
+                
+                bangOsc.connect(bangGain);
+                bangGain.connect(offlineCtx.destination);
+                bangOsc.start(0);
+            }));
+
+            // 11. Flashbang ring (duration 2.8s) - long tail!
+            promises.push(this.bakeSound('flashbangRing', 2.8, (offlineCtx) => {
+                const ringOsc = offlineCtx.createOscillator();
+                const ringGain = offlineCtx.createGain();
+                ringOsc.type = 'sine';
+                ringOsc.frequency.setValueAtTime(4500, 0);
+                ringGain.gain.setValueAtTime(0.18, 0);
+                ringGain.gain.exponentialRampToValueAtTime(0.001, 2.5);
+                
+                ringOsc.connect(ringGain);
+                ringGain.connect(offlineCtx.destination);
+                ringOsc.start(0);
+            }));
+
+            await Promise.all(promises);
+        } catch (e) {
+            console.error("Failed to bake sounds:", e);
+        } finally {
+            this.isBaking = false;
+        }
+    }
+
+    playBakedSound(name, destination = this.sfxGain, gainValue = 1.0) {
+        if (!this.ctx || !this.bakedBuffers[name]) return;
+        const source = this.ctx.createBufferSource();
+        source.buffer = this.bakedBuffers[name];
         
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + (type === 'Sniper' ? 0.35 : type === 'M1A' ? 0.26 : 0.18));
-        
-        noise.connect(filter);
-        filter.connect(gain);
-        gain.connect(this.sfxGain);
-        
-        noise.start();
-        noise.stop(this.ctx.currentTime + 0.4);
+        if (gainValue !== 1.0) {
+            const gain = this.ctx.createGain();
+            gain.gain.value = gainValue;
+            source.connect(gain);
+            gain.connect(destination);
+        } else {
+            source.connect(destination);
+        }
+        source.start(0);
+    }
+
+    playShoot(type) {
+        this.playBakedSound('shoot_' + type);
     }
 
     playRicochet() {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(1000 + Math.random()*800, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(3200, this.ctx.currentTime + 0.08);
-        
-        gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
-        
-        osc.connect(gain);
-        gain.connect(this.sfxGain);
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.08);
+        this.playBakedSound('ricochet');
     }
 
     playExplosion(volumeScale = 1.0) {
@@ -1182,187 +1533,38 @@ class AudioEngine {
         }
         this.lastExplosionTime = now;
         
-        // Base volume is reduced to 30% per user request, and multiplied by volumeScale
-        let finalVolume = 0.3 * volumeScale;
-        
-        const osc = this.ctx.createOscillator();
-        const oscGain = this.ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(160, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 0.5);
-        oscGain.gain.setValueAtTime(1.5 * finalVolume, this.ctx.currentTime);
-        oscGain.gain.exponentialRampToValueAtTime(0.01 * finalVolume, this.ctx.currentTime + 0.5);
-        osc.connect(oscGain);
-        oscGain.connect(this.sfxGain);
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.55);
-
-        const noise = this.ctx.createBufferSource();
-        noise.buffer = this.noiseBuffer;
-        const filter = this.ctx.createBiquadFilter();
-        const noiseGain = this.ctx.createGain();
-        filter.type = 'lowpass';
-        filter.frequency.value = 600;
-        noiseGain.gain.setValueAtTime(1.8 * finalVolume, this.ctx.currentTime);
-        noiseGain.gain.exponentialRampToValueAtTime(0.01 * finalVolume, this.ctx.currentTime + 0.6);
-        noise.connect(filter);
-        filter.connect(noiseGain);
-        noiseGain.connect(this.sfxGain);
-        noise.start();
-        noise.stop(this.ctx.currentTime + 0.65);
+        this.playBakedSound('explosion', this.sfxGain, volumeScale);
     }
 
     playMiniExplosion() {
         if (!this.ctx) return;
-        try {
-            const osc = this.ctx.createOscillator();
-            const oscGain = this.ctx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(320, this.ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.25);
-            
-            let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-            oscGain.gain.setValueAtTime(0.6 * sfxVol, this.ctx.currentTime);
-            oscGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
-            osc.connect(oscGain);
-            oscGain.connect(this.sfxGain || this.masterGain);
-            osc.start();
-            osc.stop(this.ctx.currentTime + 0.28);
-
-            if (this.noiseBuffer) {
-                const noise = this.ctx.createBufferSource();
-                noise.buffer = this.noiseBuffer;
-                const filter = this.ctx.createBiquadFilter();
-                const noiseGain = this.ctx.createGain();
-                filter.type = 'lowpass';
-                filter.frequency.value = 800;
-                noiseGain.gain.setValueAtTime(0.8 * sfxVol, this.ctx.currentTime);
-                noiseGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
-                noise.connect(filter);
-                filter.connect(noiseGain);
-                noiseGain.connect(this.sfxGain || this.masterGain);
-                noise.start();
-                noise.stop(this.ctx.currentTime + 0.35);
-            }
-        } catch(e) {}
+        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        this.playBakedSound('miniExplosion', this.sfxGain || this.masterGain, sfxVol);
     }
 
     playHit() {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(110, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(25, this.ctx.currentTime + 0.12);
-        
-        gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.12);
-        
-        osc.connect(gain);
-        gain.connect(this.sfxGain);
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.12);
+        this.playBakedSound('hit');
     }
     
     playPickup(type) {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = type === 'money' ? 'sine' : 'square';
-        osc.frequency.setValueAtTime(type === 'money' ? 1000 : 350, this.ctx.currentTime);
-        osc.frequency.linearRampToValueAtTime(type === 'money' ? 1500 : 550, this.ctx.currentTime + 0.08);
-        
-        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
-        
-        osc.connect(gain);
-        gain.connect(this.sfxGain);
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.08);
+        this.playBakedSound('pickup_' + type);
     }
 
     playTadah() {
-        if (!this.ctx) return;
-        let t = this.ctx.currentTime;
-        
-        let osc1 = this.ctx.createOscillator();
-        let osc2 = this.ctx.createOscillator();
-        let gain1 = this.ctx.createGain();
-        let gain2 = this.ctx.createGain();
-        
-        osc1.type = 'triangle';
-        osc2.type = 'triangle';
-        
-        // "Ta" note
-        osc1.frequency.setValueAtTime(523.25, t); // C5
-        osc2.frequency.setValueAtTime(659.25, t); // E5
-        gain1.gain.setValueAtTime(0.3, t);
-        gain1.gain.setValueAtTime(0.3, t + 0.12);
-        gain1.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
-        
-        // "Dah" note
-        osc1.frequency.setValueAtTime(783.99, t + 0.16); // G5
-        osc2.frequency.setValueAtTime(1046.50, t + 0.16); // C6
-        gain2.gain.setValueAtTime(0, t);
-        gain2.gain.setValueAtTime(0.35, t + 0.16);
-        gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.9);
-        
-        osc1.connect(gain1);
-        gain1.connect(this.sfxGain);
-        
-        osc2.connect(gain2);
-        gain2.connect(this.sfxGain);
-        
-        osc1.start(t);
-        osc1.stop(t + 0.95);
-        
-        osc2.start(t);
-        osc2.stop(t + 0.95);
+        this.playBakedSound('tadah');
     }
 
     playFootstep(vol) {
         if (!this.ctx || vol <= 0.01) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(65, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 0.12);
-        
-        gain.gain.setValueAtTime(vol * 0.22, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.005, this.ctx.currentTime + 0.12);
-        
-        osc.connect(gain);
-        gain.connect(this.sfxGain);
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.14);
+        this.playBakedSound('footstep', this.sfxGain, vol);
     }
     
     playFlashbangRing() {
         if (!this.ctx) return;
-        const bangOsc = this.ctx.createOscillator();
-        const bangGain = this.ctx.createGain();
-        bangOsc.type = 'triangle';
-        bangOsc.frequency.setValueAtTime(120, this.ctx.currentTime);
-        bangOsc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 0.25);
-        bangGain.gain.setValueAtTime(0.8, this.ctx.currentTime);
-        bangGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
-        bangOsc.connect(bangGain);
-        bangGain.connect(this.sfxGain);
-        bangOsc.start();
-        bangOsc.stop(this.ctx.currentTime + 0.3);
-
-        const ringOsc = this.ctx.createOscillator();
-        const ringGain = this.ctx.createGain();
-        ringOsc.type = 'sine';
-        ringOsc.frequency.setValueAtTime(4500, this.ctx.currentTime);
+        this.playBakedSound('flashbangBang');
         
         let sfxVol = game && game.saveData && game.saveData.sfxVolume !== undefined ? game.saveData.sfxVolume : 0.5;
-        ringGain.gain.setValueAtTime(0.18 * sfxVol, this.ctx.currentTime);
-        ringGain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 2.5);
-        ringOsc.connect(ringGain);
-        ringGain.connect(this.masterGain); 
-        ringOsc.start();
-        ringOsc.stop(this.ctx.currentTime + 2.6);
+        this.playBakedSound('flashbangRing', this.masterGain, sfxVol);
     }
 }
 
@@ -2007,6 +2209,7 @@ class MapGen {
         this.width = width;
         this.height = height;
         this.walls = [];
+        this.currentSearchId = 0;
         this.generate();
         this.initializeSpatialGrid();
         this.buildNavGrid();
@@ -2272,51 +2475,66 @@ class MapGen {
             return [{ x: endX, y: endY }];
         }
         
-        // A* algorithm
-        let openSet = [startNode];
-        let cameFrom = new Map();
+        // Incremental generational caching searchId update
+        this.currentSearchId++;
+        if (this.currentSearchId > 1000000) {
+            for (let n of this.navNodes) {
+                n.searchId = 0;
+                n.closedSearchId = 0;
+            }
+            this.currentSearchId = 1;
+        }
+
+        // A* algorithm using Priority Queue
+        // Comparator breaks ties using hScore (heuristic/distance to target)
+        let openSet = new PriorityQueue((a, b) => {
+            if (a.fScore === b.fScore) {
+                return a.hScore - b.hScore;
+            }
+            return a.fScore - b.fScore;
+        });
+
+        startNode.gScore = 0;
+        let startH = Math.hypot(startNode.x - endX, startNode.y - endY);
+        startNode.fScore = startH;
+        startNode.searchId = this.currentSearchId;
+        startNode.cameFrom = null;
         
-        let gScore = new Map();
-        gScore.set(startNode, 0);
+        openSet.push({
+            node: startNode,
+            fScore: startNode.fScore,
+            hScore: startH,
+            searchId: this.currentSearchId
+        });
         
-        let fScore = new Map();
-        fScore.set(startNode, Math.hypot(startNode.x - endX, startNode.y - endY));
-        
-        let closedSet = new Set();
-        
-        while (openSet.length > 0) {
-            let current = openSet[0];
-            let lowestF = fScore.get(current) || Infinity;
-            let lowestIdx = 0;
-            for (let i = 1; i < openSet.length; i++) {
-                let f = fScore.get(openSet[i]) || Infinity;
-                if (f < lowestF) {
-                    lowestF = f;
-                    current = openSet[i];
-                    lowestIdx = i;
-                }
+        while (!openSet.isEmpty()) {
+            let popped = openSet.pop();
+            let { node, fScore, searchId } = popped;
+            
+            // Skip popped entries if they belong to an old search, are already closed, or are suboptimal
+            if (node.searchId !== this.currentSearchId || node.closedSearchId === this.currentSearchId || fScore > node.fScore) {
+                continue;
             }
             
-            if (current === endNode) {
+            if (node === endNode) {
                 let path = [{ x: endX, y: endY }];
-                let temp = current;
-                while (cameFrom.has(temp)) {
+                let temp = node;
+                while (temp && temp.cameFrom && temp.searchId === this.currentSearchId) {
                     path.unshift({ x: temp.x, y: temp.y });
-                    temp = cameFrom.get(temp);
+                    temp = temp.cameFrom;
                 }
                 return path;
             }
             
-            openSet.splice(lowestIdx, 1);
-            closedSet.add(current);
+            node.closedSearchId = this.currentSearchId;
             
-            for (let neighbor of current.neighbors) {
-                if (closedSet.has(neighbor)) continue;
+            for (let neighbor of node.neighbors) {
+                if (neighbor.closedSearchId === this.currentSearchId) continue;
                 
                 let blockedByBarrier = false;
                 if (typeof game !== 'undefined' && game.barriers) {
                     for (let b of game.barriers) {
-                        if (MathUtils.lineIntersectCapsule(current.x, current.y, neighbor.x, neighbor.y, b)) {
+                        if (MathUtils.lineIntersectCapsule(node.x, node.y, neighbor.x, neighbor.y, b)) {
                             blockedByBarrier = true;
                             break;
                         }
@@ -2324,17 +2542,23 @@ class MapGen {
                 }
                 if (blockedByBarrier) continue;
                 
-                let tentativeG = (gScore.get(current) || 0) + Math.hypot(neighbor.x - current.x, neighbor.y - current.y);
+                let neighborG = neighbor.searchId === this.currentSearchId ? neighbor.gScore : Infinity;
+                let tentativeG = node.gScore + Math.hypot(neighbor.x - node.x, neighbor.y - node.y);
                 
-                if (!openSet.includes(neighbor)) {
-                    openSet.push(neighbor);
-                } else if (tentativeG >= (gScore.get(neighbor) || Infinity)) {
-                    continue;
+                if (tentativeG < neighborG) {
+                    neighbor.cameFrom = node;
+                    neighbor.gScore = tentativeG;
+                    let neighborH = Math.hypot(neighbor.x - endX, neighbor.y - endY);
+                    neighbor.fScore = tentativeG + neighborH;
+                    neighbor.searchId = this.currentSearchId;
+                    
+                    openSet.push({
+                        node: neighbor,
+                        fScore: neighbor.fScore,
+                        hScore: neighborH,
+                        searchId: this.currentSearchId
+                    });
                 }
-                
-                cameFrom.set(neighbor, current);
-                gScore.set(neighbor, tentativeG);
-                fScore.set(neighbor, tentativeG + Math.hypot(neighbor.x - endX, neighbor.y - endY));
             }
         }
         
@@ -2826,7 +3050,7 @@ class Player extends Entity {
         for(let i=0; i<pellets; i++) {
             let spreadAngle = baseFireAngle + (Math.random() - 0.5) * this.weapon.spread;
             
-            game.bullets.push(new Bullet(barrelX, barrelY, spreadAngle, this.weapon, this, isAP, isHP, false));
+            game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, this.weapon, this, isAP, isHP, false));
             game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*600, Math.sin(spreadAngle)*600, '#fff', 0.04, 3));
         }
     }
@@ -2935,6 +3159,19 @@ class Player extends Entity {
 class Enemy extends Entity {
     constructor(x, y, config) {
         super(x, y, config.size);
+        this.init(x, y, config);
+    }
+    
+    init(x, y, config) {
+        this.x = x;
+        this.y = y;
+        this.r = config.size;
+        this.vx = 0;
+        this.vy = 0;
+        this.angle = 0;
+        this.dead = false;
+        this.footstepTimer = 0;
+
         this.type = config.type;
         this.hp = config.hp;
         this.maxHp = config.hp;
@@ -2962,9 +3199,11 @@ class Enemy extends Entity {
         }
         this.willShootDrone = Math.random() < baseProb;
         
-        // Cached variables for AI Throttling (Task 2)
+        // Cached variables for AI Throttling
         this.aiTimer = 0;
         this.cachedTarget = null;
+        this.target = null;
+        this.waypoint = null;
         this.cachedDistToTarget = 9999;
         this.cachedHasLOS = false;
         this.cachedRunFromDrone = false;
@@ -3403,26 +3642,26 @@ class Enemy extends Entity {
             for (let i = 0; i < pellets; i++) {
                 let spreadAngle = this.angle + (Math.random() - 0.5) * 0.28;
                 let bulletSpec = { name: 'Shotgun', dmg: 6, speed: 1600, drag: 0.2, color: '#ff5722' };
-                game.bullets.push(new Bullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
+                game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
                 game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, '#ff5722', 0.04, 2));
             }
         } else if (this.weaponType === 'sniper') {
             audio.playShoot('Sniper');
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.02;
             let bulletSpec = { name: 'Sniper', dmg: 40, speed: 3000, drag: 0.02, color: '#f50057' };
-            game.bullets.push(new Bullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
+            game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
             game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*500, Math.sin(spreadAngle)*500, '#f50057', 0.05, 3.5));
         } else if (this.weaponType === 'heavy_pistol') {
             audio.playShoot('Pistol');
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.10;
             let bulletSpec = { name: 'Pistol', dmg: 16, speed: 1800, drag: 0.1, color: '#ff2a5f' };
-            game.bullets.push(new Bullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
+            game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
             game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, '#ff2a5f', 0.04, 3));
         } else {
             audio.playShoot('Pistol');
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.12;
             let bulletSpec = { name: 'Pistol', dmg: 8, speed: 1800, drag: 0.1, color: '#ff2a5f' };
-            game.bullets.push(new Bullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
+            game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
             game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, '#ff2a5f', 0.04, 3));
         }
     }
@@ -3520,6 +3759,10 @@ class Enemy extends Entity {
 
 class Bullet {
     constructor(x, y, angle, weaponInfo, isPlayerBullet, isAP = false, isHP = false, isNeutral = false) {
+        this.init(x, y, angle, weaponInfo, isPlayerBullet, isAP, isHP, isNeutral);
+    }
+    
+    init(x, y, angle, weaponInfo, isPlayerBullet, isAP = false, isHP = false, isNeutral = false) {
         this.x = x; this.y = y;
         this.vx = Math.cos(angle) * weaponInfo.speed;
         this.vy = Math.sin(angle) * weaponInfo.speed;
@@ -3534,6 +3777,7 @@ class Bullet {
         this.isAP = isAP;
         this.isHP = isHP;
         this.isNeutral = isNeutral; 
+        this.owner = null;
     }
 
     update(dt, walls, entities, game) {
@@ -3613,7 +3857,7 @@ class Bullet {
                     } else if (ent instanceof RobotDog) {
                         dmgCol = '#ffffff';
                     }
-                    game.floatingTexts.push(new FloatingText(ent.x + MathUtils.rand(-8, 8), ent.y - 12 - MathUtils.rand(0, 10), Math.round(calculatedDmg).toString(), dmgCol, 0.9));
+                    game.floatingTexts.push(game.spawnFloatingText(ent.x + MathUtils.rand(-8, 8), ent.y - 12 - MathUtils.rand(0, 10), Math.round(calculatedDmg).toString(), dmgCol, 0.9));
                     if (ent instanceof AutoTurret || ent instanceof FPVDrone || ent instanceof RobotDog) {
                         let pColor = ent instanceof AutoTurret ? '#ffd700' : ent instanceof FPVDrone ? '#ffff00' : '#ffffff';
                         for(let c=0; c<4; c++) {
@@ -4100,7 +4344,7 @@ class FPVDrone {
         for (let i = 0; i < fragments; i++) {
             let angle = (i / fragments) * Math.PI * 2 + (Math.random() - 0.5) * 0.15;
             let speed = MathUtils.rand(2000, 3000);
-            let b = new Bullet(this.x, this.y, angle, { name: 'Pistol', dmg: 35, speed: speed, drag: 0.12, color: '#ff5500' }, true, false, false, true);
+            let b = game.spawnBullet(this.x, this.y, angle, { name: 'Pistol', dmg: 35, speed: speed, drag: 0.12, color: '#ff5500' }, true, false, false, true);
             game.bullets.push(b);
         }
         
@@ -4204,7 +4448,7 @@ class FPVDrone {
                     game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ff5500', 0.4, 2));
                 }
                 let rem = 3 - this.bombsDropped;
-                game.floatingTexts.push(new FloatingText(this.x, this.y - 15, `BOMB DROPPED (${rem} LEFT)`, '#ff2a5f', 1.2));
+                game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 15, `BOMB DROPPED (${rem} LEFT)`, '#ff2a5f', 1.2));
             }
         }
     }
@@ -4317,14 +4561,14 @@ class AutoTurret extends Entity {
         if (this.isMKII) {
             let spreadAngles = [this.angle - 0.12, this.angle, this.angle + 0.12];
             for (let a of spreadAngles) {
-                let bullet = new Bullet(barrelX, barrelY, a, bulletSpec, true, false, false, false);
+                let bullet = game.spawnBullet(barrelX, barrelY, a, bulletSpec, true, false, false, false);
                 bullet.owner = this;
                 game.bullets.push(bullet);
                 game.particles.push(new Particle(barrelX, barrelY, Math.cos(a)*300, Math.sin(a)*300, '#ffea00', 0.04, 2.5));
             }
         } else {
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.08;
-            let bullet = new Bullet(barrelX, barrelY, spreadAngle, bulletSpec, true, false, false, false);
+            let bullet = game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, true, false, false, false);
             bullet.owner = this;
             game.bullets.push(bullet);
             game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, '#ffea00', 0.04, 2.5));
@@ -4517,7 +4761,7 @@ class RobotDog extends Entity {
                 this.waypoint = null;
                 this.waypointExplorePoints = [];
                 this.currentExploreIdx = 0;
-                game.floatingTexts.push(new FloatingText(this.x, this.y - 15, "RETURNING TO OWNER", '#ffb700', 1.2));
+                game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 15, "RETURNING TO OWNER", '#ffb700', 1.2));
             }
         }
         
@@ -4624,7 +4868,7 @@ class RobotDog extends Entity {
                                 this.waypoint = null;
                                 this.waypointExplorePoints = [];
                                 this.currentExploreIdx = 0;
-                                game.floatingTexts.push(new FloatingText(this.x, this.y - 15, "RETURNING TO OWNER", '#ffb700', 1.2));
+                                game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 15, "RETURNING TO OWNER", '#ffb700', 1.2));
                             }
                         } else {
                             this.currentExploreIdx = 0;
@@ -4902,7 +5146,7 @@ class RobotDog extends Entity {
         
         let laserColor = (this.owner === game.player2) ? '#ffb700' : '#00e5ff';
         let bulletSpec = { name: 'Pistol', dmg: 16, speed: 2000, drag: 0.05, color: laserColor };
-        let bullet = new Bullet(barrelX, barrelY, spreadAngle, bulletSpec, true, false, false, false);
+        let bullet = game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, true, false, false, false);
         bullet.owner = this;
         game.bullets.push(bullet);
         
@@ -5564,7 +5808,7 @@ class ShrapnelGrenade {
         for (let i = 0; i < fragments; i++) {
             let angle = (i / fragments) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
             let speed = MathUtils.rand(1800, 2600);
-            let b = new Bullet(this.x, this.y, angle, { name: 'Pistol', dmg: 25, speed: speed, drag: 0.18, color: '#ffb700' }, true, false, false, true);
+            let b = game.spawnBullet(this.x, this.y, angle, { name: 'Pistol', dmg: 25, speed: speed, drag: 0.18, color: '#ffb700' }, true, false, false, true);
             game.bullets.push(b);
         }
 
@@ -5672,10 +5916,10 @@ class Flashbang {
                     let dmg = 15 * (1.0 - dist / 150);
                     ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 50);
                     if (ent instanceof Enemy) {
-                        game.floatingTexts.push(new FloatingText(ent.x + MathUtils.rand(-8, 8), ent.y - 12 - MathUtils.rand(0, 10), Math.round(dmg).toString(), '#39ff14', 0.9));
+                        game.floatingTexts.push(game.spawnFloatingText(ent.x + MathUtils.rand(-8, 8), ent.y - 12 - MathUtils.rand(0, 10), Math.round(dmg).toString(), '#39ff14', 0.9));
                     } else {
                         let dmgCol = ent.isPlayer2 ? '#ffb700' : '#ff2a5f';
-                        game.floatingTexts.push(new FloatingText(ent.x + MathUtils.rand(-8, 8), ent.y - 12 - MathUtils.rand(0, 10), Math.round(dmg).toString(), dmgCol, 0.9));
+                        game.floatingTexts.push(game.spawnFloatingText(ent.x + MathUtils.rand(-8, 8), ent.y - 12 - MathUtils.rand(0, 10), Math.round(dmg).toString(), dmgCol, 0.9));
                     }
                 }
             }
@@ -5757,7 +6001,7 @@ class TripMine {
         for (let i = 0; i < fragments; i++) {
             let angle = (i / fragments) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
             let speed = MathUtils.rand(1600, 2400);
-            let b = new Bullet(this.x, this.y, angle, { name: 'Pistol', dmg: 25, speed: speed, drag: 0.18, color: '#ffea00' }, true, false, false, true);
+            let b = game.spawnBullet(this.x, this.y, angle, { name: 'Pistol', dmg: 25, speed: speed, drag: 0.18, color: '#ffea00' }, true, false, false, true);
             game.bullets.push(b);
         }
 
@@ -5858,6 +6102,9 @@ class Particle {
 
 class FloatingText {
     constructor(x, y, text, color = '#39ff14', life = 1.0) {
+        this.init(x, y, text, color, life);
+    }
+    init(x, y, text, color = '#39ff14', life = 1.0) {
         this.x = x; this.y = y;
         this.text = text;
         this.color = color;
@@ -5932,6 +6179,12 @@ class Game {
         this.dogs = [];
         this.miniDrones = [];
         this.floatingTexts = [];
+        this.bullets = [];
+        this.enemies = [];
+        this.hudState = {};
+        this.inactiveBullets = [];
+        this.inactiveEnemies = [];
+        this.inactiveFloatingTexts = [];
         
         this.shopItemIDs = [
             'hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost', 
@@ -5963,9 +6216,51 @@ class Game {
         requestAnimationFrame((t) => this.loop(t));
     }
     
+    spawnBullet(x, y, angle, weaponInfo, isPlayerBullet, isAP = false, isHP = false, isNeutral = false) {
+        let b;
+        if (this.inactiveBullets.length > 0) {
+            b = this.inactiveBullets.pop();
+            b.init(x, y, angle, weaponInfo, isPlayerBullet, isAP, isHP, isNeutral);
+        } else {
+            b = new Bullet(x, y, angle, weaponInfo, isPlayerBullet, isAP, isHP, isNeutral);
+        }
+        return b;
+    }
+
+    spawnEnemy(x, y, config) {
+        let e;
+        if (this.inactiveEnemies.length > 0) {
+            e = this.inactiveEnemies.pop();
+            e.init(x, y, config);
+        } else {
+            e = new Enemy(x, y, config);
+        }
+        return e;
+    }
+
+    spawnFloatingText(x, y, text, color = '#39ff14', life = 1.0) {
+        let ft;
+        if (this.inactiveFloatingTexts.length > 0) {
+            ft = this.inactiveFloatingTexts.pop();
+            ft.init(x, y, text, color, life);
+        } else {
+            ft = new FloatingText(x, y, text, color, life);
+        }
+        return ft;
+    }
+    
     initDOM() {
-        document.getElementById('btn-start').onclick = () => {
+        document.getElementById('btn-start').onclick = async () => {
+            const btn = document.getElementById('btn-start');
+            const originalText = btn.innerText;
+            btn.innerText = "BAKING PERIMETER AUDIO...";
+            btn.disabled = true;
+            
             audio.resume();
+            await audio.bakeSounds();
+            
+            btn.innerText = originalText;
+            btn.disabled = false;
             this.startNewGame();
         };
         const btnExit = document.getElementById('btn-exit');
@@ -6301,7 +6596,7 @@ class Game {
                         if (playerInstance.gamepadZoomIndex === 1) label = "2X";
                         else if (playerInstance.gamepadZoomIndex === 2) label = "3X";
                         audio.playPickup('money');
-                        this.floatingTexts.push(new FloatingText(playerInstance.x, playerInstance.y - 30, "AIM ZOOM: " + label, '#00e5ff', 1.0));
+                        this.floatingTexts.push(this.spawnFloatingText(playerInstance.x, playerInstance.y - 30, "AIM ZOOM: " + label, '#00e5ff', 1.0));
                     }
                 }
 
@@ -6799,7 +7094,7 @@ class Game {
                 activeDog.waypointExplorePoints = [];
                 activeDog.currentExploreIdx = 0;
                 audio.playPickup('weapon');
-                this.floatingTexts.push(new FloatingText(player.x, player.y - 15, "SPOT RECALLED", '#ff00ff', 1.2));
+                this.floatingTexts.push(this.spawnFloatingText(player.x, player.y - 15, "SPOT RECALLED", '#ff00ff', 1.2));
             } else {
                 let aimCoords = this.getWorldAimCoords(player);
                 activeDog.waypoint = { x: aimCoords.x, y: aimCoords.y };
@@ -6815,7 +7110,7 @@ class Game {
                 }
                 activeDog.currentExploreIdx = 0;
                 audio.playPickup('money');
-                this.floatingTexts.push(new FloatingText(player.x, player.y - 15, "SPOT DISPATCHED", '#39ff14', 1.2));
+                this.floatingTexts.push(this.spawnFloatingText(player.x, player.y - 15, "SPOT DISPATCHED", '#39ff14', 1.2));
             }
             return;
         }
@@ -7218,6 +7513,16 @@ class Game {
             toggleClass('hud-bottom-p2', 'hidden', true);
         }
         
+        if (this.bullets) {
+            for (let b of this.bullets) this.inactiveBullets.push(b);
+        }
+        if (this.enemies) {
+            for (let e of this.enemies) this.inactiveEnemies.push(e);
+        }
+        if (this.floatingTexts) {
+            for (let ft of this.floatingTexts) this.inactiveFloatingTexts.push(ft);
+        }
+        
         this.enemies = [];
         this.bullets = [];
         this.initializeParticlePool();
@@ -7346,8 +7651,9 @@ class Game {
 
             if (shouldDeactivate) {
                 p.active = false;
-                this.particles.splice(i, 1);
                 this.inactiveParticles.push(p);
+                this.particles[i] = this.particles[this.particles.length - 1];
+                this.particles.pop();
             }
         }
     }
@@ -7360,12 +7666,12 @@ class Game {
             if (isJackpot) {
                 amount = Math.floor(MathUtils.rand(100, 151)); 
                 amount = Math.round(amount * this.cashMultiplier);
-                this.floatingTexts.push(new FloatingText(it.x, it.y - 12, "JACKPOT +$" + amount + "!", '#ffea00', 1.8));
+                this.floatingTexts.push(this.spawnFloatingText(it.x, it.y - 12, "JACKPOT +$" + amount + "!", '#ffea00', 1.8));
                 audio.playPickup('money');
                 setTimeout(() => { audio.playPickup('money'); }, 80);
             } else {
                 amount = Math.round(amount * this.cashMultiplier);
-                this.floatingTexts.push(new FloatingText(it.x, it.y - 10, "+$" + amount, '#39ff14', 1.0));
+                this.floatingTexts.push(this.spawnFloatingText(it.x, it.y - 10, "+$" + amount, '#39ff14', 1.0));
                 audio.playPickup('money');
             }
             p.cash += amount;
@@ -7396,9 +7702,9 @@ class Game {
                 audio.playPickup('weapon');
                 if (hasWeapon) {
                     let refill = wKey === 'shotgun' ? 12 : wKey === 'sniper' ? 5 : wKey === 'm1a' ? 20 : 30;
-                    this.floatingTexts.push(new FloatingText(p.x, p.y - 15, "+" + refill + " AMMO", Weapons[wKey].color, 1.2));
+                    this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 15, "+" + refill + " AMMO", Weapons[wKey].color, 1.2));
                 } else {
-                    this.floatingTexts.push(new FloatingText(p.x, p.y - 15, wKey.toUpperCase() + " ACQUIRED!", Weapons[wKey].color, 1.5));
+                    this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 15, wKey.toUpperCase() + " ACQUIRED!", Weapons[wKey].color, 1.5));
                 }
                 pickedUp = true;
             }
@@ -7442,8 +7748,13 @@ class Game {
                 for (let p of this.particles) p.update(dt);
                 this.handlePermanentParticles();
                 for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-                    let active = this.floatingTexts[i].update(dt);
-                    if (!active) this.floatingTexts.splice(i, 1);
+                    let ft = this.floatingTexts[i];
+                    let active = ft.update(dt);
+                    if (!active) {
+                        this.inactiveFloatingTexts.push(ft);
+                        this.floatingTexts[i] = this.floatingTexts[this.floatingTexts.length - 1];
+                        this.floatingTexts.pop();
+                    }
                 }
             }
             return;
@@ -7464,8 +7775,13 @@ class Game {
             this.handlePermanentParticles();
             
             for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-                let active = this.floatingTexts[i].update(dt);
-                if (!active) this.floatingTexts.splice(i, 1);
+                let ft = this.floatingTexts[i];
+                let active = ft.update(dt);
+                if (!active) {
+                    this.inactiveFloatingTexts.push(ft);
+                    this.floatingTexts[i] = this.floatingTexts[this.floatingTexts.length - 1];
+                    this.floatingTexts.pop();
+                }
             }
             
             if (this.roundWinDelay <= 0) {
@@ -7534,7 +7850,7 @@ class Game {
                     }
                 }
                 
-                let enemy = new Enemy(ex, ey, chosenType);
+                let enemy = this.spawnEnemy(ex, ey, chosenType);
                 let scaleHP = 1.0 + (this.wave - 1) * 0.04;
                 let scaleSpeed = 1.0 + (this.wave - 1) * 0.015;
                 enemy.hp = Math.round(enemy.hp * scaleHP);
@@ -7628,7 +7944,11 @@ class Game {
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             let b = this.bullets[i];
             b.update(dt, this.map.walls, entities, this);
-            if (!b.active) this.bullets.splice(i, 1);
+            if (!b.active) {
+                this.inactiveBullets.push(b);
+                this.bullets[i] = this.bullets[this.bullets.length - 1];
+                this.bullets.pop();
+            }
         }
 
         for (let i = this.grenades.length - 1; i >= 0; i--) {
@@ -7669,8 +7989,13 @@ class Game {
         this.handlePermanentParticles();
 
         for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-            let active = this.floatingTexts[i].update(dt);
-            if (!active) this.floatingTexts.splice(i, 1);
+            let ft = this.floatingTexts[i];
+            let active = ft.update(dt);
+            if (!active) {
+                this.inactiveFloatingTexts.push(ft);
+                this.floatingTexts[i] = this.floatingTexts[this.floatingTexts.length - 1];
+                this.floatingTexts.pop();
+            }
         }
 
         let activePlayers = [this.player];
@@ -7708,7 +8033,9 @@ class Game {
                     this.items.push(new Item(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'redbull'));
                 }
                 
-                this.enemies.splice(i, 1);
+                this.inactiveEnemies.push(e);
+                this.enemies[i] = this.enemies[this.enemies.length - 1];
+                this.enemies.pop();
             }
         }
 
@@ -7779,6 +8106,7 @@ class Game {
         audio.playTadah();
         
         this.winFlashIntensity = 1.0;
+        for (let b of this.bullets) this.inactiveBullets.push(b);
         this.bullets = [];
         this.grenades = [];
         
@@ -8232,71 +8560,103 @@ class Game {
     updateHUD() {
         if (this.state !== 'playing' && this.state !== 'shop') return;
         
-        // Player 1 HUD updates (Top Bar Core Stats)
-        setHtml('ui-wave', this.wave);
-        setHtml('ui-enemies', this.enemies.length + this.enemiesToSpawn);
-        setHtml('ui-cash', this.player.cash);
-        setHtml('ui-hp-val', Math.ceil(this.player.hp));
-        setHtml('ui-armor-val', Math.ceil(this.player.armor));
-        
-        let healthBar = document.getElementById('health-bar');
-        if (healthBar) healthBar.style.width = MathUtils.clamp(this.player.hp / this.player.maxHp * 100, 0, 100) + '%';
-        let armorBar = document.getElementById('armor-bar');
-        if (armorBar) armorBar.style.width = MathUtils.clamp(this.player.armor, 0, 100) + '%';
-        
-        let staminaBar = document.getElementById('stamina-bar');
-        if (staminaBar) {
-            staminaBar.style.width = MathUtils.clamp(this.player.stamina / this.player.maxStamina * 100, 0, 100) + '%';
-            if (this.player.isExhausted) {
-                staminaBar.style.backgroundColor = 'var(--red)';
-                staminaBar.style.boxShadow = '0 0 8px var(--red)';
-            } else {
-                staminaBar.style.backgroundColor = '#ffb700';
-                staminaBar.style.boxShadow = '0 0 8px #ffb700';
+        // Namespaced HUD dirty checking helper
+        const setHtmlCached = (id, val) => {
+            let strVal = String(val);
+            if (this.hudState[id] !== strVal) {
+                const el = document.getElementById(id);
+                if (el) el.innerText = strVal;
+                this.hudState[id] = strVal;
             }
+        };
+
+        const setStyleWidthCached = (id, val) => {
+            let strVal = String(val);
+            let key = id + '_width';
+            if (this.hudState[key] !== strVal) {
+                const el = document.getElementById(id);
+                if (el) el.style.width = strVal;
+                this.hudState[key] = strVal;
+            }
+        };
+
+        const setStyleBgColorCached = (id, val) => {
+            let strVal = String(val);
+            let key = id + '_bgColor';
+            if (this.hudState[key] !== strVal) {
+                const el = document.getElementById(id);
+                if (el) el.style.backgroundColor = strVal;
+                this.hudState[key] = strVal;
+            }
+        };
+
+        const setStyleBoxShadowCached = (id, val) => {
+            let strVal = String(val);
+            let key = id + '_boxShadow';
+            if (this.hudState[key] !== strVal) {
+                const el = document.getElementById(id);
+                if (el) el.style.boxShadow = strVal;
+                this.hudState[key] = strVal;
+            }
+        };
+
+        const setStyleVisibilityCached = (id, val) => {
+            let strVal = String(val);
+            let key = id + '_visibility';
+            if (this.hudState[key] !== strVal) {
+                const el = document.getElementById(id);
+                if (el) el.style.visibility = strVal;
+                this.hudState[key] = strVal;
+            }
+        };
+
+        // Player 1 HUD updates (Top Bar Core Stats)
+        setHtmlCached('ui-wave', this.wave);
+        setHtmlCached('ui-enemies', this.enemies.length + this.enemiesToSpawn);
+        setHtmlCached('ui-cash', this.player.cash);
+        setHtmlCached('ui-hp-val', Math.ceil(this.player.hp));
+        setHtmlCached('ui-armor-val', Math.ceil(this.player.armor));
+        
+        setStyleWidthCached('health-bar', MathUtils.clamp(this.player.hp / this.player.maxHp * 100, 0, 100) + '%');
+        setStyleWidthCached('armor-bar', MathUtils.clamp(this.player.armor, 0, 100) + '%');
+        
+        setStyleWidthCached('stamina-bar', MathUtils.clamp(this.player.stamina / this.player.maxStamina * 100, 0, 100) + '%');
+        if (this.player.isExhausted) {
+            setStyleBgColorCached('stamina-bar', 'var(--red)');
+            setStyleBoxShadowCached('stamina-bar', '0 0 8px var(--red)');
+        } else {
+            setStyleBgColorCached('stamina-bar', '#ffb700');
+            setStyleBoxShadowCached('stamina-bar', '0 0 8px #ffb700');
         }
         
-        setHtml('ui-weight-penalty', Math.round(this.player.speedPenalty * 100) + '%');
-
-        let boostLabel = document.getElementById('ui-boost-active');
-        if (boostLabel) {
-            boostLabel.style.visibility = this.player.energyDrinkTimer > 0 ? 'visible' : 'hidden';
-        }
+        setHtmlCached('ui-weight-penalty', Math.round(this.player.speedPenalty * 100) + '%');
+        setStyleVisibilityCached('ui-boost-active', this.player.energyDrinkTimer > 0 ? 'visible' : 'hidden');
 
         // Render Carousels for Player 1
         renderHUDSelectors(this.player, 'p1');
 
         // Player 2 HUD updates (Co-op)
         if (this.isTwoPlayer && this.player2) {
-            setHtml('ui-wave-p2', this.wave);
-            setHtml('ui-enemies-p2', this.enemies.length + this.enemiesToSpawn);
-            setHtml('ui-cash-p2', this.player2.cash);
-            setHtml('ui-hp-val-p2', Math.ceil(this.player2.hp));
-            setHtml('ui-armor-val-p2', Math.ceil(this.player2.armor));
+            setHtmlCached('ui-wave-p2', this.wave);
+            setHtmlCached('ui-enemies-p2', this.enemies.length + this.enemiesToSpawn);
+            setHtmlCached('ui-cash-p2', this.player2.cash);
+            setHtmlCached('ui-hp-val-p2', Math.ceil(this.player2.hp));
+            setHtmlCached('ui-armor-val-p2', Math.ceil(this.player2.armor));
             
-            let healthBar2 = document.getElementById('health-bar-p2');
-            if (healthBar2) healthBar2.style.width = MathUtils.clamp(this.player2.hp / this.player2.maxHp * 100, 0, 100) + '%';
-            let armorBar2 = document.getElementById('armor-bar-p2');
-            if (armorBar2) armorBar2.style.width = MathUtils.clamp(this.player2.armor, 0, 100) + '%';
+            setStyleWidthCached('health-bar-p2', MathUtils.clamp(this.player2.hp / this.player2.maxHp * 100, 0, 100) + '%');
+            setStyleWidthCached('armor-bar-p2', MathUtils.clamp(this.player2.armor, 0, 100) + '%');
             
-            let staminaBar2 = document.getElementById('stamina-bar-p2');
-            if (staminaBar2) {
-                staminaBar2.style.width = MathUtils.clamp(this.player2.stamina / this.player2.maxStamina * 100, 0, 100) + '%';
-                if (this.player2.isExhausted) {
-                    staminaBar2.style.backgroundColor = 'var(--red)';
-                    staminaBar2.style.boxShadow = '0 0 8px var(--red)';
-                } else {
-                    staminaBar2.style.backgroundColor = '#ffb700';
-                    staminaBar2.style.boxShadow = '0 0 8px #ffb700';
-                }
+            setStyleWidthCached('stamina-bar-p2', MathUtils.clamp(this.player2.stamina / this.player2.maxStamina * 100, 0, 100) + '%');
+            if (this.player2.isExhausted) {
+                setStyleBgColorCached('stamina-bar-p2', 'var(--red)');
+                setStyleBoxShadowCached('stamina-bar-p2', '0 0 8px var(--red)');
+            } else {
+                setStyleBgColorCached('stamina-bar-p2', '#ffb700');
+                setStyleBoxShadowCached('stamina-bar-p2', '0 0 8px #ffb700');
             }
             
-            setHtml('ui-weight-penalty-p2', Math.round(this.player2.speedPenalty * 100) + '%');
-
-            let boostLabel2 = document.getElementById('ui-boost-active-p2');
-            if (boostLabel2) {
-                boostLabel2.style.visibility = this.player2.energyDrinkTimer > 0 ? 'visible' : 'hidden';
-            }
+            setHtmlCached('ui-weight-penalty-p2', Math.round(this.player2.speedPenalty * 100) + '%');
+            setStyleVisibilityCached('ui-boost-active-p2', this.player2.energyDrinkTimer > 0 ? 'visible' : 'hidden');
 
             // Render Carousels for Player 2
             renderHUDSelectors(this.player2, 'p2');
@@ -9416,7 +9776,7 @@ class TouchController {
                 activeDog.waypointExplorePoints = [];
                 activeDog.currentExploreIdx = 0;
                 if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, "SPOT RECALLED", '#ff00ff', 1.2));
+                game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, "SPOT RECALLED", '#ff00ff', 1.2));
             } else {
                 // Dispatch Spot to new waypoint
                 activeDog.waypoint = { x: wx, y: wy };
@@ -9431,7 +9791,7 @@ class TouchController {
                 }
                 activeDog.currentExploreIdx = 0;
                 if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('money');
-                game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, "SPOT DISPATCHED", '#39ff14', 1.2));
+                game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, "SPOT DISPATCHED", '#39ff14', 1.2));
             }
             return;
         }
@@ -9525,27 +9885,27 @@ class TouchController {
                     game.player.barriersInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, isMKII: closestItem.isMKII || false });
                     game.barriers.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, `BARRIER RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#00e5ff', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, `BARRIER RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#00e5ff', 1.2));
                 } else if (closestItemType === 'turret') {
                     game.player.turretsInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, isMKII: closestItem.isMKII || false });
                     game.turrets.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, `TURRET RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#ffea00', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, `TURRET RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#ffea00', 1.2));
                 } else if (closestItemType === 'dog') {
                     game.player.dogsInventory.push({ hp: closestItem.hp, upgraded: closestItem.upgraded || false });
                     game.dogs.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, `SPOT ROBOT RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#ffffff', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, `SPOT ROBOT RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#ffffff', 1.2));
                 } else if (closestItemType === 'drone') {
                     game.player.dronesCount = Math.min(3, (game.player.dronesCount || 0) + 1);
                     game.drone.stopAudio();
                     game.drone = null;
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, "FPV DRONE RETRIEVED", '#ffd700', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, "FPV DRONE RETRIEVED", '#ffd700', 1.2));
                 }
             } else {
                 // Show visual feedback that they tapped but are too far
-                game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, "TOO FAR TO RETRIEVE", '#ff2a5f', 1.1));
+                game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, "TOO FAR TO RETRIEVE", '#ff2a5f', 1.1));
             }
             return;
         }
