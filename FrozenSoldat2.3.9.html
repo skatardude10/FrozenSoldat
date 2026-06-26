@@ -3970,7 +3970,15 @@ class FPVDrone {
                 if (input.keys['d']) moveX += 1;
                 
                 let cam = (this.pilot === game.player2) ? game.camera2 : game.camera;
-                aimAngle = Math.atan2(input.my + cam.y - this.y, input.mx + cam.x - this.x);
+                let ax = input.mx;
+                let ay = input.my;
+                if (window.touchController && window.touchController.enabled && this.pilot && !this.pilot.isPlayer2) {
+                    if (input.tax !== undefined && input.tay !== undefined) {
+                        ax = input.tax;
+                        ay = input.tay;
+                    }
+                }
+                aimAngle = Math.atan2(ay + cam.y - this.y, ax + cam.x - this.x);
             }
             
             this.angle = aimAngle;
@@ -6028,7 +6036,8 @@ class Game {
         });
         window.addEventListener('keyup', e => this.input.keys[e.key.toLowerCase()] = false);
         window.addEventListener('mousemove', e => {
-            if (window.touchController && window.touchController.enabled && window.touchController.rightStick.active) {
+            const isTouchPlaying = window.touchController && window.touchController.enabled && this && this.state === 'playing' && !this.isPaused;
+            if (isTouchPlaying) {
                 return;
             }
             this.input.mx = e.clientX; this.input.my = e.clientY;
@@ -6037,6 +6046,10 @@ class Game {
         });
         window.addEventListener('mousedown', e => { 
             if(e.button===0) {
+                const isTouchPlaying = window.touchController && window.touchController.enabled && this && this.state === 'playing' && !this.isPaused;
+                if (isTouchPlaying) {
+                    return;
+                }
                 this.input.mouseDown = true; 
                 if (this.state === 'playing' && this.drone && this.drone.pilot === this.player && this.drone.isPiloted && !this.drone.dead) {
                     if (this.player.droneUpgraded && (this.drone.bombsDropped || 0) < 3) {
@@ -6047,7 +6060,15 @@ class Game {
                 }
             }
         });
-        window.addEventListener('mouseup', e => { if(e.button===0) this.input.mouseDown = false; });
+        window.addEventListener('mouseup', e => { 
+            if(e.button===0) {
+                const isTouchPlaying = window.touchController && window.touchController.enabled && this && this.state === 'playing' && !this.isPaused;
+                if (isTouchPlaying) {
+                    return;
+                }
+                this.input.mouseDown = false; 
+            }
+        });
         window.addEventListener('wheel', e => {
             if (this.state === 'playing') {
                 this.player.switchWeapon(e.deltaY > 0 ? 1 : -1);
@@ -9532,8 +9553,6 @@ class TouchController {
         // Command 4: Direct Pickup/interaction of items on the floor (weapons/cash etc) if within range
         let distToPlayer = Math.hypot(game.player.x - wx, game.player.y - wy);
         if (distToPlayer < 75) {
-            game.input.mx = clientX;
-            game.input.my = clientY;
             interactPickUpItem(game.player);
         }
     }
@@ -9605,13 +9624,12 @@ class TouchController {
             const targetCrosshairX = player.x + cos * aimRange;
             const targetCrosshairY = player.y + sin * aimRange;
             
-            game.input.mx = cx + (targetCrosshairX - cam.x - cx) * cam.zoom;
-            game.input.my = cy + (targetCrosshairY - cam.y - cy) * cam.zoom;
+            game.input.tax = cx + (targetCrosshairX - cam.x - cx) * cam.zoom;
+            game.input.tay = cy + (targetCrosshairY - cam.y - cy) * cam.zoom;
             
-            if (game.crosshair) {
-                game.crosshair.style.left = game.input.mx + 'px';
-                game.crosshair.style.top = game.input.my + 'px';
-            }
+            // Sync mx/my to tax/tay to keep properties matching
+            game.input.mx = game.input.tax;
+            game.input.my = game.input.tay;
             
             // Fire if pushed beyond 98% (allows aiming/looking without firing unless pushed fully to the edge)
             if (this.rightStick.dist > 0.98) {
@@ -9622,6 +9640,12 @@ class TouchController {
             }
         } else if (this.rightStick.active) {
             game.input.mouseDown = false;
+        }
+        
+        // Set crosshair position based on tax and tay
+        if (game && game.crosshair && game.input.tax !== undefined) {
+            game.crosshair.style.left = game.input.tax + 'px';
+            game.crosshair.style.top = game.input.tay + 'px';
         }
     }
     
@@ -9705,6 +9729,27 @@ Game.prototype.update = function(dt) {
         window.touchController.update(dt);
     }
     originalUpdate.call(this, dt);
+};
+
+// Monkey-patching getWorldAimCoords to use stable touch aim coordinates (decoupled from screen taps)
+const originalGetWorldAimCoords = Game.prototype.getWorldAimCoords;
+Game.prototype.getWorldAimCoords = function(player) {
+    if (window.touchController && window.touchController.enabled && player && !player.isPlayer2) {
+        let cam = this.camera;
+        let viewportW = this.width;
+        let cx = viewportW / 2;
+        let cy = this.height / 2;
+        
+        if (this.input.tax === undefined || this.input.tay === undefined) {
+            this.input.tax = cx + 180;
+            this.input.tay = cy;
+        }
+        
+        let wx = cam.x + cx + (this.input.tax - cx) / cam.zoom;
+        let wy = cam.y + cy + (this.input.tay - cy) / cam.zoom;
+        return { x: wx, y: wy };
+    }
+    return originalGetWorldAimCoords.call(this, player);
 };
 
 game = new Game();
