@@ -9054,7 +9054,7 @@ class TouchController {
             curY: 0,
             angle: 0,
             dist: 0,
-            maxRadius: 65
+            maxRadius: 98
         };
         
         this.hudTouchState = {
@@ -9733,11 +9733,9 @@ game = new Game();
     width: 130px;
     height: 130px;
     border-radius: 50%;
-    background: rgba(0, 5, 12, 0.25);
+    background: transparent;
     border: 2px solid rgba(0, 229, 255, 0.2);
     box-shadow: 0 0 20px rgba(0, 229, 255, 0.05);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
     pointer-events: auto;
     touch-action: none;
     display: flex;
@@ -9752,26 +9750,36 @@ game = new Game();
 }
 
 #touch-joystick-left {
-    left: 45px;
+    left: 82px;
+    bottom: 65px;
 }
 
 #touch-joystick-right {
-    right: 45px;
+    right: 102px;
+    bottom: 65px;
+    width: 200px;
+    height: 200px;
+}
+
+#touch-joystick-right-knob {
+    width: 64px;
+    height: 64px;
 }
 
 .touch-joystick-knob {
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: rgba(0, 229, 255, 0.35);
+    background: transparent;
     border: 1.5px solid var(--neon-blue);
     box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
     pointer-events: none;
-    transition: transform 0.05s ease-out, background-color 0.2s ease;
+    transition: transform 0.05s ease-out, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .touch-joystick.active .touch-joystick-knob {
-    background: rgba(0, 229, 255, 0.6);
+    background: rgba(0, 229, 255, 0.12);
+    border-color: #ffffff;
     box-shadow: 0 0 15px rgba(0, 229, 255, 0.7);
 }
 
@@ -9808,8 +9816,8 @@ game = new Game();
 }
 
 #touch-interact-btn {
-    right: 50px;
-    bottom: 200px;
+    right: 138px;
+    bottom: 290px;
     width: 68px;
     height: 68px;
     border-radius: 50%;
