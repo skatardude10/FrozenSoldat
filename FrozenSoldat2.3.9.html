@@ -491,6 +491,15 @@
                 <input type="range" id="sld-time-scale" min="0.5" max="1.5" step="0.1" value="1.0" style="width: 100%; cursor: pointer;" oninput="game.setTimeScale(parseFloat(this.value))">
             </div>
             
+            <div style="margin: 15px 0;">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">TOUCH INTERFACE:</label><br>
+                <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px;">
+                    <button id="btn-touch-auto" class="active-mode" onclick="game.setTouchMode('auto')">Auto-Detect</button>
+                    <button id="btn-touch-on" onclick="game.setTouchMode('on')">Force On</button>
+                    <button id="btn-touch-off" onclick="game.setTouchMode('off')">Force Off</button>
+                </div>
+            </div>
+            
             <button id="btn-start" style="border-color: var(--green); color: var(--green); font-size: 16px; padding: 10px 20px; width: 75%; margin-top: 5px;">INITIALIZE PERIMETER SYSTEM</button>
             <button id="btn-exit" style="border-color: var(--red); color: var(--red); font-size: 16px; padding: 10px 20px; width: 75%; margin-top: 10px;">EXIT TO DESKTOP</button>
         </div>
@@ -6019,6 +6028,9 @@ class Game {
         });
         window.addEventListener('keyup', e => this.input.keys[e.key.toLowerCase()] = false);
         window.addEventListener('mousemove', e => {
+            if (window.touchController && window.touchController.enabled && window.touchController.rightStick.active) {
+                return;
+            }
             this.input.mx = e.clientX; this.input.my = e.clientY;
             this.crosshair.style.left = e.clientX + 'px';
             this.crosshair.style.top = e.clientY + 'px';
@@ -6431,6 +6443,7 @@ class Game {
                 ['btn-sandbox-no', 'btn-sandbox-yes'],
                 ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
                 ['sld-time-scale'],
+                ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
                 ['btn-start'],
                 ['btn-exit']
             ],
@@ -6593,6 +6606,7 @@ class Game {
                 ['btn-sandbox-no', 'btn-sandbox-yes'],
                 ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
                 ['sld-time-scale'],
+                ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
                 ['btn-start'],
                 ['btn-exit']
             ],
@@ -9012,8 +9026,836 @@ class Game {
     }
 }
 
+// ==========================================================================
+// TOUCH CONTROLLER LOGIC & DECORATORS
+// ==========================================================================
+class TouchController {
+    constructor() {
+        this.enabled = false;
+        this.pulseToggle = false;
+        this.screenTap = null;
+        this.leftStick = {
+            active: false,
+            pointerId: null,
+            startX: 0,
+            startY: 0,
+            curX: 0,
+            curY: 0,
+            angle: 0,
+            dist: 0,
+            maxRadius: 65
+        };
+        this.rightStick = {
+            active: false,
+            pointerId: null,
+            startX: 0,
+            startY: 0,
+            curX: 0,
+            curY: 0,
+            angle: 0,
+            dist: 0,
+            maxRadius: 65
+        };
+        
+        this.hudTouchState = {
+            left: { touchId: null, startY: 0, lastSelectIdx: 0 },
+            right: { touchId: null, startY: 0, lastSelectIdx: 0 },
+            bottom: { touchId: null, startX: 0, lastWeaponIdx: 0 }
+        };
+    }
+    
+    init() {
+        this.bindEvents();
+    }
+    
+    bindEvents() {
+        const leftEl = document.getElementById('touch-joystick-left');
+        const rightEl = document.getElementById('touch-joystick-right');
+        const interactEl = document.getElementById('touch-interact-btn');
+        const pauseEl = document.getElementById('touch-pause-btn');
+        const canvas = document.getElementById('gameCanvas');
+        
+        if (!leftEl || !rightEl || !interactEl || !pauseEl) return;
+        
+        // --- Left Joystick Pointer Events ---
+        leftEl.addEventListener('pointerdown', (e) => {
+            if (this.leftStick.active) return;
+            leftEl.releasePointerCapture(e.pointerId);
+            const rect = leftEl.getBoundingClientRect();
+            this.leftStick.active = true;
+            this.leftStick.pointerId = e.pointerId;
+            this.leftStick.startX = rect.left + rect.width / 2;
+            this.leftStick.startY = rect.top + rect.height / 2;
+            this.leftStick.curX = e.clientX;
+            this.leftStick.curY = e.clientY;
+            leftEl.classList.add('active');
+            this.updateStickDisplacement(this.leftStick);
+        });
+        
+        // --- Right Joystick Pointer Events ---
+        rightEl.addEventListener('pointerdown', (e) => {
+            if (this.rightStick.active) return;
+            rightEl.releasePointerCapture(e.pointerId);
+            const rect = rightEl.getBoundingClientRect();
+            this.rightStick.active = true;
+            this.rightStick.pointerId = e.pointerId;
+            this.rightStick.startX = rect.left + rect.width / 2;
+            this.rightStick.startY = rect.top + rect.height / 2;
+            this.rightStick.curX = e.clientX;
+            this.rightStick.curY = e.clientY;
+            rightEl.classList.add('active');
+            this.updateStickDisplacement(this.rightStick);
+        });
+        
+        // --- Document Global Pointer Move/Up ---
+        window.addEventListener('pointermove', (e) => {
+            if (this.leftStick.active && e.pointerId === this.leftStick.pointerId) {
+                this.leftStick.curX = e.clientX;
+                this.leftStick.curY = e.clientY;
+                this.updateStickDisplacement(this.leftStick);
+            }
+            if (this.rightStick.active && e.pointerId === this.rightStick.pointerId) {
+                this.rightStick.curX = e.clientX;
+                this.rightStick.curY = e.clientY;
+                this.updateStickDisplacement(this.rightStick);
+            }
+        });
+        
+        const endPointer = (pointerId) => {
+            if (this.leftStick.active && pointerId === this.leftStick.pointerId) {
+                this.leftStick.active = false;
+                this.leftStick.pointerId = null;
+                this.leftStick.dist = 0;
+                leftEl.classList.remove('active');
+                const knob = document.getElementById('touch-joystick-left-knob');
+                if (knob) knob.style.transform = 'translate(0, 0)';
+                if (game && game.input) {
+                    game.input.keys['w'] = false;
+                    game.input.keys['s'] = false;
+                    game.input.keys['a'] = false;
+                    game.input.keys['d'] = false;
+                    game.input.keys['shift'] = false;
+                }
+            }
+            if (this.rightStick.active && pointerId === this.rightStick.pointerId) {
+                this.rightStick.active = false;
+                this.rightStick.pointerId = null;
+                this.rightStick.dist = 0;
+                rightEl.classList.remove('active');
+                const knob = document.getElementById('touch-joystick-right-knob');
+                if (knob) knob.style.transform = 'translate(0, 0)';
+                if (game && game.input) {
+                    game.input.mouseDown = false;
+                }
+            }
+        };
+        
+        window.addEventListener('pointerup', (e) => endPointer(e.pointerId));
+        window.addEventListener('pointercancel', (e) => endPointer(e.pointerId));
+        
+        // --- Interact FAB Event ---
+        interactEl.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            if (game && game.input && game.player) {
+                game.input.keys['f'] = true;
+                interactPickUpItem(game.player);
+            }
+        });
+        interactEl.addEventListener('pointerup', (e) => {
+            if (game && game.input) {
+                game.input.keys['f'] = false;
+            }
+        });
+        
+        // --- Pause FAB Event ---
+        pauseEl.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (game) {
+                game.togglePause();
+            }
+        });
+        
+        // --- Game Canvas Taps (Aiming/Commands/Pickup) ---
+        if (canvas) {
+            canvas.addEventListener('pointerdown', (e) => {
+                if (!this.enabled || !game || game.state !== 'playing' || game.isPaused || !game.player || game.player.dead) return;
+                // Exclude joystick pointer IDs
+                if (this.leftStick.pointerId === e.pointerId || this.rightStick.pointerId === e.pointerId) return;
+                
+                this.screenTap = {
+                    pointerId: e.pointerId,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    time: Date.now()
+                };
+            });
+            
+            canvas.addEventListener('pointerup', (e) => {
+                if (!this.screenTap || this.screenTap.pointerId !== e.pointerId) return;
+                const tap = this.screenTap;
+                this.screenTap = null;
+                
+                const duration = Date.now() - tap.time;
+                const dist = Math.hypot(e.clientX - tap.startX, e.clientY - tap.startY);
+                
+                if (duration < 350 && dist < 15) {
+                    this.handleScreenTap(e.clientX, e.clientY);
+                }
+            });
+        }
+        
+        // --- HUD Click/Tap Delegation ---
+        const uiLayer = document.getElementById('ui-layer');
+        if (uiLayer) {
+            uiLayer.addEventListener('click', (e) => {
+                if (!game || game.state !== 'playing' || game.isPaused || !game.player || game.player.dead) return;
+                
+                // Weapon slots
+                const weaponSlot = e.target.closest('.weapon-slot');
+                if (weaponSlot) {
+                    const track = document.getElementById('weapon-track-p1');
+                    if (track) {
+                        const idx = Array.from(track.children).indexOf(weaponSlot);
+                        if (idx !== -1) {
+                            game.player.weaponIdx = idx;
+                            if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
+                        }
+                    }
+                    return;
+                }
+                
+                // Left HUD slots
+                const leftSlot = e.target.closest('#hud-left-p1 .hud-item-slot');
+                if (leftSlot) {
+                    const track = document.getElementById('left-track-p1');
+                    if (track) {
+                        const idx = Array.from(track.children).indexOf(leftSlot);
+                        if (idx !== -1) {
+                            if (game.player.leftSelectIdx === idx) {
+                                useLeftItem(game.player);
+                            } else {
+                                game.player.leftSelectIdx = idx;
+                                if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('money');
+                            }
+                        }
+                    }
+                    return;
+                }
+                
+                // Right HUD slots
+                const rightSlot = e.target.closest('#hud-right-p1 .hud-item-slot');
+                if (rightSlot) {
+                    const track = document.getElementById('right-track-p1');
+                    if (track) {
+                        const idx = Array.from(track.children).indexOf(rightSlot);
+                        if (idx !== -1) {
+                            if (game.player.rightSelectIdx === idx) {
+                                useRightItem(game.player);
+                            } else {
+                                game.player.rightSelectIdx = idx;
+                                if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('money');
+                            }
+                        }
+                    }
+                    return;
+                }
+            });
+            
+            // --- HUD Swiping Gestures ---
+            // Left HUD
+            const leftContainer = document.getElementById('hud-left-p1');
+            if (leftContainer) {
+                leftContainer.addEventListener('pointerdown', (e) => {
+                    if (!game || !game.player) return;
+                    if (this.hudTouchState.left.touchId !== null) return;
+                    this.hudTouchState.left.touchId = e.pointerId;
+                    this.hudTouchState.left.startY = e.clientY;
+                    this.hudTouchState.left.lastSelectIdx = game.player.leftSelectIdx;
+                });
+                leftContainer.addEventListener('pointermove', (e) => {
+                    if (!game || !game.player) return;
+                    if (this.hudTouchState.left.touchId !== e.pointerId) return;
+                    let dy = e.clientY - this.hudTouchState.left.startY;
+                    let indexShift = Math.round(dy / 35);
+                    if (indexShift !== 0) {
+                        let newIdx = (this.hudTouchState.left.lastSelectIdx - indexShift) % 4;
+                        if (newIdx < 0) newIdx += 4;
+                        if (game.player.leftSelectIdx !== newIdx) {
+                            game.player.leftSelectIdx = newIdx;
+                            if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('money');
+                        }
+                    }
+                });
+                const endLeftTouch = (e) => {
+                    if (this.hudTouchState.left.touchId === e.pointerId) {
+                        this.hudTouchState.left.touchId = null;
+                    }
+                };
+                leftContainer.addEventListener('pointerup', endLeftTouch);
+                leftContainer.addEventListener('pointercancel', endLeftTouch);
+            }
+            
+            // Right HUD
+            const rightContainer = document.getElementById('hud-right-p1');
+            if (rightContainer) {
+                rightContainer.addEventListener('pointerdown', (e) => {
+                    if (!game || !game.player) return;
+                    if (this.hudTouchState.right.touchId !== null) return;
+                    this.hudTouchState.right.touchId = e.pointerId;
+                    this.hudTouchState.right.startY = e.clientY;
+                    this.hudTouchState.right.lastSelectIdx = game.player.rightSelectIdx;
+                });
+                rightContainer.addEventListener('pointermove', (e) => {
+                    if (!game || !game.player) return;
+                    if (this.hudTouchState.right.touchId !== e.pointerId) return;
+                    let dy = e.clientY - this.hudTouchState.right.startY;
+                    let indexShift = Math.round(dy / 35);
+                    if (indexShift !== 0) {
+                        let newIdx = (this.hudTouchState.right.lastSelectIdx - indexShift) % 5;
+                        if (newIdx < 0) newIdx += 5;
+                        if (game.player.rightSelectIdx !== newIdx) {
+                            game.player.rightSelectIdx = newIdx;
+                            if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('money');
+                        }
+                    }
+                });
+                const endRightTouch = (e) => {
+                    if (this.hudTouchState.right.touchId === e.pointerId) {
+                        this.hudTouchState.right.touchId = null;
+                    }
+                };
+                rightContainer.addEventListener('pointerup', endRightTouch);
+                rightContainer.addEventListener('pointercancel', endRightTouch);
+            }
+            
+            // Bottom HUD (Weapon carousel)
+            const bottomContainer = document.getElementById('hud-bottom-p1');
+            if (bottomContainer) {
+                bottomContainer.addEventListener('pointerdown', (e) => {
+                    if (!game || !game.player) return;
+                    if (this.hudTouchState.bottom.touchId !== null) return;
+                    this.hudTouchState.bottom.touchId = e.pointerId;
+                    this.hudTouchState.bottom.startX = e.clientX;
+                    this.hudTouchState.bottom.lastWeaponIdx = game.player.weaponIdx;
+                });
+                bottomContainer.addEventListener('pointermove', (e) => {
+                    if (!game || !game.player) return;
+                    if (this.hudTouchState.bottom.touchId !== e.pointerId) return;
+                    let dx = e.clientX - this.hudTouchState.bottom.startX;
+                    let indexShift = Math.round(dx / 55);
+                    if (indexShift !== 0) {
+                        let totalWeapons = game.player.inventory.length;
+                        let newIdx = (this.hudTouchState.bottom.lastWeaponIdx - indexShift) % totalWeapons;
+                        if (newIdx < 0) newIdx += totalWeapons;
+                        if (game.player.weaponIdx !== newIdx) {
+                            game.player.weaponIdx = newIdx;
+                            if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
+                        }
+                    }
+                });
+                const endBottomTouch = (e) => {
+                    if (this.hudTouchState.bottom.touchId === e.pointerId) {
+                        this.hudTouchState.bottom.touchId = null;
+                    }
+                };
+                bottomContainer.addEventListener('pointerup', endBottomTouch);
+                bottomContainer.addEventListener('pointercancel', endBottomTouch);
+            }
+        }
+    }
+    
+    handleScreenTap(clientX, clientY) {
+        if (!game || !game.player || game.player.dead) return;
+        
+        let cam = game.player.isPlayer2 ? game.camera2 : game.camera;
+        let viewportW = game.isTwoPlayer ? game.width / 2 : game.width;
+        let cx = viewportW / 2;
+        let cy = game.height / 2;
+        
+        // Translate screen touch coords to game world coordinates
+        let wx = cam.x + cx + (clientX - cx) / cam.zoom;
+        let wy = cam.y + cy + (clientY - cy) / cam.zoom;
+        
+        // Command 1: Spot Robot Waypoint Command (if active & Spot is selected in Right HUD)
+        let activeDog = game.dogs ? game.dogs.find(d => d.owner === game.player && !d.dead) : null;
+        if (activeDog && game.player.rightSelectIdx === 3) {
+            let tappedNearWp = false;
+            if (activeDog.waypoint) {
+                let d = Math.hypot(activeDog.waypoint.x - wx, activeDog.waypoint.y - wy);
+                if (d < 45) tappedNearWp = true;
+            }
+            let tappedNearDog = Math.hypot(activeDog.x - wx, activeDog.y - wy) < 45;
+            let tappedNearPlayer = Math.hypot(game.player.x - wx, game.player.y - wy) < 45;
+            
+            if (activeDog.waypoint && (tappedNearWp || tappedNearDog || tappedNearPlayer)) {
+                // Clear waypoint / recall Spot
+                activeDog.waypoint = null;
+                activeDog.waypointTimer = 0;
+                activeDog.waypointExplorePoints = [];
+                activeDog.currentExploreIdx = 0;
+                if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
+                game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, "SPOT RECALLED", '#ff00ff', 1.2));
+            } else {
+                // Dispatch Spot to new waypoint
+                activeDog.waypoint = { x: wx, y: wy };
+                activeDog.waypointTimer = 30.0;
+                activeDog.waypointExplorePoints = [];
+                for (let i = 0; i < 3; i++) {
+                    let angle = Math.random() * Math.PI * 2;
+                    let dist = Math.random() * 120 + 60;
+                    let ex = wx + Math.cos(angle) * dist;
+                    let ey = wy + Math.sin(angle) * dist;
+                    activeDog.waypointExplorePoints.push({ x: ex, y: ey });
+                }
+                activeDog.currentExploreIdx = 0;
+                if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('money');
+                game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, "SPOT DISPATCHED", '#39ff14', 1.2));
+            }
+            return;
+        }
+        
+        // Command 2: Detonate / Bomb FPV Drone (if active & piloted)
+        if (game.drone && game.drone.pilot === game.player && game.drone.isPiloted && !game.drone.dead) {
+            if (game.player.droneUpgraded && (game.drone.bombsDropped || 0) < 3) {
+                game.drone.dropBomb();
+            } else {
+                game.drone.detonate();
+            }
+            return;
+        }
+        
+        // Command 3: Direct Item Proximity Interactions (Barriers, spot dogs, turrets, drones)
+        let closestItem = null;
+        let closestItemType = null;
+        let closestItemIdx = -1;
+        let minDist = 40; // max screen-tap distance to register on item (40px)
+        
+        // Check barriers
+        if (game.barriers) {
+            for (let i = 0; i < game.barriers.length; i++) {
+                let barrier = game.barriers[i];
+                let col = MathUtils.closestPointOnSegment(wx, wy, barrier.ax, barrier.ay, barrier.bx, barrier.by);
+                let d = Math.hypot(col.x - wx, col.y - wy);
+                if (d < minDist) {
+                    minDist = d;
+                    closestItem = barrier;
+                    closestItemType = 'barrier';
+                    closestItemIdx = i;
+                }
+            }
+        }
+        
+        // Check turrets
+        if (game.turrets) {
+            for (let i = 0; i < game.turrets.length; i++) {
+                let tur = game.turrets[i];
+                if (tur.owner === game.player) {
+                    let d = Math.hypot(tur.x - wx, tur.y - wy);
+                    if (d < minDist) {
+                        minDist = d;
+                        closestItem = tur;
+                        closestItemType = 'turret';
+                        closestItemIdx = i;
+                    }
+                }
+            }
+        }
+        
+        // Check dogs
+        if (game.dogs) {
+            for (let i = 0; i < game.dogs.length; i++) {
+                let dog = game.dogs[i];
+                if (dog.owner === game.player) {
+                    let d = Math.hypot(dog.x - wx, dog.y - wy);
+                    if (d < minDist) {
+                        minDist = d;
+                        closestItem = dog;
+                        closestItemType = 'dog';
+                        closestItemIdx = i;
+                    }
+                }
+            }
+        }
+        
+        // Check unpiloted drone
+        if (game.drone && !game.drone.dead && game.drone.pilot === game.player && !game.drone.isPiloted) {
+            let d = Math.hypot(game.drone.x - wx, game.drone.y - wy);
+            if (d < minDist) {
+                minDist = d;
+                closestItem = game.drone;
+                closestItemType = 'drone';
+            }
+        }
+        
+        // If we found a valid tapped item
+        if (closestItem) {
+            // Check player physical pickup range (generous 75px for touch vs standard 45px)
+            let itemX = (closestItemType === 'barrier') ? 
+                (closestItem.ax + closestItem.bx) / 2 : closestItem.x;
+            let itemY = (closestItemType === 'barrier') ? 
+                (closestItem.ay + closestItem.by) / 2 : closestItem.y;
+                
+            let distToPlayer = Math.hypot(game.player.x - itemX, game.player.y - itemY);
+            
+            if (distToPlayer < 75) {
+                // Retrieve the item
+                if (closestItemType === 'barrier') {
+                    game.player.barriersInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, isMKII: closestItem.isMKII || false });
+                    game.barriers.splice(closestItemIdx, 1);
+                    if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
+                    game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, `BARRIER RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#00e5ff', 1.2));
+                } else if (closestItemType === 'turret') {
+                    game.player.turretsInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, isMKII: closestItem.isMKII || false });
+                    game.turrets.splice(closestItemIdx, 1);
+                    if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
+                    game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, `TURRET RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#ffea00', 1.2));
+                } else if (closestItemType === 'dog') {
+                    game.player.dogsInventory.push({ hp: closestItem.hp, upgraded: closestItem.upgraded || false });
+                    game.dogs.splice(closestItemIdx, 1);
+                    if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
+                    game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, `SPOT ROBOT RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#ffffff', 1.2));
+                } else if (closestItemType === 'drone') {
+                    game.player.dronesCount = Math.min(3, (game.player.dronesCount || 0) + 1);
+                    game.drone.stopAudio();
+                    game.drone = null;
+                    if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
+                    game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, "FPV DRONE RETRIEVED", '#ffd700', 1.2));
+                }
+            } else {
+                // Show visual feedback that they tapped but are too far
+                game.floatingTexts.push(new FloatingText(game.player.x, game.player.y - 15, "TOO FAR TO RETRIEVE", '#ff2a5f', 1.1));
+            }
+            return;
+        }
+        
+        // Command 4: Direct Pickup/interaction of items on the floor (weapons/cash etc) if within range
+        let distToPlayer = Math.hypot(game.player.x - wx, game.player.y - wy);
+        if (distToPlayer < 75) {
+            game.input.mx = clientX;
+            game.input.my = clientY;
+            interactPickUpItem(game.player);
+        }
+    }
+    
+    updateStickDisplacement(stick) {
+        let dx = stick.curX - stick.startX;
+        let dy = stick.curY - stick.startY;
+        let dist = Math.hypot(dx, dy);
+        
+        if (dist > stick.maxRadius) {
+            dx = (dx / dist) * stick.maxRadius;
+            dy = (dy / dist) * stick.maxRadius;
+            dist = stick.maxRadius;
+        }
+        
+        stick.angle = Math.atan2(dy, dx);
+        stick.dist = dist / stick.maxRadius;
+        
+        const knobId = stick === this.leftStick ? 'touch-joystick-left-knob' : 'touch-joystick-right-knob';
+        const knob = document.getElementById(knobId);
+        if (knob) {
+            knob.style.transform = `translate(${dx}px, ${dy}px)`;
+        }
+    }
+    
+    update(dt) {
+        if (!this.enabled || !game || game.state !== 'playing' || game.isPaused || !game.player || game.player.dead) {
+            this.hideOverlay();
+            return;
+        }
+        
+        this.showOverlay();
+        
+        // --- Left Stick: WASD + Sprint ---
+        if (this.leftStick.active && this.leftStick.dist > 0.15) {
+            const cos = Math.cos(this.leftStick.angle);
+            const sin = Math.sin(this.leftStick.angle);
+            
+            game.input.keys['w'] = (sin < -0.38);
+            game.input.keys['s'] = (sin > 0.38);
+            game.input.keys['a'] = (cos < -0.38);
+            game.input.keys['d'] = (cos > 0.38);
+            
+            game.input.keys['shift'] = (this.leftStick.dist > 0.8);
+        } else if (this.leftStick.active) {
+            game.input.keys['w'] = false;
+            game.input.keys['s'] = false;
+            game.input.keys['a'] = false;
+            game.input.keys['d'] = false;
+            game.input.keys['shift'] = false;
+        }
+        
+        // --- Right Stick: Aiming + Auto-Fire ---
+        if (this.rightStick.active && this.rightStick.dist > 0.15) {
+            const player = game.player;
+            const cam = player.isPlayer2 ? game.camera2 : game.camera;
+            
+            const viewportW = game.isTwoPlayer ? game.width / 2 : game.width;
+            const cx = viewportW / 2;
+            const cy = game.height / 2;
+            
+            const zoomMult = (player.gamepadZoomIndex === 1) ? 2.0 : (player.gamepadZoomIndex === 2) ? 3.0 : 1.0;
+            const aimRange = (player.weapon.gamepadAimDist || 180) * zoomMult;
+            
+            const cos = Math.cos(this.rightStick.angle);
+            const sin = Math.sin(this.rightStick.angle);
+            
+            // Map world aim coords to screen coords (centered perfectly on player with camera shift and zoom!)
+            const targetCrosshairX = player.x + cos * aimRange;
+            const targetCrosshairY = player.y + sin * aimRange;
+            
+            game.input.mx = cx + (targetCrosshairX - cam.x - cx) * cam.zoom;
+            game.input.my = cy + (targetCrosshairY - cam.y - cy) * cam.zoom;
+            
+            if (game.crosshair) {
+                game.crosshair.style.left = game.input.mx + 'px';
+                game.crosshair.style.top = game.input.my + 'px';
+            }
+            
+            // Fire if pushed beyond 98% (allows aiming/looking without firing unless pushed fully to the edge)
+            if (this.rightStick.dist > 0.98) {
+                game.input.mouseDown = true;
+                player.semiAutoTriggerReleased = true;
+            } else {
+                game.input.mouseDown = false;
+            }
+        } else if (this.rightStick.active) {
+            game.input.mouseDown = false;
+        }
+    }
+    
+    showOverlay() {
+        const el = document.getElementById('touch-overlay');
+        if (el && el.classList.contains('hidden')) {
+            el.classList.remove('hidden');
+        }
+    }
+    
+    hideOverlay() {
+        const el = document.getElementById('touch-overlay');
+        if (el && !el.classList.contains('hidden')) {
+            el.classList.add('hidden');
+        }
+    }
+    
+    updateVisibility() {
+        const mode = (game && game.touchControlsMode) || 'auto';
+        let show = false;
+        if (mode === 'on') {
+            show = true;
+        } else if (mode === 'off') {
+            show = false;
+        } else {
+            show = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+        }
+        
+        this.enabled = show;
+        if (!show) {
+            this.hideOverlay();
+        }
+    }
+}
+
+// Instantiate Touch Controller but defer initialization
+window.touchController = new TouchController();
+window.addEventListener('DOMContentLoaded', () => {
+    window.touchController.init();
+    window.touchController.updateVisibility();
+});
+
+// Monkey-patching setTouchMode method on Game prototype
+Game.prototype.setTouchMode = function(mode) {
+    this.touchControlsMode = mode;
+    this.saveGameData();
+    
+    const btnAuto = document.getElementById('btn-touch-auto');
+    const btnOn = document.getElementById('btn-touch-on');
+    const btnOff = document.getElementById('btn-touch-off');
+    
+    if (btnAuto) btnAuto.classList.toggle('active-mode', mode === 'auto');
+    if (btnOn) btnOn.classList.toggle('active-mode', mode === 'on');
+    if (btnOff) btnOff.classList.toggle('active-mode', mode === 'off');
+    
+    if (window.touchController) {
+        window.touchController.updateVisibility();
+    }
+};
+
+// Monkey-patching loadGameData and saveGameData
+const originalLoad = Game.prototype.loadGameData;
+Game.prototype.loadGameData = function() {
+    originalLoad.call(this);
+    if (this.saveData.touchControlsMode === undefined) {
+        this.saveData.touchControlsMode = 'auto';
+    }
+    this.setTouchMode(this.saveData.touchControlsMode);
+};
+
+const originalSave = Game.prototype.saveGameData;
+Game.prototype.saveGameData = function() {
+    this.saveData.touchControlsMode = this.touchControlsMode || 'auto';
+    originalSave.call(this);
+};
+
+// Monkey-patching update loop to drive touch updates
+const originalUpdate = Game.prototype.update;
+Game.prototype.update = function(dt) {
+    if (window.touchController) {
+        window.touchController.update(dt);
+    }
+    originalUpdate.call(this, dt);
+};
+
 game = new Game();
 
 </script>
+
+<style>
+/* ==========================================================================
+   TOUCH OVERLAY AND JOYSTICKS STYLING
+   ========================================================================== */
+#touch-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 99;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.touch-joystick {
+    position: absolute;
+    bottom: 50px;
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    background: rgba(0, 5, 12, 0.25);
+    border: 2px solid rgba(0, 229, 255, 0.2);
+    box-shadow: 0 0 20px rgba(0, 229, 255, 0.05);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    pointer-events: auto;
+    touch-action: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.touch-joystick.active {
+    border-color: rgba(0, 229, 255, 0.6);
+    box-shadow: 0 0 25px rgba(0, 229, 255, 0.2);
+}
+
+#touch-joystick-left {
+    left: 45px;
+}
+
+#touch-joystick-right {
+    right: 45px;
+}
+
+.touch-joystick-knob {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(0, 229, 255, 0.35);
+    border: 1.5px solid var(--neon-blue);
+    box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+    pointer-events: none;
+    transition: transform 0.05s ease-out, background-color 0.2s ease;
+}
+
+.touch-joystick.active .touch-joystick-knob {
+    background: rgba(0, 229, 255, 0.6);
+    box-shadow: 0 0 15px rgba(0, 229, 255, 0.7);
+}
+
+.touch-fab {
+    position: absolute;
+    pointer-events: auto;
+    touch-action: none;
+    background: rgba(0, 5, 12, 0.4);
+    border: 1.5px solid rgba(0, 229, 255, 0.3);
+    box-shadow: 0 0 15px rgba(0, 229, 255, 0.1);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--neon-blue);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.touch-fab:active {
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 20px rgba(0, 229, 255, 0.4);
+    background: rgba(0, 229, 255, 0.12);
+}
+
+#touch-pause-btn {
+    top: 15px;
+    right: 25px;
+    width: 42px;
+    height: 42px;
+    border-radius: 4px;
+}
+
+#touch-interact-btn {
+    right: 50px;
+    bottom: 200px;
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+#touch-interact-btn .btn-label {
+    font-size: 8px;
+    line-height: 1;
+}
+
+#touch-interact-btn .btn-sub {
+    font-size: 14px;
+    margin-top: 2px;
+    color: #fff;
+    text-shadow: 0 0 5px var(--neon-blue);
+}
+
+.hud-item-slot, .weapon-slot {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+}
+</style>
+
+<!-- Touch Controls Markup -->
+<div id="touch-overlay" class="hidden" style="touch-action: none;">
+    <div id="touch-pause-btn" class="touch-fab">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+            <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+        </svg>
+    </div>
+    
+    <div id="touch-joystick-left" class="touch-joystick">
+        <div id="touch-joystick-left-knob" class="touch-joystick-knob"></div>
+    </div>
+    
+    <div id="touch-joystick-right" class="touch-joystick">
+        <div id="touch-joystick-right-knob" class="touch-joystick-knob"></div>
+    </div>
+    
+    <div id="touch-interact-btn" class="touch-fab">
+        <span class="btn-label">INTERACT</span>
+        <span class="btn-sub">F</span>
+    </div>
+</div>
 </body>
 </html>
