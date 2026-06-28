@@ -912,12 +912,18 @@ function useLeftItem(player) {
             player.grenades--;
             let power = 1480;
             game.grenades.push(new ShrapnelGrenade(player.x, player.y, Math.cos(player.angle)*power + player.vx, Math.sin(player.angle)*power + player.vy));
+            if (audio && audio.playGrenadeThrow) {
+                audio.playGrenadeThrow(player.x, player.y);
+            }
         }
     } else if (player.leftSelectIdx === 3) {
         if (player.mines > 0) {
             player.mines--;
             game.mines.push(new TripMine(player.x, player.y));
             game.spawnDeployRing(player.x, player.y);
+            if (audio && audio.playMinePlace) {
+                audio.playMinePlace(player.x, player.y);
+            }
         }
     }
 }
@@ -1639,7 +1645,7 @@ class AudioEngine {
 
                     // Routing & Saturation
                     const sumGain = offlineCtx.createGain();
-                    sumGain.gain.value = 0.3;
+                    sumGain.gain.value = 0.55;
                     tGain.connect(sumGain);
                     bGain.connect(sumGain);
                     subGain.connect(sumGain);
@@ -1949,6 +1955,92 @@ class AudioEngine {
                 osc.start(0);
             }));
 
+            // 13. Grenade throw foley (metallic chink pin-pull)
+            promises.push(this.bakeSound('grenade_throw', 0.25, (offlineCtx) => {
+                const osc1 = offlineCtx.createOscillator();
+                const osc2 = offlineCtx.createOscillator();
+                const gain1 = offlineCtx.createGain();
+                const gain2 = offlineCtx.createGain();
+                
+                osc1.type = 'triangle';
+                osc2.type = 'triangle';
+                
+                osc1.frequency.setValueAtTime(1600, 0);
+                osc1.frequency.exponentialRampToValueAtTime(1400, 0.08);
+                osc2.frequency.setValueAtTime(1950, 0);
+                osc2.frequency.exponentialRampToValueAtTime(1800, 0.12);
+                
+                gain1.gain.setValueAtTime(0.2, 0);
+                gain1.gain.exponentialRampToValueAtTime(0.001, 0.15);
+                gain2.gain.setValueAtTime(0.15, 0.02);
+                gain2.gain.exponentialRampToValueAtTime(0.001, 0.18);
+                
+                osc1.connect(gain1);
+                gain1.connect(offlineCtx.destination);
+                osc2.connect(gain2);
+                gain2.connect(offlineCtx.destination);
+                
+                osc1.start(0);
+                osc2.start(0);
+            }));
+
+            // 14. Mine placement foley (heavy mechanical click-clack)
+            promises.push(this.bakeSound('mine_place', 0.3, (offlineCtx) => {
+                const osc1 = offlineCtx.createOscillator();
+                const gain1 = offlineCtx.createGain();
+                osc1.type = 'square';
+                osc1.frequency.setValueAtTime(1200, 0);
+                osc1.frequency.exponentialRampToValueAtTime(80, 0.04);
+                gain1.gain.setValueAtTime(0.35, 0);
+                gain1.gain.exponentialRampToValueAtTime(0.001, 0.04);
+                
+                const osc2 = offlineCtx.createOscillator();
+                const gain2 = offlineCtx.createGain();
+                osc2.type = 'square';
+                osc2.frequency.setValueAtTime(800, 0.06);
+                osc2.frequency.exponentialRampToValueAtTime(50, 0.11);
+                gain2.gain.setValueAtTime(0, 0);
+                gain2.gain.setValueAtTime(0.3, 0.06);
+                gain2.gain.exponentialRampToValueAtTime(0.001, 0.11);
+                
+                osc1.connect(gain1);
+                gain1.connect(offlineCtx.destination);
+                osc2.connect(gain2);
+                gain2.connect(offlineCtx.destination);
+                
+                osc1.start(0);
+                osc2.start(0);
+            }));
+
+            // 15. Weapon switch foley (sliding mechanism and cocking sound)
+            promises.push(this.bakeSound('weapon_switch', 0.35, (offlineCtx) => {
+                const osc1 = offlineCtx.createOscillator();
+                const gain1 = offlineCtx.createGain();
+                osc1.type = 'triangle';
+                osc1.frequency.setValueAtTime(300, 0);
+                osc1.frequency.linearRampToValueAtTime(600, 0.08);
+                osc1.frequency.exponentialRampToValueAtTime(150, 0.18);
+                gain1.gain.setValueAtTime(0.25, 0);
+                gain1.gain.exponentialRampToValueAtTime(0.001, 0.18);
+                
+                const osc2 = offlineCtx.createOscillator();
+                const gain2 = offlineCtx.createGain();
+                osc2.type = 'square';
+                osc2.frequency.setValueAtTime(900, 0.16);
+                osc2.frequency.exponentialRampToValueAtTime(100, 0.22);
+                gain2.gain.setValueAtTime(0, 0);
+                gain2.gain.setValueAtTime(0.2, 0.16);
+                gain2.gain.exponentialRampToValueAtTime(0.001, 0.22);
+                
+                osc1.connect(gain1);
+                gain1.connect(offlineCtx.destination);
+                osc2.connect(gain2);
+                gain2.connect(offlineCtx.destination);
+                
+                osc1.start(0);
+                osc2.start(0);
+            }));
+
             await Promise.all(promises);
         } catch (e) {
             console.error("Failed to bake sounds:", e);
@@ -2111,6 +2203,48 @@ class AudioEngine {
             cutoff = settings.cutoff;
         }
         this.playBakedSound('hit', this.sfxGain, gainVal, cutoff);
+    }
+
+    playGrenadeThrow(x = null, y = null) {
+        if (!this.ctx) return;
+        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        let gainVal = 0.8 * sfxVol;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('hit', d);
+            gainVal = settings.vol * 0.8 * sfxVol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound('grenade_throw', this.sfxGain, gainVal, cutoff);
+    }
+    
+    playMinePlace(x = null, y = null) {
+        if (!this.ctx) return;
+        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        let gainVal = 0.85 * sfxVol;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('hit', d);
+            gainVal = settings.vol * 0.85 * sfxVol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound('mine_place', this.sfxGain, gainVal, cutoff);
+    }
+    
+    playWeaponSwitch(x = null, y = null) {
+        if (!this.ctx) return;
+        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        let gainVal = 0.75 * sfxVol;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('hit', d);
+            gainVal = settings.vol * 0.75 * sfxVol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound('weapon_switch', this.sfxGain, gainVal, cutoff);
     }
     
     playPickup(type) {
@@ -2818,6 +2952,7 @@ class Camera {
         this.kickbackY = 0;
         this.kickbackVX = 0;
         this.kickbackVY = 0;
+        this.screenShake = 0;
     }
     update(player, mapW, mapH, canvasW, canvasH, dt, aimX, aimY, maxZoomOut) {
         let aimDist = Math.hypot(aimX - player.x, aimY - player.y);
@@ -2832,6 +2967,10 @@ class Camera {
             if (this.zoomPunch !== 0) {
                 this.zoomPunch *= Math.pow(0.001, dt);
                 if (Math.abs(this.zoomPunch) < 0.001) this.zoomPunch = 0;
+            }
+            if (this.screenShake > 0) {
+                this.screenShake -= dt * 25;
+                if (this.screenShake < 0) this.screenShake = 0;
             }
         } else {
             this.zoom = targetZoom;
@@ -3387,6 +3526,10 @@ class Player extends Entity {
         this.lastMiniDroneBreakoffTime = 0;
     }
     
+    get camera() {
+        return this.isPlayer2 ? game.camera2 : game.camera;
+    }
+    
     get barriersCount() {
         return this.barriersInventory.length;
     }
@@ -3734,7 +3877,7 @@ class Player extends Entity {
             if (this.pistolHP) isHP = true;
         }
         
-        audio.playShoot(this.weapon.name);
+        audio.playShoot(this.weapon.name, this.x, this.y);
         
         let ejectAngle = this.angle - Math.PI*0.6;
         let caseX = this.x + Math.cos(this.angle)*4 - Math.sin(this.angle)*6;
@@ -3744,7 +3887,9 @@ class Player extends Entity {
         let recoilForce = this.weapon.name === 'Shotgun' ? 420 : this.weapon.name === 'LMG' ? 180 : this.weapon.name === 'Sniper' ? 1200 : this.weapon.name === 'M1A' ? 300 : 120;
         this.vx -= Math.cos(this.angle) * recoilForce;
         this.vy -= Math.sin(this.angle) * recoilForce;
-        game.screenShake = Math.max(game.screenShake, this.weapon.name === 'Sniper' ? 32 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : 5);
+        if (this.camera) {
+            this.camera.screenShake = Math.max(this.camera.screenShake, this.weapon.name === 'Sniper' ? 32 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : 5);
+        }
 
         let aimCoords = game.getWorldAimCoords(this);
         let barrelX = this.x + Math.cos(this.angle)*22 - Math.sin(this.angle)*7;
@@ -3789,6 +3934,9 @@ class Player extends Entity {
         super.takeDamage(amt, pushDir, pushForce);
         this.stamina = Math.max(0, this.stamina - amt * 0.5); // Shock takes away stamina instantly
         this.damageFlashIntensity = 1.0; // Trigger damage flash
+        if (this.camera && amt > 0) {
+            this.camera.screenShake = Math.max(this.camera.screenShake, 10 + amt * 1.5);
+        }
         if (amt >= 20 && game) {
             // Longer, stronger chromatic aberration on heavy hits
             let duration = Math.min(0.6, 0.2 + amt * 0.008);
@@ -3865,6 +4013,9 @@ class Player extends Entity {
     
     switchWeapon(dir) {
         this.weaponIdx = (this.weaponIdx + dir + this.inventory.length) % this.inventory.length;
+        if (audio && audio.playWeaponSwitch) {
+            audio.playWeaponSwitch(this.x, this.y);
+        }
     }
     
     addWeapon(typeKey) {
@@ -3951,6 +4102,8 @@ class Enemy extends Entity {
         this.cachedRunFromDrone = false;
         this.cachedMoveAngle = 0;
         this.cachedVisibleToPlayers = false;
+        this.cachedReactingToDrone = false;
+        this.reactingToDrone = false;
         this.slowTimer = 0;
     }
     
@@ -4181,9 +4334,19 @@ class Enemy extends Entity {
             this.cachedRunFromDrone = runFromDrone;
             this.cachedMoveAngle = moveAngle;
             this.cachedVisibleToPlayers = visibleToPlayers;
+
+            this.cachedReactingToDrone = false;
+            if (target === (game && game.drone)) {
+                this.cachedReactingToDrone = true;
+            } else if (runFromDrone && runFromObj) {
+                if (runFromObj === (game && game.drone) || (game && game.miniDrones && game.miniDrones.includes(runFromObj))) {
+                    this.cachedReactingToDrone = true;
+                }
+            }
         }
 
         this.angle = this.cachedMoveAngle;
+        this.reactingToDrone = this.cachedReactingToDrone || false;
 
         if (this.cachedVisibleToPlayers) {
             this.opacity = Math.min(1.0, this.opacity + dt * 6);
@@ -4239,8 +4402,7 @@ class Enemy extends Entity {
                 let actualDistToTarget = Math.hypot(this.cachedTarget.x - this.x, this.cachedTarget.y - this.y);
                 if (actualDistToTarget < this.r + this.cachedTarget.r + 5) {
                     this.cachedTarget.takeDamage(12, Math.atan2(this.cachedTarget.y - this.y, this.cachedTarget.x - this.x), 200);
-                    audio.playHit();
-                    game.screenShake = Math.max(game.screenShake, 8);
+                    audio.playHit(this.x, this.y);
                     this.takeDamage(10, Math.atan2(this.y - this.cachedTarget.y, this.x - this.cachedTarget.x), 100);
                 }
             } else if (this.type === 'sapper') {
@@ -4254,8 +4416,8 @@ class Enemy extends Entity {
                             this.hp = 0;
                             this.dead = true;
                             this.onDeath();
-                            audio.playExplosion();
-                            game.screenShake = Math.max(game.screenShake, 30);
+                            audio.playExplosion(1.0, this.x, this.y);
+                            game.applyExplosionShake(this.x, this.y, 30, 100);
                             game.spawnShockwave(this.x, this.y, 100, 0.25);
                             game.camera.punchZoom(0.05);
                             if (game.camera2) game.camera2.punchZoom(0.05);
@@ -4277,8 +4439,8 @@ class Enemy extends Entity {
                             this.hp = 0;
                             this.dead = true;
                             this.onDeath();
-                            audio.playExplosion();
-                            game.screenShake = Math.max(game.screenShake, 30);
+                            audio.playExplosion(1.0, this.x, this.y);
+                            game.applyExplosionShake(this.x, this.y, 30, 100);
                             game.spawnShockwave(this.x, this.y, 100, 0.25);
                             game.camera.punchZoom(0.05);
                             if (game.camera2) game.camera2.punchZoom(0.05);
@@ -4294,8 +4456,7 @@ class Enemy extends Entity {
                         let dist = Math.hypot(target.x - this.x, target.y - this.y);
                         if (dist < this.r + target.r + 5) {
                             target.takeDamage(12, Math.atan2(target.y - this.y, target.x - this.x), 200);
-                            audio.playHit();
-                            game.screenShake = Math.max(game.screenShake, 8);
+                            audio.playHit(this.x, this.y);
                             this.takeDamage(10, Math.atan2(this.y - target.y, this.x - target.x), 100);
                         }
                     }
@@ -4369,13 +4530,13 @@ class Enemy extends Entity {
                     if (gameTime - this.lastBarrierAttack > 1.0) {
                         bar.hp -= 25; 
                         this.lastBarrierAttack = gameTime;
-                        audio.playHit();
+                        audio.playHit(this.x, this.y);
                         for(let c=0; c<5; c++) {
                             game.particles.push(new Particle(col.px, col.py, MathUtils.rand(-60, 60), MathUtils.rand(-60, 60), '#00e5ff', 0.3, 2));
                         }
                         if (bar.hp <= 0) {
                             game.barriers = game.barriers.filter(b => b !== bar);
-                            audio.playExplosion();
+                            audio.playExplosion(1.0, this.x, this.y);
                             break;
                         }
                     }
@@ -4410,7 +4571,7 @@ class Enemy extends Entity {
         this.muzzleFlashY = barrelY;
 
         if (this.weaponType === 'shotgun') {
-            audio.playShoot('Shotgun');
+            audio.playShoot('Shotgun', this.x, this.y);
             let pellets = 6;
             for (let i = 0; i < pellets; i++) {
                 let spreadAngle = this.angle + (Math.random() - 0.5) * 0.28;
@@ -4419,19 +4580,19 @@ class Enemy extends Entity {
                 game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, '#ff5722', 0.04, 2));
             }
         } else if (this.weaponType === 'sniper') {
-            audio.playShoot('Sniper');
+            audio.playShoot('Sniper', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.02;
             let bulletSpec = { name: 'Sniper', dmg: 40, speed: 3000, drag: 0.02, color: '#f50057' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
             game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*500, Math.sin(spreadAngle)*500, '#f50057', 0.05, 3.5));
         } else if (this.weaponType === 'heavy_pistol') {
-            audio.playShoot('Pistol');
+            audio.playShoot('Pistol', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.10;
             let bulletSpec = { name: 'Pistol', dmg: 16, speed: 1800, drag: 0.1, color: '#ff2a5f' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
             game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, '#ff2a5f', 0.04, 3));
         } else {
-            audio.playShoot('Pistol');
+            audio.playShoot('Pistol', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.12;
             let bulletSpec = { name: 'Pistol', dmg: 8, speed: 1800, drag: 0.1, color: '#ff2a5f' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
@@ -4600,6 +4761,22 @@ class Enemy extends Entity {
         }
 
         ctx.restore();
+
+        if (this.reactingToDrone) {
+            let ex = this.x - cam.x;
+            let ey = this.y - cam.y - this.r - 18;
+
+            ctx.save();
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#ff2a5f';
+            ctx.fillStyle = '#ff2a5f';
+            ctx.font = 'bold 20px "Outfit", "Inter", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('!', ex, ey);
+            ctx.restore();
+        }
+
         ctx.globalAlpha = 1.0;
     }
 
@@ -4609,7 +4786,7 @@ class Enemy extends Entity {
         if (game.isTwoPlayer && game.player2) {
             game.player2.cash += amount;
         }
-        audio.playHit();
+        audio.playHit(this.x, this.y);
         
         // Death blood burst
         let angle = this.lastHitAngle || 0;
@@ -4746,7 +4923,10 @@ class Bullet {
                                     calculatedShake += 2.0; // Sniper is even more punchy!
                                 }
                                 calculatedShake = Math.min(8.0, calculatedShake);
-                                game.screenShake = Math.max(game.screenShake, calculatedShake);
+                                let cam = player.isPlayer2 ? game.camera2 : game.camera;
+                                if (cam) {
+                                    cam.screenShake = Math.max(cam.screenShake, calculatedShake);
+                                }
                             }
                         }
                     }
@@ -4868,7 +5048,7 @@ class Bullet {
                     } else {
                         game.spawnBlood(this.x, this.y, this.vx, this.vy);
                     }
-                    audio.playHit();
+                    audio.playHit(this.x, this.y);
                     
                     if (!this.isAP) {
                         this.active = false;
@@ -4893,14 +5073,14 @@ class Bullet {
                         
                         if (bar.hp <= 0) {
                             game.barriers.splice(j, 1);
-                            audio.playExplosion();
+                            audio.playExplosion(1.0, this.x, this.y);
                             let mx = (bar.ax + bar.bx) / 2;
                             let my = (bar.ay + bar.by) / 2;
                             for(let c=0; c<10; c++) {
                                 game.particles.push(new Particle(mx, my, MathUtils.rand(-150, 150), MathUtils.rand(-150, 150), '#00e5ff', 0.5, 3));
                             }
                         } else {
-                            audio.playRicochet();
+                            audio.playRicochet(this.x, this.y);
                         }
                         
                         this.active = false;
@@ -5346,8 +5526,8 @@ class FPVDrone {
         this.dead = true;
         this.stopAudio();
         
-        audio.playExplosion();
-        game.screenShake = Math.max(game.screenShake, 50);
+        audio.playExplosion(1.0, this.x, this.y);
+        game.applyExplosionShake(this.x, this.y, 50, 300);
         
         game.spawnShockwave(this.x, this.y, 300 * 1.2, 0.3);
         game.camera.punchZoom(0.12);
@@ -5538,7 +5718,7 @@ class AutoTurret extends Entity {
     }
     
     onDeath() {
-        audio.playExplosion();
+        audio.playExplosion(1.0, this.x, this.y);
         if (game) {
             for (let i = 0; i < 25; i++) {
                 let angle = Math.random() * Math.PI * 2;
@@ -5603,7 +5783,7 @@ class AutoTurret extends Entity {
     
     shoot(game) {
         if (this.dead) return;
-        audio.playShoot('Pistol');
+        audio.playShoot('Pistol', this.x, this.y);
         
         let spawnDist = 18;
         let barrelX = this.x + Math.cos(this.angle) * spawnDist;
@@ -5760,7 +5940,7 @@ class RobotDog extends Entity {
         this.waypoint = null;
         this.waypointExplorePoints = [];
         this.currentExploreIdx = 0;
-        audio.playExplosion();
+        audio.playExplosion(1.0, this.x, this.y);
         if (game) {
             for (let i = 0; i < 20; i++) {
                 let a = Math.random() * Math.PI * 2;
@@ -6182,7 +6362,7 @@ class RobotDog extends Entity {
     
     shoot(game) {
         if (this.dead) return;
-        audio.playShoot('Pistol'); // slow punchy shot
+        audio.playShoot('Pistol', this.x, this.y); // slow punchy shot
         
         let spawnDist = 16;
         let barrelX = this.x + Math.cos(this.angle) * spawnDist;
@@ -6751,12 +6931,12 @@ class MiniDrone extends Entity {
         this.stopAudio();
         
         if (audio.playMiniExplosion) {
-            audio.playMiniExplosion();
+            audio.playMiniExplosion(this.x, this.y);
         } else {
-            audio.playExplosion();
+            audio.playExplosion(1.0, this.x, this.y);
         }
         
-        game.screenShake = Math.max(game.screenShake, 15);
+        game.applyExplosionShake(this.x, this.y, 15, 65);
         game.spawnShockwave(this.x, this.y, 65 * 1.2, 0.25);
         game.camera.punchZoom(0.04);
         if (game.camera2) game.camera2.punchZoom(0.04);
@@ -6819,6 +6999,24 @@ class MiniDrone extends Entity {
         ctx.rotate(this.angle);
         
         let color = (this.owner === game.player2) ? '#ffb700' : '#39ff14';
+        
+        if (game && game.nightMode) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            let pulse = 1.0 + 0.15 * Math.sin(Date.now() / 100);
+            let glowRadius = 35 * pulse;
+            let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
+            let glowColor = (this.owner === game.player2) ? '255, 183, 0' : '57, 255, 20';
+            grad.addColorStop(0, `rgba(${glowColor}, 0.15)`);
+            grad.addColorStop(0.5, `rgba(${glowColor}, 0.05)`);
+            grad.addColorStop(1, `rgba(${glowColor}, 0)`);
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.8;
         
@@ -6888,8 +7086,8 @@ class ShrapnelGrenade {
         return true;
     }
     explode(game) {
-        audio.playExplosion();
-        game.screenShake = Math.max(game.screenShake, 35);
+        audio.playExplosion(1.0, this.x, this.y);
+        game.applyExplosionShake(this.x, this.y, 35, 180);
         
         game.spawnShockwave(this.x, this.y, 180 * 1.2, 0.3);
         game.camera.punchZoom(0.08);
@@ -7170,8 +7368,8 @@ class TripMine {
         return true;
     }
     explode(game) {
-        audio.playExplosion();
-        game.screenShake = Math.max(game.screenShake, 30);
+        audio.playExplosion(1.0, this.x, this.y);
+        game.applyExplosionShake(this.x, this.y, 30, 140);
         
         game.spawnShockwave(this.x, this.y, 140 * 1.2, 0.3);
         game.camera.punchZoom(0.06);
@@ -7237,6 +7435,20 @@ class TripMine {
         
         ctx.save();
         ctx.translate(scx, scy);
+        
+        if (game && game.nightMode && this.armed && Math.floor(this.t * 5) % 2 === 0) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 24);
+            grad.addColorStop(0, 'rgba(255, 42, 95, 0.85)');
+            grad.addColorStop(1, 'rgba(255, 42, 95, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(0, 0, 24, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+        }
+
         ctx.rotate(this.t * 0.5);
 
         ctx.fillStyle = '#37474f';
@@ -7450,7 +7662,6 @@ class Game {
         this.lastTime = 0;
         this.gameTime = 0;
         this.frameCounter = 0;
-        this.screenShake = 0;
         this.isPaused = false;
         
         // Game-feel variables
@@ -7610,6 +7821,28 @@ class Game {
         this.chromaticAberrationPeak = Math.max(this.chromaticAberrationPeak || 0, duration);
     }
 
+    applyExplosionShake(x, y, maxShake, blastRadius) {
+        let maxDist = Math.max(600, blastRadius * 3);
+        
+        if (this.player && !this.player.dead) {
+            let dist = Math.hypot(this.player.x - x, this.player.y - y);
+            let factor = Math.max(0, 1 - dist / maxDist);
+            let shake = maxShake * factor;
+            if (shake > 0 && this.camera) {
+                this.camera.screenShake = Math.max(this.camera.screenShake, shake);
+            }
+        }
+        
+        if (this.isTwoPlayer && this.player2 && !this.player2.dead) {
+            let dist = Math.hypot(this.player2.x - x, this.player2.y - y);
+            let factor = Math.max(0, 1 - dist / maxDist);
+            let shake = maxShake * factor;
+            if (shake > 0 && this.camera2) {
+                this.camera2.screenShake = Math.max(this.camera2.screenShake, shake);
+            }
+        }
+    }
+
     triggerGloryKill(enemy) {
         if (this.gloryKillTimer > 0) return;
         this.baseTimeScale = this.timeScale;
@@ -7682,9 +7915,10 @@ class Game {
             let pulse2 = Math.max(0, 1.0 - Math.abs(this.heartbeatPhase - 0.45) * 8.0);
             this.heartbeatIntensity = Math.max(pulse1, pulse2);
             
-            if (pulse1 > 0.7 || pulse2 > 0.7) {
-                this.screenShake = Math.max(this.screenShake, 3.5);
-            }
+                let cam = player.isPlayer2 ? this.camera2 : this.camera;
+                if (cam) {
+                    cam.screenShake = Math.max(cam.screenShake, 3.5);
+                }
         } else {
             this.heartbeatTimer = 0;
             this.heartbeatIntensity = 0;
@@ -8842,6 +9076,33 @@ class Game {
         
         this.drone.draw(this.ctx, droneCam);
         
+        if (this.nightMode) {
+            // Apply green tint (multiply + screen)
+            this.ctx.save();
+            this.ctx.globalCompositeOperation = 'multiply';
+            this.ctx.fillStyle = 'rgba(0, 255, 100, 0.45)';
+            this.ctx.fillRect(0, 0, visibleW, visibleH);
+            this.ctx.restore();
+
+            this.ctx.save();
+            this.ctx.globalCompositeOperation = 'screen';
+            this.ctx.fillStyle = 'rgba(0, 255, 100, 0.2)';
+            this.ctx.fillRect(0, 0, visibleW, visibleH);
+            this.ctx.restore();
+
+            // Draw subtle scanlines
+            this.ctx.save();
+            this.ctx.strokeStyle = 'rgba(0, 255, 50, 0.12)';
+            this.ctx.lineWidth = 1.5;
+            for (let y = 0; y < visibleH; y += 6) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, y);
+                this.ctx.lineTo(visibleW, y);
+                this.ctx.stroke();
+            }
+            this.ctx.restore();
+        }
+        
         this.ctx.restore();
 
         if (!this.drone.pilot.fiberOpticOwned) {
@@ -9341,11 +9602,6 @@ class Game {
             return;
         }
 
-        if (this.screenShake > 0) {
-            this.screenShake -= dt * 25;
-            if (this.screenShake < 0) this.screenShake = 0;
-        }
-        
         // Update shockwaves
         for (let i = 0; i < this.shockwaves.length; i++) {
             let sw = this.shockwaves[i];
@@ -10618,9 +10874,9 @@ class Game {
         let viewportH = this.height;
 
         this.ctx.save();
-        if (this.screenShake > 0) {
-            let dx = (Math.random() - 0.5) * this.screenShake;
-            let dy = (Math.random() - 0.5) * this.screenShake;
+        if (cam.screenShake > 0) {
+            let dx = (Math.random() - 0.5) * cam.screenShake;
+            let dy = (Math.random() - 0.5) * cam.screenShake;
             this.ctx.translate(dx, dy);
         }
 
@@ -10940,19 +11196,28 @@ class Game {
             nightCtx.globalCompositeOperation = 'destination-out';
 
             let matrix = this.ctx.getTransform();
+            
+            let worldToCanvas = (wx, wy) => {
+                let rx = wx - cam.x;
+                let ry = wy - cam.y;
+                let sx = rx * matrix.a + ry * matrix.c + matrix.e;
+                let sy = rx * matrix.b + ry * matrix.d + matrix.f;
+                return {
+                    x: isPlayer2 ? (sx - viewportW) : sx,
+                    y: sy
+                };
+            };
+
             let activePlayersForLight = [this.player];
             if (this.isTwoPlayer && this.player2 && !this.player2.dead) {
                 activePlayersForLight.push(this.player2);
             }
 
+            // Player flashlights & ambient light
             for (let p of activePlayersForLight) {
-                let wx = p.x - cam.x;
-                let wy = p.y - cam.y;
-                let sx = wx * matrix.a + wy * matrix.c + matrix.e;
-                let sy = wx * matrix.b + wy * matrix.d + matrix.f;
-
-                let px = isPlayer2 ? (sx - viewportW) : sx;
-                let py = sy;
+                let pos = worldToCanvas(p.x, p.y);
+                let px = pos.x;
+                let py = pos.y;
 
                 let ambientRadius = 90 * cam.zoom;
                 let coneRadius = 1600 * cam.zoom;
@@ -10986,6 +11251,152 @@ class Game {
                 nightCtx.arc(px, py, coneRadius, startAngle, endAngle);
                 nightCtx.closePath();
                 nightCtx.fill();
+            }
+
+            // 1. RobotDog Flashlight (Short, wide cone)
+            if (this.dogs) {
+                for (let dog of this.dogs) {
+                    if (dog.dead) continue;
+                    let pos = worldToCanvas(dog.x, dog.y);
+                    let coneRadius = 260 * cam.zoom;
+                    let coneAngle = Math.PI / 1.5;
+                    let startAngle = dog.angle - coneAngle / 2;
+                    let endAngle = dog.angle + coneAngle / 2;
+
+                    let flashlightGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coneRadius);
+                    flashlightGrad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
+                    flashlightGrad.addColorStop(0.2, 'rgba(0, 0, 0, 1.0)');
+                    flashlightGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.45)');
+                    flashlightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+                    nightCtx.fillStyle = flashlightGrad;
+                    nightCtx.beginPath();
+                    nightCtx.moveTo(pos.x, pos.y);
+                    nightCtx.arc(pos.x, pos.y, coneRadius, startAngle, endAngle);
+                    nightCtx.closePath();
+                    nightCtx.fill();
+                }
+            }
+
+            // 2. Auto-Turret Flashlight (Long, narrow cone)
+            if (this.turrets) {
+                for (let turret of this.turrets) {
+                    if (turret.dead) continue;
+                    let pos = worldToCanvas(turret.x, turret.y);
+                    let coneRadius = 500 * cam.zoom;
+                    let coneAngle = Math.PI / 6.0;
+                    let startAngle = turret.angle - coneAngle / 2;
+                    let endAngle = turret.angle + coneAngle / 2;
+
+                    let flashlightGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coneRadius);
+                    flashlightGrad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
+                    flashlightGrad.addColorStop(0.5, 'rgba(0, 0, 0, 1.0)');
+                    flashlightGrad.addColorStop(0.8, 'rgba(0, 0, 0, 0.5)');
+                    flashlightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+                    nightCtx.fillStyle = flashlightGrad;
+                    nightCtx.beginPath();
+                    nightCtx.moveTo(pos.x, pos.y);
+                    nightCtx.arc(pos.x, pos.y, coneRadius, startAngle, endAngle);
+                    nightCtx.closePath();
+                    nightCtx.fill();
+                }
+            }
+
+            // 3. Mini-Drones Glow (soft pulsating radial glow)
+            if (this.miniDrones) {
+                for (let md of this.miniDrones) {
+                    if (md.dead) continue;
+                    let pos = worldToCanvas(md.x, md.y);
+                    let pulse = 1.0 + 0.15 * Math.sin(Date.now() / 100);
+                    let radius = 45 * cam.zoom * pulse;
+
+                    let glowGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, radius);
+                    glowGrad.addColorStop(0, 'rgba(0, 0, 0, 0.35)');
+                    glowGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.15)');
+                    glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+                    nightCtx.fillStyle = glowGrad;
+                    nightCtx.beginPath();
+                    nightCtx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+                    nightCtx.fill();
+                }
+            }
+
+            // 4. Trip Mines Blink Glow (destination-out sync with red blink)
+            if (this.mines) {
+                for (let mine of this.mines) {
+                    if (mine.armed && Math.floor(mine.t * 5) % 2 === 0) {
+                        let pos = worldToCanvas(mine.x, mine.y);
+                        let radius = 24 * cam.zoom;
+
+                        let glowGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, radius);
+                        glowGrad.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
+                        glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+                        nightCtx.fillStyle = glowGrad;
+                        nightCtx.beginPath();
+                        nightCtx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+                        nightCtx.fill();
+                    }
+                }
+            }
+
+            // 5. Player & Enemy Muzzle Flashes (brief, intense radial flashes)
+            for (let p of activePlayersForLight) {
+                if (p.muzzleFlashTimer > 0) {
+                    let pos = worldToCanvas(p.muzzleFlashX, p.muzzleFlashY);
+                    let flashRadius = 180 * cam.zoom;
+                    let intensity = p.muzzleFlashTimer / 0.04;
+
+                    let flashGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, flashRadius);
+                    flashGrad.addColorStop(0, `rgba(0, 0, 0, ${intensity})`);
+                    flashGrad.addColorStop(0.5, `rgba(0, 0, 0, ${intensity * 0.3})`);
+                    flashGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+                    nightCtx.fillStyle = flashGrad;
+                    nightCtx.beginPath();
+                    nightCtx.arc(pos.x, pos.y, flashRadius, 0, Math.PI * 2);
+                    nightCtx.fill();
+                }
+            }
+            if (this.enemies) {
+                for (let e of this.enemies) {
+                    if (!e.dead && e.muzzleFlashTimer > 0) {
+                        let pos = worldToCanvas(e.muzzleFlashX, e.muzzleFlashY);
+                        let flashRadius = 140 * cam.zoom;
+                        let intensity = e.muzzleFlashTimer / 0.04;
+
+                        let flashGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, flashRadius);
+                        flashGrad.addColorStop(0, `rgba(0, 0, 0, ${intensity})`);
+                        flashGrad.addColorStop(0.5, `rgba(0, 0, 0, ${intensity * 0.3})`);
+                        flashGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+                        nightCtx.fillStyle = flashGrad;
+                        nightCtx.beginPath();
+                        nightCtx.arc(pos.x, pos.y, flashRadius, 0, Math.PI * 2);
+                        nightCtx.fill();
+                    }
+                }
+            }
+
+            // 6. Explosions / Shockwaves (brief intense radial flashes)
+            for (let sw of this.shockwaves) {
+                if (!sw.active) continue;
+                let pos = worldToCanvas(sw.x, sw.y);
+                let flashRadius = sw.radius * 2.0 * cam.zoom;
+                if (flashRadius > 0) {
+                    let intensity = sw.life / sw.maxLife;
+                    let flashGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, flashRadius);
+                    flashGrad.addColorStop(0, `rgba(0, 0, 0, ${intensity})`);
+                    flashGrad.addColorStop(0.5, `rgba(0, 0, 0, ${intensity * 0.5})`);
+                    flashGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+                    nightCtx.fillStyle = flashGrad;
+                    nightCtx.beginPath();
+                    nightCtx.arc(pos.x, pos.y, flashRadius, 0, Math.PI * 2);
+                    nightCtx.fill();
+                }
             }
 
             this.ctx.save();
