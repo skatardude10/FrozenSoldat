@@ -1237,6 +1237,7 @@ class AudioEngine {
         this.musicGain = null;
         this.musicFilter = null;
         this.lastExplosionTime = 0;
+        this.lastFlybyTime = 0;
         this.bakedBuffers = {};
         this.isBaking = false;
         
@@ -1344,109 +1345,399 @@ class AudioEngine {
         try {
             const promises = [];
             
-            // 1. Shoot sounds (duration 0.5s)
+            const makeDistortionCurve = (amount) => {
+                const n_samples = 44100;
+                const curve = new Float32Array(n_samples);
+                const denom = Math.tanh(amount) || 1;
+                for (let i = 0; i < n_samples; ++i) {
+                    const x = (i * 2) / n_samples - 1;
+                    curve[i] = Math.tanh(x * amount) / denom;
+                }
+                return curve;
+            };
+
+            // 1. Overhauled Shoot sounds (restored caliber-specific BANGs + thud/snap layers + saturation)
             const shootSpecs = {
-                'Pistol': { freq: 2500, gain: 0.7, ramp: 0.18 },
-                'Shotgun': { freq: 850, gain: 1.2, ramp: 0.18 },
-                'SMG': { freq: 3400, gain: 0.4, ramp: 0.18 },
-                'LMG': { freq: 1400, gain: 0.9, ramp: 0.18 },
-                'Sniper': { freq: 450, gain: 1.8, ramp: 0.35 },
-                'M1A': { freq: 1100, gain: 1.1, ramp: 0.26 }
+                'Pistol': {
+                    noiseFreq: 2500, noiseDecay: 0.18, noiseGain: 0.7,
+                    thumpFreq: 100, thumpDecay: 0.06, thumpGain: 0.4,
+                    snapFreq: 4000, snapDecay: 0.015, snapGain: 0.3,
+                    duration: 0.25, saturation: 1.3
+                },
+                'Shotgun': {
+                    noiseFreq: 850, noiseDecay: 0.22, noiseGain: 1.2,
+                    thumpFreq: 65, thumpDecay: 0.10, thumpGain: 0.8,
+                    snapFreq: 1800, snapDecay: 0.03, snapGain: 0.5,
+                    duration: 0.45, saturation: 2.8
+                },
+                'SMG': {
+                    noiseFreq: 3400, noiseDecay: 0.18, noiseGain: 0.4,
+                    thumpFreq: 110, thumpDecay: 0.05, thumpGain: 0.25,
+                    snapFreq: 5000, snapDecay: 0.012, snapGain: 0.2,
+                    duration: 0.25, saturation: 1.4
+                },
+                'LMG': {
+                    noiseFreq: 1400, noiseDecay: 0.20, noiseGain: 0.9,
+                    thumpFreq: 80, thumpDecay: 0.08, thumpGain: 0.5,
+                    snapFreq: 2800, snapDecay: 0.02, snapGain: 0.4,
+                    duration: 0.35, saturation: 1.9
+                },
+                'Sniper': {
+                    noiseFreq: 1500, noiseDecay: 0.55, noiseGain: 1.5,
+                    thumpFreq: 50, thumpDecay: 0.22, thumpGain: 1.2,
+                    snapFreq: 5000, snapDecay: 0.05, snapGain: 1.0,
+                    duration: 0.8, saturation: 2.2
+                },
+                'M1A': {
+                    noiseFreq: 1100, noiseDecay: 0.26, noiseGain: 1.1,
+                    thumpFreq: 90, thumpDecay: 0.09, thumpGain: 0.5,
+                    snapFreq: 2200, snapDecay: 0.025, snapGain: 0.4,
+                    duration: 0.45, saturation: 1.6
+                }
             };
             for (let type in shootSpecs) {
                 let spec = shootSpecs[type];
-                promises.push(this.bakeSound('shoot_' + type, 0.5, (offlineCtx) => {
-                    const noise = offlineCtx.createBufferSource();
-                    noise.buffer = this.noiseBuffer;
-                    const filter = offlineCtx.createBiquadFilter();
-                    const gain = offlineCtx.createGain();
+                for (let v = 0; v < 4; v++) {
+                    promises.push(this.bakeSound('shoot_' + type + '_' + v, spec.duration, (offlineCtx) => {
+                        let randScale = 0.9 + Math.random() * 0.2;
+                        let nFreq = spec.noiseFreq * (0.95 + Math.random() * 0.1);
+                        let nDecay = spec.noiseDecay * (0.92 + Math.random() * 0.16);
+                        let tFreq = spec.snapFreq * (0.95 + Math.random() * 0.1);
+                        let tDecay = spec.snapDecay * (0.9 + Math.random() * 0.2);
+                        let sFreq = spec.thumpFreq * (0.97 + Math.random() * 0.06);
+                        let sDecay = spec.thumpDecay * (0.9 + Math.random() * 0.2);
+                        
+                        // 1. MAIN REPORT LAYER: Low-pass noise for primary caliber boom (dominant layer)
+                        const bNoise = offlineCtx.createBufferSource();
+                        bNoise.buffer = this.noiseBuffer;
+                        const bFilter = offlineCtx.createBiquadFilter();
+                        bFilter.type = 'lowpass';
+                        bFilter.frequency.value = nFreq;
+                        const bGain = offlineCtx.createGain();
+                        bGain.gain.setValueAtTime(spec.noiseGain * randScale, 0);
+                        bGain.gain.exponentialRampToValueAtTime(0.01 * randScale, nDecay);
+                        
+                        bNoise.connect(bFilter);
+                        bFilter.connect(bGain);
+                        bNoise.start(0);
+
+                        // 2. SNAP LAYER: Short low-pass noise spike for initial snap
+                        const tNoise = offlineCtx.createBufferSource();
+                        tNoise.buffer = this.noiseBuffer;
+                        const tFilter = offlineCtx.createBiquadFilter();
+                        tFilter.type = 'lowpass';
+                        tFilter.frequency.value = tFreq;
+                        const tGain = offlineCtx.createGain();
+                        tGain.gain.setValueAtTime(spec.snapGain * randScale, 0);
+                        tGain.gain.exponentialRampToValueAtTime(0.01 * randScale, tDecay);
+                        
+                        tNoise.connect(tFilter);
+                        tFilter.connect(tGain);
+                        tNoise.start(0);
+
+                        // 3. THUMP LAYER: Low sine sweep for physical thud weight
+                        const subOsc = offlineCtx.createOscillator();
+                        subOsc.type = 'sine';
+                        subOsc.frequency.setValueAtTime(sFreq * 1.25, 0);
+                        subOsc.frequency.exponentialRampToValueAtTime(sFreq * 0.9, sDecay);
+                        
+                        const subGain = offlineCtx.createGain();
+                        subGain.gain.setValueAtTime(spec.thumpGain * randScale, 0);
+                        subGain.gain.exponentialRampToValueAtTime(0.01 * randScale, sDecay);
+                        
+                        subOsc.connect(subGain);
+                        subOsc.start(0);
+
+                        // 4. ROUTING & SATURATION (Non-linear Waveshaping)
+                        const sumGain = offlineCtx.createGain();
+                        sumGain.gain.value = 1.0;
+                        bGain.connect(sumGain);
+                        tGain.connect(sumGain);
+                        subGain.connect(sumGain);
+
+                        const saturator = offlineCtx.createWaveShaper();
+                        saturator.curve = makeDistortionCurve(spec.saturation);
+                        saturator.oversample = '4x';
+
+                        sumGain.connect(saturator);
+                        saturator.connect(offlineCtx.destination);
+                    }));
+                }
+            }
+
+            // 2. Ricochet variations (duration up to 0.35s)
+            for (let i = 0; i < 5; i++) {
+                promises.push(this.bakeSound('ricochet_' + i, 0.35, (offlineCtx) => {
+                    const duration = 0.2 + Math.random() * 0.15; // random duration between 0.2s and 0.35s
+                    const startFreq = 1100 + Math.random() * 500; // 1100Hz to 1600Hz
+                    const endFreq = 200 + Math.random() * 150;    // 200Hz to 350Hz
+                    const detune = 20 + Math.random() * 40;       // 20Hz to 60Hz detune difference
                     
-                    filter.type = 'lowpass';
-                    filter.frequency.value = spec.freq;
-                    gain.gain.setValueAtTime(spec.gain, 0);
-                    gain.gain.exponentialRampToValueAtTime(0.01, spec.ramp);
+                    // Transient click (impact bite)
+                    const oscClick = offlineCtx.createOscillator();
+                    const gainClick = offlineCtx.createGain();
+                    oscClick.type = 'sine';
+                    oscClick.frequency.setValueAtTime(2500 + Math.random() * 1000, 0);
                     
-                    noise.connect(filter);
-                    filter.connect(gain);
-                    gain.connect(offlineCtx.destination);
-                    noise.start(0);
+                    gainClick.gain.setValueAtTime(0.12, 0);
+                    gainClick.gain.exponentialRampToValueAtTime(0.001, 0.02); // 20ms decay
+                    
+                    oscClick.connect(gainClick);
+                    gainClick.connect(offlineCtx.destination);
+                    oscClick.start(0);
+                    
+                    // Main Whining Tonal Layer (Triangle 1)
+                    const osc1 = offlineCtx.createOscillator();
+                    const gain1 = offlineCtx.createGain();
+                    osc1.type = 'triangle';
+                    osc1.frequency.setValueAtTime(startFreq, 0);
+                    osc1.frequency.exponentialRampToValueAtTime(endFreq, duration * 0.75);
+                    
+                    gain1.gain.setValueAtTime(0.08, 0);
+                    gain1.gain.exponentialRampToValueAtTime(0.001, duration);
+                    
+                    osc1.connect(gain1);
+                    gain1.connect(offlineCtx.destination);
+                    osc1.start(0);
+                    
+                    // Beating Warbling Layer (Triangle 2, slightly detuned)
+                    const osc2 = offlineCtx.createOscillator();
+                    const gain2 = offlineCtx.createGain();
+                    osc2.type = 'triangle';
+                    osc2.frequency.setValueAtTime(startFreq + detune, 0);
+                    osc2.frequency.exponentialRampToValueAtTime(endFreq + detune, duration * 0.75);
+                    
+                    gain2.gain.setValueAtTime(0.06, 0);
+                    gain2.gain.exponentialRampToValueAtTime(0.001, duration * 0.9);
+                    
+                    osc2.connect(gain2);
+                    gain2.connect(offlineCtx.destination);
+                    osc2.start(0);
                 }));
             }
 
-            // 2. Ricochet (duration 0.15s)
-            promises.push(this.bakeSound('ricochet', 0.15, (offlineCtx) => {
-                const osc = offlineCtx.createOscillator();
-                const gain = offlineCtx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(1400, 0);
-                osc.frequency.exponentialRampToValueAtTime(3200, 0.08);
-                
-                gain.gain.setValueAtTime(0.12, 0);
-                gain.gain.exponentialRampToValueAtTime(0.01, 0.08);
-                
-                osc.connect(gain);
-                gain.connect(offlineCtx.destination);
-                osc.start(0);
-            }));
+            // 2b. Flyby variations (duration 0.25s - pure noise-based aerodynamic Doppler whoosh)
+            for (let i = 0; i < 4; i++) {
+                promises.push(this.bakeSound('flyby_' + i, 0.25, (offlineCtx) => {
+                    const duration = 0.22 + Math.random() * 0.06;
+                    
+                    // A. Aerodynamic Wind Whoosh (sweeping bandpass noise)
+                    const windSrc = offlineCtx.createBufferSource();
+                    windSrc.buffer = this.noiseBuffer;
+                    const windFilter = offlineCtx.createBiquadFilter();
+                    windFilter.type = 'bandpass';
+                    windFilter.Q.value = 1.0;
+                    windFilter.frequency.setValueAtTime(1200, 0);
+                    windFilter.frequency.exponentialRampToValueAtTime(300, duration);
+                    
+                    const windGain = offlineCtx.createGain();
+                    windGain.gain.setValueAtTime(1.2, 0);
+                    windGain.gain.exponentialRampToValueAtTime(0.001, duration);
+                    
+                    windSrc.connect(windFilter);
+                    windFilter.connect(windGain);
+                    windSrc.start(0);
 
-            // 3. Explosion (duration 1.0s)
-            promises.push(this.bakeSound('explosion', 1.0, (offlineCtx) => {
-                let finalVolume = 0.3; // volumeScale = 1.0
-                const osc = offlineCtx.createOscillator();
-                const oscGain = offlineCtx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(160, 0);
-                osc.frequency.exponentialRampToValueAtTime(10, 0.5);
-                oscGain.gain.setValueAtTime(1.5 * finalVolume, 0);
-                oscGain.gain.exponentialRampToValueAtTime(0.01 * finalVolume, 0.5);
-                
-                osc.connect(oscGain);
-                oscGain.connect(offlineCtx.destination);
-                osc.start(0);
+                    // B. Low-Frequency Air Pressure (sweeping lowpass noise)
+                    const pressSrc = offlineCtx.createBufferSource();
+                    pressSrc.buffer = this.noiseBuffer;
+                    const pressFilter = offlineCtx.createBiquadFilter();
+                    pressFilter.type = 'lowpass';
+                    pressFilter.frequency.setValueAtTime(600, 0);
+                    pressFilter.frequency.exponentialRampToValueAtTime(150, duration);
+                    
+                    const pressGain = offlineCtx.createGain();
+                    pressGain.gain.setValueAtTime(1.5, 0);
+                    pressGain.gain.exponentialRampToValueAtTime(0.001, duration * 0.85);
 
-                const noise = offlineCtx.createBufferSource();
-                noise.buffer = this.noiseBuffer;
-                const filter = offlineCtx.createBiquadFilter();
-                const noiseGain = offlineCtx.createGain();
-                filter.type = 'lowpass';
-                filter.frequency.value = 600;
-                noiseGain.gain.setValueAtTime(1.8 * finalVolume, 0);
-                noiseGain.gain.exponentialRampToValueAtTime(0.01 * finalVolume, 0.6);
-                
-                noise.connect(filter);
-                filter.connect(noiseGain);
-                noiseGain.connect(offlineCtx.destination);
-                noise.start(0);
-            }));
+                    pressSrc.connect(pressFilter);
+                    pressFilter.connect(pressGain);
+                    pressSrc.start(0);
 
-            // 4. Mini Explosion (duration 0.5s)
-            promises.push(this.bakeSound('miniExplosion', 0.5, (offlineCtx) => {
-                const osc = offlineCtx.createOscillator();
-                const oscGain = offlineCtx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(320, 0);
-                osc.frequency.exponentialRampToValueAtTime(30, 0.25);
-                oscGain.gain.setValueAtTime(0.6, 0);
-                oscGain.gain.exponentialRampToValueAtTime(0.01, 0.25);
-                
-                osc.connect(oscGain);
-                oscGain.connect(offlineCtx.destination);
-                osc.start(0);
+                    // Routing & Saturation
+                    const sumGain = offlineCtx.createGain();
+                    sumGain.gain.value = 0.65; // overall master output scale for flyby buffer
+                    windGain.connect(sumGain);
+                    pressGain.connect(sumGain);
 
-                const noise = offlineCtx.createBufferSource();
-                noise.buffer = this.noiseBuffer;
-                const filter = offlineCtx.createBiquadFilter();
-                const noiseGain = offlineCtx.createGain();
-                filter.type = 'lowpass';
-                filter.frequency.value = 800;
-                noiseGain.gain.setValueAtTime(0.8, 0);
-                noiseGain.gain.exponentialRampToValueAtTime(0.01, 0.3);
-                
-                noise.connect(filter);
-                filter.connect(noiseGain);
-                noiseGain.connect(offlineCtx.destination);
-                noise.start(0);
-            }));
+                    const saturator = offlineCtx.createWaveShaper();
+                    saturator.curve = makeDistortionCurve(1.4);
+                    saturator.oversample = '4x';
+
+                    sumGain.connect(saturator);
+                    saturator.connect(offlineCtx.destination);
+                }));
+            }
+
+            // 3. Overhauled Explosion variations (duration 1.2s - restored heavy BOOM)
+            for (let i = 0; i < 3; i++) {
+                promises.push(this.bakeSound('explosion_' + i, 1.3, (offlineCtx) => {
+                    let randScale = 0.9 + Math.random() * 0.2;
+                    let nFreq = 800 * (0.95 + Math.random() * 0.1);
+                    let nDecay = 0.6 * (0.9 + Math.random() * 0.2);
+                    let sFreq = 90 * (0.95 + Math.random() * 0.1);
+                    let sDecay = 0.8 * (0.9 + Math.random() * 0.2);
+                    let snapFreq = 1200 * (0.95 + Math.random() * 0.1);
+                    let snapDecay = 0.02 * (0.9 + Math.random() * 0.2);
+                    let debFreq = 1800 * (0.9 + Math.random() * 0.2);
+                    let debDecay = 0.25 * (0.9 + Math.random() * 0.2);
+
+                    // A. Transient/Snap: Lowpass noise thud for concussive start (tamed)
+                    const tNoise = offlineCtx.createBufferSource();
+                    tNoise.buffer = this.noiseBuffer;
+                    const tFilter = offlineCtx.createBiquadFilter();
+                    tFilter.type = 'lowpass';
+                    tFilter.frequency.value = snapFreq;
+                    const tGain = offlineCtx.createGain();
+                    tGain.gain.setValueAtTime(0.4 * randScale, 0);
+                    tGain.gain.exponentialRampToValueAtTime(0.001, snapDecay);
+                    
+                    tNoise.connect(tFilter);
+                    tFilter.connect(tGain);
+                    tNoise.start(0);
+
+                    // B. Main Report: Lowpass noise for deep caliber boom (dominant layer)
+                    const bNoise = offlineCtx.createBufferSource();
+                    bNoise.buffer = this.noiseBuffer;
+                    const bFilter = offlineCtx.createBiquadFilter();
+                    bFilter.type = 'lowpass';
+                    bFilter.frequency.value = nFreq;
+                    const bGain = offlineCtx.createGain();
+                    bGain.gain.setValueAtTime(2.5 * randScale, 0);
+                    bGain.gain.exponentialRampToValueAtTime(0.01 * randScale, nDecay);
+                    
+                    bNoise.connect(bFilter);
+                    bFilter.connect(bGain);
+                    bNoise.start(0);
+
+                    // C. Sub Thump: Heavy sine sweep for physical rattle
+                    const subOsc = offlineCtx.createOscillator();
+                    subOsc.type = 'sine';
+                    subOsc.frequency.setValueAtTime(sFreq, 0);
+                    subOsc.frequency.exponentialRampToValueAtTime(20, sDecay);
+                    const subGain = offlineCtx.createGain();
+                    subGain.gain.setValueAtTime(1.8 * randScale, 0);
+                    subGain.gain.exponentialRampToValueAtTime(0.01 * randScale, sDecay);
+                    
+                    subOsc.connect(subGain);
+                    subOsc.start(0);
+
+                    // D. Debris / Fragmentation: Subtle wide bandpass sizzle (lowered gain to avoid whistling hiss)
+                    const dNoise = offlineCtx.createBufferSource();
+                    dNoise.buffer = this.noiseBuffer;
+                    const dFilter = offlineCtx.createBiquadFilter();
+                    dFilter.type = 'bandpass';
+                    dFilter.frequency.value = debFreq;
+                    dFilter.Q.value = 1.0;
+                    const dGain = offlineCtx.createGain();
+                    dGain.gain.setValueAtTime(0.2 * randScale, 0);
+                    dGain.gain.exponentialRampToValueAtTime(0.001, debDecay);
+                    
+                    dNoise.connect(dFilter);
+                    dFilter.connect(dGain);
+                    dNoise.start(0);
+
+                    // Routing & Saturation
+                    const sumGain = offlineCtx.createGain();
+                    sumGain.gain.value = 0.3;
+                    tGain.connect(sumGain);
+                    bGain.connect(sumGain);
+                    subGain.connect(sumGain);
+                    dGain.connect(sumGain);
+
+                    const saturator = offlineCtx.createWaveShaper();
+                    saturator.curve = makeDistortionCurve(2.8);
+                    saturator.oversample = '4x';
+
+                    sumGain.connect(saturator);
+                    saturator.connect(offlineCtx.destination);
+                }));
+            }
+
+            // 4. Overhauled Mini Explosion variations (duration 0.7s)
+            for (let i = 0; i < 3; i++) {
+                promises.push(this.bakeSound('miniExplosion_' + i, 0.7, (offlineCtx) => {
+                    let randScale = 0.9 + Math.random() * 0.2;
+                    let nFreq = 950 * (0.95 + Math.random() * 0.1);
+                    let nDecay = 0.4 * (0.9 + Math.random() * 0.2);
+                    let sFreq = 110 * (0.95 + Math.random() * 0.1);
+                    let sDecay = 0.4 * (0.9 + Math.random() * 0.2);
+                    let snapFreq = 1500 * (0.95 + Math.random() * 0.1);
+                    let snapDecay = 0.015 * (0.9 + Math.random() * 0.2);
+                    let debFreq = 2200 * (0.9 + Math.random() * 0.2);
+                    let debDecay = 0.15 * (0.9 + Math.random() * 0.2);
+
+                    // A. Transient/Snap
+                    const tNoise = offlineCtx.createBufferSource();
+                    tNoise.buffer = this.noiseBuffer;
+                    const tFilter = offlineCtx.createBiquadFilter();
+                    tFilter.type = 'lowpass';
+                    tFilter.frequency.value = snapFreq;
+                    const tGain = offlineCtx.createGain();
+                    tGain.gain.setValueAtTime(0.3 * randScale, 0);
+                    tGain.gain.exponentialRampToValueAtTime(0.001, snapDecay);
+                    
+                    tNoise.connect(tFilter);
+                    tFilter.connect(tGain);
+                    tNoise.start(0);
+
+                    // B. Main Report
+                    const bNoise = offlineCtx.createBufferSource();
+                    bNoise.buffer = this.noiseBuffer;
+                    const bFilter = offlineCtx.createBiquadFilter();
+                    bFilter.type = 'lowpass';
+                    bFilter.frequency.value = nFreq;
+                    const bGain = offlineCtx.createGain();
+                    bGain.gain.setValueAtTime(1.8 * randScale, 0);
+                    bGain.gain.exponentialRampToValueAtTime(0.01 * randScale, nDecay);
+                    
+                    bNoise.connect(bFilter);
+                    bFilter.connect(bGain);
+                    bNoise.start(0);
+
+                    // C. Sub Thump
+                    const subOsc = offlineCtx.createOscillator();
+                    subOsc.type = 'sine';
+                    subOsc.frequency.setValueAtTime(sFreq, 0);
+                    subOsc.frequency.exponentialRampToValueAtTime(30, sDecay);
+                    const subGain = offlineCtx.createGain();
+                    subGain.gain.setValueAtTime(1.0 * randScale, 0);
+                    subGain.gain.exponentialRampToValueAtTime(0.01 * randScale, sDecay);
+                    
+                    subOsc.connect(subGain);
+                    subOsc.start(0);
+
+                    // D. Debris
+                    const dNoise = offlineCtx.createBufferSource();
+                    dNoise.buffer = this.noiseBuffer;
+                    const dFilter = offlineCtx.createBiquadFilter();
+                    dFilter.type = 'bandpass';
+                    dFilter.frequency.value = debFreq;
+                    dFilter.Q.value = 1.0;
+                    const dGain = offlineCtx.createGain();
+                    dGain.gain.setValueAtTime(0.15 * randScale, 0);
+                    dGain.gain.exponentialRampToValueAtTime(0.001, debDecay);
+                    
+                    dNoise.connect(dFilter);
+                    dFilter.connect(dGain);
+                    dNoise.start(0);
+
+                    // Routing & Saturation
+                    const sumGain = offlineCtx.createGain();
+                    sumGain.gain.value = 0.5;
+                    tGain.connect(sumGain);
+                    bGain.connect(sumGain);
+                    subGain.connect(sumGain);
+                    dGain.connect(sumGain);
+
+                    const saturator = offlineCtx.createWaveShaper();
+                    saturator.curve = makeDistortionCurve(2.0);
+                    saturator.oversample = '4x';
+
+                    sumGain.connect(saturator);
+                    saturator.connect(offlineCtx.destination);
+                }));
+            }
 
             // 5. Hit (duration 0.2s)
             promises.push(this.bakeSound('hit', 0.2, (offlineCtx) => {
@@ -1543,20 +1834,90 @@ class AudioEngine {
                 osc.start(0);
             }));
 
-            // 10. Flashbang bang (duration 0.5s)
-            promises.push(this.bakeSound('flashbangBang', 0.5, (offlineCtx) => {
-                const bangOsc = offlineCtx.createOscillator();
-                const bangGain = offlineCtx.createGain();
-                bangOsc.type = 'triangle';
-                bangOsc.frequency.setValueAtTime(120, 0);
-                bangOsc.frequency.exponentialRampToValueAtTime(10, 0.25);
-                bangGain.gain.setValueAtTime(0.8, 0);
-                bangGain.gain.exponentialRampToValueAtTime(0.01, 0.25);
-                
-                bangOsc.connect(bangGain);
-                bangGain.connect(offlineCtx.destination);
-                bangOsc.start(0);
-            }));
+            // 10. Overhauled Flashbang Bang variations (duration 0.5s)
+            for (let i = 0; i < 3; i++) {
+                promises.push(this.bakeSound('flashbangBang_' + i, 0.5, (offlineCtx) => {
+                    let randScale = 0.9 + Math.random() * 0.2;
+                    let nFreq = 1400 * (0.95 + Math.random() * 0.1);
+                    let nDecay = 0.3 * (0.9 + Math.random() * 0.2);
+                    let sFreq = 130 * (0.95 + Math.random() * 0.1);
+                    let sDecay = 0.2 * (0.9 + Math.random() * 0.2);
+                    let snapFreq = 2500 * (0.95 + Math.random() * 0.1);
+                    let snapDecay = 0.03 * (0.9 + Math.random() * 0.2);
+                    let debFreq = 3500 * (0.9 + Math.random() * 0.2);
+                    let debDecay = 0.2 * (0.9 + Math.random() * 0.2);
+
+                    // A. Transient/Snap (crisp concussive lowpass pop)
+                    const tNoise = offlineCtx.createBufferSource();
+                    tNoise.buffer = this.noiseBuffer;
+                    const tFilter = offlineCtx.createBiquadFilter();
+                    tFilter.type = 'lowpass';
+                    tFilter.frequency.value = snapFreq;
+                    const tGain = offlineCtx.createGain();
+                    tGain.gain.setValueAtTime(0.6 * randScale, 0);
+                    tGain.gain.exponentialRampToValueAtTime(0.001, snapDecay);
+                    
+                    tNoise.connect(tFilter);
+                    tFilter.connect(tGain);
+                    tNoise.start(0);
+
+                    // B. Main Report (snappy report)
+                    const bNoise = offlineCtx.createBufferSource();
+                    bNoise.buffer = this.noiseBuffer;
+                    const bFilter = offlineCtx.createBiquadFilter();
+                    bFilter.type = 'lowpass';
+                    bFilter.frequency.value = nFreq;
+                    const bGain = offlineCtx.createGain();
+                    bGain.gain.setValueAtTime(1.5 * randScale, 0);
+                    bGain.gain.exponentialRampToValueAtTime(0.01 * randScale, nDecay);
+                    
+                    bNoise.connect(bFilter);
+                    bFilter.connect(bGain);
+                    bNoise.start(0);
+
+                    // C. Sub Thump (tight thump)
+                    const subOsc = offlineCtx.createOscillator();
+                    subOsc.type = 'sine';
+                    subOsc.frequency.setValueAtTime(sFreq, 0);
+                    subOsc.frequency.exponentialRampToValueAtTime(40, sDecay);
+                    const subGain = offlineCtx.createGain();
+                    subGain.gain.setValueAtTime(0.5 * randScale, 0);
+                    subGain.gain.exponentialRampToValueAtTime(0.01 * randScale, sDecay);
+                    
+                    subOsc.connect(subGain);
+                    subOsc.start(0);
+
+                    // D. Debris (subtle sizzle)
+                    const dNoise = offlineCtx.createBufferSource();
+                    dNoise.buffer = this.noiseBuffer;
+                    const dFilter = offlineCtx.createBiquadFilter();
+                    dFilter.type = 'bandpass';
+                    dFilter.frequency.value = debFreq;
+                    dFilter.Q.value = 1.5;
+                    const dGain = offlineCtx.createGain();
+                    dGain.gain.setValueAtTime(0.3 * randScale, 0);
+                    dGain.gain.exponentialRampToValueAtTime(0.001, debDecay);
+                    
+                    dNoise.connect(dFilter);
+                    dFilter.connect(dGain);
+                    dNoise.start(0);
+
+                    // Routing & Saturation
+                    const sumGain = offlineCtx.createGain();
+                    sumGain.gain.value = 0.6;
+                    tGain.connect(sumGain);
+                    bGain.connect(sumGain);
+                    subGain.connect(sumGain);
+                    dGain.connect(sumGain);
+
+                    const saturator = offlineCtx.createWaveShaper();
+                    saturator.curve = makeDistortionCurve(2.5);
+                    saturator.oversample = '4x';
+
+                    sumGain.connect(saturator);
+                    saturator.connect(offlineCtx.destination);
+                }));
+            }
 
             // 11. Flashbang ring (duration 2.8s) - long tail!
             promises.push(this.bakeSound('flashbangRing', 2.8, (offlineCtx) => {
@@ -1596,35 +1957,111 @@ class AudioEngine {
         }
     }
 
-    playBakedSound(name, destination = this.sfxGain, gainValue = 1.0) {
+    getDistanceToPlayers(x, y) {
+        if (!game) return 0;
+        let minDist = Infinity;
+        if (game.player && !game.player.dead) {
+            let d = Math.hypot(x - game.player.x, y - game.player.y);
+            if (d < minDist) minDist = d;
+        }
+        if (game.isTwoPlayer && game.player2 && !game.player2.dead) {
+            let d = Math.hypot(x - game.player2.x, y - game.player2.y);
+            if (d < minDist) minDist = d;
+        }
+        return minDist === Infinity ? 0 : minDist;
+    }
+
+    getSpatialSettings(type, distance) {
+        let minD = 100, maxD = 1000, minVol = 0.0, minCutoff = 1000;
+        if (type === 'shoot') {
+            minD = 150; maxD = 2000; minVol = 0.18; minCutoff = 1100;
+        } else if (type === 'explosion') {
+            minD = 250; maxD = 2500; minVol = 0.25; minCutoff = 800;
+        } else if (type === 'ricochet') {
+            minD = 100; maxD = 900; minVol = 0.0; minCutoff = 1500;
+        } else if (type === 'hit') {
+            minD = 100; maxD = 800; minVol = 0.0; minCutoff = 2000;
+        }
+        
+        let vol = 1.0;
+        let cutoff = 20000;
+        if (distance > minD) {
+            let t = Math.min(1.0, (distance - minD) / (maxD - minD));
+            let roll = Math.pow(1.0 - t, 1.5);
+            vol = minVol + (1.0 - minVol) * roll;
+            cutoff = minCutoff + (20000 - minCutoff) * (1.0 - t);
+        }
+        return { vol, cutoff };
+    }
+
+    playBakedSound(name, destination = this.sfxGain, gainValue = 1.0, cutoff = 20000) {
         if (!this.ctx || !this.bakedBuffers[name]) return;
         const source = this.ctx.createBufferSource();
         source.buffer = this.bakedBuffers[name];
         
-        let hasEcho = this.echoBusInput && this.ECHO_SOUNDS.has(name);
+        let baseName = name;
+        if (name.lastIndexOf('_') > 0) {
+            let base = name.substring(0, name.lastIndexOf('_'));
+            if (base.startsWith('shoot_') || base === 'explosion' || base === 'miniExplosion' || base === 'flashbangBang' || base === 'flyby') {
+                baseName = base;
+            }
+        }
+        let hasEcho = this.echoBusInput && this.ECHO_SOUNDS.has(baseName);
+        
+        let lastNode = source;
+        if (cutoff < 18000) {
+            const filterNode = this.ctx.createBiquadFilter();
+            filterNode.type = 'lowpass';
+            filterNode.frequency.value = cutoff;
+            lastNode.connect(filterNode);
+            lastNode = filterNode;
+        }
+        
         if (gainValue !== 1.0 || hasEcho) {
             const gain = this.ctx.createGain();
             gain.gain.value = gainValue;
-            source.connect(gain);
+            lastNode.connect(gain);
             gain.connect(destination);
             if (hasEcho) {
                 gain.connect(this.echoBusInput);
             }
         } else {
-            source.connect(destination);
+            lastNode.connect(destination);
         }
         source.start(0);
     }
 
-    playShoot(type) {
-        this.playBakedSound('shoot_' + type);
+    playShoot(type, x = null, y = null) {
+        let idx = Math.floor(Math.random() * 4);
+        let name = 'shoot_' + type + '_' + idx;
+        
+        let gainVal = 1.0;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('shoot', d);
+            gainVal = settings.vol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff);
     }
 
-    playRicochet() {
-        this.playBakedSound('ricochet');
+    playRicochet(x = null, y = null) {
+        let idx = Math.floor(Math.random() * 5);
+        let name = 'ricochet_' + idx;
+        
+        let gainVal = 1.0;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('ricochet', d);
+            gainVal = settings.vol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff);
     }
 
-    playExplosion(volumeScale = 1.0) {
+    playExplosion(volumeScale = 1.0, x = null, y = null) {
         if (!this.ctx) return;
         
         let now = this.ctx.currentTime;
@@ -1633,17 +2070,47 @@ class AudioEngine {
         }
         this.lastExplosionTime = now;
         
-        this.playBakedSound('explosion', this.sfxGain, volumeScale);
+        let idx = Math.floor(Math.random() * 3);
+        let name = 'explosion_' + idx;
+        
+        let gainVal = volumeScale;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('explosion', d);
+            gainVal = settings.vol * volumeScale;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff);
     }
 
-    playMiniExplosion() {
+    playMiniExplosion(x = null, y = null) {
         if (!this.ctx) return;
         let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-        this.playBakedSound('miniExplosion', this.sfxGain || this.masterGain, sfxVol);
+        let idx = Math.floor(Math.random() * 3);
+        let name = 'miniExplosion_' + idx;
+        
+        let gainVal = sfxVol;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('explosion', d);
+            gainVal = settings.vol * sfxVol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound(name, this.sfxGain || this.masterGain, gainVal, cutoff);
     }
 
-    playHit() {
-        this.playBakedSound('hit');
+    playHit(x = null, y = null) {
+        let gainVal = 1.0;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('hit', d);
+            gainVal = settings.vol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound('hit', this.sfxGain, gainVal, cutoff);
     }
     
     playPickup(type) {
@@ -1661,10 +2128,49 @@ class AudioEngine {
     
     playFlashbangRing() {
         if (!this.ctx) return;
-        this.playBakedSound('flashbangBang');
+        let idx = Math.floor(Math.random() * 3);
+        this.playBakedSound('flashbangBang_' + idx);
         
         let sfxVol = game && game.saveData && game.saveData.sfxVolume !== undefined ? game.saveData.sfxVolume : 0.5;
         this.playBakedSound('flashbangRing', this.masterGain, sfxVol);
+    }
+
+    playFlyby(intensity, pan, speed) {
+        if (!this.ctx || intensity <= 0.01) return;
+        
+        let now = this.ctx.currentTime;
+        if (now - this.lastFlybyTime < 0.04) return; // rate limit
+        this.lastFlybyTime = now;
+        
+        let idx = Math.floor(Math.random() * 4);
+        let name = 'flyby_' + idx;
+        if (!this.bakedBuffers[name]) return;
+        
+        const source = this.ctx.createBufferSource();
+        source.buffer = this.bakedBuffers[name];
+        
+        // 1. Playback Rate based on speed (baseline 1200 px/s)
+        let rate = Math.max(0.65, Math.min(2.0, speed / 1200));
+        source.playbackRate.value = rate;
+        
+        // 2. Gain/Volume
+        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        const gainNode = this.ctx.createGain();
+        gainNode.gain.value = intensity * sfxVol * 1.0; // tamer, well-balanced volume multiplier
+        
+        source.connect(gainNode);
+        
+        // 3. Stereo Panning
+        if (this.ctx.createStereoPanner) {
+            const panner = this.ctx.createStereoPanner();
+            panner.pan.value = Math.max(-1.0, Math.min(1.0, pan));
+            gainNode.connect(panner);
+            panner.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+        } else {
+            gainNode.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+        }
+        
+        source.start(0);
     }
 }
 
@@ -2347,8 +2853,8 @@ class Camera {
             this.kickbackX += this.kickbackVX * dt;
             this.kickbackY += this.kickbackVY * dt;
             // Slower spring return (8 instead of 18) and slower damping for more visible effect
-            this.kickbackVX += -this.kickbackX * 8 * dt;
-            this.kickbackVY += -this.kickbackY * 8 * dt;
+            this.kickbackVX += -this.kickbackX * 58 * dt;
+            this.kickbackVY += -this.kickbackY * 58 * dt;
             this.kickbackVX *= Math.pow(0.05, dt);
             this.kickbackVY *= Math.pow(0.05, dt);
             this.kickbackX = MathUtils.clamp(this.kickbackX, -200, 200);
@@ -3257,7 +3763,8 @@ class Player extends Entity {
         }
 
         const KICKBACK_FORCES = {
-            'Shotgun': 220,
+            'SMG': 65,
+            'Shotgun': 280,
             'Sniper': 420,
             'M1A': 190,
             'LMG': 130
@@ -3270,7 +3777,7 @@ class Player extends Entity {
             game.camera2.applyKickback(this.angle, kickForce);
         }
 
-        if (['Shotgun', 'Sniper', 'M1A', 'LMG'].includes(this.weapon.name)) {
+        if (['SMG', 'Shotgun', 'Sniper', 'M1A', 'LMG'].includes(this.weapon.name)) {
             game.spawnBarrelFX(barrelX, barrelY, this.angle);
         }
     }
@@ -3880,17 +4387,27 @@ class Enemy extends Entity {
     }
     
     fire(game) {
+        if (this.weaponType === 'melee') {
+            return;
+        }
+
+        let scale = this.r / 12;
+        let barrelLen = 16;
+        if (this.weaponType === 'heavy_pistol') barrelLen = 18;
+        else if (this.weaponType === 'shotgun') barrelLen = 24;
+        else if (this.weaponType === 'sniper') barrelLen = 34;
+
+        let gunY = Math.round(this.r * 0.5);
+        let lx = (5 + barrelLen) * scale;
+        let ly = gunY;
+
         let spreadAngle = this.angle;
-        let barrelX = this.x + Math.cos(this.angle)*20 - Math.sin(this.angle)*5;
-        let barrelY = this.y + Math.sin(this.angle)*20 + Math.cos(this.angle)*5;
+        let barrelX = this.x + Math.cos(this.angle) * lx - Math.sin(this.angle) * ly;
+        let barrelY = this.y + Math.sin(this.angle) * lx + Math.cos(this.angle) * ly;
 
         this.muzzleFlashTimer = 0.04;
         this.muzzleFlashX = barrelX;
         this.muzzleFlashY = barrelY;
-
-        if (this.weaponType === 'melee') {
-            return;
-        }
 
         if (this.weaponType === 'shotgun') {
             audio.playShoot('Shotgun');
@@ -3997,18 +4514,68 @@ class Enemy extends Entity {
             ctx.stroke();
         }
 
-        if (this.type !== 'swarmer') {
+        if (this.type !== 'swarmer' && this.weaponType !== 'melee') {
+            let scale = this.r / 12;
+            let barrelLen = 16;
+            let bh = 3;
+            let receiverLen = 7;
+            let rh = 5;
+            let gripX = 8;
+            let forehandX = 11;
+            let weaponColor = '#00e5ff';
+
+            if (this.weaponType === 'heavy_pistol') {
+                barrelLen = 18;
+                bh = 4;
+                receiverLen = 8;
+                rh = 6;
+                gripX = 9;
+                forehandX = 12;
+                weaponColor = '#ff2a5f';
+            } else if (this.weaponType === 'shotgun') {
+                barrelLen = 24;
+                bh = 4;
+                receiverLen = 10;
+                rh = 6;
+                gripX = 9;
+                forehandX = 14;
+                weaponColor = '#ff5722';
+            } else if (this.weaponType === 'sniper') {
+                barrelLen = 34;
+                bh = 3;
+                receiverLen = 12;
+                rh = 5.5;
+                gripX = 9;
+                forehandX = 14;
+                weaponColor = '#f50057';
+            }
+
+            let gunY = Math.round(this.r * 0.5);
+            let y_barrel = gunY - (bh * scale) / 2;
+            let y_receiver = gunY - (rh * scale) / 2;
+
             ctx.strokeStyle = enemyColor;
-            ctx.lineWidth = 2.5;
+            ctx.lineWidth = 2.5 * scale;
+            
+            // Right arm (holding grip)
             ctx.beginPath();
-            ctx.moveTo(0, 5); ctx.lineTo(6, 5);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, -5); ctx.lineTo(10, 2);
+            ctx.moveTo(0, gunY);
+            ctx.lineTo(gripX * scale, gunY);
             ctx.stroke();
 
+            // Left arm (crossing over to support barrel/receiver)
+            ctx.beginPath();
+            ctx.moveTo(0, -gunY);
+            ctx.lineTo(forehandX * scale, gunY - bh * scale);
+            ctx.stroke();
+
+            // Draw gun barrel
             ctx.fillStyle = '#fff';
-            ctx.fillRect(4, 3, 14, 3);
+            ctx.fillRect(5 * scale, y_barrel, barrelLen * scale, bh * scale);
+
+            // Draw gun receiver (thick part)
+            ctx.fillStyle = weaponColor;
+            ctx.fillRect(9 * scale, y_receiver, receiverLen * scale, rh * scale);
         }
 
         ctx.beginPath();
@@ -4018,6 +4585,19 @@ class Enemy extends Entity {
         ctx.lineWidth = 2;
         ctx.strokeStyle = enemyColor;
         ctx.stroke();
+
+        if (this.type === 'sapper') {
+            // Draw a red warning/explosive vest on their body (a red rectangle in the center)
+            ctx.fillStyle = '#ff2a5f';
+            ctx.fillRect(-this.r * 0.4, -this.r * 0.4, this.r * 0.8, this.r * 0.8);
+            
+            // Blinking yellow light in the center of their chest
+            let isLightOn = Math.floor((game ? game.gameTime : 0) * 8) % 2 === 0;
+            ctx.fillStyle = isLightOn ? '#ffea00' : '#443300';
+            ctx.beginPath();
+            ctx.arc(0, 0, 3, 0, Math.PI*2);
+            ctx.fill();
+        }
 
         ctx.restore();
         ctx.globalAlpha = 1.0;
@@ -4090,6 +4670,7 @@ class Bullet {
         this.isHP = isHP;
         this.isNeutral = isNeutral; 
         this.owner = null;
+        this.whizzedPlayers = [];
     }
 
     update(dt, walls, entities, game) {
@@ -4109,6 +4690,68 @@ class Bullet {
             
             this.x += this.vx * stepDt;
             this.y += this.vy * stepDt;
+
+            // Near-miss flyby audio check
+            if (game) {
+                let activePlayers = [];
+                if (game.player && !game.player.dead) activePlayers.push(game.player);
+                if (game.isTwoPlayer && game.player2 && !game.player2.dead) activePlayers.push(game.player2);
+                
+                for (let player of activePlayers) {
+                    if (this.isPlayerBullet === player) continue;
+                    if (this.whizzedPlayers && this.whizzedPlayers.includes(player)) continue;
+
+                    let abx = this.x - prevX;
+                    let aby = this.y - prevY;
+                    let apx = player.x - prevX;
+                    let apy = player.y - prevY;
+                    let ab2 = abx * abx + aby * aby;
+                    if (ab2 === 0) continue;
+
+                    let t = (apx * abx + apy * aby) / ab2;
+                    
+                    // Trigger flyby only when the bullet has reached or passed its point of closest approach (t < 1.0)
+                    if (t < 1.0) {
+                        let tClamp = Math.max(0, t);
+                        let cx = prevX + tClamp * abx;
+                        let cy = prevY + tClamp * aby;
+                        let dx = player.x - cx;
+                        let dy = player.y - cy;
+                        let distSq = dx * dx + dy * dy;
+
+                        // Dynamic Radius based on bullet speed (Sniper is faster and has a wider radius)
+                        let maxRadius = Math.max(60, Math.min(160, (currentSpeed / 1200) * 85));
+
+                        if (distSq < maxRadius * maxRadius) {
+                            this.whizzedPlayers.push(player);
+                            let dist = Math.sqrt(distSq);
+                            let intensity = 0;
+                            if (dist <= 10) {
+                                intensity = 1.0;
+                            } else {
+                                // quadratic rapid falloff from 10px to maxRadius
+                                let ratio = (maxRadius - dist) / (maxRadius - 10);
+                                intensity = ratio * ratio;
+                            }
+                            
+                            // Stereo Pan calculation relative to player orientation (horizontal screen space relativeX)
+                            let pan = (cx - player.x) / maxRadius;
+                            
+                            audio.playFlyby(intensity, pan, currentSpeed);
+
+                            // Subtle screen shake for close passes (intensity > 0.25)
+                            if (intensity > 0.25) {
+                                let calculatedShake = 3.0 + intensity * 5.0; // scales from 3.0 to 8.0 to ensure visibility
+                                if (this.weaponName === 'Sniper') {
+                                    calculatedShake += 2.0; // Sniper is even more punchy!
+                                }
+                                calculatedShake = Math.min(8.0, calculatedShake);
+                                game.screenShake = Math.max(game.screenShake, calculatedShake);
+                            }
+                        }
+                    }
+                }
+            }
             
             let curSpeedSq = this.vx*this.vx + this.vy*this.vy;
             if (curSpeedSq < 360000) { 
@@ -4311,6 +4954,8 @@ class Bullet {
                         if (nx !== 0) this.vx *= -0.7;
                         if (ny !== 0) this.vy *= -0.7;
                         this.x = prevX; this.y = prevY; 
+                        this.startX = prevX;
+                        this.startY = prevY;
                         this.bounces++;
                         audio.playRicochet();
                         game.particles.push(new Particle(this.x, this.y, nx*120, ny*120, '#00e5ff', 0.12, 2.5));

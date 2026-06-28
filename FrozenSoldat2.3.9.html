@@ -910,13 +910,14 @@ function useLeftItem(player) {
     } else if (player.leftSelectIdx === 2) {
         if (player.grenades > 0) {
             player.grenades--;
-            let power = 480;
+            let power = 1480;
             game.grenades.push(new ShrapnelGrenade(player.x, player.y, Math.cos(player.angle)*power + player.vx, Math.sin(player.angle)*power + player.vy));
         }
     } else if (player.leftSelectIdx === 3) {
         if (player.mines > 0) {
             player.mines--;
             game.mines.push(new TripMine(player.x, player.y));
+            game.spawnDeployRing(player.x, player.y);
         }
     }
 }
@@ -955,7 +956,11 @@ function interactPickUpItem(player) {
             game.drone.stopAudio();
             game.drone = null;
             audio.playPickup('weapon');
-            game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, "FPV DRONE RETRIEVED", '#ffd700', 1.2));
+            game.floatingTexts.push(game.spawnFloatingText(
+                player.x, player.y - 15, "+RETRIEVED FPV DRONE",
+                '#39ff14', 1.2,
+                (Math.random() - 0.5) * 60, -80, 240, true
+            ));
             return;
         }
     }
@@ -968,7 +973,11 @@ function interactPickUpItem(player) {
                 player.barriersInventory.push({ hp: bar.hp, maxHp: bar.maxHp, isMKII: bar.isMKII || false });
                 game.barriers.splice(i, 1);
                 audio.playPickup('weapon');
-                game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, `BARRIER RETRIEVED (${Math.round(bar.hp)}HP)`, '#00e5ff', 1.2));
+                game.floatingTexts.push(game.spawnFloatingText(
+                    player.x, player.y - 15, `+RETRIEVED BARRIER (${Math.round(bar.hp)}HP)`,
+                    '#39ff14', 1.2,
+                    (Math.random() - 0.5) * 60, -80, 240, true
+                ));
                 return;
             }
         }
@@ -982,7 +991,11 @@ function interactPickUpItem(player) {
                     player.turretsInventory.push({ hp: tur.hp, maxHp: tur.maxHp, isMKII: tur.isMKII || false });
                     game.turrets.splice(i, 1);
                     audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, `TURRET RETRIEVED (${Math.round(tur.hp)}HP)`, '#ffea00', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        player.x, player.y - 15, `+RETRIEVED TURRET (${Math.round(tur.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                     return;
                 }
             }
@@ -997,7 +1010,11 @@ function interactPickUpItem(player) {
                     player.dogsInventory.push({ hp: dog.hp, upgraded: dog.upgraded || false });
                     game.dogs.splice(i, 1);
                     audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, `SPOT ROBOT RETRIEVED (${Math.round(dog.hp)}HP)`, '#ffffff', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        player.x, player.y - 15, `+RETRIEVED SPOT ROBOT (${Math.round(dog.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                     return;
                 }
             }
@@ -1220,6 +1237,7 @@ class AudioEngine {
         this.musicGain = null;
         this.musicFilter = null;
         this.lastExplosionTime = 0;
+        this.lastFlybyTime = 0;
         this.bakedBuffers = {};
         this.isBaking = false;
         
@@ -1327,109 +1345,399 @@ class AudioEngine {
         try {
             const promises = [];
             
-            // 1. Shoot sounds (duration 0.5s)
+            const makeDistortionCurve = (amount) => {
+                const n_samples = 44100;
+                const curve = new Float32Array(n_samples);
+                const denom = Math.tanh(amount) || 1;
+                for (let i = 0; i < n_samples; ++i) {
+                    const x = (i * 2) / n_samples - 1;
+                    curve[i] = Math.tanh(x * amount) / denom;
+                }
+                return curve;
+            };
+
+            // 1. Overhauled Shoot sounds (restored caliber-specific BANGs + thud/snap layers + saturation)
             const shootSpecs = {
-                'Pistol': { freq: 2500, gain: 0.7, ramp: 0.18 },
-                'Shotgun': { freq: 850, gain: 1.2, ramp: 0.18 },
-                'SMG': { freq: 3400, gain: 0.4, ramp: 0.18 },
-                'LMG': { freq: 1400, gain: 0.9, ramp: 0.18 },
-                'Sniper': { freq: 450, gain: 1.8, ramp: 0.35 },
-                'M1A': { freq: 1100, gain: 1.1, ramp: 0.26 }
+                'Pistol': {
+                    noiseFreq: 2500, noiseDecay: 0.18, noiseGain: 0.7,
+                    thumpFreq: 100, thumpDecay: 0.06, thumpGain: 0.4,
+                    snapFreq: 4000, snapDecay: 0.015, snapGain: 0.3,
+                    duration: 0.25, saturation: 1.3
+                },
+                'Shotgun': {
+                    noiseFreq: 850, noiseDecay: 0.22, noiseGain: 1.2,
+                    thumpFreq: 65, thumpDecay: 0.10, thumpGain: 0.8,
+                    snapFreq: 1800, snapDecay: 0.03, snapGain: 0.5,
+                    duration: 0.45, saturation: 2.8
+                },
+                'SMG': {
+                    noiseFreq: 3400, noiseDecay: 0.18, noiseGain: 0.4,
+                    thumpFreq: 110, thumpDecay: 0.05, thumpGain: 0.25,
+                    snapFreq: 5000, snapDecay: 0.012, snapGain: 0.2,
+                    duration: 0.25, saturation: 1.4
+                },
+                'LMG': {
+                    noiseFreq: 1400, noiseDecay: 0.20, noiseGain: 0.9,
+                    thumpFreq: 80, thumpDecay: 0.08, thumpGain: 0.5,
+                    snapFreq: 2800, snapDecay: 0.02, snapGain: 0.4,
+                    duration: 0.35, saturation: 1.9
+                },
+                'Sniper': {
+                    noiseFreq: 1500, noiseDecay: 0.55, noiseGain: 1.5,
+                    thumpFreq: 50, thumpDecay: 0.22, thumpGain: 1.2,
+                    snapFreq: 5000, snapDecay: 0.05, snapGain: 1.0,
+                    duration: 0.8, saturation: 2.2
+                },
+                'M1A': {
+                    noiseFreq: 1100, noiseDecay: 0.26, noiseGain: 1.1,
+                    thumpFreq: 90, thumpDecay: 0.09, thumpGain: 0.5,
+                    snapFreq: 2200, snapDecay: 0.025, snapGain: 0.4,
+                    duration: 0.45, saturation: 1.6
+                }
             };
             for (let type in shootSpecs) {
                 let spec = shootSpecs[type];
-                promises.push(this.bakeSound('shoot_' + type, 0.5, (offlineCtx) => {
-                    const noise = offlineCtx.createBufferSource();
-                    noise.buffer = this.noiseBuffer;
-                    const filter = offlineCtx.createBiquadFilter();
-                    const gain = offlineCtx.createGain();
+                for (let v = 0; v < 4; v++) {
+                    promises.push(this.bakeSound('shoot_' + type + '_' + v, spec.duration, (offlineCtx) => {
+                        let randScale = 0.9 + Math.random() * 0.2;
+                        let nFreq = spec.noiseFreq * (0.95 + Math.random() * 0.1);
+                        let nDecay = spec.noiseDecay * (0.92 + Math.random() * 0.16);
+                        let tFreq = spec.snapFreq * (0.95 + Math.random() * 0.1);
+                        let tDecay = spec.snapDecay * (0.9 + Math.random() * 0.2);
+                        let sFreq = spec.thumpFreq * (0.97 + Math.random() * 0.06);
+                        let sDecay = spec.thumpDecay * (0.9 + Math.random() * 0.2);
+                        
+                        // 1. MAIN REPORT LAYER: Low-pass noise for primary caliber boom (dominant layer)
+                        const bNoise = offlineCtx.createBufferSource();
+                        bNoise.buffer = this.noiseBuffer;
+                        const bFilter = offlineCtx.createBiquadFilter();
+                        bFilter.type = 'lowpass';
+                        bFilter.frequency.value = nFreq;
+                        const bGain = offlineCtx.createGain();
+                        bGain.gain.setValueAtTime(spec.noiseGain * randScale, 0);
+                        bGain.gain.exponentialRampToValueAtTime(0.01 * randScale, nDecay);
+                        
+                        bNoise.connect(bFilter);
+                        bFilter.connect(bGain);
+                        bNoise.start(0);
+
+                        // 2. SNAP LAYER: Short low-pass noise spike for initial snap
+                        const tNoise = offlineCtx.createBufferSource();
+                        tNoise.buffer = this.noiseBuffer;
+                        const tFilter = offlineCtx.createBiquadFilter();
+                        tFilter.type = 'lowpass';
+                        tFilter.frequency.value = tFreq;
+                        const tGain = offlineCtx.createGain();
+                        tGain.gain.setValueAtTime(spec.snapGain * randScale, 0);
+                        tGain.gain.exponentialRampToValueAtTime(0.01 * randScale, tDecay);
+                        
+                        tNoise.connect(tFilter);
+                        tFilter.connect(tGain);
+                        tNoise.start(0);
+
+                        // 3. THUMP LAYER: Low sine sweep for physical thud weight
+                        const subOsc = offlineCtx.createOscillator();
+                        subOsc.type = 'sine';
+                        subOsc.frequency.setValueAtTime(sFreq * 1.25, 0);
+                        subOsc.frequency.exponentialRampToValueAtTime(sFreq * 0.9, sDecay);
+                        
+                        const subGain = offlineCtx.createGain();
+                        subGain.gain.setValueAtTime(spec.thumpGain * randScale, 0);
+                        subGain.gain.exponentialRampToValueAtTime(0.01 * randScale, sDecay);
+                        
+                        subOsc.connect(subGain);
+                        subOsc.start(0);
+
+                        // 4. ROUTING & SATURATION (Non-linear Waveshaping)
+                        const sumGain = offlineCtx.createGain();
+                        sumGain.gain.value = 1.0;
+                        bGain.connect(sumGain);
+                        tGain.connect(sumGain);
+                        subGain.connect(sumGain);
+
+                        const saturator = offlineCtx.createWaveShaper();
+                        saturator.curve = makeDistortionCurve(spec.saturation);
+                        saturator.oversample = '4x';
+
+                        sumGain.connect(saturator);
+                        saturator.connect(offlineCtx.destination);
+                    }));
+                }
+            }
+
+            // 2. Ricochet variations (duration up to 0.35s)
+            for (let i = 0; i < 5; i++) {
+                promises.push(this.bakeSound('ricochet_' + i, 0.35, (offlineCtx) => {
+                    const duration = 0.2 + Math.random() * 0.15; // random duration between 0.2s and 0.35s
+                    const startFreq = 1100 + Math.random() * 500; // 1100Hz to 1600Hz
+                    const endFreq = 200 + Math.random() * 150;    // 200Hz to 350Hz
+                    const detune = 20 + Math.random() * 40;       // 20Hz to 60Hz detune difference
                     
-                    filter.type = 'lowpass';
-                    filter.frequency.value = spec.freq;
-                    gain.gain.setValueAtTime(spec.gain, 0);
-                    gain.gain.exponentialRampToValueAtTime(0.01, spec.ramp);
+                    // Transient click (impact bite)
+                    const oscClick = offlineCtx.createOscillator();
+                    const gainClick = offlineCtx.createGain();
+                    oscClick.type = 'sine';
+                    oscClick.frequency.setValueAtTime(2500 + Math.random() * 1000, 0);
                     
-                    noise.connect(filter);
-                    filter.connect(gain);
-                    gain.connect(offlineCtx.destination);
-                    noise.start(0);
+                    gainClick.gain.setValueAtTime(0.12, 0);
+                    gainClick.gain.exponentialRampToValueAtTime(0.001, 0.02); // 20ms decay
+                    
+                    oscClick.connect(gainClick);
+                    gainClick.connect(offlineCtx.destination);
+                    oscClick.start(0);
+                    
+                    // Main Whining Tonal Layer (Triangle 1)
+                    const osc1 = offlineCtx.createOscillator();
+                    const gain1 = offlineCtx.createGain();
+                    osc1.type = 'triangle';
+                    osc1.frequency.setValueAtTime(startFreq, 0);
+                    osc1.frequency.exponentialRampToValueAtTime(endFreq, duration * 0.75);
+                    
+                    gain1.gain.setValueAtTime(0.08, 0);
+                    gain1.gain.exponentialRampToValueAtTime(0.001, duration);
+                    
+                    osc1.connect(gain1);
+                    gain1.connect(offlineCtx.destination);
+                    osc1.start(0);
+                    
+                    // Beating Warbling Layer (Triangle 2, slightly detuned)
+                    const osc2 = offlineCtx.createOscillator();
+                    const gain2 = offlineCtx.createGain();
+                    osc2.type = 'triangle';
+                    osc2.frequency.setValueAtTime(startFreq + detune, 0);
+                    osc2.frequency.exponentialRampToValueAtTime(endFreq + detune, duration * 0.75);
+                    
+                    gain2.gain.setValueAtTime(0.06, 0);
+                    gain2.gain.exponentialRampToValueAtTime(0.001, duration * 0.9);
+                    
+                    osc2.connect(gain2);
+                    gain2.connect(offlineCtx.destination);
+                    osc2.start(0);
                 }));
             }
 
-            // 2. Ricochet (duration 0.15s)
-            promises.push(this.bakeSound('ricochet', 0.15, (offlineCtx) => {
-                const osc = offlineCtx.createOscillator();
-                const gain = offlineCtx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(1400, 0);
-                osc.frequency.exponentialRampToValueAtTime(3200, 0.08);
-                
-                gain.gain.setValueAtTime(0.12, 0);
-                gain.gain.exponentialRampToValueAtTime(0.01, 0.08);
-                
-                osc.connect(gain);
-                gain.connect(offlineCtx.destination);
-                osc.start(0);
-            }));
+            // 2b. Flyby variations (duration 0.25s - pure noise-based aerodynamic Doppler whoosh)
+            for (let i = 0; i < 4; i++) {
+                promises.push(this.bakeSound('flyby_' + i, 0.25, (offlineCtx) => {
+                    const duration = 0.22 + Math.random() * 0.06;
+                    
+                    // A. Aerodynamic Wind Whoosh (sweeping bandpass noise)
+                    const windSrc = offlineCtx.createBufferSource();
+                    windSrc.buffer = this.noiseBuffer;
+                    const windFilter = offlineCtx.createBiquadFilter();
+                    windFilter.type = 'bandpass';
+                    windFilter.Q.value = 1.0;
+                    windFilter.frequency.setValueAtTime(1200, 0);
+                    windFilter.frequency.exponentialRampToValueAtTime(300, duration);
+                    
+                    const windGain = offlineCtx.createGain();
+                    windGain.gain.setValueAtTime(1.2, 0);
+                    windGain.gain.exponentialRampToValueAtTime(0.001, duration);
+                    
+                    windSrc.connect(windFilter);
+                    windFilter.connect(windGain);
+                    windSrc.start(0);
 
-            // 3. Explosion (duration 1.0s)
-            promises.push(this.bakeSound('explosion', 1.0, (offlineCtx) => {
-                let finalVolume = 0.3; // volumeScale = 1.0
-                const osc = offlineCtx.createOscillator();
-                const oscGain = offlineCtx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(160, 0);
-                osc.frequency.exponentialRampToValueAtTime(10, 0.5);
-                oscGain.gain.setValueAtTime(1.5 * finalVolume, 0);
-                oscGain.gain.exponentialRampToValueAtTime(0.01 * finalVolume, 0.5);
-                
-                osc.connect(oscGain);
-                oscGain.connect(offlineCtx.destination);
-                osc.start(0);
+                    // B. Low-Frequency Air Pressure (sweeping lowpass noise)
+                    const pressSrc = offlineCtx.createBufferSource();
+                    pressSrc.buffer = this.noiseBuffer;
+                    const pressFilter = offlineCtx.createBiquadFilter();
+                    pressFilter.type = 'lowpass';
+                    pressFilter.frequency.setValueAtTime(600, 0);
+                    pressFilter.frequency.exponentialRampToValueAtTime(150, duration);
+                    
+                    const pressGain = offlineCtx.createGain();
+                    pressGain.gain.setValueAtTime(1.5, 0);
+                    pressGain.gain.exponentialRampToValueAtTime(0.001, duration * 0.85);
 
-                const noise = offlineCtx.createBufferSource();
-                noise.buffer = this.noiseBuffer;
-                const filter = offlineCtx.createBiquadFilter();
-                const noiseGain = offlineCtx.createGain();
-                filter.type = 'lowpass';
-                filter.frequency.value = 600;
-                noiseGain.gain.setValueAtTime(1.8 * finalVolume, 0);
-                noiseGain.gain.exponentialRampToValueAtTime(0.01 * finalVolume, 0.6);
-                
-                noise.connect(filter);
-                filter.connect(noiseGain);
-                noiseGain.connect(offlineCtx.destination);
-                noise.start(0);
-            }));
+                    pressSrc.connect(pressFilter);
+                    pressFilter.connect(pressGain);
+                    pressSrc.start(0);
 
-            // 4. Mini Explosion (duration 0.5s)
-            promises.push(this.bakeSound('miniExplosion', 0.5, (offlineCtx) => {
-                const osc = offlineCtx.createOscillator();
-                const oscGain = offlineCtx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(320, 0);
-                osc.frequency.exponentialRampToValueAtTime(30, 0.25);
-                oscGain.gain.setValueAtTime(0.6, 0);
-                oscGain.gain.exponentialRampToValueAtTime(0.01, 0.25);
-                
-                osc.connect(oscGain);
-                oscGain.connect(offlineCtx.destination);
-                osc.start(0);
+                    // Routing & Saturation
+                    const sumGain = offlineCtx.createGain();
+                    sumGain.gain.value = 0.65; // overall master output scale for flyby buffer
+                    windGain.connect(sumGain);
+                    pressGain.connect(sumGain);
 
-                const noise = offlineCtx.createBufferSource();
-                noise.buffer = this.noiseBuffer;
-                const filter = offlineCtx.createBiquadFilter();
-                const noiseGain = offlineCtx.createGain();
-                filter.type = 'lowpass';
-                filter.frequency.value = 800;
-                noiseGain.gain.setValueAtTime(0.8, 0);
-                noiseGain.gain.exponentialRampToValueAtTime(0.01, 0.3);
-                
-                noise.connect(filter);
-                filter.connect(noiseGain);
-                noiseGain.connect(offlineCtx.destination);
-                noise.start(0);
-            }));
+                    const saturator = offlineCtx.createWaveShaper();
+                    saturator.curve = makeDistortionCurve(1.4);
+                    saturator.oversample = '4x';
+
+                    sumGain.connect(saturator);
+                    saturator.connect(offlineCtx.destination);
+                }));
+            }
+
+            // 3. Overhauled Explosion variations (duration 1.2s - restored heavy BOOM)
+            for (let i = 0; i < 3; i++) {
+                promises.push(this.bakeSound('explosion_' + i, 1.3, (offlineCtx) => {
+                    let randScale = 0.9 + Math.random() * 0.2;
+                    let nFreq = 800 * (0.95 + Math.random() * 0.1);
+                    let nDecay = 0.6 * (0.9 + Math.random() * 0.2);
+                    let sFreq = 90 * (0.95 + Math.random() * 0.1);
+                    let sDecay = 0.8 * (0.9 + Math.random() * 0.2);
+                    let snapFreq = 1200 * (0.95 + Math.random() * 0.1);
+                    let snapDecay = 0.02 * (0.9 + Math.random() * 0.2);
+                    let debFreq = 1800 * (0.9 + Math.random() * 0.2);
+                    let debDecay = 0.25 * (0.9 + Math.random() * 0.2);
+
+                    // A. Transient/Snap: Lowpass noise thud for concussive start (tamed)
+                    const tNoise = offlineCtx.createBufferSource();
+                    tNoise.buffer = this.noiseBuffer;
+                    const tFilter = offlineCtx.createBiquadFilter();
+                    tFilter.type = 'lowpass';
+                    tFilter.frequency.value = snapFreq;
+                    const tGain = offlineCtx.createGain();
+                    tGain.gain.setValueAtTime(0.4 * randScale, 0);
+                    tGain.gain.exponentialRampToValueAtTime(0.001, snapDecay);
+                    
+                    tNoise.connect(tFilter);
+                    tFilter.connect(tGain);
+                    tNoise.start(0);
+
+                    // B. Main Report: Lowpass noise for deep caliber boom (dominant layer)
+                    const bNoise = offlineCtx.createBufferSource();
+                    bNoise.buffer = this.noiseBuffer;
+                    const bFilter = offlineCtx.createBiquadFilter();
+                    bFilter.type = 'lowpass';
+                    bFilter.frequency.value = nFreq;
+                    const bGain = offlineCtx.createGain();
+                    bGain.gain.setValueAtTime(2.5 * randScale, 0);
+                    bGain.gain.exponentialRampToValueAtTime(0.01 * randScale, nDecay);
+                    
+                    bNoise.connect(bFilter);
+                    bFilter.connect(bGain);
+                    bNoise.start(0);
+
+                    // C. Sub Thump: Heavy sine sweep for physical rattle
+                    const subOsc = offlineCtx.createOscillator();
+                    subOsc.type = 'sine';
+                    subOsc.frequency.setValueAtTime(sFreq, 0);
+                    subOsc.frequency.exponentialRampToValueAtTime(20, sDecay);
+                    const subGain = offlineCtx.createGain();
+                    subGain.gain.setValueAtTime(1.8 * randScale, 0);
+                    subGain.gain.exponentialRampToValueAtTime(0.01 * randScale, sDecay);
+                    
+                    subOsc.connect(subGain);
+                    subOsc.start(0);
+
+                    // D. Debris / Fragmentation: Subtle wide bandpass sizzle (lowered gain to avoid whistling hiss)
+                    const dNoise = offlineCtx.createBufferSource();
+                    dNoise.buffer = this.noiseBuffer;
+                    const dFilter = offlineCtx.createBiquadFilter();
+                    dFilter.type = 'bandpass';
+                    dFilter.frequency.value = debFreq;
+                    dFilter.Q.value = 1.0;
+                    const dGain = offlineCtx.createGain();
+                    dGain.gain.setValueAtTime(0.2 * randScale, 0);
+                    dGain.gain.exponentialRampToValueAtTime(0.001, debDecay);
+                    
+                    dNoise.connect(dFilter);
+                    dFilter.connect(dGain);
+                    dNoise.start(0);
+
+                    // Routing & Saturation
+                    const sumGain = offlineCtx.createGain();
+                    sumGain.gain.value = 0.3;
+                    tGain.connect(sumGain);
+                    bGain.connect(sumGain);
+                    subGain.connect(sumGain);
+                    dGain.connect(sumGain);
+
+                    const saturator = offlineCtx.createWaveShaper();
+                    saturator.curve = makeDistortionCurve(2.8);
+                    saturator.oversample = '4x';
+
+                    sumGain.connect(saturator);
+                    saturator.connect(offlineCtx.destination);
+                }));
+            }
+
+            // 4. Overhauled Mini Explosion variations (duration 0.7s)
+            for (let i = 0; i < 3; i++) {
+                promises.push(this.bakeSound('miniExplosion_' + i, 0.7, (offlineCtx) => {
+                    let randScale = 0.9 + Math.random() * 0.2;
+                    let nFreq = 950 * (0.95 + Math.random() * 0.1);
+                    let nDecay = 0.4 * (0.9 + Math.random() * 0.2);
+                    let sFreq = 110 * (0.95 + Math.random() * 0.1);
+                    let sDecay = 0.4 * (0.9 + Math.random() * 0.2);
+                    let snapFreq = 1500 * (0.95 + Math.random() * 0.1);
+                    let snapDecay = 0.015 * (0.9 + Math.random() * 0.2);
+                    let debFreq = 2200 * (0.9 + Math.random() * 0.2);
+                    let debDecay = 0.15 * (0.9 + Math.random() * 0.2);
+
+                    // A. Transient/Snap
+                    const tNoise = offlineCtx.createBufferSource();
+                    tNoise.buffer = this.noiseBuffer;
+                    const tFilter = offlineCtx.createBiquadFilter();
+                    tFilter.type = 'lowpass';
+                    tFilter.frequency.value = snapFreq;
+                    const tGain = offlineCtx.createGain();
+                    tGain.gain.setValueAtTime(0.3 * randScale, 0);
+                    tGain.gain.exponentialRampToValueAtTime(0.001, snapDecay);
+                    
+                    tNoise.connect(tFilter);
+                    tFilter.connect(tGain);
+                    tNoise.start(0);
+
+                    // B. Main Report
+                    const bNoise = offlineCtx.createBufferSource();
+                    bNoise.buffer = this.noiseBuffer;
+                    const bFilter = offlineCtx.createBiquadFilter();
+                    bFilter.type = 'lowpass';
+                    bFilter.frequency.value = nFreq;
+                    const bGain = offlineCtx.createGain();
+                    bGain.gain.setValueAtTime(1.8 * randScale, 0);
+                    bGain.gain.exponentialRampToValueAtTime(0.01 * randScale, nDecay);
+                    
+                    bNoise.connect(bFilter);
+                    bFilter.connect(bGain);
+                    bNoise.start(0);
+
+                    // C. Sub Thump
+                    const subOsc = offlineCtx.createOscillator();
+                    subOsc.type = 'sine';
+                    subOsc.frequency.setValueAtTime(sFreq, 0);
+                    subOsc.frequency.exponentialRampToValueAtTime(30, sDecay);
+                    const subGain = offlineCtx.createGain();
+                    subGain.gain.setValueAtTime(1.0 * randScale, 0);
+                    subGain.gain.exponentialRampToValueAtTime(0.01 * randScale, sDecay);
+                    
+                    subOsc.connect(subGain);
+                    subOsc.start(0);
+
+                    // D. Debris
+                    const dNoise = offlineCtx.createBufferSource();
+                    dNoise.buffer = this.noiseBuffer;
+                    const dFilter = offlineCtx.createBiquadFilter();
+                    dFilter.type = 'bandpass';
+                    dFilter.frequency.value = debFreq;
+                    dFilter.Q.value = 1.0;
+                    const dGain = offlineCtx.createGain();
+                    dGain.gain.setValueAtTime(0.15 * randScale, 0);
+                    dGain.gain.exponentialRampToValueAtTime(0.001, debDecay);
+                    
+                    dNoise.connect(dFilter);
+                    dFilter.connect(dGain);
+                    dNoise.start(0);
+
+                    // Routing & Saturation
+                    const sumGain = offlineCtx.createGain();
+                    sumGain.gain.value = 0.5;
+                    tGain.connect(sumGain);
+                    bGain.connect(sumGain);
+                    subGain.connect(sumGain);
+                    dGain.connect(sumGain);
+
+                    const saturator = offlineCtx.createWaveShaper();
+                    saturator.curve = makeDistortionCurve(2.0);
+                    saturator.oversample = '4x';
+
+                    sumGain.connect(saturator);
+                    saturator.connect(offlineCtx.destination);
+                }));
+            }
 
             // 5. Hit (duration 0.2s)
             promises.push(this.bakeSound('hit', 0.2, (offlineCtx) => {
@@ -1526,20 +1834,90 @@ class AudioEngine {
                 osc.start(0);
             }));
 
-            // 10. Flashbang bang (duration 0.5s)
-            promises.push(this.bakeSound('flashbangBang', 0.5, (offlineCtx) => {
-                const bangOsc = offlineCtx.createOscillator();
-                const bangGain = offlineCtx.createGain();
-                bangOsc.type = 'triangle';
-                bangOsc.frequency.setValueAtTime(120, 0);
-                bangOsc.frequency.exponentialRampToValueAtTime(10, 0.25);
-                bangGain.gain.setValueAtTime(0.8, 0);
-                bangGain.gain.exponentialRampToValueAtTime(0.01, 0.25);
-                
-                bangOsc.connect(bangGain);
-                bangGain.connect(offlineCtx.destination);
-                bangOsc.start(0);
-            }));
+            // 10. Overhauled Flashbang Bang variations (duration 0.5s)
+            for (let i = 0; i < 3; i++) {
+                promises.push(this.bakeSound('flashbangBang_' + i, 0.5, (offlineCtx) => {
+                    let randScale = 0.9 + Math.random() * 0.2;
+                    let nFreq = 1400 * (0.95 + Math.random() * 0.1);
+                    let nDecay = 0.3 * (0.9 + Math.random() * 0.2);
+                    let sFreq = 130 * (0.95 + Math.random() * 0.1);
+                    let sDecay = 0.2 * (0.9 + Math.random() * 0.2);
+                    let snapFreq = 2500 * (0.95 + Math.random() * 0.1);
+                    let snapDecay = 0.03 * (0.9 + Math.random() * 0.2);
+                    let debFreq = 3500 * (0.9 + Math.random() * 0.2);
+                    let debDecay = 0.2 * (0.9 + Math.random() * 0.2);
+
+                    // A. Transient/Snap (crisp concussive lowpass pop)
+                    const tNoise = offlineCtx.createBufferSource();
+                    tNoise.buffer = this.noiseBuffer;
+                    const tFilter = offlineCtx.createBiquadFilter();
+                    tFilter.type = 'lowpass';
+                    tFilter.frequency.value = snapFreq;
+                    const tGain = offlineCtx.createGain();
+                    tGain.gain.setValueAtTime(0.6 * randScale, 0);
+                    tGain.gain.exponentialRampToValueAtTime(0.001, snapDecay);
+                    
+                    tNoise.connect(tFilter);
+                    tFilter.connect(tGain);
+                    tNoise.start(0);
+
+                    // B. Main Report (snappy report)
+                    const bNoise = offlineCtx.createBufferSource();
+                    bNoise.buffer = this.noiseBuffer;
+                    const bFilter = offlineCtx.createBiquadFilter();
+                    bFilter.type = 'lowpass';
+                    bFilter.frequency.value = nFreq;
+                    const bGain = offlineCtx.createGain();
+                    bGain.gain.setValueAtTime(1.5 * randScale, 0);
+                    bGain.gain.exponentialRampToValueAtTime(0.01 * randScale, nDecay);
+                    
+                    bNoise.connect(bFilter);
+                    bFilter.connect(bGain);
+                    bNoise.start(0);
+
+                    // C. Sub Thump (tight thump)
+                    const subOsc = offlineCtx.createOscillator();
+                    subOsc.type = 'sine';
+                    subOsc.frequency.setValueAtTime(sFreq, 0);
+                    subOsc.frequency.exponentialRampToValueAtTime(40, sDecay);
+                    const subGain = offlineCtx.createGain();
+                    subGain.gain.setValueAtTime(0.5 * randScale, 0);
+                    subGain.gain.exponentialRampToValueAtTime(0.01 * randScale, sDecay);
+                    
+                    subOsc.connect(subGain);
+                    subOsc.start(0);
+
+                    // D. Debris (subtle sizzle)
+                    const dNoise = offlineCtx.createBufferSource();
+                    dNoise.buffer = this.noiseBuffer;
+                    const dFilter = offlineCtx.createBiquadFilter();
+                    dFilter.type = 'bandpass';
+                    dFilter.frequency.value = debFreq;
+                    dFilter.Q.value = 1.5;
+                    const dGain = offlineCtx.createGain();
+                    dGain.gain.setValueAtTime(0.3 * randScale, 0);
+                    dGain.gain.exponentialRampToValueAtTime(0.001, debDecay);
+                    
+                    dNoise.connect(dFilter);
+                    dFilter.connect(dGain);
+                    dNoise.start(0);
+
+                    // Routing & Saturation
+                    const sumGain = offlineCtx.createGain();
+                    sumGain.gain.value = 0.6;
+                    tGain.connect(sumGain);
+                    bGain.connect(sumGain);
+                    subGain.connect(sumGain);
+                    dGain.connect(sumGain);
+
+                    const saturator = offlineCtx.createWaveShaper();
+                    saturator.curve = makeDistortionCurve(2.5);
+                    saturator.oversample = '4x';
+
+                    sumGain.connect(saturator);
+                    saturator.connect(offlineCtx.destination);
+                }));
+            }
 
             // 11. Flashbang ring (duration 2.8s) - long tail!
             promises.push(this.bakeSound('flashbangRing', 2.8, (offlineCtx) => {
@@ -1579,35 +1957,111 @@ class AudioEngine {
         }
     }
 
-    playBakedSound(name, destination = this.sfxGain, gainValue = 1.0) {
+    getDistanceToPlayers(x, y) {
+        if (!game) return 0;
+        let minDist = Infinity;
+        if (game.player && !game.player.dead) {
+            let d = Math.hypot(x - game.player.x, y - game.player.y);
+            if (d < minDist) minDist = d;
+        }
+        if (game.isTwoPlayer && game.player2 && !game.player2.dead) {
+            let d = Math.hypot(x - game.player2.x, y - game.player2.y);
+            if (d < minDist) minDist = d;
+        }
+        return minDist === Infinity ? 0 : minDist;
+    }
+
+    getSpatialSettings(type, distance) {
+        let minD = 100, maxD = 1000, minVol = 0.0, minCutoff = 1000;
+        if (type === 'shoot') {
+            minD = 150; maxD = 2000; minVol = 0.18; minCutoff = 1100;
+        } else if (type === 'explosion') {
+            minD = 250; maxD = 2500; minVol = 0.25; minCutoff = 800;
+        } else if (type === 'ricochet') {
+            minD = 100; maxD = 900; minVol = 0.0; minCutoff = 1500;
+        } else if (type === 'hit') {
+            minD = 100; maxD = 800; minVol = 0.0; minCutoff = 2000;
+        }
+        
+        let vol = 1.0;
+        let cutoff = 20000;
+        if (distance > minD) {
+            let t = Math.min(1.0, (distance - minD) / (maxD - minD));
+            let roll = Math.pow(1.0 - t, 1.5);
+            vol = minVol + (1.0 - minVol) * roll;
+            cutoff = minCutoff + (20000 - minCutoff) * (1.0 - t);
+        }
+        return { vol, cutoff };
+    }
+
+    playBakedSound(name, destination = this.sfxGain, gainValue = 1.0, cutoff = 20000) {
         if (!this.ctx || !this.bakedBuffers[name]) return;
         const source = this.ctx.createBufferSource();
         source.buffer = this.bakedBuffers[name];
         
-        let hasEcho = this.echoBusInput && this.ECHO_SOUNDS.has(name);
+        let baseName = name;
+        if (name.lastIndexOf('_') > 0) {
+            let base = name.substring(0, name.lastIndexOf('_'));
+            if (base.startsWith('shoot_') || base === 'explosion' || base === 'miniExplosion' || base === 'flashbangBang' || base === 'flyby') {
+                baseName = base;
+            }
+        }
+        let hasEcho = this.echoBusInput && this.ECHO_SOUNDS.has(baseName);
+        
+        let lastNode = source;
+        if (cutoff < 18000) {
+            const filterNode = this.ctx.createBiquadFilter();
+            filterNode.type = 'lowpass';
+            filterNode.frequency.value = cutoff;
+            lastNode.connect(filterNode);
+            lastNode = filterNode;
+        }
+        
         if (gainValue !== 1.0 || hasEcho) {
             const gain = this.ctx.createGain();
             gain.gain.value = gainValue;
-            source.connect(gain);
+            lastNode.connect(gain);
             gain.connect(destination);
             if (hasEcho) {
                 gain.connect(this.echoBusInput);
             }
         } else {
-            source.connect(destination);
+            lastNode.connect(destination);
         }
         source.start(0);
     }
 
-    playShoot(type) {
-        this.playBakedSound('shoot_' + type);
+    playShoot(type, x = null, y = null) {
+        let idx = Math.floor(Math.random() * 4);
+        let name = 'shoot_' + type + '_' + idx;
+        
+        let gainVal = 1.0;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('shoot', d);
+            gainVal = settings.vol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff);
     }
 
-    playRicochet() {
-        this.playBakedSound('ricochet');
+    playRicochet(x = null, y = null) {
+        let idx = Math.floor(Math.random() * 5);
+        let name = 'ricochet_' + idx;
+        
+        let gainVal = 1.0;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('ricochet', d);
+            gainVal = settings.vol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff);
     }
 
-    playExplosion(volumeScale = 1.0) {
+    playExplosion(volumeScale = 1.0, x = null, y = null) {
         if (!this.ctx) return;
         
         let now = this.ctx.currentTime;
@@ -1616,17 +2070,47 @@ class AudioEngine {
         }
         this.lastExplosionTime = now;
         
-        this.playBakedSound('explosion', this.sfxGain, volumeScale);
+        let idx = Math.floor(Math.random() * 3);
+        let name = 'explosion_' + idx;
+        
+        let gainVal = volumeScale;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('explosion', d);
+            gainVal = settings.vol * volumeScale;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff);
     }
 
-    playMiniExplosion() {
+    playMiniExplosion(x = null, y = null) {
         if (!this.ctx) return;
         let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-        this.playBakedSound('miniExplosion', this.sfxGain || this.masterGain, sfxVol);
+        let idx = Math.floor(Math.random() * 3);
+        let name = 'miniExplosion_' + idx;
+        
+        let gainVal = sfxVol;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('explosion', d);
+            gainVal = settings.vol * sfxVol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound(name, this.sfxGain || this.masterGain, gainVal, cutoff);
     }
 
-    playHit() {
-        this.playBakedSound('hit');
+    playHit(x = null, y = null) {
+        let gainVal = 1.0;
+        let cutoff = 20000;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('hit', d);
+            gainVal = settings.vol;
+            cutoff = settings.cutoff;
+        }
+        this.playBakedSound('hit', this.sfxGain, gainVal, cutoff);
     }
     
     playPickup(type) {
@@ -1644,10 +2128,49 @@ class AudioEngine {
     
     playFlashbangRing() {
         if (!this.ctx) return;
-        this.playBakedSound('flashbangBang');
+        let idx = Math.floor(Math.random() * 3);
+        this.playBakedSound('flashbangBang_' + idx);
         
         let sfxVol = game && game.saveData && game.saveData.sfxVolume !== undefined ? game.saveData.sfxVolume : 0.5;
         this.playBakedSound('flashbangRing', this.masterGain, sfxVol);
+    }
+
+    playFlyby(intensity, pan, speed) {
+        if (!this.ctx || intensity <= 0.01) return;
+        
+        let now = this.ctx.currentTime;
+        if (now - this.lastFlybyTime < 0.04) return; // rate limit
+        this.lastFlybyTime = now;
+        
+        let idx = Math.floor(Math.random() * 4);
+        let name = 'flyby_' + idx;
+        if (!this.bakedBuffers[name]) return;
+        
+        const source = this.ctx.createBufferSource();
+        source.buffer = this.bakedBuffers[name];
+        
+        // 1. Playback Rate based on speed (baseline 1200 px/s)
+        let rate = Math.max(0.65, Math.min(2.0, speed / 1200));
+        source.playbackRate.value = rate;
+        
+        // 2. Gain/Volume
+        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        const gainNode = this.ctx.createGain();
+        gainNode.gain.value = intensity * sfxVol * 1.0; // tamer, well-balanced volume multiplier
+        
+        source.connect(gainNode);
+        
+        // 3. Stereo Panning
+        if (this.ctx.createStereoPanner) {
+            const panner = this.ctx.createStereoPanner();
+            panner.pan.value = Math.max(-1.0, Math.min(1.0, pan));
+            gainNode.connect(panner);
+            panner.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+        } else {
+            gainNode.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+        }
+        
+        source.start(0);
     }
 }
 
@@ -2257,11 +2780,44 @@ const EnemyTypes = {
 /**
  * CLASSES
  */
+function drawDropShadow(ctx, cam, x, y, radiusX, radiusY = null) {
+    let sx = x - cam.x;
+    // Offset down and slightly to the right to simulate light source from top-left
+    let sy = (y + 12) - cam.y;
+    sx += 4;
+    
+    let scaleY = 0.40;
+    if (radiusY !== null) {
+        scaleY = radiusY / radiusX;
+    }
+    
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.scale(1.0, scaleY);
+    
+    // Soft slate-grey shadow - visible against near-black floor
+    let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusX);
+    grad.addColorStop(0, 'rgba(48, 54, 72, 0.75)');
+    grad.addColorStop(0.3, 'rgba(48, 54, 72, 0.45)');
+    grad.addColorStop(1, 'rgba(48, 54, 72, 0)');
+    ctx.fillStyle = grad;
+    
+    ctx.beginPath();
+    ctx.arc(0, 0, radiusX, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+}
+
 class Camera {
     constructor() { 
         this.x = 0; this.y = 0; 
         this.zoom = 1.0; 
         this.zoomPunch = 0;
+        this.kickbackX = 0;
+        this.kickbackY = 0;
+        this.kickbackVX = 0;
+        this.kickbackVY = 0;
     }
     update(player, mapW, mapH, canvasW, canvasH, dt, aimX, aimY, maxZoomOut) {
         let aimDist = Math.hypot(aimX - player.x, aimY - player.y);
@@ -2288,11 +2844,31 @@ class Camera {
         let camCenterX = player.x * 0.65 + aimX * 0.35;
         let camCenterY = player.y * 0.65 + aimY * 0.35;
 
+        // Glory kill: stay on player, just apply zoom pulse (no camera pan to avoid jerk)
+
         this.x = camCenterX - visibleW / 2;
         this.y = camCenterY - visibleH / 2;
+
+        if (dt) {
+            this.kickbackX += this.kickbackVX * dt;
+            this.kickbackY += this.kickbackVY * dt;
+            // Slower spring return (8 instead of 18) and slower damping for more visible effect
+            this.kickbackVX += -this.kickbackX * 58 * dt;
+            this.kickbackVY += -this.kickbackY * 58 * dt;
+            this.kickbackVX *= Math.pow(0.05, dt);
+            this.kickbackVY *= Math.pow(0.05, dt);
+            this.kickbackX = MathUtils.clamp(this.kickbackX, -200, 200);
+            this.kickbackY = MathUtils.clamp(this.kickbackY, -200, 200);
+            this.x += this.kickbackX;
+            this.y += this.kickbackY;
+        }
     }
     punchZoom(amount) {
         this.zoomPunch = (this.zoomPunch || 0) + amount;
+    }
+    applyKickback(angle, force) {
+        this.kickbackVX -= Math.cos(angle) * force;
+        this.kickbackVY -= Math.sin(angle) * force;
     }
 }
 
@@ -3020,7 +3596,10 @@ class Player extends Entity {
             let weaponKey = this.weapon.name.toLowerCase();
             let hasAmmo = weaponKey === 'pistol' || this.ammo[weaponKey] > 0;
             let canFireSemi = !isSemi || this.semiAutoTriggerReleased;
-            if (hasAmmo && canFireSemi && (gameTime - this.lastFireTime >= this.weapon.fireRate)) {
+            let baseFireRate = this.weapon.fireRate;
+            let clutchFireRateBuff = (this.hp / this.maxHp < 0.20) ? 0.80 : 1.0;
+            let actualFireRate = baseFireRate * clutchFireRateBuff;
+            if (hasAmmo && canFireSemi && (gameTime - this.lastFireTime >= actualFireRate)) {
                 this.fire(game);
                 this.lastFireTime = gameTime;
                 if (isSemi) {
@@ -3107,7 +3686,8 @@ class Player extends Entity {
 
         let sprintSpeedMulti = (isSprinting && !this.isExhausted) ? 1.55 : 1.0;
         let exhaustionPenalty = this.isExhausted ? 0.5 : 1.0; // walk twice as slow if exhausted [1]
-        let curAccel = this.accel * (1.0 + this.speedUpgrades * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty;
+        let clutchSpeedBuff = (healthPct < 0.20) ? 1.15 : 1.0;
+        let curAccel = this.accel * (1.0 + this.speedUpgrades * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff;
         
         this.vx += moveX * curAccel * dt;
         this.vy += moveY * curAccel * dt;
@@ -3181,6 +3761,25 @@ class Player extends Entity {
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, this.weapon, this, isAP, isHP, false));
             game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*600, Math.sin(spreadAngle)*600, '#fff', 0.04, 3));
         }
+
+        const KICKBACK_FORCES = {
+            'SMG': 65,
+            'Shotgun': 280,
+            'Sniper': 420,
+            'M1A': 190,
+            'LMG': 130
+        };
+        let kickForce = KICKBACK_FORCES[this.weapon.name];
+        if (kickForce && game.camera) {
+            game.camera.applyKickback(this.angle, kickForce);
+        }
+        if (kickForce && game.isTwoPlayer && game.camera2 && this.isPlayer2) {
+            game.camera2.applyKickback(this.angle, kickForce);
+        }
+
+        if (['SMG', 'Shotgun', 'Sniper', 'M1A', 'LMG'].includes(this.weapon.name)) {
+            game.spawnBarrelFX(barrelX, barrelY, this.angle);
+        }
     }
 
     takeDamage(amt, pushDir, pushForce) {
@@ -3190,12 +3789,19 @@ class Player extends Entity {
         super.takeDamage(amt, pushDir, pushForce);
         this.stamina = Math.max(0, this.stamina - amt * 0.5); // Shock takes away stamina instantly
         this.damageFlashIntensity = 1.0; // Trigger damage flash
+        if (amt >= 20 && game) {
+            // Longer, stronger chromatic aberration on heavy hits
+            let duration = Math.min(0.6, 0.2 + amt * 0.008);
+            game.triggerChromaticAberration(duration);
+        }
         if (game && game.isTestingMode) {
             this.hp = this.maxHp;
         }
     }
 
     draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.1);
+
         let scx = this.x - cam.x;
         let scy = this.y - cam.y;
 
@@ -3300,6 +3906,7 @@ class Enemy extends Entity {
         this.angle = 0;
         this.dead = false;
         this.footstepTimer = 0;
+        this.isElite = false;
         
         // Game-feel variables
         this.muzzleFlashTimer = 0;
@@ -3780,17 +4387,27 @@ class Enemy extends Entity {
     }
     
     fire(game) {
+        if (this.weaponType === 'melee') {
+            return;
+        }
+
+        let scale = this.r / 12;
+        let barrelLen = 16;
+        if (this.weaponType === 'heavy_pistol') barrelLen = 18;
+        else if (this.weaponType === 'shotgun') barrelLen = 24;
+        else if (this.weaponType === 'sniper') barrelLen = 34;
+
+        let gunY = Math.round(this.r * 0.5);
+        let lx = (5 + barrelLen) * scale;
+        let ly = gunY;
+
         let spreadAngle = this.angle;
-        let barrelX = this.x + Math.cos(this.angle)*20 - Math.sin(this.angle)*5;
-        let barrelY = this.y + Math.sin(this.angle)*20 + Math.cos(this.angle)*5;
+        let barrelX = this.x + Math.cos(this.angle) * lx - Math.sin(this.angle) * ly;
+        let barrelY = this.y + Math.sin(this.angle) * lx + Math.cos(this.angle) * ly;
 
         this.muzzleFlashTimer = 0.04;
         this.muzzleFlashX = barrelX;
         this.muzzleFlashY = barrelY;
-
-        if (this.weaponType === 'melee') {
-            return;
-        }
 
         if (this.weaponType === 'shotgun') {
             audio.playShoot('Shotgun');
@@ -3825,6 +4442,24 @@ class Enemy extends Entity {
     draw(ctx, cam) {
         if (this.opacity <= 0.01) return; 
 
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.1);
+
+        if (this.isElite) {
+            let scx = this.x - cam.x;
+            let scy = this.y - cam.y;
+            let glowAlpha = 0.12 + 0.08 * Math.sin((game ? game.gameTime : 0) * 4.0);
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, glowAlpha);
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = '#ffcc00';
+            ctx.strokeStyle = '#ffcc00';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 6, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
         if (this.weaponType === 'sniper' && game) {
             let target = this.target || game.player;
             if (target && !target.dead) {
@@ -3850,6 +4485,8 @@ class Enemy extends Entity {
         ctx.rotate(this.angle);
         ctx.globalAlpha = this.opacity;
 
+        let enemyColor = this.isElite ? '#ffcc00' : this.color;
+
         // Stepping feet circles animation (skipped for swarmer crawler types)
         if (this.type !== 'swarmer') {
             let speed = Math.hypot(this.vx, this.vy);
@@ -3860,7 +4497,7 @@ class Enemy extends Entity {
                 oscillation = Math.sin(walkPhase) * this.r * 0.5;
             }
             ctx.fillStyle = '#010a15';
-            ctx.strokeStyle = this.color;
+            ctx.strokeStyle = enemyColor;
             ctx.lineWidth = 1.5;
             let footR = this.r * 0.35;
             
@@ -3877,18 +4514,68 @@ class Enemy extends Entity {
             ctx.stroke();
         }
 
-        if (this.type !== 'swarmer') {
-            ctx.strokeStyle = this.color;
-            ctx.lineWidth = 2.5;
+        if (this.type !== 'swarmer' && this.weaponType !== 'melee') {
+            let scale = this.r / 12;
+            let barrelLen = 16;
+            let bh = 3;
+            let receiverLen = 7;
+            let rh = 5;
+            let gripX = 8;
+            let forehandX = 11;
+            let weaponColor = '#00e5ff';
+
+            if (this.weaponType === 'heavy_pistol') {
+                barrelLen = 18;
+                bh = 4;
+                receiverLen = 8;
+                rh = 6;
+                gripX = 9;
+                forehandX = 12;
+                weaponColor = '#ff2a5f';
+            } else if (this.weaponType === 'shotgun') {
+                barrelLen = 24;
+                bh = 4;
+                receiverLen = 10;
+                rh = 6;
+                gripX = 9;
+                forehandX = 14;
+                weaponColor = '#ff5722';
+            } else if (this.weaponType === 'sniper') {
+                barrelLen = 34;
+                bh = 3;
+                receiverLen = 12;
+                rh = 5.5;
+                gripX = 9;
+                forehandX = 14;
+                weaponColor = '#f50057';
+            }
+
+            let gunY = Math.round(this.r * 0.5);
+            let y_barrel = gunY - (bh * scale) / 2;
+            let y_receiver = gunY - (rh * scale) / 2;
+
+            ctx.strokeStyle = enemyColor;
+            ctx.lineWidth = 2.5 * scale;
+            
+            // Right arm (holding grip)
             ctx.beginPath();
-            ctx.moveTo(0, 5); ctx.lineTo(6, 5);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, -5); ctx.lineTo(10, 2);
+            ctx.moveTo(0, gunY);
+            ctx.lineTo(gripX * scale, gunY);
             ctx.stroke();
 
+            // Left arm (crossing over to support barrel/receiver)
+            ctx.beginPath();
+            ctx.moveTo(0, -gunY);
+            ctx.lineTo(forehandX * scale, gunY - bh * scale);
+            ctx.stroke();
+
+            // Draw gun barrel
             ctx.fillStyle = '#fff';
-            ctx.fillRect(4, 3, 14, 3);
+            ctx.fillRect(5 * scale, y_barrel, barrelLen * scale, bh * scale);
+
+            // Draw gun receiver (thick part)
+            ctx.fillStyle = weaponColor;
+            ctx.fillRect(9 * scale, y_receiver, receiverLen * scale, rh * scale);
         }
 
         ctx.beginPath();
@@ -3896,8 +4583,21 @@ class Enemy extends Entity {
         ctx.fillStyle = '#010a15';
         ctx.fill();
         ctx.lineWidth = 2;
-        ctx.strokeStyle = this.color;
+        ctx.strokeStyle = enemyColor;
         ctx.stroke();
+
+        if (this.type === 'sapper') {
+            // Draw a red warning/explosive vest on their body (a red rectangle in the center)
+            ctx.fillStyle = '#ff2a5f';
+            ctx.fillRect(-this.r * 0.4, -this.r * 0.4, this.r * 0.8, this.r * 0.8);
+            
+            // Blinking yellow light in the center of their chest
+            let isLightOn = Math.floor((game ? game.gameTime : 0) * 8) % 2 === 0;
+            ctx.fillStyle = isLightOn ? '#ffea00' : '#443300';
+            ctx.beginPath();
+            ctx.arc(0, 0, 3, 0, Math.PI*2);
+            ctx.fill();
+        }
 
         ctx.restore();
         ctx.globalAlpha = 1.0;
@@ -3916,7 +4616,31 @@ class Enemy extends Entity {
         game.spawnBlood(this.x, this.y, Math.cos(angle) * 300, Math.sin(angle) * 300);
 
         // Corpse debris in enemy's color
-        game.spawnCorpseDebris(this.x, this.y, angle, this.color, this.r);
+        let debrisColor = this.isElite ? '#ffcc00' : this.color;
+        game.spawnCorpseDebris(this.x, this.y, angle, debrisColor, this.r);
+
+        // Elite guaranteed drops & text
+        if (this.isElite && game) {
+            let dropRoll = Math.random();
+            let dropType = dropRoll < 0.4 ? 'medpack' : dropRoll < 0.7 ? 'grenade' : 'redbull';
+            game.items.push(new Item(this.x, this.y, dropType));
+            
+            // Kinetic floating text for elite cash
+            let eliteAmt_vx = (Math.random() - 0.5) * 60;
+            game.floatingTexts.push(game.spawnFloatingText(
+                this.x, this.y - 20,
+                `ELITE +$${amount}!`,
+                '#ffcc00', 2.0,
+                eliteAmt_vx, -90, 200, true
+            ));
+        }
+
+        // Glory Kill trigger: last wave enemy OR an elite
+        let remainingAlive = game.enemies.filter(e => !e.dead && e !== this).length;
+        let isLastEnemy = (remainingAlive === 0 && game.enemiesToSpawn === 0);
+        if (game && (isLastEnemy || this.isElite)) {
+            game.triggerGloryKill(this);
+        }
     }
 }
 
@@ -3946,6 +4670,7 @@ class Bullet {
         this.isHP = isHP;
         this.isNeutral = isNeutral; 
         this.owner = null;
+        this.whizzedPlayers = [];
     }
 
     update(dt, walls, entities, game) {
@@ -3965,6 +4690,68 @@ class Bullet {
             
             this.x += this.vx * stepDt;
             this.y += this.vy * stepDt;
+
+            // Near-miss flyby audio check
+            if (game) {
+                let activePlayers = [];
+                if (game.player && !game.player.dead) activePlayers.push(game.player);
+                if (game.isTwoPlayer && game.player2 && !game.player2.dead) activePlayers.push(game.player2);
+                
+                for (let player of activePlayers) {
+                    if (this.isPlayerBullet === player) continue;
+                    if (this.whizzedPlayers && this.whizzedPlayers.includes(player)) continue;
+
+                    let abx = this.x - prevX;
+                    let aby = this.y - prevY;
+                    let apx = player.x - prevX;
+                    let apy = player.y - prevY;
+                    let ab2 = abx * abx + aby * aby;
+                    if (ab2 === 0) continue;
+
+                    let t = (apx * abx + apy * aby) / ab2;
+                    
+                    // Trigger flyby only when the bullet has reached or passed its point of closest approach (t < 1.0)
+                    if (t < 1.0) {
+                        let tClamp = Math.max(0, t);
+                        let cx = prevX + tClamp * abx;
+                        let cy = prevY + tClamp * aby;
+                        let dx = player.x - cx;
+                        let dy = player.y - cy;
+                        let distSq = dx * dx + dy * dy;
+
+                        // Dynamic Radius based on bullet speed (Sniper is faster and has a wider radius)
+                        let maxRadius = Math.max(60, Math.min(160, (currentSpeed / 1200) * 85));
+
+                        if (distSq < maxRadius * maxRadius) {
+                            this.whizzedPlayers.push(player);
+                            let dist = Math.sqrt(distSq);
+                            let intensity = 0;
+                            if (dist <= 10) {
+                                intensity = 1.0;
+                            } else {
+                                // quadratic rapid falloff from 10px to maxRadius
+                                let ratio = (maxRadius - dist) / (maxRadius - 10);
+                                intensity = ratio * ratio;
+                            }
+                            
+                            // Stereo Pan calculation relative to player orientation (horizontal screen space relativeX)
+                            let pan = (cx - player.x) / maxRadius;
+                            
+                            audio.playFlyby(intensity, pan, currentSpeed);
+
+                            // Subtle screen shake for close passes (intensity > 0.25)
+                            if (intensity > 0.25) {
+                                let calculatedShake = 3.0 + intensity * 5.0; // scales from 3.0 to 8.0 to ensure visibility
+                                if (this.weaponName === 'Sniper') {
+                                    calculatedShake += 2.0; // Sniper is even more punchy!
+                                }
+                                calculatedShake = Math.min(8.0, calculatedShake);
+                                game.screenShake = Math.max(game.screenShake, calculatedShake);
+                            }
+                        }
+                    }
+                }
+            }
             
             let curSpeedSq = this.vx*this.vx + this.vy*this.vy;
             if (curSpeedSq < 360000) { 
@@ -4020,16 +4807,36 @@ class Bullet {
                         }
                     }
                     
+                    let wasDeadBefore = ent.dead;
                     ent.takeDamage(calculatedDmg, Math.atan2(this.vy, this.vx), 180);
                     
+                    if (ent instanceof Enemy && ent.dead && !wasDeadBefore) {
+                        let isTurret = (this.owner instanceof AutoTurret);
+                        let isDog = (this.owner instanceof RobotDog);
+                        if ((isTurret || isDog) && game) {
+                            let assistAmt = Math.round((ent.scoreVal || 10) * game.cashMultiplier * 0.35);
+                            let ownerRef = this.owner;
+                            game.floatingTexts.push(game.spawnFloatingText(
+                                ownerRef.x, ownerRef.y - 25,
+                                `+ASSIST $${assistAmt}`, '#39ff14', 1.2,
+                                (Math.random() - 0.5) * 40, -60, 150, false
+                            ));
+                            for (let c = 0; c < 8; c++) {
+                                let a = (c / 8) * Math.PI * 2;
+                                let p = game.spawnParticle(ownerRef.x, ownerRef.y, Math.cos(a)*60, Math.sin(a)*60, '#39ff14', 0.4, 2);
+                                if (p) game.particles.push(p);
+                            }
+                        }
+                    }
+
                     // Hit-stop triggers
                     if (this.isPlayerBullet) {
                         if (this.weaponName === 'Sniper') {
-                            game.triggerHitStop(0.04);
+                            game.triggerHitStop(0.12);
                         } else if (this.weaponName === 'Shotgun' && ent.dead) {
                             let dist = Math.hypot(this.startX - ent.x, this.startY - ent.y);
-                            if (dist <= 150) {
-                                game.triggerHitStop(0.05);
+                            if (dist <= 250) {
+                                game.triggerHitStop(0.09);
                             }
                         }
                     }
@@ -4044,7 +4851,15 @@ class Bullet {
                     } else if (ent instanceof RobotDog) {
                         dmgCol = '#ffffff';
                     }
-                    game.floatingTexts.push(game.spawnFloatingText(ent.x + MathUtils.rand(-8, 8), ent.y - 12 - MathUtils.rand(0, 10), Math.round(calculatedDmg).toString(), dmgCol, 0.9));
+                    let spread_vx = (Math.random() - 0.5) * 80;
+                    let spread_vy = -50 - Math.random() * 60;
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        ent.x + MathUtils.rand(-8, 8),
+                        ent.y - 12 - MathUtils.rand(0, 10),
+                        Math.round(calculatedDmg).toString(),
+                        dmgCol, 0.9,
+                        spread_vx, spread_vy, 280, true
+                    ));
                     if (ent instanceof AutoTurret || ent instanceof FPVDrone || ent instanceof RobotDog) {
                         let pColor = ent instanceof AutoTurret ? '#ffd700' : ent instanceof FPVDrone ? '#ffff00' : '#ffffff';
                         for(let c=0; c<4; c++) {
@@ -4139,6 +4954,8 @@ class Bullet {
                         if (nx !== 0) this.vx *= -0.7;
                         if (ny !== 0) this.vy *= -0.7;
                         this.x = prevX; this.y = prevY; 
+                        this.startX = prevX;
+                        this.startY = prevY;
                         this.bounces++;
                         audio.playRicochet();
                         game.particles.push(new Particle(this.x, this.y, nx*120, ny*120, '#00e5ff', 0.12, 2.5));
@@ -4159,12 +4976,32 @@ class Bullet {
     
     draw(ctx, cam) {
         if (!this.active) return;
+        let bx = this.x - cam.x;
+        let by = this.y - cam.y;
+        let spd = Math.hypot(this.vx, this.vy);
+        
+        // Cap the tracer length to the actual distance traveled so it doesn't stretch behind the muzzle
+        let distFromStart = Math.hypot(this.x - this.startX, this.y - this.startY);
+        let tracerLen = Math.min(500, Math.max(150, spd * 0.20));
+        tracerLen = Math.min(tracerLen, distFromStart);
+        
+        let nx = this.vx / (spd || 1);
+        let ny = this.vy / (spd || 1);
+        let tailX = bx - nx * tracerLen;
+        let tailY = by - ny * tracerLen;
+        
+        let grad = ctx.createLinearGradient(bx, by, tailX, tailY);
+        grad.addColorStop(0, this.color);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        
+        ctx.save();
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1.0; // Narrower line width as requested
         ctx.beginPath();
-        ctx.moveTo(this.x - cam.x, this.y - cam.y);
-        ctx.lineTo(this.x - this.vx * 0.015 - cam.x, this.y - this.vy * 0.015 - cam.y);
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 2.5;
+        ctx.moveTo(bx, by);
+        ctx.lineTo(tailX, tailY);
         ctx.stroke();
+        ctx.restore();
     }
 }
 
@@ -4792,6 +5629,8 @@ class AutoTurret extends Entity {
     }
     
     draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.3, this.r * 0.4);
+        
         let scx = this.x - cam.x;
         let scy = this.y - cam.y;
         
@@ -5376,6 +6215,8 @@ class RobotDog extends Entity {
     
     draw(ctx, cam) {
         if (this.dead) return;
+        
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.2, this.r * 0.4);
         
         // 1. Draw Aiming Laser in world space (checking walls, fading and stopping)
         let laserAngle = this.angle;
@@ -6006,6 +6847,8 @@ class ShrapnelGrenade {
         this.x = x; this.y = y; this.vx = vx; this.vy = vy;
         this.fuse = 1.8;
         this.r = 6;
+        this.z = 0;
+        this.vz = 280;
     }
     update(dt, walls, game) {
         this.vx *= Math.pow(0.01, dt);
@@ -6026,6 +6869,15 @@ class ShrapnelGrenade {
                     if (ny !== 0) this.vy *= -0.5;
                 }
             }
+        }
+
+        const GRAVITY = 680;
+        this.vz -= GRAVITY * dt;
+        this.z += this.vz * dt;
+        if (this.z < 0) {
+            this.z = 0;
+            this.vz *= -0.42;
+            if (Math.abs(this.vz) < 30) this.vz = 0;
         }
 
         this.fuse -= dt;
@@ -6099,10 +6951,21 @@ class ShrapnelGrenade {
         }
     }
     draw(ctx, cam) {
-        let scx = this.x - cam.x;
-        let scy = this.y - cam.y;
+        let shadowX = this.x - cam.x;
+        let shadowY = this.y - cam.y;
+        let shadowScale = Math.max(0.3, 1.0 - this.z / 200);
+        ctx.save();
+        ctx.globalAlpha = 0.35 * shadowScale;
+        ctx.fillStyle = 'rgba(0, 5, 12, 1)';
         ctx.beginPath();
-        ctx.arc(scx, scy, this.r, 0, Math.PI*2);
+        ctx.ellipse(shadowX, shadowY, this.r * 1.6 * shadowScale, this.r * 0.5 * shadowScale, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y - this.z;
+        ctx.beginPath();
+        ctx.arc(scx, scy, this.r, 0, Math.PI * 2);
         ctx.fillStyle = '#ff3d00';
         ctx.fill();
         ctx.strokeStyle = '#fff';
@@ -6116,6 +6979,8 @@ class Flashbang {
         this.x = x; this.y = y; this.vx = vx; this.vy = vy;
         this.fuse = 1.5;
         this.r = 5;
+        this.z = 0;
+        this.vz = 220;
     }
     update(dt, walls, game) {
         this.vx *= Math.pow(0.01, dt);
@@ -6152,6 +7017,15 @@ class Flashbang {
                     }
                 }
             }
+        }
+
+        const GRAVITY = 680;
+        this.vz -= GRAVITY * dt;
+        this.z += this.vz * dt;
+        if (this.z < 0) {
+            this.z = 0;
+            this.vz *= -0.42;
+            if (Math.abs(this.vz) < 30) this.vz = 0;
         }
 
         this.fuse -= dt;
@@ -6222,8 +7096,19 @@ class Flashbang {
         }
     }
     draw(ctx, cam) {
+        let shadowX = this.x - cam.x;
+        let shadowY = this.y - cam.y;
+        let shadowScale = Math.max(0.3, 1.0 - this.z / 200);
+        ctx.save();
+        ctx.globalAlpha = 0.35 * shadowScale;
+        ctx.fillStyle = 'rgba(0, 5, 12, 1)';
+        ctx.beginPath();
+        ctx.ellipse(shadowX, shadowY, this.r * 1.6 * shadowScale, this.r * 0.5 * shadowScale, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
         let scx = this.x - cam.x;
-        let scy = this.y - cam.y;
+        let scy = this.y - cam.y - this.z;
         
         ctx.save();
         ctx.fillStyle = '#8a9b9c';
@@ -6419,6 +7304,8 @@ class Item {
         this.y += this.vy * dt;
     }
     draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.3, this.r * 0.4);
+
         let scx = this.x - cam.x;
         let scy = this.y - cam.y;
         ctx.save();
@@ -6492,18 +7379,40 @@ class Particle {
 }
 
 class FloatingText {
-    constructor(x, y, text, color = '#39ff14', life = 1.0) {
-        this.init(x, y, text, color, life);
+    constructor(x, y, text, color = '#39ff14', life = 1.0, vx = 0, vy = -60, gravity = 0, bounce = false) {
+        this.init(x, y, text, color, life, vx, vy, gravity, bounce);
     }
-    init(x, y, text, color = '#39ff14', life = 1.0) {
+    init(x, y, text, color = '#39ff14', life = 1.0, vx = 0, vy = -60, gravity = 0, bounce = false) {
         this.x = x; this.y = y;
         this.text = text;
         this.color = color;
         this.life = life;
         this.maxLife = life;
+        this.vx = vx;
+        this.vy = vy;
+        this.gravity = gravity;
+        this.bounce = bounce;
+        this.hasBounced = false;
+        this.bounceY = y + 20;
     }
     update(dt) {
-        this.y -= dt * 45; 
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        
+        if (this.gravity) {
+            this.vy += this.gravity * dt;
+        }
+        
+        if (this.bounce && !this.hasBounced && this.y >= this.bounceY) {
+            this.y = this.bounceY;
+            this.vy = -Math.abs(this.vy) * 0.4;
+            this.vx *= 0.5;
+            this.hasBounced = true;
+            this.gravity = 0;
+        } else if (!this.gravity && !this.bounce) {
+            this.y -= dt * 45;
+        }
+        
         this.life -= dt;
         return this.life > 0;
     }
@@ -6587,6 +7496,17 @@ class Game {
         this.dogs = [];
         this.miniDrones = [];
         this.floatingTexts = [];
+        this.dustMotes = [];
+        this.initDustMotes();
+        this.smokeParticles = [];
+        this.embers = [];
+        this.chromaticAberrationTimer = 0;
+        this.gloryKillTimer = 0;
+        this.gloryKillTarget = null;
+        this.baseTimeScale = 1.0;
+        this.heartbeatTimer = 0;
+        this.heartbeatPhase = 0;
+        this.heartbeatIntensity = 0;
         this.bullets = [];
         this.enemies = [];
         this.hudState = {};
@@ -6646,15 +7566,129 @@ class Game {
         return e;
     }
 
-    spawnFloatingText(x, y, text, color = '#39ff14', life = 1.0) {
+    spawnFloatingText(x, y, text, color = '#39ff14', life = 1.0, vx = 0, vy = -60, gravity = 0, bounce = false) {
         let ft;
         if (this.inactiveFloatingTexts.length > 0) {
             ft = this.inactiveFloatingTexts.pop();
-            ft.init(x, y, text, color, life);
+            ft.init(x, y, text, color, life, vx, vy, gravity, bounce);
         } else {
-            ft = new FloatingText(x, y, text, color, life);
+            ft = new FloatingText(x, y, text, color, life, vx, vy, gravity, bounce);
         }
         return ft;
+    }
+
+    initDustMotes() {
+        const COUNT = 75;
+        this.dustMotes = [];
+        for (let i = 0; i < COUNT; i++) {
+            this.dustMotes.push({
+                x: Math.random() * this.mapW,
+                y: Math.random() * this.mapH,
+                vx: (Math.random() - 0.5) * 18,
+                vy: (Math.random() - 0.5) * 18,
+                r: Math.random() * 2.5 + 0.5,
+                opacity: Math.random() * 0.18 + 0.04,
+                parallaxFactor: Math.random() * 0.35 + 0.15,
+            });
+        }
+    }
+
+    updateDustMotes(dt) {
+        for (let m of this.dustMotes) {
+            m.x += m.vx * dt;
+            m.y += m.vy * dt;
+            if (m.x < 0) m.x += this.mapW;
+            if (m.x > this.mapW) m.x -= this.mapW;
+            if (m.y < 0) m.y += this.mapH;
+            if (m.y > this.mapH) m.y -= this.mapH;
+        }
+    }
+
+    triggerChromaticAberration(duration = 0.2) {
+        this.chromaticAberrationTimer = Math.max(this.chromaticAberrationTimer, duration);
+        // Also track intensity peak for variable-strength rendering
+        this.chromaticAberrationPeak = Math.max(this.chromaticAberrationPeak || 0, duration);
+    }
+
+    triggerGloryKill(enemy) {
+        if (this.gloryKillTimer > 0) return;
+        this.baseTimeScale = this.timeScale;
+        this.timeScale = 0.08;
+        this.gloryKillTimer = 1.2;
+        // Store target position for UI/effects but do NOT pan camera to it
+        this.gloryKillTarget = { x: enemy.x, y: enemy.y };
+        // Strong zoom punch to signal the kill, stays player-centered
+        if (this.camera) this.camera.punchZoom(0.14);
+        if (this.camera2) this.camera2.punchZoom(0.14);
+        // Chromatic aberration flash on glory kill
+        this.triggerChromaticAberration(0.5);
+    }
+
+    spawnBarrelFX(x, y, angle) {
+        let smokeCount = 3 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < smokeCount; i++) {
+            let spread = (Math.random() - 0.5) * 1.2;
+            let spd = Math.random() * 40 + 15;
+            this.smokeParticles.push({
+                x: x + (Math.random() - 0.5) * 8,
+                y: y + (Math.random() - 0.5) * 8,
+                vx: Math.cos(angle + spread) * spd - Math.sin(angle) * 25,
+                vy: Math.sin(angle + spread) * spd + Math.cos(angle) * 25,
+                r: 4 + Math.random() * 4,
+                maxR: 28 + Math.random() * 20,
+                life: 0.8 + Math.random() * 0.6,
+                maxLife: 0,
+                opacity: 0.35 + Math.random() * 0.15,
+            });
+            this.smokeParticles[this.smokeParticles.length - 1].maxLife = this.smokeParticles[this.smokeParticles.length - 1].life;
+        }
+        
+        let emberCount = 1 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < emberCount; i++) {
+            let spread = (Math.random() - 0.5) * 0.8;
+            this.embers.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle + spread) * (Math.random() * 80 + 30) - Math.sin(angle) * 20,
+                vy: Math.sin(angle + spread) * (Math.random() * 80 + 30),
+                z: 0,
+                vz: Math.random() * 180 + 100,
+                life: 1.0 + Math.random() * 0.5,
+                maxLife: 0,
+            });
+            this.embers[this.embers.length - 1].maxLife = this.embers[this.embers.length - 1].life;
+        }
+    }
+
+    spawnDeployRing(x, y) {
+        for (let i = 0; i < 16; i++) {
+            let a = (i / 16) * Math.PI * 2;
+            let spd = 120 + Math.random() * 80;
+            let p = this.spawnParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, '#39ff14', 0.6, 3);
+            if (p) this.particles.push(p);
+        }
+        let p2 = this.spawnParticle(x, y, 0, 0, '#ffffff', 0.25, 12);
+        if (p2) this.particles.push(p2);
+    }
+
+    updateHeartbeat(dt, player) {
+        let healthPct = player ? (player.hp / player.maxHp) : 1.0;
+        if (healthPct < 0.20 && !player.dead) {
+            this.heartbeatTimer += dt;
+            let beatInterval = 0.75;
+            this.heartbeatPhase = (this.heartbeatTimer % beatInterval) / beatInterval;
+            
+            let pulse1 = Math.max(0, 1.0 - this.heartbeatPhase * 5.0);
+            let pulse2 = Math.max(0, 1.0 - Math.abs(this.heartbeatPhase - 0.45) * 8.0);
+            this.heartbeatIntensity = Math.max(pulse1, pulse2);
+            
+            if (pulse1 > 0.7 || pulse2 > 0.7) {
+                this.screenShake = Math.max(this.screenShake, 3.5);
+            }
+        } else {
+            this.heartbeatTimer = 0;
+            this.heartbeatIntensity = 0;
+        }
     }
 
     triggerHitStop(duration) {
@@ -7490,6 +8524,7 @@ class Game {
             for (let i = 0; i < 12; i++) {
                 this.particles.push(new Particle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.4, 2));
             }
+            this.spawnDeployRing(cx, cy);
         } else {
             audio.playRicochet(); 
         }
@@ -7533,6 +8568,7 @@ class Game {
             for (let i = 0; i < 12; i++) {
                 this.particles.push(new Particle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.4, 2));
             }
+            this.spawnDeployRing(cx, cy);
         } else {
             audio.playRicochet(); 
         }
@@ -7611,6 +8647,7 @@ class Game {
             for (let i = 0; i < 12; i++) {
                 this.particles.push(new Particle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), laserColor, 0.4, 2));
             }
+            this.spawnDeployRing(cx, cy);
         } else {
             audio.playRicochet(); 
         }
@@ -7997,6 +9034,15 @@ class Game {
         }
         this.miniDrones = [];
         this.floatingTexts = [];
+        this.initDustMotes();
+        this.smokeParticles = [];
+        this.embers = [];
+        this.chromaticAberrationTimer = 0;
+        this.gloryKillTimer = 0;
+        this.gloryKillTarget = null;
+        this.heartbeatTimer = 0;
+        this.heartbeatPhase = 0;
+        this.heartbeatIntensity = 0;
         this.barriers = []; 
         this.drone = null;  
         
@@ -8159,12 +9205,22 @@ class Game {
             if (isJackpot) {
                 amount = Math.floor(MathUtils.rand(100, 151)); 
                 amount = Math.round(amount * this.cashMultiplier);
-                this.floatingTexts.push(this.spawnFloatingText(it.x, it.y - 12, "JACKPOT +$" + amount + "!", '#ffea00', 1.8));
+                let cash_vx = (Math.random() - 0.5) * 120;
+                this.floatingTexts.push(this.spawnFloatingText(
+                    it.x, it.y - 12, "JACKPOT +$" + amount + "!",
+                    '#ffea00', 1.8,
+                    cash_vx, -110, 260, true
+                ));
                 audio.playPickup('money');
                 setTimeout(() => { audio.playPickup('money'); }, 80);
             } else {
                 amount = Math.round(amount * this.cashMultiplier);
-                this.floatingTexts.push(this.spawnFloatingText(it.x, it.y - 10, "+$" + amount, '#39ff14', 1.0));
+                let cash_vx = (Math.random() - 0.5) * 90;
+                this.floatingTexts.push(this.spawnFloatingText(
+                    it.x, it.y - 10, "+$" + amount,
+                    '#39ff14', 1.2,
+                    cash_vx, -80, 260, true
+                ));
                 audio.playPickup('money');
             }
             p.cash += amount;
@@ -8360,6 +9416,13 @@ class Game {
                 enemy.maxHp = enemy.hp;
                 enemy.speed = enemy.speed * scaleSpeed;
                 
+                if (Math.random() < 0.04) {
+                    enemy.isElite = true;
+                    enemy.hp = Math.round(enemy.hp * 2.2);
+                    enemy.maxHp = enemy.hp;
+                    enemy.r *= 1.45;
+                }
+                
                 this.enemies.push(enemy);
                 this.enemiesToSpawn--;
                 this.spawnTimer = Math.max(0.2, 1.6 - this.wave*0.12);
@@ -8404,6 +9467,12 @@ class Game {
             let p2MaxZoom = this.player2.weapon.maxZoom || 0.15;
             this.camera2.update(this.player2, this.mapW, this.mapH, this.width / 2, this.height, dt, aimCoords2.x, aimCoords2.y, p2MaxZoom);
         }
+        
+        let activePlayer = this.player;
+        if (this.isTwoPlayer && this.player2 && this.player2.hp < this.player.hp) {
+            activePlayer = this.player2;
+        }
+        this.updateHeartbeat(dt, activePlayer);
         
         if (this.flashMuffleTimer > 0) {
             this.flashMuffleTimer -= dt;
@@ -8486,6 +9555,38 @@ class Game {
                     this.miniDrones.splice(i, 1);
                 }
             }
+        }
+
+        this.updateDustMotes(dt);
+
+        for (let i = this.smokeParticles.length - 1; i >= 0; i--) {
+            let s = this.smokeParticles[i];
+            s.life -= dt;
+            s.x += s.vx * dt;
+            s.y += s.vy * dt;
+            s.vx *= Math.pow(0.04, dt);
+            s.vy *= Math.pow(0.04, dt);
+            let t = 1 - (s.life / s.maxLife);
+            s.r = 4 + (s.maxR - 4) * t;
+            if (s.life <= 0) { this.smokeParticles.splice(i, 1); }
+        }
+
+        const EMBER_GRAVITY = 600;
+        for (let i = this.embers.length - 1; i >= 0; i--) {
+            let e = this.embers[i];
+            e.life -= dt;
+            e.x += e.vx * dt;
+            e.y += e.vy * dt;
+            e.vz -= EMBER_GRAVITY * dt;
+            e.z += e.vz * dt;
+            if (e.z < 0) {
+                e.z = 0;
+                e.vz *= -0.38;
+                e.vx *= 0.6;
+                e.vy *= 0.6;
+                if (Math.abs(e.vz) < 20) e.vz = 0;
+            }
+            if (e.life <= 0) { this.embers.splice(i, 1); }
         }
 
         for (let p of this.particles) p.update(dt);
@@ -9553,6 +10654,22 @@ class Game {
             this.ctx.restore();
         }
 
+        // DUST MOTES (parallax background)
+        this.ctx.save();
+        for (let m of this.dustMotes) {
+            let mx = (m.x - cam.x * m.parallaxFactor) % viewportW;
+            if (mx < 0) mx += viewportW;
+            let my = (m.y - cam.y * m.parallaxFactor) % viewportH;
+            if (my < 0) my += viewportH;
+            
+            this.ctx.globalAlpha = m.opacity;
+            this.ctx.fillStyle = 'rgba(200, 220, 255, 1)';
+            this.ctx.beginPath();
+            this.ctx.arc(mx, my, m.r, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        this.ctx.restore();
+
         this.map.draw(this.ctx, cam, viewportW, viewportH);
 
         if (this.state === 'playing') {
@@ -9609,6 +10726,35 @@ class Game {
         for (let m of this.mines) m.draw(this.ctx, cam);
         for (let g of this.grenades) g.draw(this.ctx, cam);
         for (let p of this.particles) p.draw(this.ctx, cam);
+
+        // SMOKE PARTICLES (heavy weapon trail/lingering gas)
+        this.ctx.save();
+        for (let s of this.smokeParticles) {
+            let alpha = (s.life / s.maxLife) * s.opacity;
+            this.ctx.globalAlpha = Math.max(0, alpha);
+            this.ctx.fillStyle = `rgb(30, 35, 40)`;
+            this.ctx.beginPath();
+            this.ctx.arc(s.x - cam.x, s.y - cam.y, s.r, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.restore();
+
+        // EMBERS (Z-axis lifted)
+        this.ctx.save();
+        for (let e of this.embers) {
+            let alpha = (e.life / e.maxLife);
+            this.ctx.globalAlpha = Math.max(0, alpha * 0.9);
+            this.ctx.fillStyle = '#ffcc00';
+            this.ctx.shadowBlur = 6;
+            this.ctx.shadowColor = '#ff8800';
+            this.ctx.beginPath();
+            this.ctx.arc(e.x - cam.x, e.y - cam.y - e.z, 2.5, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.shadowBlur = 0;
+        this.ctx.restore();
         for (let e of this.enemies) e.draw(this.ctx, cam);
         if (this.enemies.length === 1 && this.enemiesToSpawn === 0) {
             let lastEnemy = this.enemies[0];
@@ -9849,6 +10995,12 @@ class Game {
             this.ctx.restore();
         }
 
+        if (this.floatingTexts) {
+            for (let ft of this.floatingTexts) {
+                ft.draw(this.ctx, cam);
+            }
+        }
+
         this.ctx.restore();
     }
 
@@ -9861,6 +11013,25 @@ class Game {
         vignette.addColorStop(1, 'rgba(0,4,12,0.85)');
         this.ctx.fillStyle = vignette;
         this.ctx.fillRect(x, y, w, h);
+
+        let hpPct = p.hp / p.maxHp;
+        if (hpPct < 0.20 && !p.dead) {
+            let baseIntensity = (0.20 - hpPct) / 0.20;
+            let pulseFactor = this.heartbeatIntensity || 0;
+            let vigAlpha = baseIntensity * (0.22 + 0.28 * pulseFactor);
+            
+            this.ctx.save();
+            this.ctx.globalAlpha = Math.max(0, vigAlpha);
+            let radGrad = this.ctx.createRadialGradient(
+                x + w / 2, y + h / 2, h * 0.15,
+                x + w / 2, y + h / 2, w * 0.70
+            );
+            radGrad.addColorStop(0, 'rgba(255, 0, 42, 0)');
+            radGrad.addColorStop(1, 'rgba(255, 0, 42, 1.0)');
+            this.ctx.fillStyle = radGrad;
+            this.ctx.fillRect(x, y, w, h);
+            this.ctx.restore();
+        }
 
         if (p.flashOpacity > 0) {
             this.ctx.fillStyle = `rgba(255, 255, 255, ${p.flashOpacity})`;
@@ -9875,6 +11046,34 @@ class Game {
         if (this.winFlashIntensity > 0) {
             this.ctx.fillStyle = `rgba(255, 215, 0, ${this.winFlashIntensity * 0.45})`;
             this.ctx.fillRect(x, y, w, h);
+        }
+    }
+
+    drawViewportWithAberration(camera, player, isPlayer2) {
+        if (this.chromaticAberrationTimer > 0) {
+            let shiftVal = (this.chromaticAberrationTimer / (this.chromaticAberrationPeak || 0.5)) * 26;
+            
+            // Draw center layer with slightly reduced opacity
+            this.ctx.save();
+            this.ctx.globalAlpha = 0.55;
+            this.drawViewport(camera, player, isPlayer2);
+            this.ctx.restore();
+
+            // Left ghost layer with sine vertical shift
+            this.ctx.save();
+            this.ctx.globalAlpha = 0.40;
+            this.ctx.translate(-shiftVal, Math.sin(Date.now() * 0.05) * 6);
+            this.drawViewport(camera, player, isPlayer2);
+            this.ctx.restore();
+
+            // Right ghost layer with negative sine vertical shift
+            this.ctx.save();
+            this.ctx.globalAlpha = 0.40;
+            this.ctx.translate(shiftVal, -Math.sin(Date.now() * 0.05) * 6);
+            this.drawViewport(camera, player, isPlayer2);
+            this.ctx.restore();
+        } else {
+            this.drawViewport(camera, player, isPlayer2);
         }
     }
 
@@ -9899,7 +11098,7 @@ class Game {
             this.ctx.scale(effectiveZoom1, effectiveZoom1);
             this.ctx.translate(-viewportW / 2, -viewportH / 2);
             
-            this.drawViewport(this.camera, this.player, false);
+            this.drawViewportWithAberration(this.camera, this.player, false);
             this.ctx.restore();
 
             // Draw P1 Screen Overlays in Screen Space
@@ -9918,7 +11117,7 @@ class Game {
             this.ctx.scale(effectiveZoom2, effectiveZoom2);
             this.ctx.translate(-viewportW / 2, -viewportH / 2);
             
-            this.drawViewport(this.camera2, this.player2, true);
+            this.drawViewportWithAberration(this.camera2, this.player2, true);
             this.ctx.restore();
 
             // Draw P2 Screen Overlays in Screen Space
@@ -9942,7 +11141,7 @@ class Game {
             this.ctx.scale(effectiveZoom, effectiveZoom);
             this.ctx.translate(-this.width / 2, -this.height / 2);
             
-            this.drawViewport(this.camera, this.player, false);
+            this.drawViewportWithAberration(this.camera, this.player, false);
             this.ctx.restore();
 
             // Draw Screen Overlays in Screen Space
@@ -10111,6 +11310,20 @@ class Game {
         this.lastTime = timestamp;
         if (dt > 0.1) dt = 0.1;
         
+        if (this.chromaticAberrationTimer > 0) {
+            this.chromaticAberrationTimer -= dt;
+            if (this.chromaticAberrationTimer < 0) this.chromaticAberrationTimer = 0;
+        }
+        
+        if (this.gloryKillTimer > 0) {
+            this.gloryKillTimer -= dt;
+            if (this.gloryKillTimer <= 0) {
+                this.gloryKillTimer = 0;
+                this.gloryKillTarget = null;
+                this.timeScale = this.baseTimeScale;
+            }
+        }
+
         if (this.hitPauseTimer > 0) {
             this.hitPauseTimer -= dt;
             if (this.hitPauseTimer < 0) this.hitPauseTimer = 0;
@@ -10605,23 +11818,39 @@ class TouchController {
                     game.player.barriersInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, isMKII: closestItem.isMKII || false });
                     game.barriers.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, `BARRIER RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#00e5ff', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        game.player.x, game.player.y - 15, `+RETRIEVED BARRIER (${Math.round(closestItem.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                 } else if (closestItemType === 'turret') {
                     game.player.turretsInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, isMKII: closestItem.isMKII || false });
                     game.turrets.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, `TURRET RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#ffea00', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        game.player.x, game.player.y - 15, `+RETRIEVED TURRET (${Math.round(closestItem.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                 } else if (closestItemType === 'dog') {
                     game.player.dogsInventory.push({ hp: closestItem.hp, upgraded: closestItem.upgraded || false });
                     game.dogs.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, `SPOT ROBOT RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#ffffff', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        game.player.x, game.player.y - 15, `+RETRIEVED SPOT ROBOT (${Math.round(closestItem.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                 } else if (closestItemType === 'drone') {
                     game.player.dronesCount = Math.min(3, (game.player.dronesCount || 0) + 1);
                     game.drone.stopAudio();
                     game.drone = null;
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, "FPV DRONE RETRIEVED", '#ffd700', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        game.player.x, game.player.y - 15, "+RETRIEVED FPV DRONE",
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                 }
             } else {
                 // Show visual feedback that they tapped but are too far
