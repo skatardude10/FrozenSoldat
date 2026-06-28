@@ -917,6 +917,7 @@ function useLeftItem(player) {
         if (player.mines > 0) {
             player.mines--;
             game.mines.push(new TripMine(player.x, player.y));
+            game.spawnDeployRing(player.x, player.y);
         }
     }
 }
@@ -955,7 +956,11 @@ function interactPickUpItem(player) {
             game.drone.stopAudio();
             game.drone = null;
             audio.playPickup('weapon');
-            game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, "FPV DRONE RETRIEVED", '#ffd700', 1.2));
+            game.floatingTexts.push(game.spawnFloatingText(
+                player.x, player.y - 15, "+RETRIEVED FPV DRONE",
+                '#39ff14', 1.2,
+                (Math.random() - 0.5) * 60, -80, 240, true
+            ));
             return;
         }
     }
@@ -968,7 +973,11 @@ function interactPickUpItem(player) {
                 player.barriersInventory.push({ hp: bar.hp, maxHp: bar.maxHp, isMKII: bar.isMKII || false });
                 game.barriers.splice(i, 1);
                 audio.playPickup('weapon');
-                game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, `BARRIER RETRIEVED (${Math.round(bar.hp)}HP)`, '#00e5ff', 1.2));
+                game.floatingTexts.push(game.spawnFloatingText(
+                    player.x, player.y - 15, `+RETRIEVED BARRIER (${Math.round(bar.hp)}HP)`,
+                    '#39ff14', 1.2,
+                    (Math.random() - 0.5) * 60, -80, 240, true
+                ));
                 return;
             }
         }
@@ -982,7 +991,11 @@ function interactPickUpItem(player) {
                     player.turretsInventory.push({ hp: tur.hp, maxHp: tur.maxHp, isMKII: tur.isMKII || false });
                     game.turrets.splice(i, 1);
                     audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, `TURRET RETRIEVED (${Math.round(tur.hp)}HP)`, '#ffea00', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        player.x, player.y - 15, `+RETRIEVED TURRET (${Math.round(tur.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                     return;
                 }
             }
@@ -997,7 +1010,11 @@ function interactPickUpItem(player) {
                     player.dogsInventory.push({ hp: dog.hp, upgraded: dog.upgraded || false });
                     game.dogs.splice(i, 1);
                     audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, `SPOT ROBOT RETRIEVED (${Math.round(dog.hp)}HP)`, '#ffffff', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        player.x, player.y - 15, `+RETRIEVED SPOT ROBOT (${Math.round(dog.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                     return;
                 }
             }
@@ -2257,11 +2274,44 @@ const EnemyTypes = {
 /**
  * CLASSES
  */
+function drawDropShadow(ctx, cam, x, y, radiusX, radiusY = null) {
+    let sx = x - cam.x;
+    // Offset down and slightly to the right to simulate light source from top-left
+    let sy = (y + 12) - cam.y;
+    sx += 4;
+    
+    let scaleY = 0.40;
+    if (radiusY !== null) {
+        scaleY = radiusY / radiusX;
+    }
+    
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.scale(1.0, scaleY);
+    
+    // Soft slate-grey shadow - visible against near-black floor
+    let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusX);
+    grad.addColorStop(0, 'rgba(48, 54, 72, 0.75)');
+    grad.addColorStop(0.3, 'rgba(48, 54, 72, 0.45)');
+    grad.addColorStop(1, 'rgba(48, 54, 72, 0)');
+    ctx.fillStyle = grad;
+    
+    ctx.beginPath();
+    ctx.arc(0, 0, radiusX, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+}
+
 class Camera {
     constructor() { 
         this.x = 0; this.y = 0; 
         this.zoom = 1.0; 
         this.zoomPunch = 0;
+        this.kickbackX = 0;
+        this.kickbackY = 0;
+        this.kickbackVX = 0;
+        this.kickbackVY = 0;
     }
     update(player, mapW, mapH, canvasW, canvasH, dt, aimX, aimY, maxZoomOut) {
         let aimDist = Math.hypot(aimX - player.x, aimY - player.y);
@@ -2288,11 +2338,31 @@ class Camera {
         let camCenterX = player.x * 0.65 + aimX * 0.35;
         let camCenterY = player.y * 0.65 + aimY * 0.35;
 
+        // Glory kill: stay on player, just apply zoom pulse (no camera pan to avoid jerk)
+
         this.x = camCenterX - visibleW / 2;
         this.y = camCenterY - visibleH / 2;
+
+        if (dt) {
+            this.kickbackX += this.kickbackVX * dt;
+            this.kickbackY += this.kickbackVY * dt;
+            // Slower spring return (8 instead of 18) and slower damping for more visible effect
+            this.kickbackVX += -this.kickbackX * 8 * dt;
+            this.kickbackVY += -this.kickbackY * 8 * dt;
+            this.kickbackVX *= Math.pow(0.05, dt);
+            this.kickbackVY *= Math.pow(0.05, dt);
+            this.kickbackX = MathUtils.clamp(this.kickbackX, -200, 200);
+            this.kickbackY = MathUtils.clamp(this.kickbackY, -200, 200);
+            this.x += this.kickbackX;
+            this.y += this.kickbackY;
+        }
     }
     punchZoom(amount) {
         this.zoomPunch = (this.zoomPunch || 0) + amount;
+    }
+    applyKickback(angle, force) {
+        this.kickbackVX -= Math.cos(angle) * force;
+        this.kickbackVY -= Math.sin(angle) * force;
     }
 }
 
@@ -3020,7 +3090,10 @@ class Player extends Entity {
             let weaponKey = this.weapon.name.toLowerCase();
             let hasAmmo = weaponKey === 'pistol' || this.ammo[weaponKey] > 0;
             let canFireSemi = !isSemi || this.semiAutoTriggerReleased;
-            if (hasAmmo && canFireSemi && (gameTime - this.lastFireTime >= this.weapon.fireRate)) {
+            let baseFireRate = this.weapon.fireRate;
+            let clutchFireRateBuff = (this.hp / this.maxHp < 0.20) ? 0.80 : 1.0;
+            let actualFireRate = baseFireRate * clutchFireRateBuff;
+            if (hasAmmo && canFireSemi && (gameTime - this.lastFireTime >= actualFireRate)) {
                 this.fire(game);
                 this.lastFireTime = gameTime;
                 if (isSemi) {
@@ -3107,7 +3180,8 @@ class Player extends Entity {
 
         let sprintSpeedMulti = (isSprinting && !this.isExhausted) ? 1.55 : 1.0;
         let exhaustionPenalty = this.isExhausted ? 0.5 : 1.0; // walk twice as slow if exhausted [1]
-        let curAccel = this.accel * (1.0 + this.speedUpgrades * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty;
+        let clutchSpeedBuff = (healthPct < 0.20) ? 1.15 : 1.0;
+        let curAccel = this.accel * (1.0 + this.speedUpgrades * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff;
         
         this.vx += moveX * curAccel * dt;
         this.vy += moveY * curAccel * dt;
@@ -3181,6 +3255,24 @@ class Player extends Entity {
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, this.weapon, this, isAP, isHP, false));
             game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*600, Math.sin(spreadAngle)*600, '#fff', 0.04, 3));
         }
+
+        const KICKBACK_FORCES = {
+            'Shotgun': 220,
+            'Sniper': 420,
+            'M1A': 190,
+            'LMG': 130
+        };
+        let kickForce = KICKBACK_FORCES[this.weapon.name];
+        if (kickForce && game.camera) {
+            game.camera.applyKickback(this.angle, kickForce);
+        }
+        if (kickForce && game.isTwoPlayer && game.camera2 && this.isPlayer2) {
+            game.camera2.applyKickback(this.angle, kickForce);
+        }
+
+        if (['Shotgun', 'Sniper', 'M1A', 'LMG'].includes(this.weapon.name)) {
+            game.spawnBarrelFX(barrelX, barrelY, this.angle);
+        }
     }
 
     takeDamage(amt, pushDir, pushForce) {
@@ -3190,12 +3282,19 @@ class Player extends Entity {
         super.takeDamage(amt, pushDir, pushForce);
         this.stamina = Math.max(0, this.stamina - amt * 0.5); // Shock takes away stamina instantly
         this.damageFlashIntensity = 1.0; // Trigger damage flash
+        if (amt >= 20 && game) {
+            // Longer, stronger chromatic aberration on heavy hits
+            let duration = Math.min(0.6, 0.2 + amt * 0.008);
+            game.triggerChromaticAberration(duration);
+        }
         if (game && game.isTestingMode) {
             this.hp = this.maxHp;
         }
     }
 
     draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.1);
+
         let scx = this.x - cam.x;
         let scy = this.y - cam.y;
 
@@ -3300,6 +3399,7 @@ class Enemy extends Entity {
         this.angle = 0;
         this.dead = false;
         this.footstepTimer = 0;
+        this.isElite = false;
         
         // Game-feel variables
         this.muzzleFlashTimer = 0;
@@ -3825,6 +3925,24 @@ class Enemy extends Entity {
     draw(ctx, cam) {
         if (this.opacity <= 0.01) return; 
 
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.1);
+
+        if (this.isElite) {
+            let scx = this.x - cam.x;
+            let scy = this.y - cam.y;
+            let glowAlpha = 0.12 + 0.08 * Math.sin((game ? game.gameTime : 0) * 4.0);
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, glowAlpha);
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = '#ffcc00';
+            ctx.strokeStyle = '#ffcc00';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 6, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
         if (this.weaponType === 'sniper' && game) {
             let target = this.target || game.player;
             if (target && !target.dead) {
@@ -3850,6 +3968,8 @@ class Enemy extends Entity {
         ctx.rotate(this.angle);
         ctx.globalAlpha = this.opacity;
 
+        let enemyColor = this.isElite ? '#ffcc00' : this.color;
+
         // Stepping feet circles animation (skipped for swarmer crawler types)
         if (this.type !== 'swarmer') {
             let speed = Math.hypot(this.vx, this.vy);
@@ -3860,7 +3980,7 @@ class Enemy extends Entity {
                 oscillation = Math.sin(walkPhase) * this.r * 0.5;
             }
             ctx.fillStyle = '#010a15';
-            ctx.strokeStyle = this.color;
+            ctx.strokeStyle = enemyColor;
             ctx.lineWidth = 1.5;
             let footR = this.r * 0.35;
             
@@ -3878,7 +3998,7 @@ class Enemy extends Entity {
         }
 
         if (this.type !== 'swarmer') {
-            ctx.strokeStyle = this.color;
+            ctx.strokeStyle = enemyColor;
             ctx.lineWidth = 2.5;
             ctx.beginPath();
             ctx.moveTo(0, 5); ctx.lineTo(6, 5);
@@ -3896,7 +4016,7 @@ class Enemy extends Entity {
         ctx.fillStyle = '#010a15';
         ctx.fill();
         ctx.lineWidth = 2;
-        ctx.strokeStyle = this.color;
+        ctx.strokeStyle = enemyColor;
         ctx.stroke();
 
         ctx.restore();
@@ -3916,7 +4036,31 @@ class Enemy extends Entity {
         game.spawnBlood(this.x, this.y, Math.cos(angle) * 300, Math.sin(angle) * 300);
 
         // Corpse debris in enemy's color
-        game.spawnCorpseDebris(this.x, this.y, angle, this.color, this.r);
+        let debrisColor = this.isElite ? '#ffcc00' : this.color;
+        game.spawnCorpseDebris(this.x, this.y, angle, debrisColor, this.r);
+
+        // Elite guaranteed drops & text
+        if (this.isElite && game) {
+            let dropRoll = Math.random();
+            let dropType = dropRoll < 0.4 ? 'medpack' : dropRoll < 0.7 ? 'grenade' : 'redbull';
+            game.items.push(new Item(this.x, this.y, dropType));
+            
+            // Kinetic floating text for elite cash
+            let eliteAmt_vx = (Math.random() - 0.5) * 60;
+            game.floatingTexts.push(game.spawnFloatingText(
+                this.x, this.y - 20,
+                `ELITE +$${amount}!`,
+                '#ffcc00', 2.0,
+                eliteAmt_vx, -90, 200, true
+            ));
+        }
+
+        // Glory Kill trigger: last wave enemy OR an elite
+        let remainingAlive = game.enemies.filter(e => !e.dead && e !== this).length;
+        let isLastEnemy = (remainingAlive === 0 && game.enemiesToSpawn === 0);
+        if (game && (isLastEnemy || this.isElite)) {
+            game.triggerGloryKill(this);
+        }
     }
 }
 
@@ -4020,8 +4164,28 @@ class Bullet {
                         }
                     }
                     
+                    let wasDeadBefore = ent.dead;
                     ent.takeDamage(calculatedDmg, Math.atan2(this.vy, this.vx), 180);
                     
+                    if (ent instanceof Enemy && ent.dead && !wasDeadBefore) {
+                        let isTurret = (this.owner instanceof AutoTurret);
+                        let isDog = (this.owner instanceof RobotDog);
+                        if ((isTurret || isDog) && game) {
+                            let assistAmt = Math.round((ent.scoreVal || 10) * game.cashMultiplier * 0.35);
+                            let ownerRef = this.owner;
+                            game.floatingTexts.push(game.spawnFloatingText(
+                                ownerRef.x, ownerRef.y - 25,
+                                `+ASSIST $${assistAmt}`, '#39ff14', 1.2,
+                                (Math.random() - 0.5) * 40, -60, 150, false
+                            ));
+                            for (let c = 0; c < 8; c++) {
+                                let a = (c / 8) * Math.PI * 2;
+                                let p = game.spawnParticle(ownerRef.x, ownerRef.y, Math.cos(a)*60, Math.sin(a)*60, '#39ff14', 0.4, 2);
+                                if (p) game.particles.push(p);
+                            }
+                        }
+                    }
+
                     // Hit-stop triggers
                     if (this.isPlayerBullet) {
                         if (this.weaponName === 'Sniper') {
@@ -4044,7 +4208,15 @@ class Bullet {
                     } else if (ent instanceof RobotDog) {
                         dmgCol = '#ffffff';
                     }
-                    game.floatingTexts.push(game.spawnFloatingText(ent.x + MathUtils.rand(-8, 8), ent.y - 12 - MathUtils.rand(0, 10), Math.round(calculatedDmg).toString(), dmgCol, 0.9));
+                    let spread_vx = (Math.random() - 0.5) * 80;
+                    let spread_vy = -50 - Math.random() * 60;
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        ent.x + MathUtils.rand(-8, 8),
+                        ent.y - 12 - MathUtils.rand(0, 10),
+                        Math.round(calculatedDmg).toString(),
+                        dmgCol, 0.9,
+                        spread_vx, spread_vy, 280, true
+                    ));
                     if (ent instanceof AutoTurret || ent instanceof FPVDrone || ent instanceof RobotDog) {
                         let pColor = ent instanceof AutoTurret ? '#ffd700' : ent instanceof FPVDrone ? '#ffff00' : '#ffffff';
                         for(let c=0; c<4; c++) {
@@ -4159,12 +4331,32 @@ class Bullet {
     
     draw(ctx, cam) {
         if (!this.active) return;
+        let bx = this.x - cam.x;
+        let by = this.y - cam.y;
+        let spd = Math.hypot(this.vx, this.vy);
+        
+        // Cap the tracer length to the actual distance traveled so it doesn't stretch behind the muzzle
+        let distFromStart = Math.hypot(this.x - this.startX, this.y - this.startY);
+        let tracerLen = Math.min(500, Math.max(150, spd * 0.20));
+        tracerLen = Math.min(tracerLen, distFromStart);
+        
+        let nx = this.vx / (spd || 1);
+        let ny = this.vy / (spd || 1);
+        let tailX = bx - nx * tracerLen;
+        let tailY = by - ny * tracerLen;
+        
+        let grad = ctx.createLinearGradient(bx, by, tailX, tailY);
+        grad.addColorStop(0, this.color);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        
+        ctx.save();
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1.0; // Narrower line width as requested
         ctx.beginPath();
-        ctx.moveTo(this.x - cam.x, this.y - cam.y);
-        ctx.lineTo(this.x - this.vx * 0.015 - cam.x, this.y - this.vy * 0.015 - cam.y);
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 2.5;
+        ctx.moveTo(bx, by);
+        ctx.lineTo(tailX, tailY);
         ctx.stroke();
+        ctx.restore();
     }
 }
 
@@ -4792,6 +4984,8 @@ class AutoTurret extends Entity {
     }
     
     draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.3, this.r * 0.4);
+        
         let scx = this.x - cam.x;
         let scy = this.y - cam.y;
         
@@ -5376,6 +5570,8 @@ class RobotDog extends Entity {
     
     draw(ctx, cam) {
         if (this.dead) return;
+        
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.2, this.r * 0.4);
         
         // 1. Draw Aiming Laser in world space (checking walls, fading and stopping)
         let laserAngle = this.angle;
@@ -6006,6 +6202,8 @@ class ShrapnelGrenade {
         this.x = x; this.y = y; this.vx = vx; this.vy = vy;
         this.fuse = 1.8;
         this.r = 6;
+        this.z = 0;
+        this.vz = 280;
     }
     update(dt, walls, game) {
         this.vx *= Math.pow(0.01, dt);
@@ -6026,6 +6224,15 @@ class ShrapnelGrenade {
                     if (ny !== 0) this.vy *= -0.5;
                 }
             }
+        }
+
+        const GRAVITY = 680;
+        this.vz -= GRAVITY * dt;
+        this.z += this.vz * dt;
+        if (this.z < 0) {
+            this.z = 0;
+            this.vz *= -0.42;
+            if (Math.abs(this.vz) < 30) this.vz = 0;
         }
 
         this.fuse -= dt;
@@ -6099,10 +6306,21 @@ class ShrapnelGrenade {
         }
     }
     draw(ctx, cam) {
-        let scx = this.x - cam.x;
-        let scy = this.y - cam.y;
+        let shadowX = this.x - cam.x;
+        let shadowY = this.y - cam.y;
+        let shadowScale = Math.max(0.3, 1.0 - this.z / 200);
+        ctx.save();
+        ctx.globalAlpha = 0.35 * shadowScale;
+        ctx.fillStyle = 'rgba(0, 5, 12, 1)';
         ctx.beginPath();
-        ctx.arc(scx, scy, this.r, 0, Math.PI*2);
+        ctx.ellipse(shadowX, shadowY, this.r * 1.6 * shadowScale, this.r * 0.5 * shadowScale, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y - this.z;
+        ctx.beginPath();
+        ctx.arc(scx, scy, this.r, 0, Math.PI * 2);
         ctx.fillStyle = '#ff3d00';
         ctx.fill();
         ctx.strokeStyle = '#fff';
@@ -6116,6 +6334,8 @@ class Flashbang {
         this.x = x; this.y = y; this.vx = vx; this.vy = vy;
         this.fuse = 1.5;
         this.r = 5;
+        this.z = 0;
+        this.vz = 220;
     }
     update(dt, walls, game) {
         this.vx *= Math.pow(0.01, dt);
@@ -6152,6 +6372,15 @@ class Flashbang {
                     }
                 }
             }
+        }
+
+        const GRAVITY = 680;
+        this.vz -= GRAVITY * dt;
+        this.z += this.vz * dt;
+        if (this.z < 0) {
+            this.z = 0;
+            this.vz *= -0.42;
+            if (Math.abs(this.vz) < 30) this.vz = 0;
         }
 
         this.fuse -= dt;
@@ -6222,8 +6451,19 @@ class Flashbang {
         }
     }
     draw(ctx, cam) {
+        let shadowX = this.x - cam.x;
+        let shadowY = this.y - cam.y;
+        let shadowScale = Math.max(0.3, 1.0 - this.z / 200);
+        ctx.save();
+        ctx.globalAlpha = 0.35 * shadowScale;
+        ctx.fillStyle = 'rgba(0, 5, 12, 1)';
+        ctx.beginPath();
+        ctx.ellipse(shadowX, shadowY, this.r * 1.6 * shadowScale, this.r * 0.5 * shadowScale, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
         let scx = this.x - cam.x;
-        let scy = this.y - cam.y;
+        let scy = this.y - cam.y - this.z;
         
         ctx.save();
         ctx.fillStyle = '#8a9b9c';
@@ -6419,6 +6659,8 @@ class Item {
         this.y += this.vy * dt;
     }
     draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.3, this.r * 0.4);
+
         let scx = this.x - cam.x;
         let scy = this.y - cam.y;
         ctx.save();
@@ -6492,18 +6734,40 @@ class Particle {
 }
 
 class FloatingText {
-    constructor(x, y, text, color = '#39ff14', life = 1.0) {
-        this.init(x, y, text, color, life);
+    constructor(x, y, text, color = '#39ff14', life = 1.0, vx = 0, vy = -60, gravity = 0, bounce = false) {
+        this.init(x, y, text, color, life, vx, vy, gravity, bounce);
     }
-    init(x, y, text, color = '#39ff14', life = 1.0) {
+    init(x, y, text, color = '#39ff14', life = 1.0, vx = 0, vy = -60, gravity = 0, bounce = false) {
         this.x = x; this.y = y;
         this.text = text;
         this.color = color;
         this.life = life;
         this.maxLife = life;
+        this.vx = vx;
+        this.vy = vy;
+        this.gravity = gravity;
+        this.bounce = bounce;
+        this.hasBounced = false;
+        this.bounceY = y + 20;
     }
     update(dt) {
-        this.y -= dt * 45; 
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        
+        if (this.gravity) {
+            this.vy += this.gravity * dt;
+        }
+        
+        if (this.bounce && !this.hasBounced && this.y >= this.bounceY) {
+            this.y = this.bounceY;
+            this.vy = -Math.abs(this.vy) * 0.4;
+            this.vx *= 0.5;
+            this.hasBounced = true;
+            this.gravity = 0;
+        } else if (!this.gravity && !this.bounce) {
+            this.y -= dt * 45;
+        }
+        
         this.life -= dt;
         return this.life > 0;
     }
@@ -6587,6 +6851,17 @@ class Game {
         this.dogs = [];
         this.miniDrones = [];
         this.floatingTexts = [];
+        this.dustMotes = [];
+        this.initDustMotes();
+        this.smokeParticles = [];
+        this.embers = [];
+        this.chromaticAberrationTimer = 0;
+        this.gloryKillTimer = 0;
+        this.gloryKillTarget = null;
+        this.baseTimeScale = 1.0;
+        this.heartbeatTimer = 0;
+        this.heartbeatPhase = 0;
+        this.heartbeatIntensity = 0;
         this.bullets = [];
         this.enemies = [];
         this.hudState = {};
@@ -6646,15 +6921,129 @@ class Game {
         return e;
     }
 
-    spawnFloatingText(x, y, text, color = '#39ff14', life = 1.0) {
+    spawnFloatingText(x, y, text, color = '#39ff14', life = 1.0, vx = 0, vy = -60, gravity = 0, bounce = false) {
         let ft;
         if (this.inactiveFloatingTexts.length > 0) {
             ft = this.inactiveFloatingTexts.pop();
-            ft.init(x, y, text, color, life);
+            ft.init(x, y, text, color, life, vx, vy, gravity, bounce);
         } else {
-            ft = new FloatingText(x, y, text, color, life);
+            ft = new FloatingText(x, y, text, color, life, vx, vy, gravity, bounce);
         }
         return ft;
+    }
+
+    initDustMotes() {
+        const COUNT = 75;
+        this.dustMotes = [];
+        for (let i = 0; i < COUNT; i++) {
+            this.dustMotes.push({
+                x: Math.random() * this.mapW,
+                y: Math.random() * this.mapH,
+                vx: (Math.random() - 0.5) * 18,
+                vy: (Math.random() - 0.5) * 18,
+                r: Math.random() * 2.5 + 0.5,
+                opacity: Math.random() * 0.18 + 0.04,
+                parallaxFactor: Math.random() * 0.35 + 0.15,
+            });
+        }
+    }
+
+    updateDustMotes(dt) {
+        for (let m of this.dustMotes) {
+            m.x += m.vx * dt;
+            m.y += m.vy * dt;
+            if (m.x < 0) m.x += this.mapW;
+            if (m.x > this.mapW) m.x -= this.mapW;
+            if (m.y < 0) m.y += this.mapH;
+            if (m.y > this.mapH) m.y -= this.mapH;
+        }
+    }
+
+    triggerChromaticAberration(duration = 0.2) {
+        this.chromaticAberrationTimer = Math.max(this.chromaticAberrationTimer, duration);
+        // Also track intensity peak for variable-strength rendering
+        this.chromaticAberrationPeak = Math.max(this.chromaticAberrationPeak || 0, duration);
+    }
+
+    triggerGloryKill(enemy) {
+        if (this.gloryKillTimer > 0) return;
+        this.baseTimeScale = this.timeScale;
+        this.timeScale = 0.08;
+        this.gloryKillTimer = 1.2;
+        // Store target position for UI/effects but do NOT pan camera to it
+        this.gloryKillTarget = { x: enemy.x, y: enemy.y };
+        // Strong zoom punch to signal the kill, stays player-centered
+        if (this.camera) this.camera.punchZoom(0.14);
+        if (this.camera2) this.camera2.punchZoom(0.14);
+        // Chromatic aberration flash on glory kill
+        this.triggerChromaticAberration(0.5);
+    }
+
+    spawnBarrelFX(x, y, angle) {
+        let smokeCount = 3 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < smokeCount; i++) {
+            let spread = (Math.random() - 0.5) * 1.2;
+            let spd = Math.random() * 40 + 15;
+            this.smokeParticles.push({
+                x: x + (Math.random() - 0.5) * 8,
+                y: y + (Math.random() - 0.5) * 8,
+                vx: Math.cos(angle + spread) * spd - Math.sin(angle) * 25,
+                vy: Math.sin(angle + spread) * spd + Math.cos(angle) * 25,
+                r: 4 + Math.random() * 4,
+                maxR: 28 + Math.random() * 20,
+                life: 0.8 + Math.random() * 0.6,
+                maxLife: 0,
+                opacity: 0.35 + Math.random() * 0.15,
+            });
+            this.smokeParticles[this.smokeParticles.length - 1].maxLife = this.smokeParticles[this.smokeParticles.length - 1].life;
+        }
+        
+        let emberCount = 1 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < emberCount; i++) {
+            let spread = (Math.random() - 0.5) * 0.8;
+            this.embers.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle + spread) * (Math.random() * 80 + 30) - Math.sin(angle) * 20,
+                vy: Math.sin(angle + spread) * (Math.random() * 80 + 30),
+                z: 0,
+                vz: Math.random() * 180 + 100,
+                life: 1.0 + Math.random() * 0.5,
+                maxLife: 0,
+            });
+            this.embers[this.embers.length - 1].maxLife = this.embers[this.embers.length - 1].life;
+        }
+    }
+
+    spawnDeployRing(x, y) {
+        for (let i = 0; i < 16; i++) {
+            let a = (i / 16) * Math.PI * 2;
+            let spd = 120 + Math.random() * 80;
+            let p = this.spawnParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, '#39ff14', 0.6, 3);
+            if (p) this.particles.push(p);
+        }
+        let p2 = this.spawnParticle(x, y, 0, 0, '#ffffff', 0.25, 12);
+        if (p2) this.particles.push(p2);
+    }
+
+    updateHeartbeat(dt, player) {
+        let healthPct = player ? (player.hp / player.maxHp) : 1.0;
+        if (healthPct < 0.20 && !player.dead) {
+            this.heartbeatTimer += dt;
+            let beatInterval = 0.75;
+            this.heartbeatPhase = (this.heartbeatTimer % beatInterval) / beatInterval;
+            
+            let pulse1 = Math.max(0, 1.0 - this.heartbeatPhase * 5.0);
+            let pulse2 = Math.max(0, 1.0 - Math.abs(this.heartbeatPhase - 0.45) * 8.0);
+            this.heartbeatIntensity = Math.max(pulse1, pulse2);
+            
+            if (pulse1 > 0.7 || pulse2 > 0.7) {
+                this.screenShake = Math.max(this.screenShake, 3.5);
+            }
+        } else {
+            this.heartbeatTimer = 0;
+            this.heartbeatIntensity = 0;
+        }
     }
 
     triggerHitStop(duration) {
@@ -7490,6 +7879,7 @@ class Game {
             for (let i = 0; i < 12; i++) {
                 this.particles.push(new Particle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.4, 2));
             }
+            this.spawnDeployRing(cx, cy);
         } else {
             audio.playRicochet(); 
         }
@@ -7533,6 +7923,7 @@ class Game {
             for (let i = 0; i < 12; i++) {
                 this.particles.push(new Particle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.4, 2));
             }
+            this.spawnDeployRing(cx, cy);
         } else {
             audio.playRicochet(); 
         }
@@ -7611,6 +8002,7 @@ class Game {
             for (let i = 0; i < 12; i++) {
                 this.particles.push(new Particle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), laserColor, 0.4, 2));
             }
+            this.spawnDeployRing(cx, cy);
         } else {
             audio.playRicochet(); 
         }
@@ -7997,6 +8389,15 @@ class Game {
         }
         this.miniDrones = [];
         this.floatingTexts = [];
+        this.initDustMotes();
+        this.smokeParticles = [];
+        this.embers = [];
+        this.chromaticAberrationTimer = 0;
+        this.gloryKillTimer = 0;
+        this.gloryKillTarget = null;
+        this.heartbeatTimer = 0;
+        this.heartbeatPhase = 0;
+        this.heartbeatIntensity = 0;
         this.barriers = []; 
         this.drone = null;  
         
@@ -8159,12 +8560,22 @@ class Game {
             if (isJackpot) {
                 amount = Math.floor(MathUtils.rand(100, 151)); 
                 amount = Math.round(amount * this.cashMultiplier);
-                this.floatingTexts.push(this.spawnFloatingText(it.x, it.y - 12, "JACKPOT +$" + amount + "!", '#ffea00', 1.8));
+                let cash_vx = (Math.random() - 0.5) * 120;
+                this.floatingTexts.push(this.spawnFloatingText(
+                    it.x, it.y - 12, "JACKPOT +$" + amount + "!",
+                    '#ffea00', 1.8,
+                    cash_vx, -110, 260, true
+                ));
                 audio.playPickup('money');
                 setTimeout(() => { audio.playPickup('money'); }, 80);
             } else {
                 amount = Math.round(amount * this.cashMultiplier);
-                this.floatingTexts.push(this.spawnFloatingText(it.x, it.y - 10, "+$" + amount, '#39ff14', 1.0));
+                let cash_vx = (Math.random() - 0.5) * 90;
+                this.floatingTexts.push(this.spawnFloatingText(
+                    it.x, it.y - 10, "+$" + amount,
+                    '#39ff14', 1.2,
+                    cash_vx, -80, 260, true
+                ));
                 audio.playPickup('money');
             }
             p.cash += amount;
@@ -8360,6 +8771,13 @@ class Game {
                 enemy.maxHp = enemy.hp;
                 enemy.speed = enemy.speed * scaleSpeed;
                 
+                if (Math.random() < 0.04) {
+                    enemy.isElite = true;
+                    enemy.hp = Math.round(enemy.hp * 2.2);
+                    enemy.maxHp = enemy.hp;
+                    enemy.r *= 1.45;
+                }
+                
                 this.enemies.push(enemy);
                 this.enemiesToSpawn--;
                 this.spawnTimer = Math.max(0.2, 1.6 - this.wave*0.12);
@@ -8404,6 +8822,12 @@ class Game {
             let p2MaxZoom = this.player2.weapon.maxZoom || 0.15;
             this.camera2.update(this.player2, this.mapW, this.mapH, this.width / 2, this.height, dt, aimCoords2.x, aimCoords2.y, p2MaxZoom);
         }
+        
+        let activePlayer = this.player;
+        if (this.isTwoPlayer && this.player2 && this.player2.hp < this.player.hp) {
+            activePlayer = this.player2;
+        }
+        this.updateHeartbeat(dt, activePlayer);
         
         if (this.flashMuffleTimer > 0) {
             this.flashMuffleTimer -= dt;
@@ -8486,6 +8910,38 @@ class Game {
                     this.miniDrones.splice(i, 1);
                 }
             }
+        }
+
+        this.updateDustMotes(dt);
+
+        for (let i = this.smokeParticles.length - 1; i >= 0; i--) {
+            let s = this.smokeParticles[i];
+            s.life -= dt;
+            s.x += s.vx * dt;
+            s.y += s.vy * dt;
+            s.vx *= Math.pow(0.04, dt);
+            s.vy *= Math.pow(0.04, dt);
+            let t = 1 - (s.life / s.maxLife);
+            s.r = 4 + (s.maxR - 4) * t;
+            if (s.life <= 0) { this.smokeParticles.splice(i, 1); }
+        }
+
+        const EMBER_GRAVITY = 600;
+        for (let i = this.embers.length - 1; i >= 0; i--) {
+            let e = this.embers[i];
+            e.life -= dt;
+            e.x += e.vx * dt;
+            e.y += e.vy * dt;
+            e.vz -= EMBER_GRAVITY * dt;
+            e.z += e.vz * dt;
+            if (e.z < 0) {
+                e.z = 0;
+                e.vz *= -0.38;
+                e.vx *= 0.6;
+                e.vy *= 0.6;
+                if (Math.abs(e.vz) < 20) e.vz = 0;
+            }
+            if (e.life <= 0) { this.embers.splice(i, 1); }
         }
 
         for (let p of this.particles) p.update(dt);
@@ -9553,6 +10009,22 @@ class Game {
             this.ctx.restore();
         }
 
+        // DUST MOTES (parallax background)
+        this.ctx.save();
+        for (let m of this.dustMotes) {
+            let mx = (m.x - cam.x * m.parallaxFactor) % viewportW;
+            if (mx < 0) mx += viewportW;
+            let my = (m.y - cam.y * m.parallaxFactor) % viewportH;
+            if (my < 0) my += viewportH;
+            
+            this.ctx.globalAlpha = m.opacity;
+            this.ctx.fillStyle = 'rgba(200, 220, 255, 1)';
+            this.ctx.beginPath();
+            this.ctx.arc(mx, my, m.r, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        this.ctx.restore();
+
         this.map.draw(this.ctx, cam, viewportW, viewportH);
 
         if (this.state === 'playing') {
@@ -9609,6 +10081,35 @@ class Game {
         for (let m of this.mines) m.draw(this.ctx, cam);
         for (let g of this.grenades) g.draw(this.ctx, cam);
         for (let p of this.particles) p.draw(this.ctx, cam);
+
+        // SMOKE PARTICLES (heavy weapon trail/lingering gas)
+        this.ctx.save();
+        for (let s of this.smokeParticles) {
+            let alpha = (s.life / s.maxLife) * s.opacity;
+            this.ctx.globalAlpha = Math.max(0, alpha);
+            this.ctx.fillStyle = `rgb(30, 35, 40)`;
+            this.ctx.beginPath();
+            this.ctx.arc(s.x - cam.x, s.y - cam.y, s.r, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.restore();
+
+        // EMBERS (Z-axis lifted)
+        this.ctx.save();
+        for (let e of this.embers) {
+            let alpha = (e.life / e.maxLife);
+            this.ctx.globalAlpha = Math.max(0, alpha * 0.9);
+            this.ctx.fillStyle = '#ffcc00';
+            this.ctx.shadowBlur = 6;
+            this.ctx.shadowColor = '#ff8800';
+            this.ctx.beginPath();
+            this.ctx.arc(e.x - cam.x, e.y - cam.y - e.z, 2.5, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.shadowBlur = 0;
+        this.ctx.restore();
         for (let e of this.enemies) e.draw(this.ctx, cam);
         if (this.enemies.length === 1 && this.enemiesToSpawn === 0) {
             let lastEnemy = this.enemies[0];
@@ -9849,6 +10350,12 @@ class Game {
             this.ctx.restore();
         }
 
+        if (this.floatingTexts) {
+            for (let ft of this.floatingTexts) {
+                ft.draw(this.ctx, cam);
+            }
+        }
+
         this.ctx.restore();
     }
 
@@ -9861,6 +10368,25 @@ class Game {
         vignette.addColorStop(1, 'rgba(0,4,12,0.85)');
         this.ctx.fillStyle = vignette;
         this.ctx.fillRect(x, y, w, h);
+
+        let hpPct = p.hp / p.maxHp;
+        if (hpPct < 0.20 && !p.dead) {
+            let baseIntensity = (0.20 - hpPct) / 0.20;
+            let pulseFactor = this.heartbeatIntensity || 0;
+            let vigAlpha = baseIntensity * (0.22 + 0.28 * pulseFactor);
+            
+            this.ctx.save();
+            this.ctx.globalAlpha = Math.max(0, vigAlpha);
+            let radGrad = this.ctx.createRadialGradient(
+                x + w / 2, y + h / 2, h * 0.15,
+                x + w / 2, y + h / 2, w * 0.70
+            );
+            radGrad.addColorStop(0, 'rgba(255, 0, 42, 0)');
+            radGrad.addColorStop(1, 'rgba(255, 0, 42, 1.0)');
+            this.ctx.fillStyle = radGrad;
+            this.ctx.fillRect(x, y, w, h);
+            this.ctx.restore();
+        }
 
         if (p.flashOpacity > 0) {
             this.ctx.fillStyle = `rgba(255, 255, 255, ${p.flashOpacity})`;
@@ -9875,6 +10401,34 @@ class Game {
         if (this.winFlashIntensity > 0) {
             this.ctx.fillStyle = `rgba(255, 215, 0, ${this.winFlashIntensity * 0.45})`;
             this.ctx.fillRect(x, y, w, h);
+        }
+    }
+
+    drawViewportWithAberration(camera, player, isPlayer2) {
+        if (this.chromaticAberrationTimer > 0) {
+            let shiftVal = (this.chromaticAberrationTimer / (this.chromaticAberrationPeak || 0.5)) * 26;
+            
+            // Draw center layer with slightly reduced opacity
+            this.ctx.save();
+            this.ctx.globalAlpha = 0.55;
+            this.drawViewport(camera, player, isPlayer2);
+            this.ctx.restore();
+
+            // Left ghost layer with sine vertical shift
+            this.ctx.save();
+            this.ctx.globalAlpha = 0.40;
+            this.ctx.translate(-shiftVal, Math.sin(Date.now() * 0.05) * 6);
+            this.drawViewport(camera, player, isPlayer2);
+            this.ctx.restore();
+
+            // Right ghost layer with negative sine vertical shift
+            this.ctx.save();
+            this.ctx.globalAlpha = 0.40;
+            this.ctx.translate(shiftVal, -Math.sin(Date.now() * 0.05) * 6);
+            this.drawViewport(camera, player, isPlayer2);
+            this.ctx.restore();
+        } else {
+            this.drawViewport(camera, player, isPlayer2);
         }
     }
 
@@ -9899,7 +10453,7 @@ class Game {
             this.ctx.scale(effectiveZoom1, effectiveZoom1);
             this.ctx.translate(-viewportW / 2, -viewportH / 2);
             
-            this.drawViewport(this.camera, this.player, false);
+            this.drawViewportWithAberration(this.camera, this.player, false);
             this.ctx.restore();
 
             // Draw P1 Screen Overlays in Screen Space
@@ -9918,7 +10472,7 @@ class Game {
             this.ctx.scale(effectiveZoom2, effectiveZoom2);
             this.ctx.translate(-viewportW / 2, -viewportH / 2);
             
-            this.drawViewport(this.camera2, this.player2, true);
+            this.drawViewportWithAberration(this.camera2, this.player2, true);
             this.ctx.restore();
 
             // Draw P2 Screen Overlays in Screen Space
@@ -9942,7 +10496,7 @@ class Game {
             this.ctx.scale(effectiveZoom, effectiveZoom);
             this.ctx.translate(-this.width / 2, -this.height / 2);
             
-            this.drawViewport(this.camera, this.player, false);
+            this.drawViewportWithAberration(this.camera, this.player, false);
             this.ctx.restore();
 
             // Draw Screen Overlays in Screen Space
@@ -10111,6 +10665,20 @@ class Game {
         this.lastTime = timestamp;
         if (dt > 0.1) dt = 0.1;
         
+        if (this.chromaticAberrationTimer > 0) {
+            this.chromaticAberrationTimer -= dt;
+            if (this.chromaticAberrationTimer < 0) this.chromaticAberrationTimer = 0;
+        }
+        
+        if (this.gloryKillTimer > 0) {
+            this.gloryKillTimer -= dt;
+            if (this.gloryKillTimer <= 0) {
+                this.gloryKillTimer = 0;
+                this.gloryKillTarget = null;
+                this.timeScale = this.baseTimeScale;
+            }
+        }
+
         if (this.hitPauseTimer > 0) {
             this.hitPauseTimer -= dt;
             if (this.hitPauseTimer < 0) this.hitPauseTimer = 0;
@@ -10605,23 +11173,39 @@ class TouchController {
                     game.player.barriersInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, isMKII: closestItem.isMKII || false });
                     game.barriers.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, `BARRIER RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#00e5ff', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        game.player.x, game.player.y - 15, `+RETRIEVED BARRIER (${Math.round(closestItem.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                 } else if (closestItemType === 'turret') {
                     game.player.turretsInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, isMKII: closestItem.isMKII || false });
                     game.turrets.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, `TURRET RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#ffea00', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        game.player.x, game.player.y - 15, `+RETRIEVED TURRET (${Math.round(closestItem.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                 } else if (closestItemType === 'dog') {
                     game.player.dogsInventory.push({ hp: closestItem.hp, upgraded: closestItem.upgraded || false });
                     game.dogs.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, `SPOT ROBOT RETRIEVED (${Math.round(closestItem.hp)}HP)`, '#ffffff', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        game.player.x, game.player.y - 15, `+RETRIEVED SPOT ROBOT (${Math.round(closestItem.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                 } else if (closestItemType === 'drone') {
                     game.player.dronesCount = Math.min(3, (game.player.dronesCount || 0) + 1);
                     game.drone.stopAudio();
                     game.drone = null;
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
-                    game.floatingTexts.push(game.spawnFloatingText(game.player.x, game.player.y - 15, "FPV DRONE RETRIEVED", '#ffd700', 1.2));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        game.player.x, game.player.y - 15, "+RETRIEVED FPV DRONE",
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
                 }
             } else {
                 // Show visual feedback that they tapped but are too far
