@@ -420,6 +420,11 @@
     #tab-guide::-webkit-scrollbar-track { background: rgba(0, 229, 255, 0.05); border-radius: 3px; }
     #tab-guide::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, 0.3); border-radius: 3px; }
     #tab-guide::-webkit-scrollbar-thumb:hover { background: rgba(0, 229, 255, 0.6); }
+
+    #perk-choices-container::-webkit-scrollbar { width: 6px; }
+    #perk-choices-container::-webkit-scrollbar-track { background: rgba(0, 229, 255, 0.05); border-radius: 3px; }
+    #perk-choices-container::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, 0.3); border-radius: 3px; }
+    #perk-choices-container::-webkit-scrollbar-thumb:hover { background: rgba(0, 229, 255, 0.6); }
 </style>
 </head>
 <body>
@@ -1109,8 +1114,8 @@
     </div>
 </div>
 
-<div id="perk-screen" class="menu-overlay hidden" style="background: rgba(0, 2, 8, 0.95); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
-    <div class="menu-box" style="width: 90%; max-width: 800px; padding: 40px; border-color: var(--neon-blue); box-shadow: 0 0 25px rgba(0, 229, 255, 0.25);">
+<div id="perk-screen" class="menu-overlay hidden" style="background: rgba(0, 2, 8, 0.95); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); overflow-y: auto; padding: 20px 0;">
+    <div class="menu-box" style="width: 90%; max-width: 840px; padding: 30px; border-color: var(--neon-blue); box-shadow: 0 0 25px rgba(0, 229, 255, 0.25); display: flex; flex-direction: column; max-height: 90vh; margin: auto;">
         <div id="perk-player-indicator" style="
             font-size: 12px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase;
             color: var(--neon-blue); margin-bottom: 6px;
@@ -1121,7 +1126,16 @@
         <h1 style="color: var(--neon-blue); letter-spacing: 3px; font-size: 24px; margin-bottom: 5px; text-shadow: 0 0 10px var(--neon-blue);">PERK SELECTION REQUESTED</h1>
         <p style="font-size: 12px; color: #a9c2c7; margin-bottom: 30px; letter-spacing: 1px;">CHOOSE AN UPGRADE TO LINK WITH YOUR WEAPON ARSENAL</p>
         
-        <div id="perk-choices-container" style="display: flex; gap: 20px; justify-content: center; margin-bottom: 30px;">
+        <div id="perk-choices-container" style="
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 16px;
+            width: 100%;
+            margin-bottom: 20px;
+            overflow-y: auto;
+            padding: 8px;
+            flex-grow: 1;
+        ">
             <!-- Dynamic perk cards -->
         </div>
     </div>
@@ -1518,11 +1532,6 @@ function getHUDSelectorStateKey(player, suffix) {
 
     let activeSwarmCount = game.miniDrones ? game.miniDrones.filter(md => md.owner === player && !md.dead).length : 0;
     
-    let ammoState = player.inventory.map(w => {
-        let wKey = w.name.toLowerCase();
-        return `${wKey}:${player.ammo[wKey]}:${player.maxAmmo[wKey]}:${player.ammoTypes[wKey]}`;
-    }).join(',');
-    
     return [
         suffix,
         player.leftSelectIdx,
@@ -1542,130 +1551,133 @@ function getHUDSelectorStateKey(player, suffix) {
         player.barriersCount,
         player.barrierUpgraded,
         player.turretsCount,
-        player.pistolHP,
-        ammoState
+        player.pistolHP
     ].join('|');
 }
 
 function renderHUDSelectors(player, suffix) {
     if (!player) return;
     
+    let key = getHUDSelectorStateKey(player, suffix);
+    let keyMatched = false;
     if (typeof game !== 'undefined' && game && game.hudState) {
-        let key = getHUDSelectorStateKey(player, suffix);
         if (game.hudState['selectorState_' + suffix] === key) {
-            return;
-        }
-        game.hudState['selectorState_' + suffix] = key;
-    }
-    
-    let leftTrack = document.getElementById('left-track-' + suffix);
-    if (leftTrack) {
-        leftTrack.innerHTML = '';
-        let items = [
-            { name: 'Medpack', count: player.medpacks, max: 3, icon: SVGIcons.medpack },
-            { name: 'Energy Drink', count: player.energyDrinks, max: 3, icon: SVGIcons.boost },
-            { name: 'Grenade', count: player.grenades, max: 3, icon: SVGIcons.grenade },
-            { name: 'Trip Mine', count: player.mines, max: 3, icon: SVGIcons.mine }
-        ];
-        items.forEach((item, idx) => {
-            let slot = document.createElement('div');
-            slot.className = 'hud-item-slot' + (idx === player.leftSelectIdx ? (suffix === 'p2' ? ' active active-p2' : ' active') : '');
-            let countColor = 'white';
-            if (item.count === 0) countColor = '#ff2a5f';
-            else if (item.count >= item.max) countColor = '#39ff14';
-            slot.innerHTML = `
-                <div class="item-icon-wrapper">${item.icon}</div>
-                <div class="item-count" style="color: ${countColor}">${item.count}</div>
-                <div class="item-label-overlay">${item.name.toUpperCase()} [E / L3]</div>
-            `;
-            leftTrack.appendChild(slot);
-        });
-        let leftOffset = 68 - (player.leftSelectIdx * 52);
-        leftTrack.style.transform = `translateY(${leftOffset}px)`;
-    }
-    
-    let rightTrack = document.getElementById('right-track-' + suffix);
-    if (rightTrack) {
-        rightTrack.innerHTML = '';
-        let droneStatus = 0;
-        let droneColor = '#808f9c';
-        if (game.drone && !game.drone.dead && game.drone.pilot === player) {
-            droneStatus = game.drone.isPiloted ? 'FLYING' : 'PLACED';
-            droneColor = game.drone.isPiloted ? '#ff0055' : '#ffb700';
-        } else if (player.dronesCount > 0) {
-            droneStatus = 'READY';
-            droneColor = '#39ff14';
+            keyMatched = true;
         } else {
-            droneStatus = 'NONE';
+            game.hudState['selectorState_' + suffix] = key;
         }
-        let droneCountText = (player.dronesCount || 0).toString();
-        let droneCountColor = (player.dronesCount > 0) ? '#39ff14' : '#ff2a5f';
-        if (droneStatus === 'FLYING') droneCountColor = '#ff0055';
-        else if (droneStatus === 'PLACED') droneCountColor = '#ffb700';
-        
-        let dogStatus = 'NONE';
-        let dogColor = player.dogUpgraded ? '#ff00ff' : '#ff2a5f';
-        let activeDog = game.dogs ? game.dogs.find(d => d.owner === player && !d.dead) : null;
-        if (activeDog) {
-            if (activeDog.waypoint) {
-                dogStatus = 'WAYPOINT';
-                dogColor = '#39ff14';
-            } else {
-                dogStatus = 'FIELD';
-                dogColor = player.dogUpgraded ? '#ff00ff' : '#ffb700';
-            }
-        } else if (player.dogsCount > 0) {
-            dogStatus = 'READY';
-            dogColor = player.dogUpgraded ? '#ff00ff' : '#39ff14';
-        }
-        let dogCountText = activeDog ? '1' : player.dogsCount.toString();
-        let dogCountColor = dogColor;
-        let dogName = player.dogUpgraded ? `SUPER SPOT MK.II (${dogStatus})` : `Spot Robot (${dogStatus})`;
-
-        let items = [
-            { name: `FPV Drone (${droneStatus})`, countText: droneCountText, countColor: droneCountColor, icon: SVGIcons.drone },
-            { name: 'Barrier Wall', countText: player.barriersCount, countColor: player.barriersCount === 0 ? '#ff2a5f' : player.barriersCount >= 5 ? '#39ff14' : 'white', icon: SVGIcons.barrier },
-            { name: 'Auto Turret', countText: player.turretsCount, countColor: player.turretsCount === 0 ? '#ff2a5f' : player.turretsCount >= 1 ? '#39ff14' : 'white', icon: SVGIcons.turret },
-            { name: dogName, countText: dogCountText, countColor: dogCountColor, icon: SVGIcons.dog },
-            { name: 'Hunter Swarm', countText: player.hunterSwarmCount.toString(), countColor: player.hunterSwarmCount === 0 ? '#ff2a5f' : '#39ff14', icon: SVGIcons.hunter_swarm }
-        ];
-        items.forEach((item, idx) => {
-            let slot = document.createElement('div');
-            slot.className = 'hud-item-slot' + (idx === player.rightSelectIdx ? (suffix === 'p2' ? ' active active-p2' : ' active') : '');
-            slot.innerHTML = `
-                <div class="item-icon-wrapper" style="color: ${idx === 0 ? droneColor : (idx === 3 ? dogColor : (idx === 4 ? (player.isPlayer2 ? '#ffb700' : '#39ff14') : 'currentColor'))}">${item.icon}</div>
-                <div class="item-count" style="color: ${item.countColor}">${item.countText}</div>
-                <div class="item-label-overlay">${item.name.toUpperCase()} [C / R3]</div>
-            `;
-            rightTrack.appendChild(slot);
-        });
-        let rightOffset = 68 - (player.rightSelectIdx * 52);
-        rightTrack.style.transform = `translateY(${rightOffset}px)`;
     }
     
-    let weaponTrack = document.getElementById('weapon-track-' + suffix);
+    if (!keyMatched) {
+        let leftTrack = document.getElementById('left-track-' + suffix);
+        if (leftTrack) {
+            leftTrack.innerHTML = '';
+            let items = [
+                { name: 'Medpack', count: player.medpacks, max: 3, icon: SVGIcons.medpack },
+                { name: 'Energy Drink', count: player.energyDrinks, max: 3, icon: SVGIcons.boost },
+                { name: 'Grenade', count: player.grenades, max: 3, icon: SVGIcons.grenade },
+                { name: 'Trip Mine', count: player.mines, max: 3, icon: SVGIcons.mine }
+            ];
+            items.forEach((item, idx) => {
+                let slot = document.createElement('div');
+                slot.className = 'hud-item-slot' + (idx === player.leftSelectIdx ? (suffix === 'p2' ? ' active active-p2' : ' active') : '');
+                let countColor = 'white';
+                if (item.count === 0) countColor = '#ff2a5f';
+                else if (item.count >= item.max) countColor = '#39ff14';
+                slot.innerHTML = `
+                    <div class="item-icon-wrapper">${item.icon}</div>
+                    <div class="item-count" style="color: ${countColor}">${item.count}</div>
+                    <div class="item-label-overlay">${item.name.toUpperCase()} [E / L3]</div>
+                `;
+                leftTrack.appendChild(slot);
+            });
+            let leftOffset = 68 - (player.leftSelectIdx * 52);
+            leftTrack.style.transform = `translateY(${leftOffset}px)`;
+        }
+        
+        let rightTrack = document.getElementById('right-track-' + suffix);
+        if (rightTrack) {
+            rightTrack.innerHTML = '';
+            let droneStatus = 0;
+            let droneColor = '#808f9c';
+            if (game.drone && !game.drone.dead && game.drone.pilot === player) {
+                droneStatus = game.drone.isPiloted ? 'FLYING' : 'PLACED';
+                droneColor = game.drone.isPiloted ? '#ff0055' : '#ffb700';
+            } else if (player.dronesCount > 0) {
+                droneStatus = 'READY';
+                droneColor = '#39ff14';
+            } else {
+                droneStatus = 'NONE';
+            }
+            let droneCountText = (player.dronesCount || 0).toString();
+            let droneCountColor = (player.dronesCount > 0) ? '#39ff14' : '#ff2a5f';
+            if (droneStatus === 'FLYING') droneCountColor = '#ff0055';
+            else if (droneStatus === 'PLACED') droneCountColor = '#ffb700';
+            
+            let dogStatus = 'NONE';
+            let dogColor = player.dogUpgraded ? '#ff00ff' : '#ff2a5f';
+            let activeDog = game.dogs ? game.dogs.find(d => d.owner === player && !d.dead) : null;
+            if (activeDog) {
+                if (activeDog.waypoint) {
+                    dogStatus = 'WAYPOINT';
+                    dogColor = '#39ff14';
+                } else {
+                    dogStatus = 'FIELD';
+                    dogColor = player.dogUpgraded ? '#ff00ff' : '#ffb700';
+                }
+            } else if (player.dogsCount > 0) {
+                dogStatus = 'READY';
+                dogColor = player.dogUpgraded ? '#ff00ff' : '#39ff14';
+            }
+            let dogCountText = activeDog ? '1' : player.dogsCount.toString();
+            let dogCountColor = dogColor;
+            let dogName = player.dogUpgraded ? `SUPER SPOT MK.II (${dogStatus})` : `Spot Robot (${dogStatus})`;
+
+            let items = [
+                { name: `FPV Drone (${droneStatus})`, countText: droneCountText, countColor: droneCountColor, icon: SVGIcons.drone },
+                { name: 'Barrier Wall', countText: player.barriersCount, countColor: player.barriersCount === 0 ? '#ff2a5f' : player.barriersCount >= 5 ? '#39ff14' : 'white', icon: SVGIcons.barrier },
+                { name: 'Auto Turret', countText: player.turretsCount, countColor: player.turretsCount === 0 ? '#ff2a5f' : player.turretsCount >= 1 ? '#39ff14' : 'white', icon: SVGIcons.turret },
+                { name: dogName, countText: dogCountText, countColor: dogCountColor, icon: SVGIcons.dog },
+                { name: 'Hunter Swarm', countText: player.hunterSwarmCount.toString(), countColor: player.hunterSwarmCount === 0 ? '#ff2a5f' : '#39ff14', icon: SVGIcons.hunter_swarm }
+            ];
+            items.forEach((item, idx) => {
+                let slot = document.createElement('div');
+                slot.className = 'hud-item-slot' + (idx === player.rightSelectIdx ? (suffix === 'p2' ? ' active active-p2' : ' active') : '');
+                slot.innerHTML = `
+                    <div class="item-icon-wrapper" style="color: ${idx === 0 ? droneColor : (idx === 3 ? dogColor : (idx === 4 ? (player.isPlayer2 ? '#ffb700' : '#39ff14') : 'currentColor'))}">${item.icon}</div>
+                    <div class="item-count" style="color: ${item.countColor}">${item.countText}</div>
+                    <div class="item-label-overlay">${item.name.toUpperCase()} [C / R3]</div>
+                `;
+                rightTrack.appendChild(slot);
+            });
+            let rightOffset = 68 - (player.rightSelectIdx * 52);
+            rightTrack.style.transform = `translateY(${rightOffset}px)`;
+        }
+        
+        let weaponTrack = document.getElementById('weapon-track-' + suffix);
+        if (weaponTrack) {
+            weaponTrack.innerHTML = '';
+            player.inventory.forEach((w, idx) => {
+                let slot = document.createElement('div');
+                slot.className = 'weapon-slot' + (idx === player.weaponIdx ? ' active' : '');
+                slot.style.borderColor = w.color;
+                if (idx === player.weaponIdx) {
+                    slot.style.boxShadow = `0 0 12px ${w.color}55`;
+                }
+                let wIcon = SVGIcons[w.name.toLowerCase()] || '';
+                slot.innerHTML = `
+                    <div class="item-icon-wrapper" style="color: ${w.color}">${wIcon}</div>
+                    <div class="weapon-slot-name" style="color: ${w.color}">${w.name.toUpperCase()}</div>
+                `;
+                weaponTrack.appendChild(slot);
+            });
+            let weaponOffset = 120 - (player.weaponIdx * 92);
+            weaponTrack.style.transform = `translateX(${weaponOffset}px)`;
+        }
+    }
+    
     let ammoBar = document.getElementById('ammo-bar-' + suffix);
     let ammoText = document.getElementById('ui-ammo-text-' + suffix);
-    if (weaponTrack) {
-        weaponTrack.innerHTML = '';
-        player.inventory.forEach((w, idx) => {
-            let slot = document.createElement('div');
-            slot.className = 'weapon-slot' + (idx === player.weaponIdx ? ' active' : '');
-            slot.style.borderColor = w.color;
-            if (idx === player.weaponIdx) {
-                slot.style.boxShadow = `0 0 12px ${w.color}55`;
-            }
-            let wIcon = SVGIcons[w.name.toLowerCase()] || '';
-            slot.innerHTML = `
-                <div class="item-icon-wrapper" style="color: ${w.color}">${wIcon}</div>
-                <div class="weapon-slot-name" style="color: ${w.color}">${w.name.toUpperCase()}</div>
-            `;
-            weaponTrack.appendChild(slot);
-        });
-        let weaponOffset = 120 - (player.weaponIdx * 92);
-        weaponTrack.style.transform = `translateX(${weaponOffset}px)`;
-    }
-    
     let activeW = player.weapon;
     let wKey = activeW.name.toLowerCase();
     let ammoPct = 1.0;
@@ -3335,6 +3347,10 @@ const musicEngine = new MusicEngine();
  * UTILS & MATH
  */
 const MathUtils = {
+    _segmentResult: { x: 0, y: 0 },
+    _hitResult: { hit: false, dx: 0, dy: 0, dist: 0, px: 0, py: 0 },
+    _capsuleHitResult: { hit: false, dx: 0, dy: 0, dist: 0, px: 0, py: 0 },
+
     clamp: (val, min, max) => Math.max(min, Math.min(max, val)),
     rand: (min, max) => Math.random() * (max - min) + min,
     closestPointOnSegment: (px, py, ax, ay, bx, by) => {
@@ -3343,10 +3359,17 @@ const MathUtils = {
         let apx = px - ax;
         let apy = py - ay;
         let ab_len_sq = abx*abx + aby*aby;
-        if (ab_len_sq === 0) return { x: ax, y: ay };
+        let res = MathUtils._segmentResult;
+        if (ab_len_sq === 0) {
+            res.x = ax;
+            res.y = ay;
+            return res;
+        }
         let t = (apx * abx + apy * aby) / ab_len_sq;
         t = Math.max(0, Math.min(1, t));
-        return { x: ax + t * abx, y: ay + t * aby };
+        res.x = ax + t * abx;
+        res.y = ay + t * aby;
+        return res;
     },
     circleIntersectCapsule: (cx, cy, r, cap) => {
         let cp = MathUtils.closestPointOnSegment(cx, cy, cap.ax, cap.ay, cap.bx, cap.by);
@@ -3354,7 +3377,14 @@ const MathUtils = {
         let distY = cy - cp.y;
         let dist = Math.hypot(distX, distY);
         let minDist = r + cap.r;
-        return { hit: dist <= minDist, dx: distX, dy: distY, dist: dist, px: cp.x, py: cp.y };
+        let res = MathUtils._capsuleHitResult;
+        res.hit = dist <= minDist;
+        res.dx = distX;
+        res.dy = distY;
+        res.dist = dist;
+        res.px = cp.x;
+        res.py = cp.y;
+        return res;
     },
     lineIntersectCapsule: (x1, y1, x2, y2, cap) => {
         for (let i = 0; i <= 4; i++) {
@@ -3376,7 +3406,14 @@ const MathUtils = {
         let distX = cx - testX;
         let distY = cy - testY;
         let distance = Math.sqrt((distX*distX) + (distY*distY));
-        return { hit: distance <= r, dx: distX, dy: distY, dist: distance, px: testX, py: testY };
+        let res = MathUtils._hitResult;
+        res.hit = distance <= r;
+        res.dx = distX;
+        res.dy = distY;
+        res.dist = distance;
+        res.px = testX;
+        res.py = testY;
+        return res;
     },
     lineIntersectAABB: (x1, y1, x2, y2, rect) => {
         let minX = rect.x, maxX = rect.x + rect.w, minY = rect.y, maxY = rect.y + rect.h;
@@ -3424,9 +3461,218 @@ const EnemyTypes = {
     sapper: { hp: 35, speed: 210, color: '#ffea00', type: 'sapper', score: 20, weapon: 'melee', size: 11 }
 };
 
-/**
- * CLASSES
- */
+const cachedAmbientLightCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(24 / 90, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(0.6, 'rgba(0, 0, 0, 0.4)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(128, 128, 128, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedPlayerFlashlightCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(0.1, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(0.3, 'rgba(0, 0, 0, 0.75)');
+    grad.addColorStop(0.6, 'rgba(0, 0, 0, 0.2)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(256, 256, 256, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedDogFlashlightCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(0.2, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(0.6, 'rgba(0, 0, 0, 0.45)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(128, 128, 128, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedTurretFlashlightCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(0.5, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(0.8, 'rgba(0, 0, 0, 0.5)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(128, 128, 128, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedSoftGlowCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 0.35)');
+    grad.addColorStop(0.5, 'rgba(0, 0, 0, 0.15)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(64, 64, 64, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedIntenseGlowCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(64, 64, 64, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedMuzzleFlashLightCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(0.5, 'rgba(0, 0, 0, 0.3)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(128, 128, 128, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedExplosionLightCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(0.5, 'rgba(0, 0, 0, 0.5)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(128, 128, 128, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedWarmMuzzleFlashCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(255, 255, 240, 1)');
+    grad.addColorStop(0.3, 'rgba(255, 240, 180, 0.8)');
+    grad.addColorStop(0.7, 'rgba(255, 180, 50, 0.3)');
+    grad.addColorStop(1, 'rgba(255, 120, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(64, 64, 64, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedBulletGlowP1Canvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(57, 255, 20, 0.15)');
+    grad.addColorStop(0.5, 'rgba(57, 255, 20, 0.05)');
+    grad.addColorStop(1, 'rgba(57, 255, 20, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(64, 64, 64, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedBulletGlowP2Canvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(255, 183, 0, 0.15)');
+    grad.addColorStop(0.5, 'rgba(255, 183, 0, 0.05)');
+    grad.addColorStop(1, 'rgba(255, 183, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(64, 64, 64, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedTripMineRedGlowCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255, 42, 95, 0.85)');
+    grad.addColorStop(1, 'rgba(255, 42, 95, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(32, 32, 32, 0, Math.PI*2);
+    ctx.fill();
+    return canvas;
+})();
+
+const cachedShadowCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(48, 54, 72, 0.75)');
+    grad.addColorStop(0.3, 'rgba(48, 54, 72, 0.45)');
+    grad.addColorStop(1, 'rgba(48, 54, 72, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(64, 64, 64, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+})();
+
 function drawDropShadow(ctx, cam, x, y, radiusX, radiusY = null) {
     let sx = x - cam.x;
     // Offset down and slightly to the right to simulate light source from top-left
@@ -3442,16 +3688,7 @@ function drawDropShadow(ctx, cam, x, y, radiusX, radiusY = null) {
     ctx.translate(sx, sy);
     ctx.scale(1.0, scaleY);
     
-    // Soft slate-grey shadow - visible against near-black floor
-    let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusX);
-    grad.addColorStop(0, 'rgba(48, 54, 72, 0.75)');
-    grad.addColorStop(0.3, 'rgba(48, 54, 72, 0.45)');
-    grad.addColorStop(1, 'rgba(48, 54, 72, 0)');
-    ctx.fillStyle = grad;
-    
-    ctx.beginPath();
-    ctx.arc(0, 0, radiusX, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.drawImage(cachedShadowCanvas, -radiusX, -radiusX, radiusX * 2, radiusX * 2);
     
     ctx.restore();
 }
@@ -3901,36 +4138,46 @@ class Entity {
         this.vx *= Math.pow(0.0006, dt);
         this.vy *= Math.pow(0.0006, dt);
         
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
+        let targetX = this.x + this.vx * dt;
+        let targetY = this.y + this.vy * dt;
+        let totalDist = Math.hypot(targetX - this.x, targetY - this.y);
 
-        // Prevent clipping through outer boundaries (recoil kickback fix)
+        // Break movement into safe chunks (max 15 units per step to prevent skipping 25-unit walls)
+        let stepCount = Math.max(1, Math.ceil(totalDist / 15));
+        let stepDt = dt / stepCount;
+
         let mapW = game ? game.mapW : 2200;
         let mapH = game ? game.mapH : 2200;
-        this.x = MathUtils.clamp(this.x, this.r, mapW - this.r);
-        this.y = MathUtils.clamp(this.y, this.r, mapH - this.r);
 
-        for (let wall of walls) {
-            let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
-            if (col.hit) {
-                if (col.dist > 0) {
-                    let nx = col.dx / col.dist;
-                    let ny = col.dy / col.dist;
-                    let overlap = this.r - col.dist;
-                    this.x += nx * overlap;
-                    this.y += ny * overlap;
-                    
-                    let dot = this.vx * nx + this.vy * ny;
-                    if (dot < 0) {
-                        this.vx -= nx * dot;
-                        this.vy -= ny * dot;
+        for (let step = 0; step < stepCount; step++) {
+            this.x += this.vx * stepDt;
+            this.y += this.vy * stepDt;
+
+            this.x = MathUtils.clamp(this.x, this.r, mapW - this.r);
+            this.y = MathUtils.clamp(this.y, this.r, mapH - this.r);
+
+            for (let wall of walls) {
+                let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
+                if (col.hit) {
+                    if (col.dist > 0) {
+                        let nx = col.dx / col.dist;
+                        let ny = col.dy / col.dist;
+                        let overlap = this.r - col.dist;
+                        this.x += nx * overlap;
+                        this.y += ny * overlap;
+                        
+                        let dot = this.vx * nx + this.vy * ny;
+                        if (dot < 0) {
+                            this.vx -= nx * dot;
+                            this.vy -= ny * dot;
+                        }
+                    } else {
+                        let wallCx = wall.x + wall.w / 2;
+                        let wallCy = wall.y + wall.h / 2;
+                        let pushAngle = Math.atan2(this.y - wallCy, this.x - wallCx);
+                        this.x += Math.cos(pushAngle) * 5;
+                        this.y += Math.sin(pushAngle) * 5;
                     }
-                } else {
-                    let wallCx = wall.x + wall.w / 2;
-                    let wallCy = wall.y + wall.h / 2;
-                    let pushAngle = Math.atan2(this.y - wallCy, this.x - wallCx);
-                    this.x += Math.cos(pushAngle) * 5;
-                    this.y += Math.sin(pushAngle) * 5;
                 }
             }
         }
@@ -4465,7 +4712,7 @@ class Player extends Entity {
             let spreadAngle = baseFireAngle + (Math.random() - 0.5) * this.weapon.spread;
             
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, this.weapon, this, isAP, isHP, false));
-            game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*600, Math.sin(spreadAngle)*600, '#fff', 0.04, 3));
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*600, Math.sin(spreadAngle)*600, '#fff', 0.04, 3);
         }
 
         const KICKBACK_FORCES = {
@@ -4731,7 +4978,7 @@ class Enemy extends Entity {
                 
                 if (sapperTargets.length > 0) {
                     let closestT = sapperTargets[0];
-                    let minDist = Infinity;
+                    let minDistSq = Infinity;
                     for (let t of sapperTargets) {
                         let tx = t.x !== undefined ? t.x : (t.ax + t.bx) / 2;
                         let ty = t.y !== undefined ? t.y : (t.ay + t.by) / 2;
@@ -4740,9 +4987,11 @@ class Enemy extends Entity {
                             tx = cp.x;
                             ty = cp.y;
                         }
-                        let d = Math.hypot(tx - this.x, ty - this.y);
-                        if (d < minDist) {
-                            minDist = d;
+                        let dx = tx - this.x;
+                        let dy = ty - this.y;
+                        let dSq = dx*dx + dy*dy;
+                        if (dSq < minDistSq) {
+                            minDistSq = dSq;
                             closestT = t;
                         }
                     }
@@ -4755,11 +5004,15 @@ class Enemy extends Entity {
                     }
                     if (playerTargets.length > 0) {
                         let closestP = playerTargets[0];
-                        let minDist = Math.hypot(closestP.x - this.x, closestP.y - this.y);
+                        let dx0 = closestP.x - this.x;
+                        let dy0 = closestP.y - this.y;
+                        let minDistSq = dx0*dx0 + dy0*dy0;
                         for (let i = 1; i < playerTargets.length; i++) {
-                            let d = Math.hypot(playerTargets[i].x - this.x, playerTargets[i].y - this.y);
-                            if (d < minDist) {
-                                minDist = d;
+                            let dx = playerTargets[i].x - this.x;
+                            let dy = playerTargets[i].y - this.y;
+                            let dSq = dx*dx + dy*dy;
+                            if (dSq < minDistSq) {
+                                minDistSq = dSq;
                                 closestP = playerTargets[i];
                             }
                         }
@@ -4785,14 +5038,16 @@ class Enemy extends Entity {
                 }
                 
                 let preferredPlayer = null;
-                let preferredDist = 320;
+                let preferredDistSq = 320 * 320;
                 for (let p of playerTargets) {
-                    let d = Math.hypot(p.x - this.x, p.y - this.y);
-                    if (d < preferredDist) {
+                    let dx = p.x - this.x;
+                    let dy = p.y - this.y;
+                    let dSq = dx*dx + dy*dy;
+                    if (dSq < preferredDistSq) {
                         let checkWalls = (this.weaponType === 'sniper') ? walls : nearbyWalls;
                         let hasLOS = !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, p.x, p.y, w));
                         if (hasLOS) {
-                            preferredDist = d;
+                            preferredDistSq = dSq;
                             preferredPlayer = p;
                         }
                     }
@@ -4802,11 +5057,15 @@ class Enemy extends Entity {
                     target = preferredPlayer;
                 } else if (targets.length > 0) {
                     let closestT = targets[0];
-                    let minDist = Math.hypot(closestT.x - this.x, closestT.y - this.y);
+                    let dx0 = closestT.x - this.x;
+                    let dy0 = closestT.y - this.y;
+                    let minDistSq = dx0*dx0 + dy0*dy0;
                     for (let i = 1; i < targets.length; i++) {
-                        let d = Math.hypot(targets[i].x - this.x, targets[i].y - this.y);
-                        if (d < minDist) {
-                            minDist = d;
+                        let dx = targets[i].x - this.x;
+                        let dy = targets[i].y - this.y;
+                        let dSq = dx*dx + dy*dy;
+                        if (dSq < minDistSq) {
+                            minDistSq = dSq;
                             closestT = targets[i];
                         }
                     }
@@ -4822,13 +5081,17 @@ class Enemy extends Entity {
                 targetY = cp.y;
             }
 
-            let distToTarget = Math.hypot(targetX - this.x, targetY - this.y);
+            let dxToT = targetX - this.x;
+            let dyToT = targetY - this.y;
+            let distToTarget = Math.sqrt(dxToT*dxToT + dyToT*dyToT);
             
             // FPV Drone Fear / Scattering Check
             let runFromDrone = false;
             let runFromObj = null;
             if (game && game.drone && !game.drone.dead && game.drone.isPiloted) {
-                let droneDist = Math.hypot(game.drone.x - this.x, game.drone.y - this.y);
+                let dxDr = game.drone.x - this.x;
+                let dyDr = game.drone.y - this.y;
+                let droneDist = Math.sqrt(dxDr*dxDr + dyDr*dyDr);
                 if (this.willShootDrone && droneDist < 700) {
                     target = game.drone;
                     targetX = target.x;
@@ -4844,8 +5107,10 @@ class Enemy extends Entity {
             if (!runFromDrone && game && game.miniDrones) {
                 for (let md of game.miniDrones) {
                     if (!md.dead && md.state === 'HUNTING') {
-                        let distToMd = Math.hypot(md.x - this.x, md.y - this.y);
-                        if (distToMd < 150) {
+                        let dxMd = md.x - this.x;
+                        let dyMd = md.y - this.y;
+                        let dSqMd = dxMd*dxMd + dyMd*dyMd;
+                        if (dSqMd < 22500) {
                             runFromDrone = true;
                             runFromObj = md;
                             break;
@@ -4939,18 +5204,40 @@ class Enemy extends Entity {
         }
 
         // Player hearing/footstep checking
-        let distToP1 = game ? (!game.player.dead ? Math.hypot(game.player.x - this.x, game.player.y - this.y) : Infinity) : Infinity;
-        let distToP2 = game && game.isTwoPlayer && game.player2 && !game.player2.dead ? Math.hypot(game.player2.x - this.x, game.player2.y - this.y) : Infinity;
+        let distToP1 = Infinity;
+        if (game && !game.player.dead) {
+            let dx = game.player.x - this.x;
+            let dy = game.player.y - this.y;
+            distToP1 = Math.sqrt(dx*dx + dy*dy);
+        }
+        let distToP2 = Infinity;
+        if (game && game.isTwoPlayer && game.player2 && !game.player2.dead) {
+            let dx = game.player2.x - this.x;
+            let dy = game.player2.y - this.y;
+            distToP2 = Math.sqrt(dx*dx + dy*dy);
+        }
         let distToClosestPlayer = Math.min(distToP1, distToP2);
         
-        let p1Vel = game && game.player ? Math.hypot(game.player.vx, game.player.vy) : 0;
-        let p2Vel = game && game.isTwoPlayer && game.player2 ? Math.hypot(game.player2.vx, game.player2.vy) : 0;
+        let p1Vel = 0;
+        if (game && game.player) {
+            let vx = game.player.vx;
+            let vy = game.player.vy;
+            p1Vel = Math.sqrt(vx*vx + vy*vy);
+        }
+        let p2Vel = 0;
+        if (game && game.isTwoPlayer && game.player2) {
+            let vx = game.player2.vx;
+            let vy = game.player2.vy;
+            p2Vel = Math.sqrt(vx*vx + vy*vy);
+        }
         let closestPlayerVel = distToP1 < distToP2 ? p1Vel : p2Vel;
 
         let hearingThreshold = closestPlayerVel > 120 ? 120 : 350; 
         
         if (distToClosestPlayer < hearingThreshold) {
-            let enemyVel = Math.hypot(this.vx, this.vy);
+            let evx = this.vx;
+            let evy = this.vy;
+            let enemyVel = Math.sqrt(evx*evx + evy*evy);
             if (enemyVel > 40) {
                 this.footstepTimer -= dt;
                 if (this.footstepTimer <= 0) {
@@ -4965,9 +5252,12 @@ class Enemy extends Entity {
         let sepX = 0, sepY = 0;
         for (let other of allEnemies) {
             if (other === this) continue;
-            let d = Math.hypot(other.x - this.x, other.y - this.y);
+            let dx = other.x - this.x;
+            let dy = other.y - this.y;
+            let dSq = dx*dx + dy*dy;
             let minDist = this.r + other.r + 10;
-            if (d < minDist && d > 0) {
+            if (dSq < minDist * minDist && dSq > 0) {
+                let d = Math.sqrt(dSq);
                 sepX += (this.x - other.x)/d * 180;
                 sepY += (this.y - other.y)/d * 180;
             }
@@ -5012,8 +5302,8 @@ class Enemy extends Entity {
                             for (let i = 0; i < 20; i++) {
                                 let a = Math.random() * Math.PI*2;
                                 let spd = Math.random() * 400 + 100;
-                                game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffea00', 0.5, 3));
-                                game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd*0.7, Math.sin(a)*spd*0.7, '#ff3d00', 0.6, 4));
+                                game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffea00', 0.5, 3);
+                                game.addParticle(this.x, this.y, Math.cos(a)*spd*0.7, Math.sin(a)*spd*0.7, '#ff3d00', 0.6, 4);
                             }
                         }
                     } else if (target instanceof AutoTurret) { // auto turret
@@ -5032,8 +5322,8 @@ class Enemy extends Entity {
                             for (let i = 0; i < 20; i++) {
                                 let a = Math.random() * Math.PI*2;
                                 let spd = Math.random() * 400 + 100;
-                                game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffea00', 0.5, 3));
-                                game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd*0.7, Math.sin(a)*spd*0.7, '#ff3d00', 0.6, 4));
+                                game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffea00', 0.5, 3);
+                                game.addParticle(this.x, this.y, Math.cos(a)*spd*0.7, Math.sin(a)*spd*0.7, '#ff3d00', 0.6, 4);
                             }
                         }
                     } else { // fallback target (player/dog/etc.) - regular melee damage
@@ -5086,7 +5376,7 @@ class Enemy extends Entity {
                         this.slowTimer = 2.0;
                         this.takeDamage(5 * dt, 0, 0);
                         if (Math.random() < 0.15) {
-                            game.particles.push(new Particle(col.px, col.py, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#00e5ff', 0.2, 1.5));
+                            game.addParticle(col.px, col.py, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#00e5ff', 0.2, 1.5);
                         }
                     }
                     let nx = 0, ny = 0, overlap = 0;
@@ -5116,7 +5406,7 @@ class Enemy extends Entity {
                         this.lastBarrierAttack = gameTime;
                         audio.playHit(this.x, this.y);
                         for(let c=0; c<5; c++) {
-                            game.particles.push(new Particle(col.px, col.py, MathUtils.rand(-60, 60), MathUtils.rand(-60, 60), '#00e5ff', 0.3, 2));
+                            game.addParticle(col.px, col.py, MathUtils.rand(-60, 60), MathUtils.rand(-60, 60), '#00e5ff', 0.3, 2);
                         }
                         if (bar.hp <= 0) {
                             game.barriers = game.barriers.filter(b => b !== bar);
@@ -5161,26 +5451,26 @@ class Enemy extends Entity {
                 let spreadAngle = this.angle + (Math.random() - 0.5) * 0.28;
                 let bulletSpec = { name: 'Shotgun', dmg: 6, speed: 1600, drag: 0.2, color: '#ff5722' };
                 game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-                game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, '#ff5722', 0.04, 2));
+                game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, '#ff5722', 0.04, 2);
             }
         } else if (this.weaponType === 'sniper') {
             audio.playShoot('Sniper', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.02;
             let bulletSpec = { name: 'Sniper', dmg: 40, speed: 3000, drag: 0.02, color: '#f50057' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-            game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*500, Math.sin(spreadAngle)*500, '#f50057', 0.05, 3.5));
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*500, Math.sin(spreadAngle)*500, '#f50057', 0.05, 3.5);
         } else if (this.weaponType === 'heavy_pistol') {
             audio.playShoot('Pistol', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.10;
             let bulletSpec = { name: 'Pistol', dmg: 16, speed: 1800, drag: 0.1, color: '#ff2a5f' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-            game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, '#ff2a5f', 0.04, 3));
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, '#ff2a5f', 0.04, 3);
         } else {
             audio.playShoot('Pistol', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.12;
             let bulletSpec = { name: 'Pistol', dmg: 8, speed: 1800, drag: 0.1, color: '#ff2a5f' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-            game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, '#ff2a5f', 0.04, 3));
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, '#ff2a5f', 0.04, 3);
         }
     }
     
@@ -5380,7 +5670,7 @@ class Enemy extends Entity {
             for (let c = 0; c < 6; c++) {
                 let a = Math.random() * Math.PI * 2;
                 let spd = MathUtils.rand(40, 100);
-                game.particles.push(new Particle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ff6600', 0.3, 2));
+                game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ff6600', 0.3, 2);
             }
             
             let blastRadius = 90;
@@ -5727,7 +6017,7 @@ class Bullet {
                     if (ent instanceof AutoTurret || ent instanceof FPVDrone || ent instanceof RobotDog) {
                         let pColor = ent instanceof AutoTurret ? '#ffd700' : ent instanceof FPVDrone ? '#ffff00' : '#ffffff';
                         for(let c=0; c<4; c++) {
-                            game.particles.push(new Particle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.22, 2));
+                            game.addParticle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.22, 2);
                         }
                     } else {
                         game.spawnBlood(this.x, this.y, this.vx, this.vy);
@@ -5761,7 +6051,7 @@ class Bullet {
                     if (col.hit) {
                         bar.hp -= this.dmg;
                         for(let c=0; c<4; c++) {
-                            game.particles.push(new Particle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#00e5ff', 0.4, 2));
+                            game.addParticle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#00e5ff', 0.4, 2);
                         }
                         
                         if (bar.hp <= 0) {
@@ -5770,7 +6060,7 @@ class Bullet {
                             let mx = (bar.ax + bar.bx) / 2;
                             let my = (bar.ay + bar.by) / 2;
                             for(let c=0; c<10; c++) {
-                                game.particles.push(new Particle(mx, my, MathUtils.rand(-150, 150), MathUtils.rand(-150, 150), '#00e5ff', 0.5, 3));
+                                game.addParticle(mx, my, MathUtils.rand(-150, 150), MathUtils.rand(-150, 150), '#00e5ff', 0.5, 3);
                             }
                         } else {
                             audio.playRicochet(this.x, this.y);
@@ -5786,13 +6076,11 @@ class Bullet {
             if (hitRegistered) break;
 
             for (let wall of walls) {
-                if (this.x >= wall.x && this.x <= wall.x + wall.w && 
-                    this.y >= wall.y && this.y <= wall.y + wall.h) {
+                if (MathUtils.lineIntersectAABB(prevX, prevY, this.x, this.y, wall)) {
                     
                     if (this.perkGhost && this.ghostPasses) {
                         if (game && Math.random() < 0.4) {
-                            let p = game.spawnParticle(this.x, this.y, 0, 0, '#00e5ff', 0.2, 1.5);
-                            if (p) game.particles.push(p);
+                            game.addParticle(this.x, this.y, 0, 0, '#00e5ff', 0.2, 1.5);
                         }
                         continue;
                     }
@@ -5804,8 +6092,11 @@ class Bullet {
                     else if (prevY > wall.y + wall.h) ny = 1;
                     
                     if (nx === 0 && ny === 0) { 
-                        this.active = false; 
-                        break; 
+                        if (Math.abs(this.vx) > Math.abs(this.vy)) {
+                            nx = this.vx > 0 ? -1 : 1;
+                        } else {
+                            ny = this.vy > 0 ? -1 : 1;
+                        }
                     }
 
                     if (this.isAP) {
@@ -5817,7 +6108,7 @@ class Bullet {
                             this.vy *= 0.65;
                             this.dmg *= 0.7;
                             for(let c=0; c<6; c++) {
-                                game.particles.push(new Particle(this.x, this.y, -nx * MathUtils.rand(60, 150), -ny * MathUtils.rand(60, 150), '#808f9c', 0.25, 2));
+                                game.addParticle(this.x, this.y, -nx * MathUtils.rand(60, 150), -ny * MathUtils.rand(60, 150), '#808f9c', 0.25, 2);
                             }
                             break;
                         }
@@ -5842,13 +6133,13 @@ class Bullet {
                         this.startY = prevY;
                         this.bounces++;
                         audio.playRicochet();
-                        game.particles.push(new Particle(this.x, this.y, nx*120, ny*120, '#00e5ff', 0.12, 2.5));
+                        game.addParticle(this.x, this.y, nx*120, ny*120, '#00e5ff', 0.12, 2.5);
                     } else {
                         if (this.isPlayerBullet && this.shooter && this.shooter.perkExplosiveRounds) {
                             this.explode(game);
                         }
                         this.active = false;
-                        game.particles.push(new Particle(this.x, this.y, -this.vx*0.12, -this.vy*0.12, '#ffffff', 0.15, 2));
+                        game.addParticle(this.x, this.y, -this.vx*0.12, -this.vy*0.12, '#ffffff', 0.15, 2);
                         break;
                     }
                 }
@@ -5857,7 +6148,7 @@ class Bullet {
         }
         
         if (this.active && Math.random() > 0.4) {
-            game.particles.push(new Particle(this.x, this.y, 0, 0, this.color, 0.08, 1));
+            game.addParticle(this.x, this.y, 0, 0, this.color, 0.08, 1);
         }
     }
     
@@ -5957,7 +6248,7 @@ class FPVDrone {
             for (let i = 0; i < 4; i++) {
                 let a = Math.random() * Math.PI*2;
                 let spd = Math.random() * 200 + 50;
-                game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffff00', 0.3, 2));
+                game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffff00', 0.3, 2);
             }
         }
         
@@ -6333,8 +6624,8 @@ class FPVDrone {
         for (let i = 0; i < 30; i++) {
             let a = Math.random() * Math.PI*2;
             let spd = Math.random() * 600 + 150;
-            game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffff00', 0.5, 4));
-            game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd*0.7, Math.sin(a)*spd*0.7, '#ff3d00', 0.7, 5));
+            game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffff00', 0.5, 4);
+            game.addParticle(this.x, this.y, Math.cos(a)*spd*0.7, Math.sin(a)*spd*0.7, '#ff3d00', 0.7, 5);
         }
         
         game.drone = null;
@@ -6427,7 +6718,7 @@ class FPVDrone {
                 for (let i = 0; i < 8; i++) {
                     let a = Math.random() * Math.PI * 2;
                     let spd = Math.random() * 80 + 20;
-                    game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ff5500', 0.4, 2));
+                    game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ff5500', 0.4, 2);
                 }
                 let rem = 3 - this.bombsDropped;
                 game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 15, `BOMB DROPPED (${rem} LEFT)`, '#ff2a5f', 1.2));
@@ -6546,14 +6837,14 @@ class AutoTurret extends Entity {
                 let bullet = game.spawnBullet(barrelX, barrelY, a, bulletSpec, true, false, false, false);
                 bullet.owner = this;
                 game.bullets.push(bullet);
-                game.particles.push(new Particle(barrelX, barrelY, Math.cos(a)*300, Math.sin(a)*300, '#ffea00', 0.04, 2.5));
+                game.addParticle(barrelX, barrelY, Math.cos(a)*300, Math.sin(a)*300, '#ffea00', 0.04, 2.5);
             }
         } else {
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.08;
             let bullet = game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, true, false, false, false);
             bullet.owner = this;
             game.bullets.push(bullet);
-            game.particles.push(new Particle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, '#ffea00', 0.04, 2.5));
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, '#ffea00', 0.04, 2.5);
         }
     }
     
@@ -6694,7 +6985,7 @@ class RobotDog extends Entity {
             for (let i = 0; i < 20; i++) {
                 let a = Math.random() * Math.PI * 2;
                 let spd = Math.random() * 150 + 50;
-                game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffffff', 0.5, 2.5));
+                game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffffff', 0.5, 2.5);
             }
         }
     }
@@ -6771,16 +7062,18 @@ class RobotDog extends Entity {
             // No threats: check for items nearby
             let items = game.items;
             let targetItem = null;
-            let minItemDist = 350;
+            let minItemDistSq = 350 * 350;
             for (let it of items) {
                 if (this.failedItems && this.failedItems.has(it) && game.gameTime < this.failedItems.get(it)) {
                     continue;
                 }
-                let d = Math.hypot(it.x - this.x, it.y - this.y);
-                if (d < minItemDist) {
+                let dx = it.x - this.x;
+                let dy = it.y - this.y;
+                let dSq = dx*dx + dy*dy;
+                if (dSq < minItemDistSq) {
                     let hasLOS = !nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, it.x, it.y, w));
                     if (hasLOS) {
-                        minItemDist = d;
+                        minItemDistSq = dSq;
                         targetItem = it;
                     }
                 }
@@ -6801,11 +7094,13 @@ class RobotDog extends Entity {
             this.angle += Math.sign(diff) * Math.min(Math.abs(diff), 6 * dt); // rotate towards enemy
             
             // Firing check: only shoot if within weapon range (800px)
-            let distToEnemy = Math.hypot(closestEnemy.x - this.x, closestEnemy.y - this.y);
+            let dxE = closestEnemy.x - this.x;
+            let dyE = closestEnemy.y - this.y;
+            let distToEnemySq = dxE*dxE + dyE*dyE;
             if (this.fireCooldown > 0) {
                 this.fireCooldown -= dt;
             }
-            if (distToEnemy < 800 && Math.abs(diff) < 0.25 && this.fireCooldown <= 0) {
+            if (distToEnemySq < 640000 && Math.abs(diff) < 0.25 && this.fireCooldown <= 0) {
                 this.shoot(game);
                 this.fireCooldown = this.fireRate;
             }
@@ -7138,7 +7433,7 @@ class RobotDog extends Entity {
         for (let i = 0; i < 4; i++) {
             let a = spreadAngle + (Math.random() - 0.5) * 0.5;
             let spd = Math.random() * 200 + 100;
-            game.particles.push(new Particle(barrelX, barrelY, Math.cos(a)*spd, Math.sin(a)*spd, laserColor, 0.04, 2));
+            game.addParticle(barrelX, barrelY, Math.cos(a)*spd, Math.sin(a)*spd, laserColor, 0.04, 2);
         }
     }
     
@@ -7738,7 +8033,7 @@ class MiniDrone extends Entity {
             let angle = Math.random() * Math.PI * 2;
             let speed = Math.random() * 150 + 50;
             let color = Math.random() > 0.5 ? '#ffea00' : '#ff3d00';
-            game.particles.push(new Particle(this.x, this.y, Math.cos(angle)*speed, Math.sin(angle)*speed, color, 0.3, 2));
+            game.addParticle(this.x, this.y, Math.cos(angle)*speed, Math.sin(angle)*speed, color, 0.3, 2);
         }
     }
     
@@ -7759,15 +8054,8 @@ class MiniDrone extends Entity {
             ctx.globalCompositeOperation = 'lighter';
             let pulse = 1.0 + 0.15 * Math.sin(Date.now() / 100);
             let glowRadius = 35 * pulse;
-            let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
-            let glowColor = (this.owner === game.player2) ? '255, 183, 0' : '57, 255, 20';
-            grad.addColorStop(0, `rgba(${glowColor}, 0.15)`);
-            grad.addColorStop(0.5, `rgba(${glowColor}, 0.05)`);
-            grad.addColorStop(1, `rgba(${glowColor}, 0)`);
-            ctx.fillStyle = grad;
-            ctx.beginPath();
-            ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
-            ctx.fill();
+            let cachedGlow = (this.owner === game.player2) ? cachedBulletGlowP2Canvas : cachedBulletGlowP1Canvas;
+            ctx.drawImage(cachedGlow, -glowRadius, -glowRadius, glowRadius * 2, glowRadius * 2);
             ctx.restore();
         }
 
@@ -7898,8 +8186,8 @@ class ShrapnelGrenade {
         for (let i = 0; i < 20; i++) {
             let a = Math.random() * Math.PI*2;
             let spd = Math.random() * 400 + 100;
-            game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ff5500', 0.6, 5));
-            game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd*0.5, Math.sin(a)*spd*0.5, '#ffff00', 0.4, 4));
+            game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ff5500', 0.6, 5);
+            game.addParticle(this.x, this.y, Math.cos(a)*spd*0.5, Math.sin(a)*spd*0.5, '#ffff00', 0.4, 4);
         }
     }
     draw(ctx, cam) {
@@ -8044,7 +8332,7 @@ class Flashbang {
         for (let i = 0; i < 15; i++) {
             let a = Math.random() * Math.PI*2;
             let spd = Math.random() * 200 + 50;
-            game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffffff', 0.6, 6));
+            game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffffff', 0.6, 6);
         }
     }
     draw(ctx, cam) {
@@ -8180,7 +8468,7 @@ class TripMine {
         for (let i = 0; i < 15; i++) {
             let a = Math.random() * Math.PI*2;
             let spd = Math.random() * 300 + 80;
-            game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#d500f9', 0.5, 4));
+            game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#d500f9', 0.5, 4);
         }
     }
     draw(ctx, cam) {
@@ -8193,13 +8481,7 @@ class TripMine {
         if (game && game.nightMode && this.armed && Math.floor(this.t * 5) % 2 === 0) {
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
-            let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 24);
-            grad.addColorStop(0, 'rgba(255, 42, 95, 0.85)');
-            grad.addColorStop(1, 'rgba(255, 42, 95, 0)');
-            ctx.fillStyle = grad;
-            ctx.beginPath();
-            ctx.arc(0, 0, 24, 0, Math.PI*2);
-            ctx.fill();
+            ctx.drawImage(cachedTripMineRedGlowCanvas, -24, -24, 48, 48);
             ctx.restore();
         }
 
@@ -8807,7 +9089,7 @@ class Game {
             let size = 2 + Math.random() * (enemyRadius * 0.35);
             let life = 0.5 + Math.random() * 0.8;
             
-            let p = new Particle(x, y, vx, vy, enemyColor, life, size);
+            let p = this.spawnParticle(x, y, vx, vy, enemyColor, life, size);
             if (p) {
                 p.isCorpseDebris = true;
                 p.debrisColor = enemyColor;
@@ -9866,7 +10148,7 @@ class Game {
             audio.playPickup('weapon');
             let pColor = isMKII ? '#d500f9' : '#00e5ff';
             for (let i = 0; i < 12; i++) {
-                this.particles.push(new Particle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.4, 2));
+                this.addParticle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.4, 2);
             }
             this.spawnDeployRing(cx, cy);
         } else {
@@ -9910,7 +10192,7 @@ class Game {
             audio.playPickup('weapon');
             let pColor = isMKII ? '#ffea00' : '#808f9c';
             for (let i = 0; i < 12; i++) {
-                this.particles.push(new Particle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.4, 2));
+                this.addParticle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.4, 2);
             }
             this.spawnDeployRing(cx, cy);
         } else {
@@ -9989,7 +10271,7 @@ class Game {
             audio.playPickup('weapon');
             let laserColor = (player === this.player2) ? '#ffb700' : '#00e5ff';
             for (let i = 0; i < 12; i++) {
-                this.particles.push(new Particle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), laserColor, 0.4, 2));
+                this.addParticle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), laserColor, 0.4, 2);
             }
             this.spawnDeployRing(cx, cy);
         } else {
@@ -10340,6 +10622,12 @@ class Game {
         return p;
     }
 
+    addParticle(x, y, vx, vy, color, life, size) {
+        let p = this.spawnParticle(x, y, vx, vy, color, life, size);
+        if (p) this.particles.push(p);
+        return p;
+    }
+
     _applyMetaStatsToPlayer(p) {
         if (!p) return;
         const MA = this.saveData.metaUpgrades;
@@ -10595,18 +10883,20 @@ class Game {
     spawnCasing(x, y, angle, color = '#ffc107') {
         let vx = Math.cos(angle) * MathUtils.rand(120, 240);
         let vy = Math.sin(angle) * MathUtils.rand(120, 240);
-        let p = new Particle(x, y, vx, vy, color, 0.6, 2);
-        p.isCasing = true;
-        p.angle = Math.random() * Math.PI * 2;
-        this.particles.push(p);
+        let p = this.spawnParticle(x, y, vx, vy, color, 0.6, 2);
+        if (p) {
+            p.isCasing = true;
+            p.angle = Math.random() * Math.PI * 2;
+            this.particles.push(p);
+        }
     }
 
     spawnBlood(x, y, hitVx, hitVy) {
         for(let i=0; i<18; i++) {
             let angle = Math.atan2(hitVy, hitVx) + (Math.random()-0.5)*1.6;
             let spd = Math.random() * 500 + 80;
-            let p = new Particle(x, y, Math.cos(angle)*spd, Math.sin(angle)*spd, Math.random()>0.2?'#800a0a':'#e60000', 1.2, MathUtils.rand(2.5,5.5));
-            this.particles.push(p);
+            let p = this.spawnParticle(x, y, Math.cos(angle)*spd, Math.sin(angle)*spd, Math.random()>0.2?'#800a0a':'#e60000', 1.2, MathUtils.rand(2.5,5.5));
+            if (p) this.particles.push(p);
         }
     }
 
@@ -10758,7 +11048,8 @@ class Game {
             let y = it.y;
             let isSandbox = it.isSandbox;
             
-            this.items.splice(idxInArray, 1);
+            this.items[idxInArray] = this.items[this.items.length - 1];
+            this.items.pop();
             
             if (isSandbox && this.isTestingMode) {
                 setTimeout(() => {
@@ -10835,14 +11126,21 @@ class Game {
         this.perkSelectionIndex = 0;
         this.availablePerkChoices = available;
         
+        const activeColor = (p === this.player2) ? '#ffb700' : 'var(--neon-blue)';
+        const baseBorderColor = (p === this.player2) ? 'rgba(255, 183, 0, 0.2)' : 'rgba(0, 229, 255, 0.2)';
+
         available.forEach((perk, idx) => {
             const card = document.createElement('div');
             card.className = 'menu-box perk-card';
             card.id = 'perk-card-' + idx;
-            card.style.flex = '1';
+            card.style.minWidth = '160px';
+            card.style.maxWidth = '220px';
+            card.style.width = '100%';
+            card.style.margin = '0 auto';
+            card.style.boxSizing = 'border-box';
             card.style.cursor = 'pointer';
-            card.style.padding = '20px';
-            card.style.borderColor = 'rgba(0, 229, 255, 0.3)';
+            card.style.padding = '15px';
+            card.style.borderColor = baseBorderColor;
             card.style.transition = 'all 0.2s ease-in-out';
             card.style.display = 'flex';
             card.style.flexDirection = 'column';
@@ -10851,9 +11149,9 @@ class Game {
             card.style.textAlign = 'center';
             
             card.innerHTML = `
-                <div>
-                    <div style="font-size: 16px; font-weight: bold; color: var(--neon-blue); margin-bottom: 12px; letter-spacing: 2px;">${perk.name}</div>
-                    <div style="font-size: 11px; color: #a9c2c7; line-height: 1.6; margin-bottom: 20px;">${perk.desc}</div>
+                <div style="width: 100%;">
+                    <div style="font-size: 14px; font-weight: bold; color: ${activeColor}; margin-bottom: 12px; letter-spacing: 2px; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">${perk.name}</div>
+                    <div style="font-size: 11px; color: #a9c2c7; line-height: 1.6; margin-bottom: 20px; word-wrap: break-word; overflow-wrap: break-word;">${perk.desc}</div>
                 </div>
                 <button class="neon-btn" style="width: 100%; margin: 0;" onclick="game.selectPerk('${perk.key}')">SELECT</button>
             `;
@@ -10873,15 +11171,20 @@ class Game {
     refreshPerkHighlight() {
         const container = document.getElementById('perk-choices-container');
         const cards = container.getElementsByClassName('perk-card');
+        const p = this.perkSelectingPlayer;
+        const activeColor = (p === this.player2) ? '#ffb700' : 'var(--neon-blue)';
+        const shadowColor = (p === this.player2) ? 'rgba(255, 183, 0, 0.35)' : 'rgba(0, 229, 255, 0.35)';
+        const baseBorderColor = (p === this.player2) ? 'rgba(255, 183, 0, 0.2)' : 'rgba(0, 229, 255, 0.2)';
+
         for (let i = 0; i < cards.length; i++) {
             const card = cards[i];
             const btn = card.querySelector('button');
             if (i === this.perkSelectionIndex) {
-                card.style.borderColor = 'var(--neon-blue)';
-                card.style.boxShadow = '0 0 15px rgba(0, 229, 255, 0.35)';
+                card.style.borderColor = activeColor;
+                card.style.boxShadow = `0 0 15px ${shadowColor}`;
                 if (btn) btn.classList.add('focused-btn');
             } else {
-                card.style.borderColor = 'rgba(0, 229, 255, 0.3)';
+                card.style.borderColor = baseBorderColor;
                 card.style.boxShadow = 'none';
                 if (btn) btn.classList.remove('focused-btn');
             }
@@ -10892,8 +11195,9 @@ class Game {
         const p = this.perkSelectingPlayer;
         if (p) {
             p[perkKey] = true;
+            const activeColor = (p === this.player2) ? '#ffb700' : '#00e5ff';
             this.floatingTexts.push(this.spawnFloatingText(
-                p.x, p.y - 25, `ACQUIRED PERK`, '#00e5ff', 2.0
+                p.x, p.y - 25, `ACQUIRED PERK`, activeColor, 2.0
             ));
             if (audio) audio.playPickup('weapon');
         }
@@ -11604,23 +11908,35 @@ class Game {
             let g = this.grenades[i];
             let gWalls = this.map.getWallsNear(g.x, g.y);
             let active = g.update(dt, gWalls, this);
-            if (!active) this.grenades.splice(i, 1);
+            if (!active) {
+                this.grenades[i] = this.grenades[this.grenades.length - 1];
+                this.grenades.pop();
+            }
         }
 
         for (let i = this.mines.length - 1; i >= 0; i--) {
             let active = this.mines[i].update(dt, this);
-            if (!active) this.mines.splice(i, 1);
+            if (!active) {
+                this.mines[i] = this.mines[this.mines.length - 1];
+                this.mines.pop();
+            }
         }
 
         for (let i = this.turrets.length - 1; i >= 0; i--) {
             this.turrets[i].update(dt, this);
-            if (this.turrets[i].dead) this.turrets.splice(i, 1);
+            if (this.turrets[i].dead) {
+                this.turrets[i] = this.turrets[this.turrets.length - 1];
+                this.turrets.pop();
+            }
         }
 
         if (this.dogs) {
             for (let i = this.dogs.length - 1; i >= 0; i--) {
                 this.dogs[i].update(dt, this);
-                if (this.dogs[i].dead) this.dogs.splice(i, 1);
+                if (this.dogs[i].dead) {
+                    this.dogs[i] = this.dogs[this.dogs.length - 1];
+                    this.dogs.pop();
+                }
             }
         }
 
@@ -11629,7 +11945,8 @@ class Game {
                 this.miniDrones[i].update(dt, this);
                 if (this.miniDrones[i].dead) {
                     this.miniDrones[i].stopAudio();
-                    this.miniDrones.splice(i, 1);
+                    this.miniDrones[i] = this.miniDrones[this.miniDrones.length - 1];
+                    this.miniDrones.pop();
                 }
             }
         }
@@ -11645,7 +11962,10 @@ class Game {
             s.vy *= Math.pow(0.04, dt);
             let t = 1 - (s.life / s.maxLife);
             s.r = 4 + (s.maxR - 4) * t;
-            if (s.life <= 0) { this.smokeParticles.splice(i, 1); }
+            if (s.life <= 0) {
+                this.smokeParticles[i] = this.smokeParticles[this.smokeParticles.length - 1];
+                this.smokeParticles.pop();
+            }
         }
 
         const EMBER_GRAVITY = 600;
@@ -11663,7 +11983,10 @@ class Game {
                 e.vy *= 0.6;
                 if (Math.abs(e.vz) < 20) e.vz = 0;
             }
-            if (e.life <= 0) { this.embers.splice(i, 1); }
+            if (e.life <= 0) {
+                this.embers[i] = this.embers[this.embers.length - 1];
+                this.embers.pop();
+            }
         }
 
         for (let p of this.particles) p.update(dt);
@@ -11689,7 +12012,10 @@ class Game {
             it.update(dt, activePlayers);
             
             for (let p of activePlayers) {
-                if (Math.hypot(p.x - it.x, p.y - it.y) < p.r + it.r) {
+                let dx = p.x - it.x;
+                let dy = p.y - it.y;
+                let radSum = p.r + it.r;
+                if (dx*dx + dy*dy < radSum * radSum) {
                     let success = this.collectItem(it, p, i);
                     if (success) break;
                 }
@@ -11796,7 +12122,7 @@ class Game {
             let angle = Math.random() * Math.PI * 2;
             let spd = Math.random() * 450 + 150;
             let color = Math.random() > 0.4 ? '#ffd700' : '#ffb300';
-            this.particles.push(new Particle(
+            this.addParticle(
                 spawnX + MathUtils.rand(-20, 20),
                 spawnY + MathUtils.rand(-20, 20),
                 Math.cos(angle) * spd,
@@ -11804,7 +12130,7 @@ class Game {
                 color,
                 1.5,
                 MathUtils.rand(3.5, 7)
-            ));
+            );
         }
     }
     
@@ -12144,7 +12470,7 @@ class Game {
                 for (let i = 0; i < 30; i++) {
                     let angle = Math.random() * Math.PI * 2;
                     let spd = Math.random() * 200 + 100;
-                    this.particles.push(new Particle(p.x, p.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#ff2a5f', 0.6, 3));
+                    this.addParticle(p.x, p.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#ff2a5f', 0.6, 3);
                 }
                 audio.playPickup('weapon');
             }
@@ -12154,7 +12480,7 @@ class Game {
             for (let i = 0; i < 30; i++) {
                 let angle = Math.random() * Math.PI * 2;
                 let spd = Math.random() * 200 + 100;
-                this.particles.push(new Particle(p.x, p.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#39ff14', 0.6, 3));
+                this.addParticle(p.x, p.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#39ff14', 0.6, 3);
             }
             audio.playPickup('weapon');
         } else if (type === 'turret' && p.cash >= 650 && (p.turretsCount || 0) < 1) {
@@ -12184,7 +12510,7 @@ class Game {
             for (let i = 0; i < 30; i++) {
                 let angle = Math.random() * Math.PI * 2;
                 let spd = Math.random() * 200 + 100;
-                this.particles.push(new Particle(p.x, p.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#d500f9', 0.6, 3));
+                this.addParticle(p.x, p.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#d500f9', 0.6, 3);
             }
             audio.playPickup('weapon');
         } else if (type === 'dog' && p.cash >= 500 && (p.dogsCount || 0) < 1 && (!this.dogs || !this.dogs.some(d => d.owner === p && !d.dead))) {
@@ -12207,7 +12533,7 @@ class Game {
                     for (let i = 0; i < 30; i++) {
                         let angle = Math.random() * Math.PI * 2;
                         let spd = Math.random() * 200 + 100;
-                        this.particles.push(new Particle(activeDog.x, activeDog.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#ff00ff', 0.6, 3));
+                        this.addParticle(activeDog.x, activeDog.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#ff00ff', 0.6, 3);
                     }
                 }
                 
@@ -13186,17 +13512,7 @@ class Game {
                 
                 this.ctx.save();
                 this.ctx.globalAlpha = Math.max(0, Math.min(1.0, alpha));
-                
-                let grad = this.ctx.createRadialGradient(sx, sy, 0, sx, sy, flashRadius);
-                grad.addColorStop(0, 'rgba(255, 255, 240, 1)');      // White-hot center
-                grad.addColorStop(0.3, 'rgba(255, 240, 180, 0.8)');  // Warm yellow
-                grad.addColorStop(0.7, 'rgba(255, 180, 50, 0.3)');   // Orange fringe
-                grad.addColorStop(1, 'rgba(255, 120, 0, 0)');        // Transparent edge
-                
-                this.ctx.fillStyle = grad;
-                this.ctx.beginPath();
-                this.ctx.arc(sx, sy, flashRadius, 0, Math.PI * 2);
-                this.ctx.fill();
+                this.ctx.drawImage(cachedWarmMuzzleFlashCanvas, sx - flashRadius, sy - flashRadius, flashRadius * 2, flashRadius * 2);
                 this.ctx.restore();
             };
             
@@ -13289,35 +13605,25 @@ class Game {
                 let ambientRadius = 90 * cam.zoom;
                 let coneRadius = 1600 * cam.zoom;
 
-                let brightRadius = 24 * cam.zoom;
-                let ambientGrad = nightCtx.createRadialGradient(px, py, 0, px, py, ambientRadius);
-                ambientGrad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
-                ambientGrad.addColorStop(Math.min(1.0, brightRadius / ambientRadius), 'rgba(0, 0, 0, 1.0)');
-                ambientGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.4)');
-                ambientGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
-                
-                nightCtx.fillStyle = ambientGrad;
-                nightCtx.beginPath();
-                nightCtx.arc(px, py, ambientRadius, 0, Math.PI * 2);
-                nightCtx.fill();
+                // Ambient light
+                nightCtx.save();
+                nightCtx.translate(px, py);
+                nightCtx.drawImage(cachedAmbientLightCanvas, -ambientRadius, -ambientRadius, ambientRadius * 2, ambientRadius * 2);
+                nightCtx.restore();
 
+                // Flashlight cone
                 let coneAngle = Math.PI / 2.2;
                 let startAngle = p.angle - coneAngle / 2;
                 let endAngle = p.angle + coneAngle / 2;
 
-                let flashlightGrad = nightCtx.createRadialGradient(px, py, 0, px, py, coneRadius);
-                flashlightGrad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
-                flashlightGrad.addColorStop(0.1, 'rgba(0, 0, 0, 1.0)');
-                flashlightGrad.addColorStop(0.3, 'rgba(0, 0, 0, 0.75)');
-                flashlightGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.2)');
-                flashlightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
-
-                nightCtx.fillStyle = flashlightGrad;
+                nightCtx.save();
                 nightCtx.beginPath();
                 nightCtx.moveTo(px, py);
                 nightCtx.arc(px, py, coneRadius, startAngle, endAngle);
                 nightCtx.closePath();
-                nightCtx.fill();
+                nightCtx.clip();
+                nightCtx.drawImage(cachedPlayerFlashlightCanvas, px - coneRadius, py - coneRadius, coneRadius * 2, coneRadius * 2);
+                nightCtx.restore();
             }
 
             // 1. RobotDog Flashlight (Short, wide cone)
@@ -13330,18 +13636,14 @@ class Game {
                     let startAngle = dog.angle - coneAngle / 2;
                     let endAngle = dog.angle + coneAngle / 2;
 
-                    let flashlightGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coneRadius);
-                    flashlightGrad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
-                    flashlightGrad.addColorStop(0.2, 'rgba(0, 0, 0, 1.0)');
-                    flashlightGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.45)');
-                    flashlightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
-
-                    nightCtx.fillStyle = flashlightGrad;
+                    nightCtx.save();
                     nightCtx.beginPath();
                     nightCtx.moveTo(pos.x, pos.y);
                     nightCtx.arc(pos.x, pos.y, coneRadius, startAngle, endAngle);
                     nightCtx.closePath();
-                    nightCtx.fill();
+                    nightCtx.clip();
+                    nightCtx.drawImage(cachedDogFlashlightCanvas, pos.x - coneRadius, pos.y - coneRadius, coneRadius * 2, coneRadius * 2);
+                    nightCtx.restore();
                 }
             }
 
@@ -13355,18 +13657,14 @@ class Game {
                     let startAngle = turret.angle - coneAngle / 2;
                     let endAngle = turret.angle + coneAngle / 2;
 
-                    let flashlightGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coneRadius);
-                    flashlightGrad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
-                    flashlightGrad.addColorStop(0.5, 'rgba(0, 0, 0, 1.0)');
-                    flashlightGrad.addColorStop(0.8, 'rgba(0, 0, 0, 0.5)');
-                    flashlightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
-
-                    nightCtx.fillStyle = flashlightGrad;
+                    nightCtx.save();
                     nightCtx.beginPath();
                     nightCtx.moveTo(pos.x, pos.y);
                     nightCtx.arc(pos.x, pos.y, coneRadius, startAngle, endAngle);
                     nightCtx.closePath();
-                    nightCtx.fill();
+                    nightCtx.clip();
+                    nightCtx.drawImage(cachedTurretFlashlightCanvas, pos.x - coneRadius, pos.y - coneRadius, coneRadius * 2, coneRadius * 2);
+                    nightCtx.restore();
                 }
             }
 
@@ -13378,15 +13676,10 @@ class Game {
                     let pulse = 1.0 + 0.15 * Math.sin(Date.now() / 100);
                     let radius = 45 * cam.zoom * pulse;
 
-                    let glowGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, radius);
-                    glowGrad.addColorStop(0, 'rgba(0, 0, 0, 0.35)');
-                    glowGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.15)');
-                    glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
-
-                    nightCtx.fillStyle = glowGrad;
-                    nightCtx.beginPath();
-                    nightCtx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-                    nightCtx.fill();
+                    nightCtx.save();
+                    nightCtx.translate(pos.x, pos.y);
+                    nightCtx.drawImage(cachedSoftGlowCanvas, -radius, -radius, radius * 2, radius * 2);
+                    nightCtx.restore();
                 }
             }
 
@@ -13397,14 +13690,10 @@ class Game {
                         let pos = worldToCanvas(mine.x, mine.y);
                         let radius = 24 * cam.zoom;
 
-                        let glowGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, radius);
-                        glowGrad.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
-                        glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
-
-                        nightCtx.fillStyle = glowGrad;
-                        nightCtx.beginPath();
-                        nightCtx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-                        nightCtx.fill();
+                        nightCtx.save();
+                        nightCtx.translate(pos.x, pos.y);
+                        nightCtx.drawImage(cachedIntenseGlowCanvas, -radius, -radius, radius * 2, radius * 2);
+                        nightCtx.restore();
                     }
                 }
             }
@@ -13416,15 +13705,11 @@ class Game {
                     let flashRadius = 180 * cam.zoom;
                     let intensity = p.muzzleFlashTimer / 0.04;
 
-                    let flashGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, flashRadius);
-                    flashGrad.addColorStop(0, `rgba(0, 0, 0, ${intensity})`);
-                    flashGrad.addColorStop(0.5, `rgba(0, 0, 0, ${intensity * 0.3})`);
-                    flashGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
-
-                    nightCtx.fillStyle = flashGrad;
-                    nightCtx.beginPath();
-                    nightCtx.arc(pos.x, pos.y, flashRadius, 0, Math.PI * 2);
-                    nightCtx.fill();
+                    nightCtx.save();
+                    nightCtx.globalAlpha = Math.max(0, Math.min(1.0, intensity));
+                    nightCtx.translate(pos.x, pos.y);
+                    nightCtx.drawImage(cachedMuzzleFlashLightCanvas, -flashRadius, -flashRadius, flashRadius * 2, flashRadius * 2);
+                    nightCtx.restore();
                 }
             }
             if (this.enemies) {
@@ -13434,15 +13719,11 @@ class Game {
                         let flashRadius = 140 * cam.zoom;
                         let intensity = e.muzzleFlashTimer / 0.04;
 
-                        let flashGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, flashRadius);
-                        flashGrad.addColorStop(0, `rgba(0, 0, 0, ${intensity})`);
-                        flashGrad.addColorStop(0.5, `rgba(0, 0, 0, ${intensity * 0.3})`);
-                        flashGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
-
-                        nightCtx.fillStyle = flashGrad;
-                        nightCtx.beginPath();
-                        nightCtx.arc(pos.x, pos.y, flashRadius, 0, Math.PI * 2);
-                        nightCtx.fill();
+                        nightCtx.save();
+                        nightCtx.globalAlpha = Math.max(0, Math.min(1.0, intensity));
+                        nightCtx.translate(pos.x, pos.y);
+                        nightCtx.drawImage(cachedMuzzleFlashLightCanvas, -flashRadius, -flashRadius, flashRadius * 2, flashRadius * 2);
+                        nightCtx.restore();
                     }
                 }
             }
@@ -13454,15 +13735,12 @@ class Game {
                 let flashRadius = sw.radius * 2.0 * cam.zoom;
                 if (flashRadius > 0) {
                     let intensity = sw.life / sw.maxLife;
-                    let flashGrad = nightCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, flashRadius);
-                    flashGrad.addColorStop(0, `rgba(0, 0, 0, ${intensity})`);
-                    flashGrad.addColorStop(0.5, `rgba(0, 0, 0, ${intensity * 0.5})`);
-                    flashGrad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
 
-                    nightCtx.fillStyle = flashGrad;
-                    nightCtx.beginPath();
-                    nightCtx.arc(pos.x, pos.y, flashRadius, 0, Math.PI * 2);
-                    nightCtx.fill();
+                    nightCtx.save();
+                    nightCtx.globalAlpha = Math.max(0, Math.min(1.0, intensity));
+                    nightCtx.translate(pos.x, pos.y);
+                    nightCtx.drawImage(cachedExplosionLightCanvas, -flashRadius, -flashRadius, flashRadius * 2, flashRadius * 2);
+                    nightCtx.restore();
                 }
             }
 
