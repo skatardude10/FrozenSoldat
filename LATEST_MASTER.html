@@ -33,6 +33,7 @@
         position: absolute; top: 6px; height: 42px;
         background: rgba(0, 5, 12, 0.3); border: var(--ui-border);
         border-radius: 4px; backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
         box-shadow: 0 0 15px rgba(0, 229, 255, 0.15);
         display: flex; align-items: center; justify-content: space-between;
         padding: 0 16px; font-weight: bold; font-size: 11px; letter-spacing: 1px;
@@ -80,16 +81,22 @@
         width: 44px; height: 44px; background: rgba(0, 5, 12, 0.6);
         border: 1px solid rgba(0, 229, 255, 0.25); border-radius: 4px;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
-        position: relative; transition: all 0.2s ease; opacity: 0.35; scale: 0.85;
+        position: relative; transition: all 0.2s ease; opacity: 0.35;
+        transform: scale(0.85);
         backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
     }
     .hud-item-slot.active {
-        opacity: 1; scale: 1.1; border-color: var(--neon-blue);
+        opacity: 1;
+        transform: scale(1.1);
+        border-color: var(--neon-blue);
         box-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
         background: rgba(0, 10, 25, 0.75);
     }
     .hud-item-slot.active-p2 {
-        opacity: 1; scale: 1.1; border-color: #ffb700;
+        opacity: 1;
+        transform: scale(1.1);
+        border-color: #ffb700;
         box-shadow: 0 0 12px rgba(255, 183, 0, 0.4);
         background: rgba(25, 15, 0, 0.75);
     }
@@ -135,11 +142,15 @@
         width: 80px; height: 38px; background: rgba(0, 5, 12, 0.6);
         border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
-        opacity: 0.35; scale: 0.85; transition: all 0.2s ease;
+        opacity: 0.35;
+        transform: scale(0.85);
+        transition: all 0.2s ease;
         backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
     }
     .weapon-slot.active {
-        opacity: 1; scale: 1.1;
+        opacity: 1;
+        transform: scale(1.1);
         background: rgba(0, 10, 25, 0.75);
     }
     .weapon-slot-name { font-size: 8px; font-weight: bold; margin-top: 1px; text-transform: uppercase; }
@@ -153,12 +164,18 @@
         padding: 2px 6px; border-radius: 3px; background: rgba(57, 255, 20, 0.1);
         box-shadow: 0 0 8px rgba(57, 255, 20, 0.2);
     }
+    .hud-mutator-badge {
+        font-size: 9px; font-weight: bold; color: var(--red); border: 1px solid var(--red);
+        padding: 2px 6px; border-radius: 3px; background: rgba(255, 42, 95, 0.1);
+        box-shadow: 0 0 8px rgba(255, 42, 95, 0.2);
+    }
     
     .menu-overlay {
         position: absolute; top: 0; left: 0; width: 100%; height: 100%;
         background: rgba(0, 4, 10, 0.95); display: flex;
         flex-direction: column; justify-content: center; align-items: center;
         pointer-events: auto; backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
     }
     .menu-box {
         background: var(--ui-bg); border: 2px solid var(--neon-blue);
@@ -319,6 +336,36 @@
     input[type="range"] {
         accent-color: var(--neon-blue);
     }
+
+    /* Armory Tab Styles */
+    .armory-card {
+        background: rgba(0, 5, 12, 0.5);
+        border: 1px solid rgba(0, 229, 255, 0.2);
+        border-radius: 6px;
+        padding: 10px 12px;
+        text-align: left;
+    }
+    .armory-card-name {
+        font-size: 11px; font-weight: bold; color: var(--neon-blue);
+        text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;
+    }
+    .armory-card-desc {
+        font-size: 9px; color: #a9c2c7; margin-bottom: 8px; line-height: 1.5;
+    }
+    .armory-level-pips {
+        display: flex; gap: 4px; margin-bottom: 6px;
+    }
+    .armory-pip {
+        width: 14px; height: 6px; border-radius: 2px;
+        background: rgba(0, 229, 255, 0.12); border: 1px solid rgba(0, 229, 255, 0.25);
+    }
+    .armory-pip.filled { background: var(--neon-blue); box-shadow: 0 0 6px var(--neon-blue); }
+    .armory-pip.maxed  { background: var(--red);       box-shadow: 0 0 6px var(--red); }
+    button.armory-buy-btn { font-size: 10px; padding: 4px 10px; width: 100%; margin: 0; }
+    button.armory-buy-btn.maxed-out {
+        border-color: var(--red) !important; color: var(--red) !important;
+        cursor: not-allowed; background: transparent !important;
+    }
 </style>
 </head>
 <body>
@@ -363,6 +410,7 @@
                 <span id="ui-weight-penalty" class="hud-value">100%</span>
             </div>
             <div id="ui-boost-active" class="hud-boost-badge" style="visibility: hidden;">BOOST</div>
+            <div id="ui-mutator-badge" class="hud-mutator-badge" style="visibility: hidden; margin-left: 5px;">MUTATOR</div>
         </div>
     </div>
 
@@ -421,6 +469,7 @@
                 <span id="ui-weight-penalty-p2" class="hud-value">100%</span>
             </div>
             <div id="ui-boost-active-p2" class="hud-boost-badge" style="visibility: hidden;">BOOST</div>
+            <div id="ui-mutator-badge-p2" class="hud-mutator-badge" style="visibility: hidden; margin-left: 5px;">MUTATOR</div>
         </div>
     </div>
 
@@ -452,6 +501,7 @@
             <button class="tab-button" onclick="game.switchTab('controls')">Controls</button>
             <button class="tab-button" onclick="game.switchTab('audio')">Audio</button>
             <button class="tab-button" onclick="game.switchTab('leaderboard')">Leaderboard</button>
+            <button class="tab-button" onclick="game.switchTab('armory')">Armory</button>
         </div>
         
         <!-- Tab content: PLAY -->
@@ -629,6 +679,21 @@
                 </tbody>
             </table>
         </div>
+        
+        <!-- Tab content: ARMORY -->
+        <div id="tab-armory" class="tab-content">
+            <p style="color:var(--neon-blue); letter-spacing:1px; font-weight:bold; margin-bottom: 5px;">
+                GLOBAL FIELD UPGRADES — INTEL BANK: <span id="lbl-intel-balance">0</span>
+            </p>
+            <p style="font-size:11px; color:#a9c2c7; margin-top: 0px; margin-bottom: 12px;">
+                Intel is earned by completing waves and eliminating Elites. 
+                These upgrades persist between all runs.
+            </p>
+            <div id="armory-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; max-height:280px; overflow-y:auto; padding-right:8px;">
+                <!-- Populated dynamically by renderArmoryTab() -->
+            </div>
+            <button class="neon-btn" onclick="game.resetArmoryUpgrades()" style="width: 100%; border-color: var(--red); color: var(--red); margin-top: 15px; font-weight: bold; letter-spacing: 2px;">RESET ALL UPGRADES & REFUND INTEL</button>
+        </div>
     </div>
 </div>
 
@@ -709,6 +774,15 @@
                         <button id="btn-buy-ammo-pistol-hp-p1" onclick="game.buyItem('ammo_pistol_hp', game.player)">Pistol Hollow-Point ($80)</button>
                         <button id="btn-buy-ammo-m1a-ap-p1" onclick="game.buyItem('ammo_m1a_ap', game.player)">M1A AP x20 ($85)</button>
                     </div>
+ 
+                    <div class="shop-section-title">Weapon Overclocks</div>
+                    <div class="shop-grid">
+                        <button id="btn-buy-oc-hollow-p1" onclick="game.buyOverclock('hollowPoint', game.player)">Hollow Point Lvl.1 ($150)</button>
+                        <button id="btn-buy-oc-servos-p1" onclick="game.buyOverclock('exoServos', game.player)">Exo-Servos Lvl.1 ($100)</button>
+                        <button id="btn-buy-oc-mags-p1" onclick="game.buyOverclock('extMags', game.player)">Extended Mags ($200)</button>
+                        <button id="btn-buy-oc-firerate-p1" onclick="game.buyOverclock('fireRate', game.player)">Fire Rate Lvl.1 ($200)</button>
+                        <button id="btn-buy-oc-maxhp-p1" onclick="game.buyOverclock('maxHpOC', game.player)">Max HP Lvl.1 ($175)</button>
+                    </div>
                 </div>
             </div>
             <button id="btn-ready-p1" onclick="game.setReady(1)" style="width:100%; border-color:var(--green); color:var(--green); margin-top: 10px;">READY (P1)</button>
@@ -788,6 +862,15 @@
                         <button id="btn-buy-ammo-pistol-hp-p2" onclick="game.buyItem('ammo_pistol_hp', game.player2)">Pistol Hollow-Point ($80)</button>
                         <button id="btn-buy-ammo-m1a-ap-p2" onclick="game.buyItem('ammo_m1a_ap', game.player2)">M1A AP x20 ($85)</button>
                     </div>
+ 
+                    <div class="shop-section-title">Weapon Overclocks</div>
+                    <div class="shop-grid">
+                        <button id="btn-buy-oc-hollow-p2" onclick="game.buyOverclock('hollowPoint', game.player2)">Hollow Point Lvl.1 ($150)</button>
+                        <button id="btn-buy-oc-servos-p2" onclick="game.buyOverclock('exoServos', game.player2)">Exo-Servos Lvl.1 ($100)</button>
+                        <button id="btn-buy-oc-mags-p2" onclick="game.buyOverclock('extMags', game.player2)">Extended Mags ($200)</button>
+                        <button id="btn-buy-oc-firerate-p2" onclick="game.buyOverclock('fireRate', game.player2)">Fire Rate Lvl.1 ($200)</button>
+                        <button id="btn-buy-oc-maxhp-p2" onclick="game.buyOverclock('maxHpOC', game.player2)">Max HP Lvl.1 ($175)</button>
+                    </div>
                 </div>
             </div>
             <button id="btn-ready-p2" onclick="game.setReady(2)" style="width:100%; border-color:#ffb700; color:#ffb700; margin-top: 10px;">READY (P2)</button>
@@ -810,6 +893,180 @@
         <p style="color:#e0f7fa; font-size:11px; margin-bottom: 20px;">SYSTEMS CURRENTLY STANDBY</p>
         <button id="btn-pause-resume" onclick="game.togglePause()" style="width: 100%; margin-bottom: 12px; border-color: var(--green); color: var(--green);">RESUME OPERATIONS</button>
         <button id="btn-pause-abandon" onclick="game.returnToMainMenu()" style="width: 100%; border-color: var(--red); color: var(--red);">ABANDON MISSION (EXIT TO HQ)</button>
+    </div>
+</div>
+
+<div id="perk-screen" class="menu-overlay hidden" style="background: rgba(0, 2, 8, 0.95); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
+    <div class="menu-box" style="width: 90%; max-width: 800px; padding: 40px; border-color: var(--neon-blue); box-shadow: 0 0 25px rgba(0, 229, 255, 0.25);">
+        <div id="perk-player-indicator" style="
+            font-size: 12px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase;
+            color: var(--neon-blue); margin-bottom: 6px;
+            padding: 4px 14px; border: 1px solid currentColor;
+            border-radius: 3px; display: inline-block;
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.2);
+        ">PLAYER 1 — PERK SELECTION</div>
+        <h1 style="color: var(--neon-blue); letter-spacing: 3px; font-size: 24px; margin-bottom: 5px; text-shadow: 0 0 10px var(--neon-blue);">PERK SELECTION REQUESTED</h1>
+        <p style="font-size: 12px; color: #a9c2c7; margin-bottom: 30px; letter-spacing: 1px;">CHOOSE AN UPGRADE TO LINK WITH YOUR WEAPON ARSENAL</p>
+        
+        <div id="perk-choices-container" style="display: flex; gap: 20px; justify-content: center; margin-bottom: 30px;">
+            <!-- Dynamic perk cards -->
+        </div>
+    </div>
+</div>
+
+<div id="extmags-screen" class="menu-overlay hidden" style="background: rgba(0, 2, 8, 0.95); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
+    <div class="menu-box" style="width: 90%; max-width: 600px; padding: 40px; border-color: var(--neon-blue); box-shadow: 0 0 25px rgba(0, 229, 255, 0.25);">
+        <div id="extmags-player-indicator" style="
+            font-size: 12px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase;
+            color: var(--neon-blue); margin-bottom: 6px;
+            padding: 4px 14px; border: 1px solid currentColor;
+            border-radius: 3px; display: inline-block;
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.2);
+        ">PLAYER 1 — MAG SELECTION</div>
+        <h1 id="extmags-title" style="color: var(--neon-blue); letter-spacing: 3px; font-size: 24px; margin-bottom: 5px; text-shadow: 0 0 10px var(--neon-blue);">SELECT WEAPON FOR EXTENDED MAGS</h1>
+        <p style="font-size: 12px; color: #a9c2c7; margin-bottom: 30px; letter-spacing: 1px;">CHOOSE A WEAPON IN YOUR INVENTORY TO APPLY THE OVERCLOCK</p>
+        
+        <div id="extmags-choices-container" style="display: flex; flex-direction: column; gap: 12px; justify-content: center; margin-bottom: 30px;">
+            <!-- Rendered dynamically -->
+        </div>
+        <button class="neon-btn" onclick="game._cancelExtMags()" style="border-color: var(--red); color: var(--red); width: 100%;">CANCEL</button>
+    </div>
+</div>
+
+<div id="dev-dashboard" class="menu-overlay hidden" style="background: rgba(0, 4, 12, 0.95); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 100000; overflow-y: auto;">
+    <div class="menu-box" style="width: 90%; max-width: 900px; padding: 30px; border-color: var(--neon-blue); box-shadow: 0 0 35px rgba(0, 229, 255, 0.25);">
+        <h1 style="color: var(--neon-blue); letter-spacing: 3px; font-size: 24px; margin-bottom: 5px; text-shadow: 0 0 10px var(--neon-blue);">DEVELOPER COMMAND CENTER</h1>
+        <p style="font-size: 11px; color: #a9c2c7; margin-bottom: 15px; letter-spacing: 1px;">REAL-TIME RUNTIME DEBUGGER & CONTROL OVERLAY</p>
+
+        <!-- Dev Dashboard Tab Bar -->
+        <div class="tabs-container" style="margin-bottom: 15px;">
+            <button class="tab-button active" onclick="game.switchDevTab('dev-resources')">Resources</button>
+            <button class="tab-button" onclick="game.switchDevTab('dev-spawners')">Spawners</button>
+            <button class="tab-button" onclick="game.switchDevTab('dev-mutators')">Mutators</button>
+            <button class="tab-button" onclick="game.switchDevTab('dev-perks')">Perks</button>
+        </div>
+
+        <!-- TAB: Resources -->
+        <div id="tab-dev-resources" class="tab-content active">
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <!-- God Mode -->
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 11px; color: #e0f7fa;">God Mode</span>
+                    <button class="neon-btn" id="btn-dev-godmode" onclick="game.devToggleGodMode()" style="margin: 0; font-size: 10px; padding: 4px 10px; border-color: var(--red); color: var(--red);">DISABLED</button>
+                </div>
+                <!-- Cash -->
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                    <span style="font-size: 11px; color: #e0f7fa;">Cash ($)</span>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="neon-btn" onclick="game.devAddCash(1000)" style="margin: 0; font-size: 10px; padding: 4px 8px;">+1K</button>
+                        <button class="neon-btn" onclick="game.devAddCash(10000)" style="margin: 0; font-size: 10px; padding: 4px 8px;">+10K</button>
+                    </div>
+                </div>
+                <!-- Intel -->
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                    <span style="font-size: 11px; color: #e0f7fa;">Intel (⚙)</span>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="neon-btn" onclick="game.devAddIntel(10)" style="margin: 0; font-size: 10px; padding: 4px 8px;">+10</button>
+                        <button class="neon-btn" onclick="game.devAddIntel(100)" style="margin: 0; font-size: 10px; padding: 4px 8px;">+100</button>
+                        <button class="neon-btn" onclick="game.devResetIntel()" style="margin: 0; font-size: 10px; padding: 4px 8px; border-color: var(--red); color: var(--red);">Reset</button>
+                    </div>
+                </div>
+                <!-- Mid-Round Shop trigger (NEW) -->
+                <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(0,229,255,0.15); padding-top: 10px; margin-top: 4px;">
+                    <span style="font-size: 11px; color: #e0f7fa;">Open Armory Mid-Round</span>
+                    <button class="neon-btn" onclick="game.devOpenShopMidRound()" style="margin: 0; font-size: 10px; padding: 4px 10px; border-color: var(--green); color: var(--green);">OPEN SHOP</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: Spawners -->
+        <div id="tab-dev-spawners" class="tab-content">
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div>
+                    <span style="font-size: 11px; color: #e0f7fa; display: block; margin-bottom: 5px;">Spawn Weapon</span>
+                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('shotgun')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Shotgun</button>
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('smg')" style="margin: 0; font-size: 9px; padding: 3px 6px;">SMG</button>
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('lmg')" style="margin: 0; font-size: 9px; padding: 3px 6px;">LMG</button>
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('sniper')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Sniper</button>
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('m1a')" style="margin: 0; font-size: 9px; padding: 3px 6px;">M1A</button>
+                    </div>
+                </div>
+                <div>
+                    <span style="font-size: 11px; color: #e0f7fa; display: block; margin-bottom: 5px;">Spawn Enemy</span>
+                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('grunt', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Grunt</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('swarmer', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Swarmer</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('enforcer', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Enforcer</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('sapper', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Sapper</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('grunt', true)" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: var(--red); color: var(--red);">Elite Grunt</button>
+                    </div>
+                </div>
+                <div>
+                    <span style="font-size: 11px; color: #e0f7fa; display: block; margin-bottom: 5px;">Spawn Item Drop</span>
+                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                        <button class="neon-btn" onclick="game.devSpawnItem('medpack')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Med Pack</button>
+                        <button class="neon-btn" onclick="game.devSpawnItem('grenade')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Grenade</button>
+                        <button class="neon-btn" onclick="game.devSpawnItem('redbull')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Energy Drink</button>
+                        <button class="neon-btn" onclick="game.devSpawnItem('perk_case')" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: var(--neon-blue); color: var(--neon-blue);">Perk Case</button>
+                        <button class="neon-btn" onclick="game.devSpawnItem('intel')" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: #00e5ff; color: #00e5ff;">Intel Chip</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: Mutators -->
+        <div id="tab-dev-mutators" class="tab-content">
+            <span style="font-size: 11px; color: #a9c2c7; display: block; margin-bottom: 10px;">Force mutator for the next wave start.</span>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <button class="neon-btn" id="btn-dev-mut-none"       onclick="game.devForceMutator(null)"          style="margin: 0; font-size: 10px; width: 100%; border-color: #a9c2c7; color: #a9c2c7;">NONE (DEFAULT)</button>
+                <button class="neon-btn" id="btn-dev-mut-blackout"   onclick="game.devForceMutator('blackout')"    style="margin: 0; font-size: 10px; width: 100%;">BLACKOUT PROTOCOL</button>
+                <button class="neon-btn" id="btn-dev-mut-swarm"      onclick="game.devForceMutator('swarm')"       style="margin: 0; font-size: 10px; width: 100%;">SWARM SEASON</button>
+                <button class="neon-btn" id="btn-dev-mut-adrenaline" onclick="game.devForceMutator('adrenaline')"  style="margin: 0; font-size: 10px; width: 100%;">ADRENALINE RUSH</button>
+                <button class="neon-btn" id="btn-dev-mut-juggernaut" onclick="game.devForceMutator('juggernaut')"  style="margin: 0; font-size: 10px; width: 100%;">JUGGERNAUT PROTOCOL</button>
+            </div>
+        </div>
+
+        <!-- TAB: Perks -->
+        <div id="tab-dev-perks" class="tab-content">
+            <span style="font-size: 11px; color: #a9c2c7; display: block; margin-bottom: 10px;">Toggle perks for Player 1 instantly.</span>
+            <div style="display: flex; flex-direction: column; gap: 6px; max-height: 250px; overflow-y: auto; padding-right: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Flatline</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkFlatline" onclick="game.devTogglePerk('perkFlatline')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Point Blank</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkPointBlank" onclick="game.devTogglePerk('perkPointBlank')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Ghost Bullets</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkGhost" onclick="game.devTogglePerk('perkGhost')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Vampiric Rounds</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkVampiric" onclick="game.devTogglePerk('perkVampiric')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Volatile Corpses</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkVolatileCorpses" onclick="game.devTogglePerk('perkVolatileCorpses')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Rubber Bullets</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkRubberBullets" onclick="game.devTogglePerk('perkRubberBullets')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Smart Munitions</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkSmartMunitions" onclick="game.devTogglePerk('perkSmartMunitions')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Explosive Rounds</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkExplosiveRounds" onclick="game.devTogglePerk('perkExplosiveRounds')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+            </div>
+        </div>
+
+        <button class="neon-btn" onclick="game.toggleDevDashboard()" style="width: 100%; border-color: var(--neon-blue); color: var(--neon-blue); margin-top: 20px; font-weight: bold; letter-spacing: 2px;">CLOSE SYSTEM TERMINAL</button>
     </div>
 </div>
 
@@ -2328,72 +2585,71 @@ class MusicEngine {
         
         this.tracks = {
             off: { bpm: 120 },
-            action: {
-                bpm: 125,
-                bassPattern: [
-                    // 32-step bassline (2 bars)
-                    36, 36, 48, 36, 39, 39, 51, 39, 41, 41, 53, 41, 43, 46, 48, 36,
-                    36, 36, 48, 36, 39, 39, 51, 39, 41, 41, 53, 41, 36, 39, 41, 43
-                ],
-                leadPattern: [
-                    // 64-step melody (4 bars)
-                    60, null, 63, 60, 67, null, 63, 72, 60, null, 63, 60, 65, 63, 62, 58,
-                    60, null, 63, 60, 67, null, 63, 72, 60, null, 63, 60, 68, 67, 65, 67,
-                    63, null, 67, 63, 70, null, 67, 75, 63, null, 67, 63, 68, 67, 65, 63,
-                    62, null, 65, 62, 69, null, 65, 74, 67, 65, 63, 62, 60, 58, 56, 55
-                ],
-                drums: {
-                    kick:  [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-                    hat:   [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0],
-                    snare: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]
-                }
-            },
-            agent: {
-                bpm: 90,
-                bassPattern: [
-                    // 32-step bassline (2 bars)
-                    36, null, 39, null, 41, 42, 43, null, 36, null, 39, null, 42, 41, 39, null,
-                    36, null, 39, null, 41, 42, 43, null, 48, null, 46, null, 45, 43, 41, 39
-                ],
-                leadPattern: [
-                    // 64-step spy melody (4 bars)
-                    60, null, 63, null, 65, 66, 67, null, 72, null, 70, null, 67, null, null, null,
-                    60, null, 63, null, 65, 66, 67, null, 65, 63, 62, 60, 59, null, null, null,
-                    72, null, 75, null, 77, 78, 79, null, 84, null, 82, null, 79, null, null, null,
-                    79, null, 77, null, 75, null, 74, null, 72, 71, 70, 69, 68, 67, 66, 65
-                ],
-                drums: {
-                    kick:  [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0],
-                    hat:   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                    snare: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]
-                }
-            },
-            ambient: {
-                bpm: 72,
-                bassPattern: [
-                    // 64-step bass (4 bars)
-                    36, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                    43, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                    39, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                    41, null, null, null, null, null, null, null, 43, null, null, null, 46, null, null, null
-                ],
-                leadPattern: [
-                    // 128-step ambient melody (8 bars)
-                    60, null, null, null, 63, null, null, null, 67, null, null, null, 72, null, null, null,
-                    70, null, null, null, 67, null, null, null, 65, null, null, null, null, null, null, null,
-                    63, null, null, null, 67, null, null, null, 70, null, null, null, 75, null, null, null,
-                    74, null, null, null, 70, null, null, null, 67, null, null, null, null, null, null, null,
-                    72, null, null, null, 75, null, null, null, 79, null, null, null, 84, null, null, null,
-                    82, null, null, null, 79, null, null, null, 77, null, null, null, null, null, null, null,
-                    70, null, null, null, 74, null, null, null, 77, null, null, null, 82, null, null, null,
-                    80, null, null, null, 77, null, null, null, 74, null, null, null, 72, null, null, null
-                ],
-                drums: {
-                    kick:  [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-                    hat:   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                    snare: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                }
-            }
+            action: (function() {
+                // "CYBER-BREACH" - 108 BPM Darksynth. 4 Stages: Intro -> Verse -> Drop -> Bridge
+                const rep = (arr, times) => Array(times).fill(arr).flat();
+                const e = [40, 40, 52, 40,  40, 40, 52, 40,  40, 40, 52, 40,  43, 40, 45, 40]; // Em driving riff
+                const c = [36, 36, 48, 36,  36, 36, 48, 36,  36, 36, 48, 36,  39, 36, 41, 36]; // C driving riff
+                const d = [38, 38, 50, 38,  38, 38, 50, 38,  38, 38, 50, 38,  41, 38, 43, 38]; // D driving riff
+                const b = [35, 35, 47, 35,  35, 35, 47, 35,  35, 35, 47, 35,  38, 35, 40, 35]; // Bm driving riff
+                
+                const riff = [...e, ...e, ...c, ...d]; // 4 bars
+                const introBass = rep([40, null, null, null, 40, null, null, null, 40, null, null, null, 40, null, null, null], 32); 
+                
+                // Melodies
+                const lead1 = [...rep(null, 14), 76, null];
+                const lead2 = [...rep(null, 6), 79, null, null, 74, null, null, null, null, null, null, null, 76, null, null, null, null, null, 71, null, null, null, null, null, 74, null, 76, null, null, null, null, null, null, 79, null, null, 83, null, null, null, null, null, null, null, 81, null, null, null, null, null, 79, null, null, null, 74, null, 71, null];
+                
+                const EmPad = [52, 55, 59], CPad = [48, 52, 55], DPad = [50, 54, 57], BmPad = [47, 50, 54];
+                
+                return {
+                    bpm: 108,
+                    // Bass: Bars 1-8 intro, 9-24 driving, 25-32 bridge
+                    bassPattern: [...introBass, ...rep(riff, 4), ...rep(b, 8)],
+                    // Drums build up over the 32 bars
+                    drums: {
+                        kick:  [...rep([1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0], 24), ...rep([0], 128)], // Drops out at bridge
+                        hat:   [...rep([0,0,1,0, 0,0,1,0, 0,0,1,0, 0,0,1,0], 8), ...rep([1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0], 24)],
+                        snare: [...rep([0], 128), ...rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0], 24)] // Enters at bar 9
+                    },
+                    // Pad Swells: Enter at bar 9
+                    padPattern: [...rep(null, 8), ...rep([EmPad, EmPad, CPad, DPad], 6)],
+                    // Lead Arp: Enters during the drop (Bar 17)
+                    leadPattern: [...rep(null, 256), ...rep(lead2, 2), ...rep(lead1, 16)]
+                };
+            })(),
+            
+            agent: (function() {
+                // "SHADOW PROTOCOL" - 90 BPM Trip Hop / Stealth
+                const rep = (arr, times) => Array(times).fill(arr).flat();
+                const groove = [38, null, null, 38,  null, 41, null, null,  38, null, null, 38,  null, null, 45, 41];
+                const arp = [null, null, null, null, 81, null, null, null, null, null, null, null, 79, null, 74, null];
+                const Am = [57, 60, 64], F = [53, 57, 60], E7 = [52, 56, 60];
+                return {
+                    bpm: 90,
+                    bassPattern: rep(groove, 32),
+                    drums: {
+                        kick:  rep([1,0,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0], 32),
+                        hat:   rep([1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1], 32),
+                        snare: rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0], 32)
+                    },
+                    padPattern: [...rep(null, 16), ...rep([Am, Am, F, E7], 4)],
+                    leadPattern: [...rep(null, 128), ...rep(arp, 8)]
+                };
+            })(),
+            
+            ambient: (function() {
+                // "FROZEN WASTES" - 65 BPM Atmospheric Drone
+                const rep = (arr, times) => Array(times).fill(arr).flat();
+                const Dm9 = [50, 53, 57, 64], BbM7 = [46, 53, 57, 62], F = [53, 57, 60, 65], C = [48, 55, 59, 64];
+                return {
+                    bpm: 65,
+                    bassPattern: rep([38, ...rep(null, 63)], 8),
+                    drums: { kick: rep([1, ...rep(null, 63)], 8), hat: [], snare: [] },
+                    padPattern: rep([Dm9, BbM7, F, C], 8),
+                    leadPattern: rep([null, null, null, null, 74, ...rep(null, 27), 79, ...rep(null, 31)], 8)
+                };
+            })()
         };
     }
     
@@ -2447,19 +2703,7 @@ class MusicEngine {
         if (game && game.state === 'playing') {
             let p1Hp = (game.player && !game.player.dead) ? game.player.hp : 100;
             let p2Hp = (game.player2 && !game.player2.dead) ? game.player2.hp : 100;
-            if (game.isTwoPlayer) {
-                if (game.player && game.player.dead && game.player2 && game.player2.dead) {
-                    hp = 100;
-                } else if (game.player && game.player.dead) {
-                    hp = p2Hp;
-                } else if (game.player2 && game.player2.dead) {
-                    hp = p1Hp;
-                } else {
-                    hp = Math.min(p1Hp, p2Hp);
-                }
-            } else {
-                hp = p1Hp;
-            }
+            hp = game.isTwoPlayer ? Math.min(p1Hp, p2Hp) : p1Hp;
         }
         
         let baseBpm = this.tracks[this.currentTrack]?.bpm || 120;
@@ -2467,10 +2711,11 @@ class MusicEngine {
         let targetFreq = 20000;
         let heartbeatVol = 0.0;
         
+        // Dynamic music muffling on low health
         if (hp < 35) {
             let hpFactor = (35 - hp) / 35;
-            bpm = baseBpm * (1.0 + hpFactor * 0.35);
-            targetFreq = 20000 - hpFactor * (20000 - 700);
+            bpm = baseBpm * (1.0 + hpFactor * 0.25); // Slight tempo increase
+            targetFreq = 20000 - hpFactor * (20000 - 600); // Muffle the high end
             heartbeatVol = hpFactor * 0.85;
         }
         
@@ -2479,12 +2724,13 @@ class MusicEngine {
         }
         
         let secondsPerBeat = 60.0 / bpm;
-        let secondsPerStep = secondsPerBeat / 4;
+        let secondsPerStep = secondsPerBeat / 4; // 16th notes
         
         while (this.nextNoteTime < this.ctx.currentTime + this.scheduleAheadTime) {
             this.scheduleNote(this.step, this.nextNoteTime, heartbeatVol);
             this.nextNoteTime += secondsPerStep;
-            this.step = (this.step + 1) % 256;
+            // INCREASED TO 512 STEPS (32 BARS) FOR FULL SONG EVOLUTION
+            this.step = (this.step + 1) % 512; 
         }
     }
     
@@ -2495,106 +2741,45 @@ class MusicEngine {
         let bar = Math.floor(step / 16);
         let stepInBar = step % 16;
         
-        let trans = 0;
-        if (this.currentTrack === 'action') {
-            const actionTrans = [0, 0, 8, 8, 3, 3, 10, 10];
-            trans = actionTrans[bar % 8];
-        } else if (this.currentTrack === 'agent') {
-            const agentTrans = [0, 0, 1, 1, 0, 0, 6, 7];
-            trans = agentTrans[bar % 8];
-        } else if (this.currentTrack === 'ambient') {
-            const ambientTrans = [0, 0, 0, 0, 8, 8, 8, 8, 5, 5, 5, 5, 7, 7, 10, 10];
-            trans = ambientTrans[bar % 16];
-        }
-        
         // 1. Kick drum
-        let playKick = false;
-        if (track.drums && track.drums.kick) {
-            playKick = track.drums.kick[stepInBar] === 1;
-        }
-        if (this.currentTrack === 'action' && bar % 8 === 7 && (stepInBar === 14 || stepInBar === 15)) {
-            playKick = true;
-        }
-        
-        if (playKick) {
-            if (this.currentTrack === 'ambient') {
-                this.playAmbientKick(time);
-            } else {
-                this.playKick(time);
-            }
+        if (track.drums && track.drums.kick && track.drums.kick[step % track.drums.kick.length]) {
+            if (this.currentTrack === 'ambient') this.playAmbientKick(time);
+            else this.playKick(time);
         }
         
         // 2. Hi-hat
-        let playHat = false;
-        if (track.drums && track.drums.hat) {
-            playHat = track.drums.hat[stepInBar] === 1;
-        }
-        if (this.currentTrack === 'action' && bar % 8 === 7 && stepInBar % 2 === 0) {
-            playHat = true;
-        }
-        
-        if (playHat) {
-            let vol = (this.currentTrack === 'agent') ? 0.015 : 0.05;
-            this.playHat(time, vol);
+        if (track.drums && track.drums.hat && track.drums.hat[step % track.drums.hat.length]) {
+            this.playHat(time, (this.currentTrack === 'agent') ? 0.02 : 0.06);
         }
         
         // 3. Snare / Rimshot
-        let playSnare = false;
-        if (track.drums && track.drums.snare) {
-            playSnare = track.drums.snare[stepInBar] === 1;
-        }
-        if (this.currentTrack === 'action' && bar % 8 === 7 && stepInBar >= 12) {
-            playSnare = true;
-        }
-        if (this.currentTrack === 'agent' && bar % 8 === 7 && (stepInBar === 14 || stepInBar === 15)) {
-            playSnare = true;
+        if (track.drums && track.drums.snare && track.drums.snare[step % track.drums.snare.length]) {
+            if (this.currentTrack === 'agent') this.playRimshot(time);
+            else this.playActionSnare(time);
         }
         
-        if (playSnare) {
-            if (this.currentTrack === 'action') {
-                this.playActionSnare(time);
-            } else if (this.currentTrack === 'agent') {
-                this.playRimshot(time);
-            }
-        }
-        
-        // 4. Bass
+        // 4. Heavy Darksynth Bass
         if (track.bassPattern) {
-            let bassIdx = step % track.bassPattern.length;
-            let note = track.bassPattern[bassIdx];
-            if (note !== null && note !== undefined) {
-                this.playBass(note + trans, time);
-            }
+            let note = track.bassPattern[step % track.bassPattern.length];
+            if (note !== null && note !== undefined) this.playBass(note, time);
         }
         
-        // 5. Lead
+        // 5. Analog Lead Melody
         if (track.leadPattern) {
-            let leadIdx = step % track.leadPattern.length;
-            let note = track.leadPattern[leadIdx];
-            let playLeadNote = true;
-            if (this.currentTrack === 'action') {
-                if (bar % 8 < 2) playLeadNote = false;
-            } else if (this.currentTrack === 'agent') {
-                if (bar % 8 === 4 || bar % 8 === 5) playLeadNote = false;
-            }
-            
-            if (playLeadNote && note !== null && note !== undefined) {
-                this.playLead(note + trans, time);
-            }
+            let note = track.leadPattern[step % track.leadPattern.length];
+            if (note !== null && note !== undefined) this.playLead(note, time);
         }
         
-        // 6. Ambient Drone
-        if (this.currentTrack === 'ambient' && stepInBar === 0 && bar % 2 === 0) {
-            this.playAmbientDrone(time, trans);
+        // 6. Cinematic Pads / Chords (Triggers once per bar on step 0)
+        if (track.padPattern && stepInBar === 0) {
+            let chord = track.padPattern[bar % track.padPattern.length];
+            if (chord) this.playPad(chord, time);
         }
         
-        // 7. Heartbeat
+        // 7. Low Health Heartbeat overlay
         if (heartbeatVol > 0.0) {
-            if (stepInBar === 0 || stepInBar === 8) {
-                this.playHeartbeat(time, heartbeatVol, true);
-            } else if (stepInBar === 1 || stepInBar === 9) {
-                this.playHeartbeat(time, heartbeatVol, false);
-            }
+            if (stepInBar === 0 || stepInBar === 8) this.playHeartbeat(time, heartbeatVol, true);
+            else if (stepInBar === 1 || stepInBar === 9) this.playHeartbeat(time, heartbeatVol, false);
         }
     }
     
@@ -2698,55 +2883,170 @@ class MusicEngine {
         osc.stop(time + 0.05);
     }
     
+    playPad(chord, time) {
+        if (!audio.ctx) return;
+        const filter = audio.ctx.createBiquadFilter();
+        const gain = audio.ctx.createGain();
+        
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(200, time);
+        filter.frequency.exponentialRampToValueAtTime(1500, time + 1.2); // Swells open
+        filter.frequency.exponentialRampToValueAtTime(200, time + 2.8);  // Fades dark
+        
+        let targetGain = (this.currentTrack === 'ambient') ? 0.08 : 0.05;
+        targetGain = targetGain / chord.length; // Balance volume to prevent blowing out
+        
+        gain.gain.setValueAtTime(0.001, time);
+        gain.gain.exponentialRampToValueAtTime(targetGain, time + 0.8);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 2.8);
+        
+        chord.forEach(note => {
+            const osc1 = audio.ctx.createOscillator();
+            const osc2 = audio.ctx.createOscillator();
+            let freq = 440 * Math.pow(2, (note - 69) / 12);
+            
+            osc1.type = 'sawtooth';
+            osc2.type = 'sawtooth';
+            osc1.frequency.value = freq;
+            osc2.frequency.value = freq;
+            
+            // Analog drift detuning for a thick, wide atmosphere
+            osc1.detune.value = -8 + (Math.random() * -5);
+            osc2.detune.value = 8 + (Math.random() * 5);
+            
+            osc1.connect(filter);
+            osc2.connect(filter);
+            osc1.start(time);
+            osc2.start(time);
+            osc1.stop(time + 3.0);
+            osc2.stop(time + 3.0);
+        });
+        
+        filter.connect(gain);
+        gain.connect(audio.musicGain);
+        if (this.delayNode) gain.connect(this.delayNode); // Drown the pad in delay
+    }
+
     playBass(note, time) {
         if (!audio.ctx) return;
-        const osc = audio.ctx.createOscillator();
+        const osc1 = audio.ctx.createOscillator();
+        const osc2 = audio.ctx.createOscillator();
         const filter = audio.ctx.createBiquadFilter();
         const gain = audio.ctx.createGain();
         
         let freq = 440 * Math.pow(2, (note - 69) / 12);
-        osc.type = (this.currentTrack === 'agent') ? 'triangle' : 'sawtooth';
-        osc.frequency.setValueAtTime(freq, time);
+        osc1.type = 'sawtooth';
+        osc2.type = (this.currentTrack === 'agent') ? 'square' : 'sawtooth';
+        osc1.frequency.setValueAtTime(freq, time);
+        osc2.frequency.setValueAtTime(freq, time);
         
+        // "Reese Bass" effect - heavy, thick detuning
+        osc1.detune.setValueAtTime(-12, time); 
+        osc2.detune.setValueAtTime(12, time);  
+        
+        // Snappy Filter Envelope (The Cyberpunk "Pluck")
         filter.type = 'lowpass';
-        let startFilter = (this.currentTrack === 'agent') ? 600 : 1200;
-        let endFilter = (this.currentTrack === 'agent') ? 250 : 180;
+        let startFilter = (this.currentTrack === 'agent') ? 800 : 3000;
+        let endFilter = (this.currentTrack === 'agent') ? 100 : 300;
         filter.frequency.setValueAtTime(startFilter, time);
-        filter.frequency.exponentialRampToValueAtTime(endFilter, time + 0.15);
+        filter.frequency.exponentialRampToValueAtTime(endFilter, time + 0.12);
         
         let baseVol = (this.currentTrack === 'agent') ? 0.35 : 0.22;
         gain.gain.setValueAtTime(baseVol, time);
-        gain.gain.exponentialRampToValueAtTime(0.005, time + 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.16);
         
-        osc.connect(filter);
+        osc1.connect(filter);
+        osc2.connect(filter);
         filter.connect(gain);
         gain.connect(audio.musicGain);
         
-        osc.start(time);
-        osc.stop(time + 0.16);
+        osc1.start(time);
+        osc2.start(time);
+        osc1.stop(time + 0.18);
+        osc2.stop(time + 0.18);
     }
     
     playLead(note, time) {
         if (!audio.ctx) return;
-        const osc = audio.ctx.createOscillator();
+        const osc1 = audio.ctx.createOscillator();
+        const osc2 = audio.ctx.createOscillator();
+        const filter = audio.ctx.createBiquadFilter();
         const gain = audio.ctx.createGain();
         
         let freq = 440 * Math.pow(2, (note - 69) / 12);
-        osc.type = (this.currentTrack === 'ambient') ? 'sine' : 'triangle';
-        osc.frequency.setValueAtTime(freq, time);
+        osc1.type = (this.currentTrack === 'ambient') ? 'sine' : 'square';
+        osc2.type = 'sawtooth'; 
+        osc1.frequency.setValueAtTime(freq, time);
+        osc2.frequency.setValueAtTime(freq * 2, time); // Layer an octave up
         
-        let baseVol = (this.currentTrack === 'ambient') ? 0.08 : 0.12;
+        // Vintage Synthesizer Vibrato (LFO)
+        const lfo = audio.ctx.createOscillator();
+        const lfoGain = audio.ctx.createGain();
+        lfo.type = 'sine';
+        lfo.frequency.value = 6; // 6Hz vibrato speed
+        lfoGain.gain.value = 6;  // Vibrato depth
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc1.frequency);
+        lfoGain.connect(osc2.frequency);
+        lfo.start(time);
+        lfo.stop(time + 0.3);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(4500, time);
+        filter.frequency.exponentialRampToValueAtTime(400, time + 0.15);
+        
+        let baseVol = (this.currentTrack === 'ambient') ? 0.1 : 0.05;
         gain.gain.setValueAtTime(baseVol, time);
-        gain.gain.exponentialRampToValueAtTime(0.005, time + 0.22);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.25);
         
-        osc.connect(gain);
+        osc1.connect(filter);
+        osc2.connect(filter);
+        filter.connect(gain);
         gain.connect(audio.musicGain);
-        if (this.delayNode) {
-            gain.connect(this.delayNode);
-        }
+        if (this.delayNode) gain.connect(this.delayNode);
         
-        osc.start(time);
-        osc.stop(time + 0.24);
+        osc1.start(time);
+        osc2.start(time);
+        osc1.stop(time + 0.3);
+        osc2.stop(time + 0.3);
+    }
+
+    playActionSnare(time) {
+        if (!audio.ctx || !audio.noiseBuffer) return;
+        
+        // Top layer: White noise snap
+        const noiseSource = audio.ctx.createBufferSource();
+        noiseSource.buffer = audio.noiseBuffer;
+        const noiseFilter = audio.ctx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.value = 2500;
+        noiseFilter.Q.value = 0.8;
+        
+        const noiseGain = audio.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.25, time);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+        
+        // Bottom layer: Physical chest-thump sine drop
+        const bodyOsc = audio.ctx.createOscillator();
+        bodyOsc.type = 'sine';
+        bodyOsc.frequency.setValueAtTime(250, time);
+        bodyOsc.frequency.exponentialRampToValueAtTime(40, time + 0.08); 
+        
+        const bodyGain = audio.ctx.createGain();
+        bodyGain.gain.setValueAtTime(0.35, time);
+        bodyGain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+        
+        noiseSource.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(audio.musicGain);
+        
+        bodyOsc.connect(bodyGain);
+        bodyGain.connect(audio.musicGain);
+        
+        noiseSource.start(time);
+        noiseSource.stop(time + 0.15);
+        bodyOsc.start(time);
+        bodyOsc.stop(time + 0.15);
     }
     
     playAmbientDrone(time, trans) {
@@ -3428,6 +3728,11 @@ class Entity {
     }
     
     takeDamage(amt, pushDir, pushForce) {
+        if (typeof game !== 'undefined' && game && game.devGodMode) {
+            if (this.maxStamina !== undefined) {
+                return;
+            }
+        }
         if(this.armor && this.armor > 0) {
             let absorb = Math.min(this.armor, amt);
             this.armor -= absorb;
@@ -3524,6 +3829,15 @@ class Player extends Entity {
         this.dogsInventory = [];
         this.hunterSwarmCount = 0;
         this.lastMiniDroneBreakoffTime = 0;
+
+        // Meta-progression applied properties
+        this.maxArmor = 50;            // Will be scaled from metaUpgrades.kevlarWeave
+        this.armor = 50;               // Stays current value; maxArmor is the ceiling
+
+        // In-run state
+        this.perks = [];               // Array of strings: 'smart_munitions', 'explosive_rounds', 'nanite_siphon'
+        this.damageMultiplier = 1.0;   // Accumulates from Hollow-Point+ overclock purchases
+        this.intelEarnedThisRun = 0;   // Tracks per-run Intel earnings for HUD display
     }
     
     get camera() {
@@ -3711,6 +4025,7 @@ class Player extends Entity {
             isSprinting = !this.isPlayer2 && input.keys['shift'] && this.stamina > 0 && (moveX !== 0 || moveY !== 0);
         }
 
+        this.isSprinting = isSprinting;
         this.applySprintStaminaAndMove(dt, moveX, moveY, isSprinting);
 
         // --- Fire System (Interchangeable Mouse/Trigger) ---
@@ -3741,7 +4056,15 @@ class Player extends Entity {
             let canFireSemi = !isSemi || this.semiAutoTriggerReleased;
             let baseFireRate = this.weapon.fireRate;
             let clutchFireRateBuff = (this.hp / this.maxHp < 0.20) ? 0.80 : 1.0;
-            let actualFireRate = baseFireRate * clutchFireRateBuff;
+            
+            let fireRateLvl = 0;
+            if (game && game.runOverclocks) {
+                const ocSuffix = this.isPlayer2 ? 'p2' : 'p1';
+                const oc = game.runOverclocks[ocSuffix];
+                if (oc) fireRateLvl = oc.fireRate || 0;
+            }
+            const fireRateOCMult = Math.max(0.65, 1.0 - fireRateLvl * 0.05);
+            let actualFireRate = baseFireRate * clutchFireRateBuff * fireRateOCMult;
             if (hasAmmo && canFireSemi && (gameTime - this.lastFireTime >= actualFireRate)) {
                 this.fire(game);
                 this.lastFireTime = gameTime;
@@ -3788,11 +4111,27 @@ class Player extends Entity {
         let isMoving = (moveX !== 0 || moveY !== 0);
         let healthPct = this.hp / this.maxHp;
         
-        // Dynamic stamina consumption/recovery variables [1]
-        let regenRate = 26.4 / 3.0; // 3x slower base regeneration rate (increased by 20% from 22/3 to 26.4/3)
-        let walkDrainRate = 4.5;    // Walking slowly drains stamina
-        let runDrainRate = 38.0;    // Running sprinting drains quickly
+        // 1. Read Exo-Servos level first
+        let exoServosLvl = 0;
+        if (game && game.runOverclocks) {
+            const suffix = this.isPlayer2 ? 'p2' : 'p1';
+            const oc = game.runOverclocks[suffix];
+            if (oc) exoServosLvl = oc.exoServos || 0;
+        }
+
+        // 2. Stamina consumption and recovery calculations (including Meta upgrades)
+        let MA = game && game.saveData ? game.saveData.metaUpgrades : null;
+        let cardioLvl = MA ? (MA.cardioConditioning || 0) : 0;
         
+        let regenRate = (26.4 / 3.0) * (1 + cardioLvl * 0.12); // 3x slower base regeneration rate
+        let walkDrainRate = 4.5;    // Walking slowly drains stamina
+        let runDrainRate = 38.0 * (1 - cardioLvl * 0.08);    // Running sprinting drains quickly
+        
+        // Exo-Servos stamina efficiency: reduces drain by 6% per level (capped at 30% reduction / 0.70 multiplier)
+        const exoStaminaEfficiency = Math.max(0.70, 1.0 - exoServosLvl * 0.06);
+        runDrainRate *= exoStaminaEfficiency;
+        walkDrainRate *= exoStaminaEfficiency;
+
         let healthRegenFactor = 1.0;
         let healthLossFactor = 1.0;
         
@@ -3805,7 +4144,7 @@ class Player extends Entity {
         }
         
         if (this.energyDrinkTimer > 0) {
-            regenRate *= 2.0; // active Energy Drink modifier (increased from 1.5 to 2.0)
+            regenRate *= 2.0; // active Energy Drink modifier
         }
 
         if (isMoving) {
@@ -3827,10 +4166,19 @@ class Player extends Entity {
             this.isExhausted = false; // caught breath back at 20%
         }
 
+        // 7. Speed multipliers
         let sprintSpeedMulti = (isSprinting && !this.isExhausted) ? 1.55 : 1.0;
         let exhaustionPenalty = this.isExhausted ? 0.5 : 1.0; // walk twice as slow if exhausted [1]
         let clutchSpeedBuff = (healthPct < 0.20) ? 1.15 : 1.0;
-        let curAccel = this.accel * (1.0 + this.speedUpgrades * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff;
+        
+        // Exo-Servos top sprint speed boost: +4% sprint speed per level
+        if (isSprinting && !this.isExhausted && exoServosLvl > 0) {
+            sprintSpeedMulti += exoServosLvl * 0.04;
+        }
+
+        // 8. Acceleration (exo acceleration bonus remains +5% per level)
+        const exoServosAccelMulti = 1.0 + exoServosLvl * 0.05;
+        let curAccel = this.accel * (1.0 + this.speedUpgrades * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff * exoServosAccelMulti;
         
         this.vx += moveX * curAccel * dt;
         this.vy += moveY * curAccel * dt;
@@ -3931,6 +4279,19 @@ class Player extends Entity {
         if (game && game.isTestingMode) {
             amt = 0;
         }
+        
+        let projectedHp = this.hp;
+        if (this.armor && this.armor > 0) {
+            let absorb = Math.min(this.armor, amt);
+            projectedHp -= (amt - absorb);
+        } else {
+            projectedHp -= amt;
+        }
+        if (projectedHp <= 0 && !this.dead) {
+            const retention = ((game.saveData && game.saveData.metaUpgrades ? game.saveData.metaUpgrades.offshoreAccount : 0) * 0.20);
+            this._insurancePayout = Math.floor(this.cash * retention);
+        }
+        
         super.takeDamage(amt, pushDir, pushForce);
         this.stamina = Math.max(0, this.stamina - amt * 0.5); // Shock takes away stamina instantly
         this.damageFlashIntensity = 1.0; // Trigger damage flash
@@ -4058,6 +4419,16 @@ class Enemy extends Entity {
         this.dead = false;
         this.footstepTimer = 0;
         this.isElite = false;
+        
+        // Reset pooled AI caches to prevent stale data bleeding into the first update frame
+        this.cachedTarget = null;
+        this.cachedDistToTarget = Infinity;
+        this.cachedHasLOS = false;
+        this.cachedRunFromDrone = false;
+        this.cachedMoveAngle = 0;
+        this.cachedVisibleToPlayers = false;
+        this.cachedReactingToDrone = false;
+        this.reactingToDrone = false;
         
         // Game-feel variables
         this.muzzleFlashTimer = 0;
@@ -4788,6 +5159,34 @@ class Enemy extends Entity {
         }
         audio.playHit(this.x, this.y);
         
+        if ((game.player && game.player.perkVolatileCorpses) || (game.isTwoPlayer && game.player2 && game.player2.perkVolatileCorpses)) {
+            if (audio.playMiniExplosion) audio.playMiniExplosion(this.x, this.y);
+            game.spawnShockwave(this.x, this.y, 90, 0.25);
+            game.applyExplosionShake(this.x, this.y, 12, 100);
+            
+            for (let c = 0; c < 6; c++) {
+                let a = Math.random() * Math.PI * 2;
+                let spd = MathUtils.rand(40, 100);
+                game.particles.push(new Particle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ff6600', 0.3, 2));
+            }
+            
+            let blastRadius = 90;
+            let damage = 50;
+            for (let ent of game.enemies) {
+                if (ent === this || ent.dead) continue;
+                let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
+                if (dist < blastRadius) {
+                    let splashDmg = damage * (1.0 - dist / blastRadius);
+                    let wasDeadBefore = ent.dead;
+                    ent.takeDamage(splashDmg, Math.atan2(ent.y - this.y, ent.x - this.x), 200);
+                    game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                    if (ent.dead && !wasDeadBefore) {
+                        // Chaining assist cash or text triggers could happen here, or let call stack handle it recursively
+                    }
+                }
+            }
+        }
+        
         // Death blood burst
         let angle = this.lastHitAngle || 0;
         game.spawnBlood(this.x, this.y, Math.cos(angle) * 300, Math.sin(angle) * 300);
@@ -4798,6 +5197,7 @@ class Enemy extends Entity {
 
         // Elite guaranteed drops & text
         if (this.isElite && game) {
+            game._elitesKilledThisWave = (game._elitesKilledThisWave || 0) + 1;
             let dropRoll = Math.random();
             let dropType = dropRoll < 0.4 ? 'medpack' : dropRoll < 0.7 ? 'grenade' : 'redbull';
             game.items.push(new Item(this.x, this.y, dropType));
@@ -4810,6 +5210,16 @@ class Enemy extends Entity {
                 '#ffcc00', 2.0,
                 eliteAmt_vx, -90, 200, true
             ));
+
+            // Perk case drop chance (10%)
+            if (Math.random() < 0.10) {
+                let perkX = this.x + (Math.random() - 0.5) * 30;
+                let perkY = this.y + (Math.random() - 0.5) * 30;
+                game.items.push(new Item(perkX, perkY, 'perk_case'));
+                game.floatingTexts.push(game.spawnFloatingText(
+                    perkX, perkY - 20, '⚡ PERK CASE DROPPED', '#00e5ff', 2.0
+                ));
+            }
         }
 
         // Glory Kill trigger: last wave enemy OR an elite
@@ -4828,11 +5238,32 @@ class Bullet {
     
     init(x, y, angle, weaponInfo, isPlayerBullet, isAP = false, isHP = false, isNeutral = false) {
         this.x = x; this.y = y;
-        this.vx = Math.cos(angle) * weaponInfo.speed;
-        this.vy = Math.sin(angle) * weaponInfo.speed;
+        this.isPlayerBullet = !!isPlayerBullet;
+        this.shooter = (isPlayerBullet && typeof isPlayerBullet === 'object') ? isPlayerBullet : null;
+        
+        let speed = weaponInfo.speed;
+        if (this.shooter && this.shooter.perkFlatline) {
+            speed *= 1.25;
+        }
+        
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
         this.drag = weaponInfo.drag;
+        
         this.dmg = weaponInfo.dmg;
-        this.isPlayerBullet = isPlayerBullet;
+        if (this.shooter && typeof game !== 'undefined' && game && game.runOverclocks) {
+            const suffix = this.shooter.isPlayer2 ? 'p2' : 'p1';
+            const oc = game.runOverclocks[suffix];
+            if (oc && oc.hollowPoint) {
+                this.dmg *= (1 + oc.hollowPoint * 0.10);
+            }
+        }
+        if (this.shooter && this.shooter.perkPointBlank && this.shooter.isSprinting) {
+            this.dmg *= 1.20;
+        }
+        
+        this.perkGhost = this.shooter ? !!this.shooter.perkGhost : false;
+        this.ghostPasses = Math.random() < 0.30;
         this.color = weaponInfo.color;
         
         // Game-feel variables
@@ -4841,13 +5272,19 @@ class Bullet {
         this.weaponName = weaponInfo.name;
         this.active = true;
         this.bounces = 0;
-        this.maxBounces = 2;
+        this.maxBounces = (this.shooter && this.shooter.perkRubberBullets) ? 6 : 2;
         
         this.isAP = isAP;
         this.isHP = isHP;
         this.isNeutral = isNeutral; 
         this.owner = null;
+        this.hasExploded = false;
         this.whizzedPlayers = [];
+        
+        // Perk state — set by spawnBullet caller
+        this.hasSmartMunitions  = false;
+        this.hasExplosiveRounds = false;
+        this.firingPlayer       = null;   // Explicit Player reference for perk effects
     }
 
     update(dt, walls, entities, game) {
@@ -4864,6 +5301,40 @@ class Bullet {
             let dragFactor = Math.pow(1 - this.drag * 0.12, stepDt * 60);
             this.vx *= dragFactor;
             this.vy *= dragFactor;
+            
+            // Smart Munitions steering logic
+            if (this.isPlayerBullet && this.shooter && this.shooter.perkSmartMunitions) {
+                let nearestEnemy = null;
+                let minDist = 400;
+                let currentAngle = Math.atan2(this.vy, this.vx);
+                
+                for (let ent of entities) {
+                    if (ent instanceof Enemy && !ent.dead) {
+                        let dx = ent.x - this.x;
+                        let dy = ent.y - this.y;
+                        let dist = Math.hypot(dx, dy);
+                        if (dist < minDist) {
+                            let angleToEnemy = Math.atan2(dy, dx);
+                            let angleDiff = Math.atan2(Math.sin(angleToEnemy - currentAngle), Math.cos(angleToEnemy - currentAngle));
+                            if (Math.abs(angleDiff) < 0.6) {
+                                minDist = dist;
+                                nearestEnemy = ent;
+                            }
+                        }
+                    }
+                }
+                
+                if (nearestEnemy) {
+                    let angleToEnemy = Math.atan2(nearestEnemy.y - this.y, nearestEnemy.x - this.x);
+                    let angleDiff = Math.atan2(Math.sin(angleToEnemy - currentAngle), Math.cos(angleToEnemy - currentAngle));
+                    let maxSteer = 4.5 * stepDt;
+                    let steer = MathUtils.clamp(angleDiff, -maxSteer, maxSteer);
+                    let speed = Math.hypot(this.vx, this.vy);
+                    let newAngle = currentAngle + steer;
+                    this.vx = Math.cos(newAngle) * speed;
+                    this.vy = Math.sin(newAngle) * speed;
+                }
+            }
             
             this.x += this.vx * stepDt;
             this.y += this.vy * stepDt;
@@ -5049,6 +5520,15 @@ class Bullet {
                         game.spawnBlood(this.x, this.y, this.vx, this.vy);
                     }
                     audio.playHit(this.x, this.y);
+                    if (this.isPlayerBullet && this.shooter) {
+                        if (this.shooter.perkVampiric) {
+                            this.shooter.hp = Math.min(this.shooter.maxHp, this.shooter.hp + 1);
+                            game.updateHUD();
+                        }
+                        if (this.shooter.perkExplosiveRounds) {
+                            this.explode(game);
+                        }
+                    }
                     
                     if (!this.isAP) {
                         this.active = false;
@@ -5096,6 +5576,14 @@ class Bullet {
                 if (this.x >= wall.x && this.x <= wall.x + wall.w && 
                     this.y >= wall.y && this.y <= wall.y + wall.h) {
                     
+                    if (this.perkGhost && this.ghostPasses) {
+                        if (game && Math.random() < 0.4) {
+                            let p = game.spawnParticle(this.x, this.y, 0, 0, '#00e5ff', 0.2, 1.5);
+                            if (p) game.particles.push(p);
+                        }
+                        continue;
+                    }
+                    
                     let nx = 0, ny = 0;
                     if (prevX < wall.x) nx = -1;
                     else if (prevX > wall.x + wall.w) nx = 1;
@@ -5123,6 +5611,9 @@ class Bullet {
                     }
 
                     if (this.bounces >= this.maxBounces) {
+                        if (this.isPlayerBullet && this.shooter && this.shooter.perkExplosiveRounds) {
+                            this.explode(game);
+                        }
                         this.active = false;
                         break;
                     }
@@ -5140,6 +5631,9 @@ class Bullet {
                         audio.playRicochet();
                         game.particles.push(new Particle(this.x, this.y, nx*120, ny*120, '#00e5ff', 0.12, 2.5));
                     } else {
+                        if (this.isPlayerBullet && this.shooter && this.shooter.perkExplosiveRounds) {
+                            this.explode(game);
+                        }
                         this.active = false;
                         game.particles.push(new Particle(this.x, this.y, -this.vx*0.12, -this.vy*0.12, '#ffffff', 0.15, 2));
                         break;
@@ -5182,6 +5676,41 @@ class Bullet {
         ctx.lineTo(tailX, tailY);
         ctx.stroke();
         ctx.restore();
+    }
+
+    explode(game) {
+        if (this.hasExploded) return;
+        this.hasExploded = true;
+
+        if (audio.playMiniExplosion) audio.playMiniExplosion(this.x, this.y);
+        game.applyExplosionShake(this.x, this.y, 8, 80);
+        game.spawnShockwave(this.x, this.y, 60, 0.2);
+
+        for (let i = 0; i < 8; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            let spd = MathUtils.rand(30, 80);
+            let p = game.spawnParticle(this.x, this.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#ff6600', 0.35, 2);
+            if (p) game.particles.push(p);
+        }
+
+        let blastRadius = 60;
+        let damage = this.dmg * 0.75;
+
+        let targets = [...game.enemies];
+        if (game.friendlyFireMode !== 'off') {
+            if (game.player && game.player !== this.shooter) targets.push(game.player);
+            if (game.isTwoPlayer && game.player2 && game.player2 !== this.shooter) targets.push(game.player2);
+        }
+
+        for (let ent of targets) {
+            if (ent.dead) continue;
+            let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
+            if (dist < blastRadius) {
+                let splashDmg = damage * (1.0 - dist / blastRadius);
+                ent.takeDamage(splashDmg, Math.atan2(ent.y - this.y, ent.x - this.x), 200);
+                if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+            }
+        }
     }
 }
 
@@ -5246,10 +5775,17 @@ class FPVDrone {
     }
     
     stopAudio() {
+        if (this.oscFilter) {
+            try { this.oscFilter.disconnect(); } catch(e) {}
+            this.oscFilter = null;
+        }
+        if (this.oscGain) {
+            try { this.oscGain.disconnect(); } catch(e) {}
+            this.oscGain = null;
+        }
         if (this.osc) {
-            try {
-                this.osc.stop();
-            } catch(e) {}
+            try { this.osc.stop(); } catch(e) {}
+            try { this.osc.disconnect(); } catch(e) {}
             this.osc = null;
         }
     }
@@ -6602,14 +7138,19 @@ class MiniDrone extends Entity {
     }
     
     stopAudio() {
+        if (this.oscFilter) {
+            try { this.oscFilter.disconnect(); } catch(e) {}
+            this.oscFilter = null;
+        }
+        if (this.oscGain) {
+            try { this.oscGain.disconnect(); } catch(e) {}
+            this.oscGain = null;
+        }
         if (this.osc) {
-            try {
-                this.osc.stop();
-            } catch(e) {}
+            try { this.osc.stop(); } catch(e) {}
+            try { this.osc.disconnect(); } catch(e) {}
             this.osc = null;
         }
-        this.oscGain = null;
-        this.oscFilter = null;
     }
     
     update(dt, game) {
@@ -7490,6 +8031,8 @@ class Item {
                     canCollect = (p.medpacks < 3);
                 } else if (this.type === 'redbull') {
                     canCollect = (p.energyDrinks < 3);
+                } else if (this.type === 'perk_case' || this.type === 'intel') {
+                    canCollect = true;
                 } else {
                     let wKey = this.type;
                     if (p.inventory && p.ammo && p.maxAmmo) {
@@ -7503,7 +8046,11 @@ class Item {
                 let dx = p.x - this.x;
                 let dy = p.y - this.y;
                 let dist = Math.hypot(dx, dy);
-                if (dist < 60 && dist > 0) {
+                let basePickupRadius = 60;
+                if (game && game.saveData && game.saveData.metaUpgrades) {
+                    basePickupRadius += (game.saveData.metaUpgrades.magneticGear || 0) * 15;
+                }
+                if (dist < basePickupRadius && dist > 0) {
                     let pullForce = 800;
                     this.vx += (dx / dist) * pullForce * dt;
                     this.vy += (dy / dist) * pullForce * dt;
@@ -7536,6 +8083,30 @@ class Item {
         } else if (this.type === 'redbull') {
             ctx.fillStyle = '#0055ff'; ctx.fillRect(-3, -6, 6, 12);
             ctx.fillStyle = '#ff0000'; ctx.fillRect(-1, -6, 2, 12);
+        } else if (this.type === 'perk_case') {
+            // Secure briefcase visual — cyan box with lock icon
+            ctx.fillStyle = '#00e5ff';
+            ctx.shadowBlur = 14; ctx.shadowColor = '#00e5ff';
+            ctx.fillRect(-8, -6, 16, 12);
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2;
+            ctx.strokeRect(-8, -6, 16, 12);
+            // Lock detail
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(0, -2, 3, Math.PI, 0);
+            ctx.fillRect(-2, -2, 4, 5);
+            ctx.fill();
+        } else if (this.type === 'intel') {
+            // Glowing Intel Chip visual
+            ctx.fillStyle = '#00e5ff';
+            ctx.shadowBlur = 12; ctx.shadowColor = '#00e5ff';
+            ctx.fillRect(-5, -5, 10, 10);
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+            ctx.strokeRect(-5, -5, 10, 10);
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(0, 0, 2, 0, Math.PI * 2);
+            ctx.fill();
         } else {
             let col = Weapons[this.type].color;
             ctx.fillStyle = col; ctx.fillRect(-8, -4, 16, 8);
@@ -7664,6 +8235,12 @@ class Game {
         this.frameCounter = 0;
         this.isPaused = false;
         
+        // Developer debugging flags
+        this.devGodMode = false;
+        this.devModeEnabled = false;
+        this.forcedMutator = null;
+        this.isDevShopActive = false;
+        
         // Game-feel variables
         this.hitPauseTimer = 0;
         this.shockwaves = [];
@@ -7691,7 +8268,17 @@ class Game {
             timeScale: 1.0,
             startingCash: 0,
             friendlyFireMode: 'standard',
-            nightMode: false
+            nightMode: false,
+            
+            // NEW — Meta-Progression
+            intel: 0,                        // Persistent currency, never wiped
+            metaUpgrades: {
+                magneticGear:    0,            // 0–5  | Item pull radius +15px/level
+                offshoreAccount: 0,            // 0–5  | Cash retention on death 20%/level
+                kevlarWeave:     0,            // 0–5  | maxArmor +10%/level
+                firstAidTraining:0,            // 0–5  | maxHp +8% per level
+                cardioConditioning: 0          // 0–5  | sprint drain -8%, static regen +12%/level
+            }
         };
         
         this.startingCash = 0;
@@ -7715,6 +8302,18 @@ class Game {
         this.gloryKillTimer = 0;
         this.gloryKillTarget = null;
         this.baseTimeScale = 1.0;
+        
+        // Wave Mutator state
+        this.activeMutator       = null;   // String: 'blackout'|'swarm'|'adrenaline'|'juggernaut'|null
+        this.mutatorBaseTimeScale= 1.0;    // Saved timeScale before Adrenaline multiplies it
+        this.mutatorBaseNightMode= false;  // Saved nightMode before Blackout forces it on
+
+        // In-run Overclock tracking (reset each new game, not persisted)
+        this.runOverclocks       = {};     // { p1: { hollowPoint: 0, exoServos: 0, extMags: {} }, p2: {...} }
+
+        // Intel tracking
+        this.intelEarnedThisRun  = 0;      // Used to award intel at run end
+        
         this.heartbeatTimer = 0;
         this.heartbeatPhase = 0;
         this.heartbeatIntensity = 0;
@@ -7729,7 +8328,8 @@ class Game {
             'hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost', 
             'barrier', 'barrier_upgrade', 'drone', 'drone_upgrade', 'fiber_optic', 'turret', 'turret_mk2',
             'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
-            'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap', 'ready'
+            'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap',
+            'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC', 'ready'
         ];
         this.shopSelectedIndex = 0;
         this.dpadCooldown = 0;
@@ -7738,6 +8338,45 @@ class Game {
         
         this.initDOM();
         this.bindInput();
+
+        // Secret developer mode toggle: 10 rapid clicks on the title
+        this.devModeEnabled = false;
+        this._devClickCount = 0;
+        this._devClickTimer = null;
+        const titleEl = document.querySelector('#start-screen h1');
+        if (titleEl) {
+            titleEl.addEventListener('click', () => {
+                this._devClickCount++;
+                clearTimeout(this._devClickTimer);
+                this._devClickTimer = setTimeout(() => { this._devClickCount = 0; }, 3000);
+
+                if (this._devClickCount >= 10) {
+                    this._devClickCount = 0;
+                    this.devModeEnabled = !this.devModeEnabled;
+
+                    // Transient notification banner
+                    const notif = document.createElement('div');
+                    notif.style.cssText = [
+                        'position: fixed', 'top: 20px', 'right: 20px',
+                        'background: rgba(0, 4, 12, 0.92)',
+                        'border: 1px solid var(--neon-blue)',
+                        'color: var(--neon-blue)',
+                        'padding: 10px 22px',
+                        'font-family: "Courier New", Courier, monospace',
+                        'font-size: 13px', 'font-weight: bold',
+                        'letter-spacing: 1px',
+                        'z-index: 999999',
+                        'border-radius: 4px',
+                        'box-shadow: 0 0 20px rgba(0, 229, 255, 0.3)'
+                    ].join('; ');
+                    notif.innerText = this.devModeEnabled
+                        ? '⚙ Developer Menu Enabled!'
+                        : '⚙ Developer Menu Disabled!';
+                    document.body.appendChild(notif);
+                    setTimeout(() => notif.remove(), 2500);
+                }
+            });
+        }
         this.loadGameData();
         
         this.mainMenuRowIndex = 0;
@@ -8005,6 +8644,11 @@ class Game {
     
     bindInput() {
         window.addEventListener('keydown', e => {
+            if ((e.key === 'F1' || e.key === '`' || e.key === '~') && this.devModeEnabled) {
+                e.preventDefault();
+                this.toggleDevDashboard();
+                return;
+            }
             let key = e.key.toLowerCase();
             this.input.keys[key] = true;
             
@@ -8105,6 +8749,12 @@ class Game {
         toggleClass('pause-screen', 'hidden', !this.isPaused);
     }
 
+    _safeUnpause() {
+        if (this.state !== 'shop') {
+            this.isPaused = false;
+        }
+    }
+
     pollGamepad(dt) {
         if (!navigator.getGamepads) return false;
         const gamepads = navigator.getGamepads();
@@ -8153,6 +8803,16 @@ class Game {
         } else if (gpList.length >= 2) {
             gp1 = gpList[0];
             gp2 = gpList[1];
+        }
+
+        // --- Sub-Modal Overlay Interception (must be checked before all other states) ---
+        if (this.perkSelectingPlayer) {
+            this.handlePerkMenuNavigation(gpList);
+            return true;
+        }
+        if (this.extMagsSelectingPlayer) {
+            this.handleExtMagsMenuNavigation(gpList);
+            return true;
         }
 
         // 1. Pause Menu Controller Navigation
@@ -8375,6 +9035,11 @@ class Game {
             ammo_lmg_std: 'btn-buy-ammo-lmg-std', ammo_lmg_ap: 'btn-buy-ammo-lmg-ap',
             ammo_sniper_std: 'btn-buy-ammo-sniper-std', ammo_sniper_ap: 'btn-buy-ammo-sniper-ap', ammo_pistol_hp: 'btn-buy-ammo-pistol-hp',
             ammo_m1a_std: 'btn-buy-ammo-m1a-std', ammo_m1a_ap: 'btn-buy-ammo-m1a-ap',
+            oc_hollowPoint: 'btn-buy-oc-hollow',
+            oc_exoServos: 'btn-buy-oc-servos',
+            oc_extMags: 'btn-buy-oc-mags',
+            oc_fireRate: 'btn-buy-oc-firerate',
+            oc_maxHpOC: 'btn-buy-oc-maxhp',
             ready: 'btn-ready'
         };
 
@@ -8460,7 +9125,7 @@ class Game {
             document.activeElement.blur();
         }
 
-        const tabs = ['play', 'controls', 'audio', 'leaderboard'];
+        const tabs = ['play', 'controls', 'audio', 'leaderboard', 'armory'];
         
         let activeTabElement = document.querySelector('.tab-content.active');
         let activeTab = activeTabElement ? activeTabElement.id.replace('tab-', '') : 'play';
@@ -8491,7 +9156,8 @@ class Game {
                 ['sld-music-vol'],
                 ['sld-sfx-vol']
             ],
-            leaderboard: []
+            leaderboard: [],
+            armory: []
         };
 
         let rows = tabRows[activeTab] || [];
@@ -8657,7 +9323,8 @@ class Game {
                 ['sld-music-vol'],
                 ['sld-sfx-vol']
             ],
-            leaderboard: []
+            leaderboard: [],
+            armory: []
         };
 
         let rows = tabRows[activeTab] || [];
@@ -9230,7 +9897,32 @@ class Game {
         return p;
     }
 
+    _applyMetaStatsToPlayer(p) {
+        if (!p) return;
+        const MA = this.saveData.metaUpgrades;
+        p.maxHp    = 100 * (1 + (MA.firstAidTraining || 0) * 0.08);
+        p.hp       = p.maxHp;
+        p.maxArmor = 50 * (1 + (MA.kevlarWeave || 0) * 0.10);
+        p.armor    = p.maxArmor;
+        
+        // Reset weapon perk flags
+        p.perkFlatline = false;
+        p.perkPointBlank = false;
+        p.perkGhost = false;
+        p.perkVampiric = false;
+        p.perkVolatileCorpses = false;
+        p.perkRubberBullets = false;
+        p.perkSmartMunitions = false;
+        p.perkExplosiveRounds = false;
+    }
+
     startNewGame() {
+        this.runOverclocks = {
+            p1: { hollowPoint: 0, exoServos: 0, extMags: {}, fireRate: 0, maxHpOC: 0 },
+            p2: { hollowPoint: 0, exoServos: 0, extMags: {}, fireRate: 0, maxHpOC: 0 }
+        };
+        this.intelEarnedThisRun = 0;
+        this.isDevShopActive = false;
         this.winFlashIntensity = 0;
         this.roundWinDelay = 0;
         toggleClass('start-screen', 'hidden', true);
@@ -9268,6 +9960,11 @@ class Game {
             toggleClass('hud-left-p2', 'hidden', true);
             toggleClass('hud-right-p2', 'hidden', true);
             toggleClass('hud-bottom-p2', 'hidden', true);
+        }
+        
+        this._applyMetaStatsToPlayer(this.player);
+        if (this.isTwoPlayer && this.player2) {
+            this._applyMetaStatsToPlayer(this.player2);
         }
         
         if (this.bullets) {
@@ -9364,13 +10061,92 @@ class Game {
                 }
                 this.player2.stamina += (this.player2.maxStamina - this.player2.stamina) / 2;
             }
+            
+            if (this.player && this.player._insurancePayout) {
+                this.player.cash += this.player._insurancePayout;
+                this.floatingTexts.push(this.spawnFloatingText(
+                    this.player.x, this.player.y - 20, 
+                    `INSURANCE +$${this.player._insurancePayout}`, '#39ff14', 2.0
+                ));
+                this.player._insurancePayout = 0;
+            }
+            if (this.isTwoPlayer && this.player2 && this.player2._insurancePayout) {
+                this.player2.cash += this.player2._insurancePayout;
+                this.floatingTexts.push(this.spawnFloatingText(
+                    this.player2.x, this.player2.y - 20, 
+                    `INSURANCE +$${this.player2._insurancePayout}`, '#39ff14', 2.0
+                ));
+                this.player2._insurancePayout = 0;
+            }
         }
         
         this.prepTimer = 15.0;
         
         this.enemiesToSpawn = 5 + this.wave * 4;
+        this.rollWaveMutator();
         this.spawnTimer = 0;
         this.updateHUD();
+    }
+
+    rollWaveMutator() {
+        // 1. Reset previous mutators
+        this.activeMutator = null;
+        this.allEnemiesAreElite = false;
+        
+        // Restore nightMode to its pre-mutator value
+        if (this.mutatorBaseNightMode !== undefined) {
+            this.nightMode = this.mutatorBaseNightMode;
+            this.mutatorBaseNightMode = undefined;
+        }
+        
+        // Restore timeScale to its slider/default value
+        const sld = document.getElementById('sld-time-scale');
+        this.timeScale = sld ? parseFloat(sld.value) || 1.0 : 1.0;
+        
+        // 2. Check if we should activate a mutator (either random 30% chance from wave 6, or forced by dev dashboard)
+        let roll = false;
+        if (this.forcedMutator) {
+            roll = true;
+        } else if (this.wave >= 6 && Math.random() < 0.30) {
+            roll = true;
+        }
+        
+        if (roll) {
+            const mutators = ['blackout', 'swarm', 'adrenaline', 'juggernaut'];
+            this.activeMutator = this.forcedMutator || mutators[Math.floor(Math.random() * mutators.length)];
+            this.forcedMutator = null;
+            
+            // 3. Apply active mutator effects
+            if (this.activeMutator === 'blackout') {
+                this.mutatorBaseNightMode = this.nightMode;
+                this.nightMode = true;
+            } else if (this.activeMutator === 'swarm') {
+                this.enemiesToSpawn = Math.round((5 + this.wave * 4) * 3.0);
+            } else if (this.activeMutator === 'adrenaline') {
+                this.timeScale = 1.4;
+            } else if (this.activeMutator === 'juggernaut') {
+                this.enemiesToSpawn = Math.max(1, Math.round((5 + this.wave * 4) * 0.25));
+                this.allEnemiesAreElite = true;
+            }
+            
+            // Spawn large warning banner
+            let mutatorNames = {
+                blackout: 'BLACKOUT PROTOCOL',
+                swarm: 'SWARM SEASON',
+                adrenaline: 'ADRENALINE RUSH',
+                juggernaut: 'JUGGERNAUT PROTOCOL'
+            };
+            
+            this.floatingTexts.push(this.spawnFloatingText(
+                this.mapW / 2, this.mapH / 2 - 100,
+                `MUTATOR ACTIVE: ${mutatorNames[this.activeMutator]}`,
+                '#ff0055', 4.0, 0, 0, 100, false
+            ));
+            
+            if (audio) {
+                audio.playExplosion(0.5, this.mapW / 2, this.mapH / 2);
+            }
+        }
     }
 
     spawnCasing(x, y, angle, color = '#ffc107') {
@@ -9504,6 +10280,19 @@ class Game {
                 audio.playPickup('weapon');
                 pickedUp = true;
             }
+        } else if (it.type === 'perk_case') {
+            pickedUp = true;
+            this.grantRandomPerk(p);
+        } else if (it.type === 'intel') {
+            pickedUp = true;
+            this.saveData.intel = (this.saveData.intel || 0) + 5;
+            this.saveGameData();
+            this.floatingTexts.push(this.spawnFloatingText(
+                it.x, it.y - 12, "+5 INTEL",
+                '#00e5ff', 1.5,
+                (Math.random() - 0.5) * 80, -90, 260, true
+            ));
+            audio.playPickup('money');
         } else {
             let wKey = it.type;
             let hasWeapon = p.inventory.some(w => w.name.toLowerCase() === wKey);
@@ -9539,6 +10328,583 @@ class Game {
             }
         }
         return pickedUp;
+    }
+
+    grantRandomPerk(p) {
+        if (!p) return;
+        const perks = [
+            { key: 'perkFlatline', name: 'FLATLINE', desc: 'Increases bullet velocity by 25%.' },
+            { key: 'perkPointBlank', name: 'POINT BLANK', desc: 'Sprinting increases bullet damage by 20%.' },
+            { key: 'perkGhost', name: 'GHOST BULLETS', desc: 'Bullets have a 30% chance to pass through solid walls.' },
+            { key: 'perkVampiric', name: 'VAMPIRIC ROUNDS', desc: 'On hitting an enemy, restore +1 HP.' },
+            { key: 'perkVolatileCorpses', name: 'VOLATILE CORPSES', desc: 'Killed enemies trigger a shockwave and mini-explosion.' },
+            { key: 'perkRubberBullets', name: 'RUBBER BULLETS', desc: 'Modify maximum bounces from 2 to 6.' },
+            { key: 'perkSmartMunitions', name: 'SMART MUNITIONS', desc: 'Bullets gently steer towards nearest forward enemy.' },
+            { key: 'perkExplosiveRounds', name: 'EXPLOSIVE ROUNDS', desc: 'Bullets explode on impact. Self-damage disabled.' }
+        ];
+
+        const available = perks.filter(perk => !p[perk.key]);
+        if (available.length === 0) {
+            p.cash += 250;
+            this.floatingTexts.push(this.spawnFloatingText(
+                p.x, p.y - 25, 'MAX PERKS: +$250 BONUS!', '#00e5ff', 2.0
+            ));
+            if (audio) audio.playPickup('money');
+            return;
+        }
+
+        // Open perk selection overlay
+        this.perkSelectingPlayer = p;
+        this.isPaused = true;
+        
+        // Update player indicator label and color
+        const perkIndicator = document.getElementById('perk-player-indicator');
+        if (perkIndicator) {
+            const isP2 = (p === this.player2);
+            perkIndicator.textContent = isP2 ? 'PLAYER 2 — PERK SELECTION' : 'PLAYER 1 — PERK SELECTION';
+            perkIndicator.style.color = isP2 ? '#ffb700' : 'var(--neon-blue)';
+            perkIndicator.style.boxShadow = isP2
+                ? '0 0 12px rgba(255, 183, 0, 0.2)'
+                : '0 0 12px rgba(0, 229, 255, 0.2)';
+        }
+
+        document.getElementById('perk-screen').classList.remove('hidden');
+        this.generatePerkChoices(p);
+    }
+
+    generatePerkChoices(p) {
+        const perks = [
+            { key: 'perkFlatline', name: 'FLATLINE', desc: 'Increases bullet velocity by 25%.' },
+            { key: 'perkPointBlank', name: 'POINT BLANK', desc: 'Sprinting increases bullet damage by 20%.' },
+            { key: 'perkGhost', name: 'GHOST BULLETS', desc: 'Bullets have a 30% chance to pass through solid walls.' },
+            { key: 'perkVampiric', name: 'VAMPIRIC ROUNDS', desc: 'On hitting an enemy, restore +1 HP.' },
+            { key: 'perkVolatileCorpses', name: 'VOLATILE CORPSES', desc: 'Killed enemies trigger a shockwave and mini-explosion.' },
+            { key: 'perkRubberBullets', name: 'RUBBER BULLETS', desc: 'Modify maximum bounces from 2 to 6.' },
+            { key: 'perkSmartMunitions', name: 'SMART MUNITIONS', desc: 'Bullets gently steer towards nearest forward enemy.' },
+            { key: 'perkExplosiveRounds', name: 'EXPLOSIVE ROUNDS', desc: 'Bullets explode on impact. Self-damage disabled.' }
+        ];
+        
+        const available = perks.filter(perk => !p[perk.key]);
+        
+        const container = document.getElementById('perk-choices-container');
+        container.innerHTML = '';
+        
+        this.perkSelectionIndex = 0;
+        this.availablePerkChoices = available;
+        
+        available.forEach((perk, idx) => {
+            const card = document.createElement('div');
+            card.className = 'menu-box perk-card';
+            card.id = 'perk-card-' + idx;
+            card.style.flex = '1';
+            card.style.cursor = 'pointer';
+            card.style.padding = '20px';
+            card.style.borderColor = 'rgba(0, 229, 255, 0.3)';
+            card.style.transition = 'all 0.2s ease-in-out';
+            card.style.display = 'flex';
+            card.style.flexDirection = 'column';
+            card.style.alignItems = 'center';
+            card.style.justifyContent = 'space-between';
+            card.style.textAlign = 'center';
+            
+            card.innerHTML = `
+                <div>
+                    <div style="font-size: 16px; font-weight: bold; color: var(--neon-blue); margin-bottom: 12px; letter-spacing: 2px;">${perk.name}</div>
+                    <div style="font-size: 11px; color: #a9c2c7; line-height: 1.6; margin-bottom: 20px;">${perk.desc}</div>
+                </div>
+                <button class="neon-btn" style="width: 100%; margin: 0;" onclick="game.selectPerk('${perk.key}')">SELECT</button>
+            `;
+            
+            card.onclick = (e) => {
+                if (e.target.tagName !== 'BUTTON') {
+                    this.selectPerk(perk.key);
+                }
+            };
+            
+            container.appendChild(card);
+        });
+        
+        this.refreshPerkHighlight();
+    }
+
+    refreshPerkHighlight() {
+        const container = document.getElementById('perk-choices-container');
+        const cards = container.getElementsByClassName('perk-card');
+        for (let i = 0; i < cards.length; i++) {
+            const card = cards[i];
+            const btn = card.querySelector('button');
+            if (i === this.perkSelectionIndex) {
+                card.style.borderColor = 'var(--neon-blue)';
+                card.style.boxShadow = '0 0 15px rgba(0, 229, 255, 0.35)';
+                if (btn) btn.classList.add('focused-btn');
+            } else {
+                card.style.borderColor = 'rgba(0, 229, 255, 0.3)';
+                card.style.boxShadow = 'none';
+                if (btn) btn.classList.remove('focused-btn');
+            }
+        }
+    }
+
+    selectPerk(perkKey) {
+        const p = this.perkSelectingPlayer;
+        if (p) {
+            p[perkKey] = true;
+            this.floatingTexts.push(this.spawnFloatingText(
+                p.x, p.y - 25, `ACQUIRED PERK`, '#00e5ff', 2.0
+            ));
+            if (audio) audio.playPickup('weapon');
+        }
+        
+        document.getElementById('perk-screen').classList.add('hidden');
+        this.perkSelectingPlayer = null;
+        this.availablePerkChoices = null;
+        this.perkSelectionIndex = undefined;
+        this._safeUnpause();
+        if (document.activeElement) document.activeElement.blur();
+    }
+
+    handlePerkMenuNavigation(gpList) {
+        if (!this.availablePerkChoices || this.availablePerkChoices.length === 0) return;
+        if (this.perkSelectionIndex === undefined) this.perkSelectionIndex = 0;
+        
+        for (let gp of gpList) {
+            let dLeft = gp.buttons[14].pressed || (gp.axes[0] && gp.axes[0] < -0.5);
+            let dRight = gp.buttons[15].pressed || (gp.axes[0] && gp.axes[0] > 0.5);
+            let btnA = gp.buttons[0].pressed;
+            
+            if (this.dpadCooldown <= 0) {
+                if (dLeft) {
+                    this.perkSelectionIndex = (this.perkSelectionIndex - 1 + this.availablePerkChoices.length) % this.availablePerkChoices.length;
+                    this.dpadCooldown = 0.22;
+                    this.refreshPerkHighlight();
+                    if (audio) audio.playPickup('money'); // ui tick feedback
+                    return;
+                } else if (dRight) {
+                    this.perkSelectionIndex = (this.perkSelectionIndex + 1) % this.availablePerkChoices.length;
+                    this.dpadCooldown = 0.22;
+                    this.refreshPerkHighlight();
+                    if (audio) audio.playPickup('money');
+                    return;
+                }
+            }
+            
+            if (btnA && this.dpadCooldown <= 0) {
+                const perk = this.availablePerkChoices[this.perkSelectionIndex];
+                if (perk) {
+                    this.dpadCooldown = 0.30;
+                    this.selectPerk(perk.key);
+                    return;
+                }
+            }
+        }
+    }
+
+    buyOverclock(type, player) {
+        if (!player) return;
+        const suffix = player.isPlayer2 ? 'p2' : 'p1';
+        const oc = this.runOverclocks[suffix];
+        if (!oc) return;
+        
+        if (type === 'hollowPoint') {
+            let cost = Math.round(150 * Math.pow(1.5, oc.hollowPoint));
+            if (player.cash >= cost) {
+                player.cash -= cost;
+                oc.hollowPoint++;
+                if (audio) audio.playPickup('weapon');
+                this.floatingTexts.push(this.spawnFloatingText(
+                    player.x, player.y - 20, `HOLLOW POINT Lvl.${oc.hollowPoint}`, '#ffd700', 1.8
+                ));
+            }
+        } else if (type === 'exoServos') {
+            let cost = Math.round(100 * Math.pow(1.5, oc.exoServos));
+            if (player.cash >= cost) {
+                player.cash -= cost;
+                oc.exoServos++;
+                if (audio) audio.playPickup('weapon');
+                this.floatingTexts.push(this.spawnFloatingText(
+                    player.x, player.y - 20, `EXO-SERVOS Lvl.${oc.exoServos}`, '#ffd700', 1.8
+                ));
+            }
+        } else if (type === 'extMags') {
+            let eligibleWeapons = player.inventory.filter(w => w.name !== 'Pistol');
+            let totalMagsLvl = 0;
+            for (let k in oc.extMags) {
+                totalMagsLvl += oc.extMags[k];
+            }
+            let cost = Math.round(200 * Math.pow(1.5, totalMagsLvl));
+            if (player.cash >= cost && eligibleWeapons.length > 0) {
+                this._openExtMagsPicker(player, cost);
+            }
+        } else if (type === 'fireRate') {
+            let cost = Math.round(200 * Math.pow(1.5, oc.fireRate || 0));
+            if (player.cash >= cost) {
+                player.cash -= cost;
+                oc.fireRate = (oc.fireRate || 0) + 1;
+                if (audio) audio.playPickup('weapon');
+                this.floatingTexts.push(this.spawnFloatingText(
+                    player.x, player.y - 20,
+                    `FIRE RATE Lvl.${oc.fireRate} (+5% ROF)`, '#ffd700', 1.8
+                ));
+            }
+        } else if (type === 'maxHpOC') {
+            let cost = Math.round(175 * Math.pow(1.5, oc.maxHpOC || 0));
+            if (player.cash >= cost) {
+                player.cash -= cost;
+                oc.maxHpOC = (oc.maxHpOC || 0) + 1;
+                player.maxHp += 10;
+                player.hp = Math.min(player.hp + 10, player.maxHp);
+                if (audio) audio.playPickup('weapon');
+                this.floatingTexts.push(this.spawnFloatingText(
+                    player.x, player.y - 20,
+                    `MAX HP Lvl.${oc.maxHpOC} (+10 HP)`, '#ffd700', 1.8
+                ));
+            }
+        }
+        
+        this.openShopInterface();
+    }
+    
+    _openExtMagsPicker(player, cost) {
+        this.extMagsSelectingPlayer = player;
+        this.extMagsPendingCost = cost;
+        this.isPaused = true;
+        
+        const extmagsIndicator = document.getElementById('extmags-player-indicator');
+        if (extmagsIndicator) {
+            const isP2 = (player === this.player2);
+            extmagsIndicator.textContent = isP2 ? 'PLAYER 2 — MAG SELECTION' : 'PLAYER 1 — MAG SELECTION';
+            extmagsIndicator.style.color = isP2 ? '#ffb700' : 'var(--neon-blue)';
+            extmagsIndicator.style.boxShadow = isP2
+                ? '0 0 12px rgba(255, 183, 0, 0.2)'
+                : '0 0 12px rgba(0, 229, 255, 0.2)';
+        }
+
+        const container = document.getElementById('extmags-choices-container');
+        container.innerHTML = '';
+        
+        const suffix = player.isPlayer2 ? 'p2' : 'p1';
+        const oc = this.runOverclocks[suffix];
+        
+        this.extMagsSelectionIndex = 0;
+        this.extMagsChoices = player.inventory
+            .filter(w => w.name !== 'Pistol')
+            .map(w => w.name);
+        
+        this.extMagsChoices.forEach((weaponName, idx) => {
+            const currentLvl = oc.extMags[weaponName.toLowerCase()] || 0;
+            
+            const btn = document.createElement('button');
+            btn.className = 'neon-btn extmags-option-btn';
+            btn.id = 'extmags-option-' + idx;
+            btn.style.width = '100%';
+            btn.style.margin = '5px 0';
+            btn.innerHTML = `${weaponName.toUpperCase()} (Lvl.${currentLvl} -> Lvl.${currentLvl + 1})`;
+            btn.onclick = () => {
+                this._applyExtMags(weaponName.toLowerCase());
+            };
+            container.appendChild(btn);
+        });
+        
+        document.getElementById('extmags-screen').classList.remove('hidden');
+        this.refreshExtMagsHighlight();
+    }
+    
+    refreshExtMagsHighlight() {
+        const container = document.getElementById('extmags-choices-container');
+        const btns = container.getElementsByClassName('extmags-option-btn');
+        for (let i = 0; i < btns.length; i++) {
+            const btn = btns[i];
+            if (i === this.extMagsSelectionIndex) {
+                btn.classList.add('focused-btn');
+                btn.style.borderColor = 'var(--neon-blue)';
+                btn.style.boxShadow = '0 0 15px rgba(0, 229, 255, 0.35)';
+            } else {
+                btn.classList.remove('focused-btn');
+                btn.style.borderColor = 'rgba(0, 229, 255, 0.3)';
+                btn.style.boxShadow = 'none';
+            }
+        }
+    }
+    
+    _applyExtMags(weaponKey) {
+        const player = this.extMagsSelectingPlayer;
+        const cost = this.extMagsPendingCost;
+        if (player && player.cash >= cost) {
+            player.cash -= cost;
+            
+            const suffix = player.isPlayer2 ? 'p2' : 'p1';
+            const oc = this.runOverclocks[suffix];
+            oc.extMags[weaponKey] = (oc.extMags[weaponKey] || 0) + 1;
+            
+            // Apply Extended Mags: +25% maxAmmo limit
+            const BaseMaxAmmo = {
+                shotgun: 48,
+                smg: 360,
+                lmg: 300,
+                sniper: 15,
+                m1a: 60
+            };
+            const bonus = 1 + oc.extMags[weaponKey] * 0.25;
+            player.maxAmmo[weaponKey] = Math.round(BaseMaxAmmo[weaponKey] * bonus);
+            player.ammo[weaponKey] = Math.min(player.maxAmmo[weaponKey], player.ammo[weaponKey] + Math.round(BaseMaxAmmo[weaponKey] * 0.25));
+            
+            if (audio) audio.playPickup('weapon');
+            this.floatingTexts.push(this.spawnFloatingText(
+                player.x, player.y - 20, `${weaponKey.toUpperCase()} MAG Lvl.${oc.extMags[weaponKey]}`, '#ffd700', 1.8
+            ));
+        }
+        
+        this._cancelExtMags();
+    }
+    
+    _cancelExtMags() {
+        document.getElementById('extmags-screen').classList.add('hidden');
+        this.extMagsSelectingPlayer = null;
+        this.extMagsPendingCost = null;
+        this.extMagsSelectionIndex = undefined;
+        this.extMagsChoices = null;
+        this._safeUnpause();
+        if (document.activeElement) document.activeElement.blur();
+        this.openShopInterface();
+    }
+    
+    handleExtMagsMenuNavigation(gpList) {
+        if (!this.extMagsChoices || this.extMagsChoices.length === 0) return;
+        if (this.extMagsSelectionIndex === undefined) this.extMagsSelectionIndex = 0;
+        
+        for (let gp of gpList) {
+            let dUp = gp.buttons[12].pressed || (gp.axes[1] && gp.axes[1] < -0.5);
+            let dDown = gp.buttons[13].pressed || (gp.axes[1] && gp.axes[1] > 0.5);
+            let btnA = gp.buttons[0].pressed;
+            let btnB = gp.buttons[1].pressed;
+            
+            if (this.dpadCooldown <= 0) {
+                if (dUp) {
+                    this.extMagsSelectionIndex = (this.extMagsSelectionIndex - 1 + this.extMagsChoices.length) % this.extMagsChoices.length;
+                    this.dpadCooldown = 0.22;
+                    this.refreshExtMagsHighlight();
+                    if (audio) audio.playPickup('money');
+                    return;
+                } else if (dDown) {
+                    this.extMagsSelectionIndex = (this.extMagsSelectionIndex + 1) % this.extMagsChoices.length;
+                    this.dpadCooldown = 0.22;
+                    this.refreshExtMagsHighlight();
+                    if (audio) audio.playPickup('money');
+                    return;
+                }
+            }
+            
+            if (btnA && this.dpadCooldown <= 0) {
+                const weaponName = this.extMagsChoices[this.extMagsSelectionIndex];
+                if (weaponName) {
+                    this.dpadCooldown = 0.30;
+                    this._applyExtMags(weaponName.toLowerCase());
+                    return;
+                }
+            }
+            
+            if (btnB && this.dpadCooldown <= 0) {
+                this.dpadCooldown = 0.30;
+                this._cancelExtMags();
+                return;
+            }
+        }
+    }
+
+    toggleDevDashboard() {
+        const overlay = document.getElementById('dev-dashboard');
+        if (!overlay) return;
+        
+        const isHidden = overlay.classList.contains('hidden');
+        if (isHidden) {
+            overlay.classList.remove('hidden');
+            this.isPaused = true;
+            const godBtn = document.getElementById('btn-dev-godmode');
+            if (godBtn) {
+                godBtn.innerText = this.devGodMode ? 'ENABLED' : 'DISABLED';
+                godBtn.style.color = this.devGodMode ? 'var(--green)' : 'var(--red)';
+                godBtn.style.borderColor = this.devGodMode ? 'var(--green)' : 'var(--red)';
+            }
+            this.devUpdateForceMutatorHighlight();
+            this.devUpdatePerkHighlight();
+        } else {
+            overlay.classList.add('hidden');
+            this._safeUnpause();
+            if (document.activeElement) document.activeElement.blur();
+        }
+    }
+
+    switchDevTab(tabName) {
+        const tabBtns = document.querySelectorAll('#dev-dashboard .tab-button');
+        tabBtns.forEach(btn => btn.classList.remove('active'));
+
+        tabBtns.forEach(btn => {
+            if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(tabName)) {
+                btn.classList.add('active');
+            }
+        });
+
+        const contents = document.querySelectorAll('#dev-dashboard .tab-content');
+        contents.forEach(c => c.classList.remove('active'));
+
+        const target = document.getElementById('tab-' + tabName);
+        if (target) target.classList.add('active');
+    }
+
+    devOpenShopMidRound() {
+        if (this.state !== 'playing') {
+            this.toggleDevDashboard();
+            return;
+        }
+        this.isDevShopActive = true;
+        this.state = 'shop';
+        this.openShopInterface();
+        const overlay = document.getElementById('dev-dashboard');
+        if (overlay && !overlay.classList.contains('hidden')) {
+            overlay.classList.add('hidden');
+        }
+    }
+    
+    devTogglePerk(perkKey) {
+        if (!this.player) return;
+        this.player[perkKey] = !this.player[perkKey];
+        if (audio) audio.playPickup('money');
+        this.devUpdatePerkHighlight();
+    }
+    
+    devUpdatePerkHighlight() {
+        if (!this.player) return;
+        const perks = [
+            'perkFlatline', 'perkPointBlank', 'perkGhost', 
+            'perkVampiric', 'perkVolatileCorpses', 'perkRubberBullets', 
+            'perkSmartMunitions', 'perkExplosiveRounds'
+        ];
+        perks.forEach(key => {
+            const btn = document.getElementById('btn-dev-perk-' + key);
+            if (btn) {
+                const isActive = !!this.player[key];
+                btn.innerText = isActive ? 'ON' : 'OFF';
+                btn.style.borderColor = isActive ? 'var(--green)' : 'rgba(0, 229, 255, 0.3)';
+                btn.style.color = isActive ? 'var(--green)' : '#fff';
+            }
+        });
+    }
+    
+    devToggleGodMode() {
+        this.devGodMode = !this.devGodMode;
+        const godBtn = document.getElementById('btn-dev-godmode');
+        if (godBtn) {
+            godBtn.innerText = this.devGodMode ? 'ENABLED' : 'DISABLED';
+            godBtn.style.color = this.devGodMode ? 'var(--green)' : 'var(--red)';
+            godBtn.style.borderColor = this.devGodMode ? 'var(--green)' : 'var(--red)';
+        }
+        if (audio) audio.playPickup('money');
+    }
+    
+    devAddCash(amount) {
+        if (this.player) this.player.cash += amount;
+        if (this.player2) this.player2.cash += amount;
+        if (audio) audio.playPickup('money');
+        this.updateHUD();
+    }
+    
+    devAddIntel(amount) {
+        if (this.saveData) {
+            this.saveData.intel = (this.saveData.intel || 0) + amount;
+            this.saveGameData();
+        }
+        if (audio) audio.playPickup('money');
+        this.updateHUD();
+    }
+    
+    devResetIntel() {
+        if (this.saveData) {
+            this.saveData.intel = 0;
+            this.saveGameData();
+        }
+        if (audio) audio.playPickup('money');
+        this.updateHUD();
+    }
+    
+    devSpawnWeapon(weaponKey) {
+        if (this.player) {
+            this.player.addWeapon(weaponKey);
+            this.player.weapon = this.player.inventory[this.player.inventory.length - 1];
+            const baseMax = {
+                shotgun: 48,
+                smg: 360,
+                lmg: 300,
+                sniper: 15,
+                m1a: 60
+            };
+            if (baseMax[weaponKey]) {
+                this.player.ammo[weaponKey] = this.player.maxAmmo[weaponKey];
+            }
+            if (audio) audio.playPickup('weapon');
+        }
+        this.toggleDevDashboard();
+    }
+    
+    devSpawnEnemy(typeKey, isElite) {
+        if (this.player) {
+            let spawnX = this.player.x + Math.cos(this.player.angle) * 150;
+            let spawnY = this.player.y + Math.sin(this.player.angle) * 150;
+            
+            spawnX = Math.max(60, Math.min(this.mapW - 60, spawnX));
+            spawnY = Math.max(60, Math.min(this.mapH - 60, spawnY));
+            
+            const config = EnemyTypes[typeKey] || EnemyTypes.grunt;
+            let enemy = this.spawnEnemy(spawnX, spawnY, config);
+            let scaleHP = 1.0 + (this.wave - 1) * 0.04;
+            let scaleSpeed = 1.0 + (this.wave - 1) * 0.015;
+            enemy.hp = Math.round(enemy.hp * scaleHP);
+            enemy.maxHp = enemy.hp;
+            enemy.speed = enemy.speed * scaleSpeed;
+            
+            if (isElite) {
+                enemy.isElite = true;
+                enemy.hp = Math.round(enemy.hp * 2.2);
+                enemy.maxHp = enemy.hp;
+                enemy.r *= 1.45;
+            }
+            
+            this.enemies.push(enemy);
+            if (audio) audio.playPickup('money');
+        }
+        this.toggleDevDashboard();
+    }
+    
+    devSpawnItem(itemType) {
+        if (this.player) {
+            let spawnX = this.player.x + Math.cos(this.player.angle) * 80;
+            let spawnY = this.player.y + Math.sin(this.player.angle) * 80;
+            
+            spawnX = Math.max(60, Math.min(this.mapW - 60, spawnX));
+            spawnY = Math.max(60, Math.min(this.mapH - 60, spawnY));
+            
+            this.items.push(new Item(spawnX, spawnY, itemType));
+            if (audio) audio.playPickup('money');
+        }
+        this.toggleDevDashboard();
+    }
+    
+    devForceMutator(mutatorKey) {
+        this.forcedMutator = mutatorKey;
+        this.devUpdateForceMutatorHighlight();
+        if (audio) audio.playPickup('money');
+    }
+    
+    devUpdateForceMutatorHighlight() {
+        const mutators = [null, 'blackout', 'swarm', 'adrenaline', 'juggernaut'];
+        mutators.forEach(key => {
+            const btnId = key ? 'btn-dev-mut-' + key : 'btn-dev-mut-none';
+            const btn = document.getElementById(btnId);
+            if (btn) {
+                const isActive = (this.forcedMutator === key);
+                btn.style.borderColor = isActive ? 'var(--green)' : 'rgba(0, 229, 255, 0.3)';
+                btn.style.color = isActive ? 'var(--green)' : '#fff';
+            }
+        });
     }
 
     update(dt) {
@@ -9645,34 +11011,46 @@ class Game {
                     }
                 }
 
-                let roll = Math.random();
                 let chosenType = EnemyTypes.grunt;
-
-                if (this.wave >= 4 && Math.random() < 0.12) {
-                    chosenType = EnemyTypes.sapper;
+                if (this.activeMutator === 'swarm') {
+                    chosenType = EnemyTypes.swarmer;
                 } else {
-                    if (this.wave >= 2) {
-                        if (roll < 0.35) chosenType = EnemyTypes.swarmer;
-                    }
-                    if (this.wave >= 3) {
-                        if (roll >= 0.35 && roll < 0.50) chosenType = EnemyTypes.enforcer;
-                    }
-                    if (this.wave >= 5) {
-                        if (roll >= 0.50 && roll < 0.65) chosenType = EnemyTypes.shotgun_grunt;
-                    }
-                    if (this.wave >= 10) {
-                        if (roll >= 0.65 && roll < 0.75) chosenType = EnemyTypes.sniper_grunt;
+                    let roll = Math.random();
+                    if (this.wave >= 4 && Math.random() < 0.12) {
+                        chosenType = EnemyTypes.sapper;
+                    } else {
+                        if (this.wave >= 2) {
+                            if (roll < 0.35) chosenType = EnemyTypes.swarmer;
+                        }
+                        if (this.wave >= 3) {
+                            if (roll >= 0.35 && roll < 0.50) chosenType = EnemyTypes.enforcer;
+                        }
+                        if (this.wave >= 5) {
+                            if (roll >= 0.50 && roll < 0.65) chosenType = EnemyTypes.shotgun_grunt;
+                        }
+                        if (this.wave >= 10) {
+                            if (roll >= 0.65 && roll < 0.75) chosenType = EnemyTypes.sniper_grunt;
+                        }
                     }
                 }
                 
                 let enemy = this.spawnEnemy(ex, ey, chosenType);
                 let scaleHP = 1.0 + (this.wave - 1) * 0.04;
                 let scaleSpeed = 1.0 + (this.wave - 1) * 0.015;
-                enemy.hp = Math.round(enemy.hp * scaleHP);
-                enemy.maxHp = enemy.hp;
+                
+                if (this.activeMutator === 'swarm') {
+                    enemy.hp = 1;
+                    enemy.maxHp = 1;
+                } else {
+                    enemy.hp = Math.round(enemy.hp * scaleHP);
+                    enemy.maxHp = enemy.hp;
+                }
                 enemy.speed = enemy.speed * scaleSpeed;
                 
-                if (Math.random() < 0.04) {
+                let forceElite = (this.activeMutator === 'juggernaut');
+                let forceNoElite = (this.activeMutator === 'swarm');
+                
+                if (!forceNoElite && (forceElite || Math.random() < 0.04)) {
                     enemy.isElite = true;
                     enemy.hp = Math.round(enemy.hp * 2.2);
                     enemy.maxHp = enemy.hp;
@@ -9916,43 +11294,37 @@ class Game {
     
     applyDeadPlayerHardcorePenalties() {
         let resetPlayer = (p) => {
-            if (p && p.dead) {
-                p.dead = false;
-                p.cash = 0;
-                p.hp = 70;
-                p.maxHp = 100;
-                p.armor = 0;
-                p.stamina = 50;
-                p.speedUpgrades = 0;
-                p.grenades = 0;
-                p.mines = 0;
-                p.barriersCount = 0;
-                p.turretsCount = 0;
-                p.dronesCount = 0;
-                p.fiberOpticOwned = false;
-                p.medpacks = 0;
-                p.energyDrinks = 0;
-                p.energyDrinkTimer = 0;
-                p.isExhausted = false;
-                p.flashOpacity = 0;
-                p.pistolHP = false;
-                
-                p.inventory = [{ ...Weapons.pistol }];
-                p.weaponIdx = 0;
-                p.ammo = {
-                    shotgun: 0,
-                    smg: 0,
-                    lmg: 0,
-                    sniper: 0,
-                    m1a: 0
-                };
-                p.ammoTypes = {
-                    smg: 'standard',
-                    lmg: 'standard',
-                    sniper: 'standard',
-                    m1a: 'standard'
-                };
-            }
+            if (!p || !p.dead) return;
+            p.dead = false;
+
+            // Strip all run-specific resources (Hardcore Penalty)
+            p.cash = 0;
+            p.stamina = 50;
+            p.speedUpgrades = 0;
+            p.grenades = 0;
+            p.mines = 0;
+            p.barriersCount = 0;
+            p.turretsCount = 0;
+            p.dronesCount = 0;
+            p.fiberOpticOwned = false;
+            p.medpacks = 0;
+            p.energyDrinks = 0;
+            p.energyDrinkTimer = 0;
+            p.isExhausted = false;
+            p.flashOpacity = 0;
+            p.pistolHP = false;
+            
+            p.inventory = [{ ...Weapons.pistol }];
+            p.weaponIdx = 0;
+            p.ammo = { shotgun: 0, smg: 0, lmg: 0, sniper: 0, m1a: 0 };
+            p.ammoTypes = { smg: 'standard', lmg: 'standard', sniper: 'standard', m1a: 'standard' };
+
+            // RE-APPLY META STATS: restores correct maxHp and maxArmor from Armory upgrades.
+            this._applyMetaStatsToPlayer(p);
+
+            // Apply the hardcore HP penalty on top of the restored maxHp
+            p.hp = Math.min(70, p.maxHp);
+            p.armor = 0; // Strip all armor on hardcore death
         };
         resetPlayer(this.player);
         if (this.isTwoPlayer) {
@@ -9994,6 +11366,13 @@ class Game {
     }
     
     openShopInterface() {
+        // Award Intel: 2 per completed wave, +3 per Elite killed this wave
+        let intelGained = 2 + (this._elitesKilledThisWave || 0) * 3;
+        this.saveData.intel = (this.saveData.intel || 0) + intelGained;
+        this.intelEarnedThisRun = (this.intelEarnedThisRun || 0) + intelGained;
+        this._elitesKilledThisWave = 0;
+        this.saveGameData();
+
         if (this.drone) {
             this.drone.stopAudio();
             this.drone.isPiloted = false;
@@ -10224,6 +11603,54 @@ class Game {
             checkAmmoCap('btn-buy-ammo-sniper-ap-' + suffix, p.ammo.sniper, p.maxAmmo.sniper, "Sniper AP x5 ($100)");
             checkAmmoCap('btn-buy-ammo-m1a-std-' + suffix, p.ammo.m1a, p.maxAmmo.m1a, "M1A Standard x20 ($35)");
             checkAmmoCap('btn-buy-ammo-m1a-ap-' + suffix, p.ammo.m1a, p.maxAmmo.m1a, "M1A AP x20 ($85)");
+
+            let oc = this.runOverclocks[suffix];
+            if (oc) {
+                let costHollow = Math.round(150 * Math.pow(1.5, oc.hollowPoint));
+                let btnHollow = document.getElementById('btn-buy-oc-hollow-' + suffix);
+                if (btnHollow) {
+                    btnHollow.innerText = `Hollow Point Lvl.${oc.hollowPoint + 1} ($${costHollow})`;
+                    btnHollow.disabled = p.cash < costHollow;
+                }
+
+                let costServos = Math.round(100 * Math.pow(1.5, oc.exoServos));
+                let btnServos = document.getElementById('btn-buy-oc-servos-' + suffix);
+                if (btnServos) {
+                    btnServos.innerText = `Exo-Servos Lvl.${oc.exoServos + 1} ($${costServos})`;
+                    btnServos.disabled = p.cash < costServos;
+                }
+
+                let totalMagsLvl = 0;
+                for (let k in oc.extMags) {
+                    totalMagsLvl += oc.extMags[k];
+                }
+                let costMags = Math.round(200 * Math.pow(1.5, totalMagsLvl));
+                let btnMags = document.getElementById('btn-buy-oc-mags-' + suffix);
+                if (btnMags) {
+                    btnMags.innerText = `Extended Mags ($${costMags})`;
+                    let hasEligibleWeapon = p.inventory.some(w => w.name !== 'Pistol');
+                    btnMags.disabled = p.cash < costMags || !hasEligibleWeapon;
+                }
+
+                // Fire Rate OC button
+                let costFireRate = Math.round(200 * Math.pow(1.5, oc.fireRate || 0));
+                let btnFireRate = document.getElementById('btn-buy-oc-firerate-' + suffix);
+                if (btnFireRate) {
+                    let lvl = oc.fireRate || 0;
+                    btnFireRate.innerText = `Fire Rate Lvl.${lvl + 1} ($${costFireRate})`;
+                    btnFireRate.disabled = p.cash < costFireRate;
+                    btnFireRate.classList.toggle('maxed', lvl >= 7);
+                }
+
+                // Max HP OC button
+                let costMaxHpOC = Math.round(175 * Math.pow(1.5, oc.maxHpOC || 0));
+                let btnMaxHpOC = document.getElementById('btn-buy-oc-maxhp-' + suffix);
+                if (btnMaxHpOC) {
+                    let lvl = oc.maxHpOC || 0;
+                    btnMaxHpOC.innerText = `Max HP Lvl.${lvl + 1} ($${costMaxHpOC})`;
+                    btnMaxHpOC.disabled = p.cash < costMaxHpOC;
+                }
+            }
         };
 
         updatePanel(this.player, 'p1');
@@ -10239,6 +11666,11 @@ class Game {
     }
 
     buyItem(type, buyer = null) {
+        if (type && type.startsWith('oc_')) {
+            let ocType = type.substring(3);
+            this.buyOverclock(ocType, buyer);
+            return;
+        }
         let p = buyer || this.player;
         if (type === 'hp' && p.cash >= 50 && p.hp < p.maxHp) {
             p.cash -= 50; p.hp = Math.min(p.maxHp, p.hp + 50);
@@ -10413,7 +11845,15 @@ class Game {
             if (btn1) { btn1.innerText = "READY (P1)"; btn1.style.backgroundColor = "transparent"; }
             let btn2 = document.getElementById('btn-ready-p2');
             if (btn2) { btn2.innerText = "READY (P2)"; btn2.style.backgroundColor = "transparent"; }
-            this.startNextWave();
+            
+            if (this.isDevShopActive) {
+                this.isDevShopActive = false;
+                toggleClass('shop-screen', 'hidden', true);
+                this.state = 'playing';
+                this.isPaused = false;
+            } else {
+                this.startNextWave();
+            }
         }
     }
 
@@ -10491,6 +11931,22 @@ class Game {
         
         setHtmlCached('ui-weight-penalty', Math.round(this.player.speedPenalty * 100) + '%');
         setStyleVisibilityCached('ui-boost-active', this.player.energyDrinkTimer > 0 ? 'visible' : 'hidden');
+        
+        const mutatorBadge = document.getElementById('ui-mutator-badge');
+        if (mutatorBadge) {
+            if (this.activeMutator) {
+                mutatorBadge.style.visibility = 'visible';
+                let mutatorShortNames = {
+                    blackout: 'BLACKOUT',
+                    swarm: 'SWARM SEASON',
+                    adrenaline: 'ADRENALINE',
+                    juggernaut: 'JUGGERNAUT'
+                };
+                mutatorBadge.innerText = mutatorShortNames[this.activeMutator] || 'MUTATOR';
+            } else {
+                mutatorBadge.style.visibility = 'hidden';
+            }
+        }
 
         // Render Carousels for Player 1
         renderHUDSelectors(this.player, 'p1');
@@ -10517,6 +11973,22 @@ class Game {
             
             setHtmlCached('ui-weight-penalty-p2', Math.round(this.player2.speedPenalty * 100) + '%');
             setStyleVisibilityCached('ui-boost-active-p2', this.player2.energyDrinkTimer > 0 ? 'visible' : 'hidden');
+
+            const mutatorBadgeP2 = document.getElementById('ui-mutator-badge-p2');
+            if (mutatorBadgeP2) {
+                if (this.activeMutator) {
+                    mutatorBadgeP2.style.visibility = 'visible';
+                    let mutatorShortNames = {
+                        blackout: 'BLACKOUT',
+                        swarm: 'SWARM SEASON',
+                        adrenaline: 'ADRENALINE',
+                        juggernaut: 'JUGGERNAUT'
+                    };
+                    mutatorBadgeP2.innerText = mutatorShortNames[this.activeMutator] || 'MUTATOR';
+                } else {
+                    mutatorBadgeP2.style.visibility = 'hidden';
+                }
+            }
 
             // Render Carousels for Player 2
             renderHUDSelectors(this.player2, 'p2');
@@ -10545,6 +12017,15 @@ class Game {
         if (this.saveData.musicTrack === undefined) this.saveData.musicTrack = 'off';
         if (this.saveData.musicVolume === undefined) this.saveData.musicVolume = 0.5;
         if (this.saveData.sfxVolume === undefined) this.saveData.sfxVolume = 0.5;
+        
+        if (this.saveData.intel === undefined)         this.saveData.intel = 0;
+        if (!this.saveData.metaUpgrades)               this.saveData.metaUpgrades = {};
+        const MA = this.saveData.metaUpgrades;
+        if (MA.magneticGear    === undefined) MA.magneticGear    = 0;
+        if (MA.offshoreAccount === undefined) MA.offshoreAccount = 0;
+        if (MA.kevlarWeave     === undefined) MA.kevlarWeave     = 0;
+        if (MA.firstAidTraining=== undefined) MA.firstAidTraining= 0;
+        if (MA.cardioConditioning===undefined)MA.cardioConditioning=0;
         
         if (this.saveData.difficultyMode) {
             this.setDifficulty(this.saveData.difficultyMode);
@@ -10644,13 +12125,13 @@ class Game {
     }
 
     switchTab(tabName) {
-        let buttons = document.querySelectorAll('.tab-button');
+        let buttons = document.querySelectorAll('#start-screen .tab-button');
         buttons.forEach(btn => btn.classList.remove('active'));
         
         let btn = Array.from(buttons).find(b => b.innerText.toLowerCase() === tabName.toLowerCase());
         if (btn) btn.classList.add('active');
         
-        let contents = document.querySelectorAll('.tab-content');
+        let contents = document.querySelectorAll('#start-screen .tab-content');
         contents.forEach(c => c.classList.remove('active'));
         
         let targetContent = document.getElementById('tab-' + tabName);
@@ -10662,6 +12143,125 @@ class Game {
         if (tabName === 'audio') {
             this.refreshAudioTabUI();
         }
+        if (tabName === 'armory') {
+            this.renderArmoryTab();
+        }
+    }
+
+    renderArmoryTab() {
+        const MA = this.saveData.metaUpgrades;
+        document.getElementById('lbl-intel-balance').textContent = this.saveData.intel;
+
+        const upgrades = [
+            {
+                key: 'magneticGear', name: 'MAGNETIC GEAR', maxLevel: 5,
+                costPerLevel: [50, 100, 200, 350, 500],
+                desc: 'Increases item pickup radius. +15px/level.'
+            },
+            {
+                key: 'offshoreAccount', name: 'OFFSHORE ACCOUNT', maxLevel: 5,
+                costPerLevel: [75, 150, 250, 400, 600],
+                desc: 'Retain 20% more cash per level when downed.'
+            },
+            {
+                key: 'kevlarWeave', name: 'KEVLAR WEAVE', maxLevel: 5,
+                costPerLevel: [80, 160, 280, 450, 650],
+                desc: 'Base Max Armor +10% per level. (Base: 50)'
+            },
+            {
+                key: 'firstAidTraining', name: 'FIRST AID TRAINING', maxLevel: 5,
+                costPerLevel: [80, 160, 280, 450, 650],
+                desc: 'Base Max HP +8% per level. (Base: 100)'
+            },
+            {
+                key: 'cardioConditioning', name: 'CARDIO CONDITIONING', maxLevel: 5,
+                costPerLevel: [60, 120, 220, 380, 550],
+                desc: 'Sprint drain -8% & static regen +12% per level.'
+            }
+        ];
+
+        const grid = document.getElementById('armory-grid');
+        grid.innerHTML = '';
+
+        for (const upg of upgrades) {
+            const currentLevel = MA[upg.key] || 0;
+            const isMaxed = currentLevel >= upg.maxLevel;
+            const cost = isMaxed ? 0 : upg.costPerLevel[currentLevel];
+            const canAfford = this.saveData.intel >= cost;
+
+            let pipsHTML = '';
+            for (let i = 0; i < upg.maxLevel; i++) {
+                if (i < currentLevel)
+                    pipsHTML += `<div class="armory-pip ${isMaxed ? 'maxed' : 'filled'}"></div>`;
+                else
+                    pipsHTML += `<div class="armory-pip"></div>`;
+            }
+
+            const btnClass = isMaxed ? 'armory-buy-btn maxed-out' : 'armory-buy-btn';
+            const btnText  = isMaxed ? 'MAXED'
+                           : !canAfford ? `UPGRADE [${cost} INTEL]`
+                           : `UPGRADE [${cost} INTEL]`;
+
+            grid.innerHTML += `
+                <div class="armory-card">
+                    <div class="armory-card-name">${upg.name}</div>
+                    <div class="armory-card-desc">${upg.desc}</div>
+                    <div class="armory-level-pips">${pipsHTML}</div>
+                    <button class="${btnClass}" 
+                        ${isMaxed || !canAfford ? 'disabled' : ''}
+                        onclick="game.buyArmoryUpgrade('${upg.key}')">
+                        ${btnText}
+                    </button>
+                </div>`;
+        }
+    }
+
+    buyArmoryUpgrade(key) {
+        const MA     = this.saveData.metaUpgrades;
+        const maxLvl = 5;
+        if ((MA[key] || 0) >= maxLvl) return;
+
+        const costs = {
+            magneticGear:      [50, 100, 200, 350, 500],
+            offshoreAccount:   [75, 150, 250, 400, 600],
+            kevlarWeave:       [80, 160, 280, 450, 650],
+            firstAidTraining:  [80, 160, 280, 450, 650],
+            cardioConditioning:[60, 120, 220, 380, 550]
+        };
+
+        const cost = costs[key][MA[key] || 0];
+        if (this.saveData.intel < cost) return;
+
+        this.saveData.intel -= cost;
+        MA[key] = (MA[key] || 0) + 1;
+        this.saveGameData();
+        this.renderArmoryTab();   // Refresh the UI
+        if (audio) audio.playPickup('money');
+    }
+
+    resetArmoryUpgrades() {
+        const MA = this.saveData.metaUpgrades;
+        const costs = {
+            magneticGear:      [50, 100, 200, 350, 500],
+            offshoreAccount:   [75, 150, 250, 400, 600],
+            kevlarWeave:       [80, 160, 280, 450, 650],
+            firstAidTraining:  [80, 160, 280, 450, 650],
+            cardioConditioning:[60, 120, 220, 380, 550]
+        };
+        
+        let refundedIntel = 0;
+        for (const key in costs) {
+            const currentLevel = MA[key] || 0;
+            for (let lvl = 0; lvl < currentLevel; lvl++) {
+                refundedIntel += costs[key][lvl];
+            }
+            MA[key] = 0; // Reset level to 0
+        }
+        
+        this.saveData.intel = (this.saveData.intel || 0) + refundedIntel;
+        this.saveGameData();
+        this.renderArmoryTab();
+        if (audio) audio.playPickup('money');
     }
 
     refreshAudioTabUI() {
@@ -10940,7 +12540,7 @@ class Game {
                 let lAngle = p.angle;
                 let lStartX = p.x + Math.cos(lAngle)*20 - Math.sin(lAngle)*6;
                 let lStartY = p.y + Math.sin(lAngle)*20 + Math.cos(lAngle)*6;
-                let laserAngle = Math.atan2(aimCoords.y - lStartY, aimCoords.x - lStartX);
+                let laserAngle = this.isPaused ? lAngle : Math.atan2(aimCoords.y - lStartY, aimCoords.x - lStartX);
                 let maxLaserDist = 1400;
                 let hitPt = this.getLaserEndPoint(lStartX, lStartY, laserAngle, maxLaserDist, this.map.walls);
                 
