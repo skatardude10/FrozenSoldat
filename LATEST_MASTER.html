@@ -15,6 +15,29 @@
         --red: #ff2a5f;
         --green: #39ff14;
     }
+    @keyframes pulse {
+        0% { opacity: 0.3; }
+        50% { opacity: 1; }
+        100% { opacity: 0.3; }
+    }
+    @keyframes titleIntro {
+        0% {
+            opacity: 0;
+            letter-spacing: 2px;
+            filter: blur(10px);
+            text-shadow: 0 0 0px rgba(0,229,255,0);
+        }
+        100% {
+            opacity: 1;
+            letter-spacing: 15px;
+            filter: blur(0px);
+            text-shadow: 0 0 20px rgba(0,229,255,0.6), 0 0 40px rgba(0,229,255,0.3);
+        }
+    }
+    @keyframes promptFadeIn {
+        0% { opacity: 0; }
+        100% { opacity: 0.8; }
+    }
     body, html {
         margin: 0; padding: 0; width: 100%; height: 100%;
         background-color: var(--dark-bg); color: var(--text-color);
@@ -178,20 +201,46 @@
         -webkit-backdrop-filter: blur(6px);
     }
     .menu-box {
-        background: var(--ui-bg); border: 2px solid var(--neon-blue);
-        padding: 30px; text-align: center; max-width: 900px; width: 90%;
-        box-shadow: 0 0 40px rgba(0, 229, 255, 0.25);
-        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(0, 5, 15, 0.85), rgba(0, 10, 25, 0.95));
+        border: none;
+        border-top: 2px solid rgba(0, 229, 255, 0.5);
+        border-bottom: 2px solid rgba(0, 229, 255, 0.1);
+        padding: 40px; text-align: center; max-width: 900px; width: 90%;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 229, 255, 0.1);
+        border-radius: 6px;
+        position: relative;
+        overflow: hidden;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
     }
+    /* Add subtle scanlines over the menu boxes */
+    .menu-box::before {
+        content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 229, 255, 0.03) 2px, rgba(0, 229, 255, 0.03) 4px);
+        pointer-events: none; z-index: 0;
+    }
+    .menu-box > * { position: relative; z-index: 1; }
     h1 { margin-top: 0; color: var(--neon-blue); text-shadow: 0 0 15px var(--neon-blue); text-transform: uppercase; letter-spacing: 2px; }
     p { line-height: 1.6; margin-bottom: 20px; font-size: 13px; color: #a9c2c7; }
     
     button {
-        background: transparent; color: var(--neon-blue);
-        border: 1px solid var(--neon-blue); padding: 8px 16px;
-        font-family: inherit; font-size: 13px; font-weight: bold; cursor: pointer;
+        background: rgba(0, 229, 255, 0.03); color: #a9c2c7;
+        border: 1px solid rgba(0, 229, 255, 0.1); padding: 8px 16px;
+        font-family: inherit; font-size: 12px; font-weight: bold; cursor: pointer;
         text-transform: uppercase; transition: all 0.2s ease; margin: 4px;
-        border-radius: 4px;
+        border-radius: 3px; letter-spacing: 1px;
+    }
+    /* Hero Start Button specifically */
+    button#btn-start {
+        background: rgba(57, 255, 20, 0.1); border: 1px solid var(--green);
+        color: var(--green); font-size: 16px; padding: 12px 24px; letter-spacing: 3px;
+        box-shadow: 0 0 15px rgba(57, 255, 20, 0.15);
+        margin-top: 20px; transition: all 0.3s ease;
+    }
+    button#btn-start:hover, button#btn-start.focused-btn {
+        background: rgba(57, 255, 20, 0.25) !important;
+        box-shadow: 0 0 30px rgba(57, 255, 20, 0.4) !important;
+        transform: scale(1.02);
     }
     button:hover:not(:disabled) {
         border-color: var(--neon-blue) !important;
@@ -497,6 +546,11 @@
 
 <div id="crosshair-p2" class="hidden"></div>
 
+<div id="splash-screen" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 999999; display: flex; align-items: center; justify-content: center; flex-direction: column; cursor: pointer; transition: opacity 1.5s ease-out;">
+    <h1 style="color: var(--neon-blue); letter-spacing: 15px; font-size: 48px; text-shadow: 0 0 20px rgba(0,229,255,0.5); margin-bottom: 20px; animation: titleIntro 2.5s ease-out forwards; text-transform: uppercase;">FROZEN SOLDAT</h1>
+    <div style="color: #a9c2c7; font-size: 14px; letter-spacing: 4px; animation: promptFadeIn 1s ease-out 1.5s forwards, pulse 2s infinite 2.5s; opacity: 0;">CLICK OR PRESS ANY BUTTON TO INITIALIZE</div>
+</div>
+
 <div id="start-screen" class="menu-overlay">
     <div class="menu-box">
         <h1>FROZEN SOLDAT</h1>
@@ -514,78 +568,99 @@
         <div id="tab-play" class="tab-content active" style="max-width: 700px; margin: 0 auto;">
             <p style="margin: 5px 0 10px 0; font-size: 12px;">Tactical Top-Down Weapon Physics Simulator.</p>
             
-            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">OPERATION MODE:</label>
-                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                    <button id="btn-mode-1p" class="active-mode" onclick="game.setMode(1)" style="font-size: 11px; padding: 5px 10px; margin: 0;">1 Player (Solo Ops)</button>
-                    <button id="btn-mode-2p" onclick="game.setMode(2)" style="font-size: 11px; padding: 5px 10px; margin: 0;">2 Player (Co-op Strike)</button>
+            <!-- CORE MISSION PARAMETERS -->
+            <div style="background: rgba(0, 229, 255, 0.03); border: 1px solid rgba(0, 229, 255, 0.1); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
+                <h3 style="color: var(--neon-blue); font-size: 11px; text-align: left; letter-spacing: 2px; margin-top: 0; border-bottom: 1px solid rgba(0,229,255,0.2); padding-bottom: 5px; text-transform: uppercase;">CORE MISSION PARAMETERS</h3>
+                
+                <!-- Operation Mode -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">OPERATION MODE:</label>
+                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                        <button id="btn-mode-1p" class="active-mode" onclick="game.setMode(1)" style="font-size: 11px; padding: 5px 10px; margin: 0;">1 Player (Solo Ops)</button>
+                        <button id="btn-mode-2p" onclick="game.setMode(2)" style="font-size: 11px; padding: 5px 10px; margin: 0;">2 Player (Co-op Strike)</button>
+                    </div>
+                </div>
+
+                <!-- Environment -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">ENVIRONMENT:</label>
+                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                        <button id="btn-env-day" class="active-mode" onclick="game.setNightMode(false)" style="font-size: 11px; padding: 5px 10px; margin: 0;">DAY</button>
+                        <button id="btn-env-night" onclick="game.setNightMode(true)" style="font-size: 11px; padding: 5px 10px; margin: 0;">NIGHT</button>
+                    </div>
+                </div>
+
+                <!-- Difficulty Rating -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">DIFFICULTY RATING:</label>
+                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                        <button id="btn-diff-easy" onclick="game.setDifficulty('easy')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Easy (2.0x)</button>
+                        <button id="btn-diff-medium" onclick="game.setDifficulty('medium')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Medium (1.5x)</button>
+                        <button id="btn-diff-hard" class="active-mode" onclick="game.setDifficulty('hard')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Hard (1.0x)</button>
+                        <button id="btn-diff-legendary" onclick="game.setDifficulty('legendary')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Legendary (0.75x)</button>
+                    </div>
                 </div>
             </div>
 
-            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">TESTING SANDBOX MODE:</label>
-                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                    <button id="btn-sandbox-no" class="active-mode" onclick="game.setTestingMode(false)" style="font-size: 11px; padding: 5px 10px; margin: 0;">OFF (Normal Wave Ops)</button>
-                    <button id="btn-sandbox-yes" onclick="game.setTestingMode(true)" style="font-size: 11px; padding: 5px 10px; margin: 0;">ON (God Mode & Pickups)</button>
-                </div>
-            </div>
+            <!-- ADVANCED MODIFIERS -->
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
+                <h3 style="color: #808f9c; font-size: 11px; text-align: left; letter-spacing: 2px; margin-top: 0; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; text-transform: uppercase;">ADVANCED MODIFIERS</h3>
 
-            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">STARTING FUNDS:</label>
-                <div style="display: flex; gap: 6px; justify-content: flex-start; align-items: center; flex-grow: 1;">
-                    <button id="btn-cash-down" onclick="game.adjustStartingCash(-1000)" style="font-size: 11px; padding: 5px 10px; margin: 0;">[-</button>
-                    <span id="lbl-starting-cash" style="font-weight: bold; color: var(--green); font-size: 12px; min-width: 60px; text-align: center;">[$0]</span>
-                    <button id="btn-cash-up" onclick="game.adjustStartingCash(1000)" style="font-size: 11px; padding: 5px 10px; margin: 0;">+]</button>
+                <!-- Sandbox -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">TESTING SANDBOX MODE:</label>
+                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                        <button id="btn-sandbox-no" class="active-mode" onclick="game.setTestingMode(false)" style="font-size: 11px; padding: 5px 10px; margin: 0;">OFF (Normal Wave Ops)</button>
+                        <button id="btn-sandbox-yes" onclick="game.setTestingMode(true)" style="font-size: 11px; padding: 5px 10px; margin: 0;">ON (God Mode & Pickups)</button>
+                    </div>
                 </div>
-            </div>
 
-            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">FRIENDLY FIRE:</label>
-                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                    <button id="btn-ff-off" onclick="game.setFriendlyFireMode('off')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: OFF</button>
-                    <button id="btn-ff-standard" class="active-mode" onclick="game.setFriendlyFireMode('standard')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: STANDARD</button>
-                    <button id="btn-ff-hardcore" onclick="game.setFriendlyFireMode('hardcore')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: HARDCORE</button>
+                <!-- Starting Funds -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">STARTING FUNDS:</label>
+                    <div style="display: flex; gap: 6px; justify-content: flex-start; align-items: center; flex-grow: 1;">
+                        <button id="btn-cash-down" onclick="game.adjustStartingCash(-1000)" style="font-size: 11px; padding: 5px 10px; margin: 0;">[-</button>
+                        <span id="lbl-starting-cash" style="font-weight: bold; color: var(--green); font-size: 12px; min-width: 60px; text-align: center;">[$0]</span>
+                        <button id="btn-cash-up" onclick="game.adjustStartingCash(1000)" style="font-size: 11px; padding: 5px 10px; margin: 0;">+]</button>
+                    </div>
                 </div>
-            </div>
 
-            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">ENVIRONMENT:</label>
-                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                    <button id="btn-env-day" class="active-mode" onclick="game.setNightMode(false)" style="font-size: 11px; padding: 5px 10px; margin: 0;">DAY</button>
-                    <button id="btn-env-night" onclick="game.setNightMode(true)" style="font-size: 11px; padding: 5px 10px; margin: 0;">NIGHT</button>
+                <!-- Friendly Fire -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">FRIENDLY FIRE:</label>
+                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                        <button id="btn-ff-off" onclick="game.setFriendlyFireMode('off')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: OFF</button>
+                        <button id="btn-ff-standard" class="active-mode" onclick="game.setFriendlyFireMode('standard')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: STANDARD</button>
+                        <button id="btn-ff-hardcore" onclick="game.setFriendlyFireMode('hardcore')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: HARDCORE</button>
+                    </div>
                 </div>
-            </div>
 
-            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">DIFFICULTY RATING:</label>
-                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                    <button id="btn-diff-easy" onclick="game.setDifficulty('easy')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Easy (2.0x)</button>
-                    <button id="btn-diff-medium" onclick="game.setDifficulty('medium')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Medium (1.5x)</button>
-                    <button id="btn-diff-hard" class="active-mode" onclick="game.setDifficulty('hard')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Hard (1.0x)</button>
-                    <button id="btn-diff-legendary" onclick="game.setDifficulty('legendary')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Legendary (0.75x)</button>
+                <!-- Game Speed -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">GAME SPEED:</label>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-grow: 1;">
+                        <input type="range" id="sld-time-scale" min="0.5" max="1.5" step="0.1" value="1.0" style="flex-grow: 1; cursor: pointer; height: 4px; margin: 0;" oninput="game.setTimeScale(parseFloat(this.value))">
+                        <span id="lbl-time-scale" style="font-weight: bold; color: var(--text-color); font-size: 11px; min-width: 35px; text-align: right;">1.0x</span>
+                    </div>
+                </div>
+
+                <!-- Touch Interface -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">TOUCH INTERFACE:</label>
+                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
+                        <button id="btn-touch-auto" class="active-mode" onclick="game.setTouchMode('auto')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Auto-Detect</button>
+                        <button id="btn-touch-on" onclick="game.setTouchMode('on')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Force On</button>
+                        <button id="btn-touch-off" onclick="game.setTouchMode('off')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Force Off</button>
+                    </div>
                 </div>
             </div>
             
-            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">GAME SPEED:</label>
-                <div style="display: flex; align-items: center; gap: 10px; flex-grow: 1;">
-                    <input type="range" id="sld-time-scale" min="0.5" max="1.5" step="0.1" value="1.0" style="flex-grow: 1; cursor: pointer; height: 4px; margin: 0;" oninput="game.setTimeScale(parseFloat(this.value))">
-                    <span id="lbl-time-scale" style="font-weight: bold; color: var(--text-color); font-size: 11px; min-width: 35px; text-align: right;">1.0x</span>
-                </div>
-            </div>
-            
-            <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">TOUCH INTERFACE:</label>
-                <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                    <button id="btn-touch-auto" class="active-mode" onclick="game.setTouchMode('auto')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Auto-Detect</button>
-                    <button id="btn-touch-on" onclick="game.setTouchMode('on')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Force On</button>
-                    <button id="btn-touch-off" onclick="game.setTouchMode('off')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Force Off</button>
-                </div>
-            </div>
-            
-            <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 12px;">
-                <button id="btn-start" style="border-color: var(--green); color: var(--green); font-size: 14px; padding: 8px 16px; width: 85%; margin: 0;">INITIALIZE PERIMETER SYSTEM</button>
-                <button id="btn-exit" style="border-color: var(--red); color: var(--red); font-size: 14px; padding: 8px 16px; width: 85%; margin: 0;">EXIT TO DESKTOP</button>
+            <!-- HERO ACTIONS -->
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 10px;">
+                <!-- Start Button -->
+                <button id="btn-start" style="width: 100%;">INITIALIZE PERIMETER SYSTEM</button>
+                <!-- Exit Button -->
+                <button id="btn-exit" style="background: transparent; border-color: rgba(255,42,95,0.3); color: var(--red); font-size: 12px; width: 50%;">EXIT TO DESKTOP</button>
             </div>
         </div>
         
@@ -8763,6 +8838,24 @@ class Game {
                 window.close();
             };
         }
+        
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+            const initSplash = () => {
+                audio.resume();
+                if (typeof musicEngine !== 'undefined') {
+                    let track = this.saveData.musicTrack;
+                    if (!track || track === 'off') track = 'agent'; 
+                    this.setMusicTrack(track); 
+                }
+                splash.style.opacity = '0';
+                setTimeout(() => splash.remove(), 1500);
+                window.removeEventListener('keydown', initSplash);
+                splash.removeEventListener('click', initSplash);
+            };
+            splash.addEventListener('click', initSplash);
+            window.addEventListener('keydown', initSplash);
+        }
     }
     
     setScheme(type) { 
@@ -9463,11 +9556,11 @@ class Game {
         let tabRows = {
             play: [
                 ['btn-mode-1p', 'btn-mode-2p'],
+                ['btn-env-day', 'btn-env-night'],
+                ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
                 ['btn-sandbox-no', 'btn-sandbox-yes'],
                 ['btn-cash-down', 'btn-cash-up'],
                 ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore'],
-                ['btn-env-day', 'btn-env-night'],
-                ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
                 ['sld-time-scale'],
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
                 ['btn-start'],
@@ -9640,11 +9733,11 @@ class Game {
         let tabRows = {
             play: [
                 ['btn-mode-1p', 'btn-mode-2p'],
+                ['btn-env-day', 'btn-env-night'],
+                ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
                 ['btn-sandbox-no', 'btn-sandbox-yes'],
                 ['btn-cash-down', 'btn-cash-up'],
                 ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore'],
-                ['btn-env-day', 'btn-env-night'],
-                ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
                 ['sld-time-scale'],
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
                 ['btn-start'],
