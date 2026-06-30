@@ -9070,6 +9070,20 @@ class Game {
 
         this.gamepadConnected = true;
 
+        // Intercept for splash screen dismissal
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+            for (let gp of gpList) {
+                let anyButtonPressed = gp.buttons.some(b => b.pressed);
+                let anyAxisMoved = gp.axes.some(a => Math.abs(a) > 0.5);
+                if (anyButtonPressed || anyAxisMoved) {
+                    splash.click();
+                    return true;
+                }
+            }
+            return true; // Lock main menu controls while splash is active
+        }
+
         if (this.gpadButtonCooldown > 0) this.gpadButtonCooldown -= dt;
         if (this.dpadCooldown > 0) this.dpadCooldown -= dt;
         if (this.gpadPauseCooldown > 0) this.gpadPauseCooldown -= dt;
