@@ -425,6 +425,30 @@
     #perk-choices-container::-webkit-scrollbar-track { background: rgba(0, 229, 255, 0.05); border-radius: 3px; }
     #perk-choices-container::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, 0.3); border-radius: 3px; }
     #perk-choices-container::-webkit-scrollbar-thumb:hover { background: rgba(0, 229, 255, 0.6); }
+
+    /* Tactical Map Select Styles */
+    .map-btn {
+        text-align: left !important;
+        padding: 10px 15px !important;
+        transition: all 0.2s ease;
+        letter-spacing: 1px;
+    }
+    button.map-btn:hover:not(:disabled), button.map-btn.focused-btn {
+        border-color: var(--btn-color) !important;
+        box-shadow: 0 0 15px var(--btn-color-glow) !important;
+        background-color: var(--btn-color-bg) !important;
+        color: var(--btn-color) !important;
+    }
+    button.map-btn.active-mode {
+        border-color: var(--btn-color) !important;
+        color: var(--btn-color) !important;
+        background-color: var(--btn-color-bg) !important;
+        box-shadow: 0 0 10px var(--btn-color-glow) !important;
+    }
+    .map-list-scroll::-webkit-scrollbar { width: 6px; }
+    .map-list-scroll::-webkit-scrollbar-track { background: rgba(0, 229, 255, 0.05); border-radius: 3px; }
+    .map-list-scroll::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, 0.3); border-radius: 3px; }
+    .map-list-scroll::-webkit-scrollbar-thumb:hover { background: rgba(0, 229, 255, 0.6); }
 </style>
 </head>
 <body>
@@ -562,13 +586,58 @@
         
         <div class="tabs-container">
             <button class="tab-button active" onclick="game.switchTab('play')">Play</button>
+            <button class="tab-button" onclick="game.switchTab('maps')">Maps</button>
             <button class="tab-button" onclick="game.switchTab('controls')">Controls</button>
             <button class="tab-button" onclick="game.switchTab('audio')">Audio</button>
             <button class="tab-button" onclick="game.switchTab('leaderboard')">Leaderboard</button>
             <button class="tab-button" onclick="game.switchTab('armory')">Armory</button>
             <button class="tab-button" onclick="game.switchTab('guide')">Guide</button>
         </div>
-        
+
+        <!-- Tab content: MAPS -->
+        <div id="tab-maps" class="tab-content" style="max-width: 850px; margin: 0 auto; width: 100%;">
+            <div style="display: flex; gap: 20px; height: 380px;">
+                <!-- Left: Select List -->
+                <div class="map-list-scroll" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 10px;" onmouseleave="if(game) game.previewMap(game.selectedMapId)">
+                    <button id="btn-map-random" class="map-btn active-mode" style="--btn-color: #00e5ff; --btn-color-glow: rgba(0,229,255,0.6); --btn-color-bg: rgba(0,229,255,0.12);" onclick="game.setMap(-1)" onmouseenter="game.previewMap(-1)">[?] Random Generation</button>
+                    <button id="btn-map-10" class="map-btn" style="--btn-color: #00e5ff; --btn-color-glow: rgba(0,229,255,0.6); --btn-color-bg: rgba(0,229,255,0.12);" onclick="game.setMap(10)" onmouseenter="game.previewMap(10)">[7.5K] Massive Open World</button>
+                    <button id="btn-map-0" class="map-btn" style="--btn-color: #00e5ff; --btn-color-glow: rgba(0,229,255,0.6); --btn-color-bg: rgba(0,229,255,0.12);" onclick="game.setMap(0)" onmouseenter="game.previewMap(0)">The Cross (Classic)</button>
+                    <button id="btn-map-1" class="map-btn" style="--btn-color: #39ff14; --btn-color-glow: rgba(57,255,20,0.6); --btn-color-bg: rgba(57,255,20,0.12);" onclick="game.setMap(1)" onmouseenter="game.previewMap(1)">Central Hub (Ring)</button>
+                    <button id="btn-map-2" class="map-btn" style="--btn-color: #ff5722; --btn-color-glow: rgba(255,87,34,0.6); --btn-color-bg: rgba(255,87,34,0.12);" onclick="game.setMap(2)" onmouseenter="game.previewMap(2)">Four Corners (Bunkers)</button>
+                    <button id="btn-map-3" class="map-btn" style="--btn-color: #ffb700; --btn-color-glow: rgba(255,183,0,0.6); --btn-color-bg: rgba(255,183,0,0.12);" onclick="game.setMap(3)" onmouseenter="game.previewMap(3)">The Trench (Tug of War)</button>
+                    <button id="btn-map-4" class="map-btn" style="--btn-color: #d500f9; --btn-color-glow: rgba(213,0,249,0.6); --btn-color-bg: rgba(213,0,249,0.12);" onclick="game.setMap(4)" onmouseenter="game.previewMap(4)">The Reactor (Death Loop)</button>
+                    <button id="btn-map-5" class="map-btn" style="--btn-color: #ff007f; --btn-color-glow: rgba(255,0,127,0.6); --btn-color-bg: rgba(255,0,127,0.12);" onclick="game.setMap(5)" onmouseenter="game.previewMap(5)">The Mainframe (Maze)</button>
+                    <button id="btn-map-6" class="map-btn" style="--btn-color: #dc143c; --btn-color-glow: rgba(220,20,60,0.6); --btn-color-bg: rgba(220,20,60,0.12);" onclick="game.setMap(6)" onmouseenter="game.previewMap(6)">The Exec Suite (Chokepoint)</button>
+                    <button id="btn-map-7" class="map-btn" style="--btn-color: #ffffff; --btn-color-glow: rgba(255,255,255,0.6); --btn-color-bg: rgba(255,255,255,0.12);" onclick="game.setMap(7)" onmouseenter="game.previewMap(7)">Quarantine Zone (Intersection)</button>
+                    <button id="btn-map-8" class="map-btn" style="--btn-color: #ff2a5f; --btn-color-glow: rgba(255,42,95,0.6); --btn-color-bg: rgba(255,42,95,0.12);" onclick="game.setMap(8)" onmouseenter="game.previewMap(8)">2-Fort (Bridge Assault)</button>
+                    <button id="btn-map-9" class="map-btn" style="--btn-color: #b388ff; --btn-color-glow: rgba(179,136,255,0.6); --btn-color-bg: rgba(179,136,255,0.12);" onclick="game.setMap(9)" onmouseenter="game.previewMap(9)">The Sieve (Pillar Forest)</button>
+                </div>
+
+                <!-- Right: Intel Preview -->
+                <div id="map-preview-pane" style="flex: 1.2; border: 1px solid var(--neon-blue); background: rgba(0, 5, 12, 0.8); border-radius: 4px; padding: 15px; display: flex; flex-direction: column; position: relative; transition: all 0.2s ease;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin-bottom: 12px;">
+                        <div style="text-align: left;">
+                            <h2 id="preview-map-name" style="margin: 0; font-size: 15px; letter-spacing: 2px; color: var(--neon-blue); text-shadow: 0 0 10px var(--neon-blue);">[?] RANDOM GENERATION</h2>
+                            <div id="preview-map-size" style="font-size: 10px; color: #a9c2c7; margin-top: 4px; font-weight: bold; letter-spacing: 1px;">SIZE: VARIABLE</div>
+                        </div>
+                        <div id="preview-map-hex" style="font-size: 10px; color: var(--neon-blue); opacity: 0.6; font-family: monospace; font-weight: bold; letter-spacing: 1px;">#00E5FF</div>
+                    </div>
+
+                    <!-- Canvas for Mini Blueprint Drawing -->
+                    <div style="flex: 1; width: 100%; min-height: 140px; background: rgba(0, 2, 5, 0.6); border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 12px;">
+                        <canvas id="map-preview-canvas" width="300" height="180" style="width: 100%; height: 100%; object-fit: contain;"></canvas>
+                        <!-- Scanline overlay -->
+                        <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.2) 2px, rgba(0, 0, 0, 0.2) 4px); pointer-events: none;"></div>
+                    </div>
+
+                    <div style="text-align: left;">
+                        <div style="font-size: 10px; color: #808f9c; font-weight: bold; letter-spacing: 1px; margin-bottom: 4px;">TACTICAL INTEL:</div>
+                        <div id="preview-map-desc" style="font-size: 11px; color: #e0f7fa; line-height: 1.5;">Procedural tactical layout. Blueprint parameters unknown until deployment. Stay alert.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Tab content: PLAY -->
         <div id="tab-play" class="tab-content active" style="max-width: 700px; margin: 0 auto;">
             <p style="margin: 5px 0 10px 0; font-size: 12px;">Tactical Top-Down Weapon Physics Simulator.</p>
@@ -2057,6 +2126,53 @@ class AudioEngine {
                 }));
             }
 
+            // 2c. Supersonic Crack variations (duration 0.15s - mini sonic boom for Mach 1+ bullets)
+            for (let i = 0; i < 3; i++) {
+                promises.push(this.bakeSound('crack_' + i, 0.15, (offlineCtx) => {
+                    // A sharp, instantaneous high-frequency snap
+                    const snapOsc = offlineCtx.createOscillator();
+                    const snapGain = offlineCtx.createGain();
+                    snapOsc.type = 'sawtooth';
+                    snapOsc.frequency.setValueAtTime(4000 + Math.random() * 1000, 0);
+                    snapOsc.frequency.exponentialRampToValueAtTime(500, 0.02);
+
+                    snapGain.gain.setValueAtTime(2.0, 0);
+                    snapGain.gain.exponentialRampToValueAtTime(0.001, 0.03);
+
+                    snapOsc.connect(snapGain);
+
+                    // A high-pass noise burst for the "tear" through the air
+                    const noise = offlineCtx.createBufferSource();
+                    noise.buffer = this.noiseBuffer;
+                    const noiseFilter = offlineCtx.createBiquadFilter();
+                    noiseFilter.type = 'highpass';
+                    noiseFilter.frequency.value = 2500;
+
+                    const noiseGain = offlineCtx.createGain();
+                    noiseGain.gain.setValueAtTime(1.5, 0);
+                    noiseGain.gain.exponentialRampToValueAtTime(0.001, 0.06);
+
+                    noise.connect(noiseFilter);
+                    noiseFilter.connect(noiseGain);
+                    noise.start(0);
+
+                    // Heavy Saturation for the "whip crack"
+                    const sumGain = offlineCtx.createGain();
+                    sumGain.gain.value = 0.8;
+                    snapGain.connect(sumGain);
+                    noiseGain.connect(sumGain);
+
+                    const saturator = offlineCtx.createWaveShaper();
+                    saturator.curve = makeDistortionCurve(3.5);
+                    saturator.oversample = '4x';
+
+                    sumGain.connect(saturator);
+                    saturator.connect(offlineCtx.destination);
+
+                    snapOsc.start(0);
+                }));
+            }
+
             // 3. Overhauled Explosion variations (duration 1.2s - restored heavy BOOM)
             for (let i = 0; i < 3; i++) {
                 promises.push(this.bakeSound('explosion_' + i, 1.3, (offlineCtx) => {
@@ -2556,7 +2672,7 @@ class AudioEngine {
         } else if (type === 'hit') {
             minD = 100; maxD = 800; minVol = 0.0; minCutoff = 2000;
         }
-        
+
         let vol = 1.0;
         let cutoff = 20000;
         if (distance > minD) {
@@ -2565,14 +2681,21 @@ class AudioEngine {
             vol = minVol + (1.0 - minVol) * roll;
             cutoff = minCutoff + (20000 - minCutoff) * (1.0 - t);
         }
-        return { vol, cutoff };
+
+        let delay = 0;
+        let noDelayRadius = 350;
+        if (distance > noDelayRadius) {
+            delay = (distance - noDelayRadius) / 3400;
+        }
+
+        return { vol, cutoff, delay };
     }
 
-    playBakedSound(name, destination = this.sfxGain, gainValue = 1.0, cutoff = 20000) {
+    playBakedSound(name, destination = this.sfxGain, gainValue = 1.0, cutoff = 20000, delay = 0) {
         if (!this.ctx || !this.bakedBuffers[name]) return;
         const source = this.ctx.createBufferSource();
         source.buffer = this.bakedBuffers[name];
-        
+
         let baseName = name;
         if (name.lastIndexOf('_') > 0) {
             let base = name.substring(0, name.lastIndexOf('_'));
@@ -2581,7 +2704,7 @@ class AudioEngine {
             }
         }
         let hasEcho = this.echoBusInput && this.ECHO_SOUNDS.has(baseName);
-        
+
         let lastNode = source;
         if (cutoff < 18000) {
             const filterNode = this.ctx.createBiquadFilter();
@@ -2590,7 +2713,7 @@ class AudioEngine {
             lastNode.connect(filterNode);
             lastNode = filterNode;
         }
-        
+
         if (gainValue !== 1.0 || hasEcho) {
             const gain = this.ctx.createGain();
             gain.gain.value = gainValue;
@@ -2602,60 +2725,66 @@ class AudioEngine {
         } else {
             lastNode.connect(destination);
         }
-        source.start(0);
+        source.start(this.ctx.currentTime + delay);
     }
 
     playShoot(type, x = null, y = null) {
         let idx = Math.floor(Math.random() * 4);
         let name = 'shoot_' + type + '_' + idx;
-        
+
         let gainVal = 1.0;
         let cutoff = 20000;
+        let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('shoot', d);
             gainVal = settings.vol;
             cutoff = settings.cutoff;
+            delay = settings.delay;
         }
-        this.playBakedSound(name, this.sfxGain, gainVal, cutoff);
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff, delay);
     }
 
     playRicochet(x = null, y = null) {
         let idx = Math.floor(Math.random() * 5);
         let name = 'ricochet_' + idx;
-        
+
         let gainVal = 1.0;
         let cutoff = 20000;
+        let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('ricochet', d);
             gainVal = settings.vol;
             cutoff = settings.cutoff;
+            delay = settings.delay;
         }
-        this.playBakedSound(name, this.sfxGain, gainVal, cutoff);
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff, delay);
     }
 
     playExplosion(volumeScale = 1.0, x = null, y = null) {
         if (!this.ctx) return;
-        
+
         let now = this.ctx.currentTime;
         if (now - this.lastExplosionTime < 0.10) {
-            volumeScale *= 0.3; // scale down subsequent overlapping explosions
+            volumeScale *= 0.3;
         }
         this.lastExplosionTime = now;
-        
+
         let idx = Math.floor(Math.random() * 3);
         let name = 'explosion_' + idx;
-        
+
         let gainVal = volumeScale;
         let cutoff = 20000;
+        let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('explosion', d);
             gainVal = settings.vol * volumeScale;
             cutoff = settings.cutoff;
+            delay = settings.delay;
         }
-        this.playBakedSound(name, this.sfxGain, gainVal, cutoff);
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff, delay);
     }
 
     playMiniExplosion(x = null, y = null) {
@@ -2663,28 +2792,32 @@ class AudioEngine {
         let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
         let idx = Math.floor(Math.random() * 3);
         let name = 'miniExplosion_' + idx;
-        
+
         let gainVal = sfxVol;
         let cutoff = 20000;
+        let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('explosion', d);
             gainVal = settings.vol * sfxVol;
             cutoff = settings.cutoff;
+            delay = settings.delay;
         }
-        this.playBakedSound(name, this.sfxGain || this.masterGain, gainVal, cutoff);
+        this.playBakedSound(name, this.sfxGain || this.masterGain, gainVal, cutoff, delay);
     }
 
     playHit(x = null, y = null) {
         let gainVal = 1.0;
         let cutoff = 20000;
+        let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('hit', d);
             gainVal = settings.vol;
             cutoff = settings.cutoff;
+            delay = settings.delay;
         }
-        this.playBakedSound('hit', this.sfxGain, gainVal, cutoff);
+        this.playBakedSound('hit', this.sfxGain, gainVal, cutoff, delay);
     }
 
     playGrenadeThrow(x = null, y = null) {
@@ -2692,41 +2825,47 @@ class AudioEngine {
         let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
         let gainVal = 0.8 * sfxVol;
         let cutoff = 20000;
+        let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('hit', d);
             gainVal = settings.vol * 0.8 * sfxVol;
             cutoff = settings.cutoff;
+            delay = settings.delay;
         }
-        this.playBakedSound('grenade_throw', this.sfxGain, gainVal, cutoff);
+        this.playBakedSound('grenade_throw', this.sfxGain, gainVal, cutoff, delay);
     }
-    
+
     playMinePlace(x = null, y = null) {
         if (!this.ctx) return;
         let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
         let gainVal = 0.85 * sfxVol;
         let cutoff = 20000;
+        let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('hit', d);
             gainVal = settings.vol * 0.85 * sfxVol;
             cutoff = settings.cutoff;
+            delay = settings.delay;
         }
-        this.playBakedSound('mine_place', this.sfxGain, gainVal, cutoff);
+        this.playBakedSound('mine_place', this.sfxGain, gainVal, cutoff, delay);
     }
-    
+
     playWeaponSwitch(x = null, y = null) {
         if (!this.ctx) return;
         let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
         let gainVal = 0.75 * sfxVol;
         let cutoff = 20000;
+        let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('hit', d);
             gainVal = settings.vol * 0.75 * sfxVol;
             cutoff = settings.cutoff;
+            delay = settings.delay;
         }
-        this.playBakedSound('weapon_switch', this.sfxGain, gainVal, cutoff);
+        this.playBakedSound('weapon_switch', this.sfxGain, gainVal, cutoff, delay);
     }
     
     playPickup(type) {
@@ -2753,27 +2892,38 @@ class AudioEngine {
 
     playFlyby(intensity, pan, speed) {
         if (!this.ctx || intensity <= 0.01) return;
-        
+
         let now = this.ctx.currentTime;
         if (now - this.lastFlybyTime < 0.04) return; // rate limit
         this.lastFlybyTime = now;
-        
-        let idx = Math.floor(Math.random() * 4);
-        let name = 'flyby_' + idx;
+
+        // 3400 pixels/sec is our Speed of Sound threshold
+        let isSupersonic = speed >= 3400;
+        let maxIdx = isSupersonic ? 3 : 4;
+        let baseName = isSupersonic ? 'crack_' : 'flyby_';
+
+        let idx = Math.floor(Math.random() * maxIdx);
+        let name = baseName + idx;
         if (!this.bakedBuffers[name]) return;
-        
+
         const source = this.ctx.createBufferSource();
         source.buffer = this.bakedBuffers[name];
-        
-        // 1. Playback Rate based on speed (baseline 1200 px/s)
-        let rate = Math.max(0.65, Math.min(2.0, speed / 1200));
+
+        // 1. Playback Rate based on speed
+        let rate = 1.0;
+        if (isSupersonic) {
+            rate = Math.max(0.9, Math.min(1.2, speed / 3400)); // Keeps crack tight
+        } else {
+            rate = Math.max(0.65, Math.min(2.0, speed / 1200)); // Dynamic whoosh pitch
+        }
         source.playbackRate.value = rate;
-        
-        // 2. Gain/Volume
+
+        // 2. Gain/Volume (Supersonic cracks are noticeably louder/harsher)
         let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
         const gainNode = this.ctx.createGain();
-        gainNode.gain.value = intensity * sfxVol * 1.0; // tamer, well-balanced volume multiplier
-        
+        let baseVolMultiplier = isSupersonic ? 1.6 : 1.0;
+        gainNode.gain.value = intensity * sfxVol * baseVolMultiplier;
+
         source.connect(gainNode);
         
         // 3. Stereo Panning
@@ -3461,6 +3611,21 @@ const EnemyTypes = {
     sapper: { hp: 35, speed: 210, color: '#ffea00', type: 'sapper', score: 20, weapon: 'melee', size: 11 }
 };
 
+const MapIntel = {
+    "-1": { name: "[?] Random Generation", color: "#00e5ff", size: "Variable", desc: "Procedural tactical layout. Blueprint parameters unknown until deployment. Stay alert." },
+    "0": { name: "The Cross (Classic)", color: "#00e5ff", size: "2200x2200", desc: "Standard intersection. Clear vertical and horizontal lanes for classic engagement." },
+    "1": { name: "Central Hub (Ring)", color: "#39ff14", size: "2200x2200", desc: "Circular fortifications surrounding a vulnerable center hub. High risk of encirclement." },
+    "2": { name: "Four Corners (Bunkers)", color: "#ff5722", size: "2200x2200", desc: "Heavy isolated bunkers stationed at extreme corners. Dangerous open middle ground." },
+    "3": { name: "The Trench (Tug of War)", color: "#ffb700", size: "3400x1400", desc: "Long horizontal battlefield flanked by trench barriers. A pure tug-of-war." },
+    "4": { name: "The Reactor (Death Loop)", color: "#d500f9", size: "2400x2400", desc: "Octagonal death loop with tight chokepoints and a massive central blockade." },
+    "5": { name: "The Mainframe (Maze)", color: "#ff007f", size: "2200x2200", desc: "Claustrophobic grid maze. Expect sudden, unforgiving close-quarters combat." },
+    "6": { name: "The Exec Suite (Chokepoint)", color: "#dc143c", size: "1400x3000", desc: "Narrow vertical hourglass layout. Control the central chokepoint to survive." },
+    "7": { name: "Quarantine Zone", color: "#ffffff", size: "2600x2600", desc: "Massive plus-sign intersection. Vast sightlines demand long-range weaponry." },
+    "8": { name: "2-Fort (Bridge Assault)", color: "#ff2a5f", size: "4200x900", desc: "Bridge assault. Two heavily fortified bases separated by a deadly no-mans-land." },
+    "9": { name: "The Sieve (Pillar Forest)", color: "#b388ff", size: "2800x2800", desc: "Dense forest of small pillar covers. Sightlines are constantly broken." },
+    "10": { name: "[7.5K] Massive Open World", color: "#00e5ff", size: "7500x7500", desc: "Colossal operational zone spanning 9 distinct biomes. Stamina management is critical." }
+};
+
 const cachedAmbientLightCanvas = (() => {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
@@ -3762,11 +3927,36 @@ class Camera {
 }
 
 class MapGen {
-    constructor(width, height) {
-        this.width = width;
-        this.height = height;
+    constructor() {
         this.walls = [];
         this.currentSearchId = 0;
+        
+        const blueprints = [
+            { id: 0, w: 2200, h: 2200, biome: { main: '#00e5ff', rgb: '0, 229, 255' } },
+            { id: 1, w: 2200, h: 2200, biome: { main: '#39ff14', rgb: '57, 255, 20' } },
+            { id: 2, w: 2200, h: 2200, biome: { main: '#ff5722', rgb: '255, 87, 34' } },
+            { id: 3, w: 3400, h: 1400, biome: { main: '#ffb700', rgb: '255, 183, 0' } },
+            { id: 4, w: 2400, h: 2400, biome: { main: '#d500f9', rgb: '213, 0, 249' } },
+            { id: 5, w: 2200, h: 2200, biome: { main: '#ff007f', rgb: '255, 0, 127' } },
+            { id: 6, w: 1400, h: 3000, biome: { main: '#dc143c', rgb: '220, 20, 60' } },
+            { id: 7, w: 2600, h: 2600, biome: { main: '#ffffff', rgb: '255, 255, 255'} },
+            { id: 8, w: 4200, h: 900,  biome: { main: '#ff2a5f', rgb: '255, 42, 95', splitTheme: true } },
+            { id: 9, w: 2800, h: 2800, biome: { main: '#b388ff', rgb: '179, 136, 255' } },
+            { id: 10, w: 7500, h: 7500, biome: { main: '#00e5ff', rgb: '0, 100, 255' } }
+        ];
+
+        let chosen;
+        if (typeof game !== 'undefined' && game.selectedMapId !== undefined && game.selectedMapId !== -1) {
+            chosen = blueprints.find(b => b.id === game.selectedMapId);
+        }
+        if (!chosen) {
+            chosen = blueprints[Math.floor(Math.random() * blueprints.length)];
+        }
+        this.width = chosen.w;
+        this.height = chosen.h;
+        this.biome = chosen.biome;
+        this.templateId = chosen.id;
+        
         this.generate();
         this.initializeSpatialGrid();
         this.buildNavGrid();
@@ -3825,28 +4015,342 @@ class MapGen {
         this.walls.push({ x: -thick, y: 0, w: thick, h: this.height });
         this.walls.push({ x: this.width, y: 0, w: thick, h: this.height });
 
+        let cx = this.width / 2;
+        let cy = this.height / 2;
         const numWalls = 28;
-        for (let i = 0; i < numWalls; i++) {
-            let w = MathUtils.rand(150, 400);
-            let h = MathUtils.rand(25, 60);
-            if (Math.random() > 0.5) { let temp = w; w = h; h = temp; }
-            
-            let x = MathUtils.rand(100, this.width - w - 100);
-            let y = MathUtils.rand(100, this.height - h - 100);
-            
-            let cx = this.width/2; let cy = this.height/2;
-            if (x < cx+220 && x+w > cx-220 && y < cy+220 && y+h > cy-220) continue;
-            
-            this.walls.push({ x, y, w, h });
+        
+        switch(this.templateId) {
+            case 0: {
+                // Template 0: The Cross (Clear vertical and horizontal central lanes)
+                let placed = 0;
+                while (placed < numWalls) {
+                    let w = MathUtils.rand(150, 400);
+                    let h = MathUtils.rand(25, 60);
+                    if (Math.random() > 0.5) { let temp = w; w = h; h = temp; }
+                    let x = MathUtils.rand(100, this.width - w - 100);
+                    let y = MathUtils.rand(100, this.height - h - 100);
+                    let inVertical = (x < cx + 200 && x + w > cx - 200);
+                    let inHorizontal = (y < cy + 200 && y + h > cy - 200);
+                    if (inVertical || inHorizontal) continue;
+                    this.walls.push({ x, y, w, h });
+                    placed++;
+                }
+                break;
+            }
+            case 1: {
+                // Template 1: Central Hub (Ring of walls around center, scatter outside)
+                let ringRadius = 380;
+                let ringCount = 12;
+                for (let i = 0; i < ringCount; i++) {
+                    let angle = (i / ringCount) * Math.PI * 2;
+                    let w = 180;
+                    let h = 40;
+                    if (Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle))) {
+                        let temp = w; w = h; h = temp;
+                    }
+                    let x = cx + Math.cos(angle) * ringRadius - w / 2;
+                    let y = cy + Math.sin(angle) * ringRadius - h / 2;
+                    this.walls.push({ x, y, w, h });
+                }
+                let placed = 0;
+                while (placed < (numWalls - ringCount)) {
+                    let w = MathUtils.rand(150, 300);
+                    let h = MathUtils.rand(25, 60);
+                    if (Math.random() > 0.5) { let temp = w; w = h; h = temp; }
+                    let x = MathUtils.rand(100, this.width - w - 100);
+                    let y = MathUtils.rand(100, this.height - h - 100);
+                    let distToCenter = Math.hypot((x + w/2) - cx, (y + h/2) - cy);
+                    if (distToCenter < ringRadius + 120) continue;
+                    this.walls.push({ x, y, w, h });
+                    placed++;
+                }
+                break;
+            }
+            case 2: {
+                // Template 2: Four Corners (Heavy bunkers in the 4 corners, wide open center)
+                let corners = [
+                    { px: 350, py: 350 },
+                    { px: this.width - 350, py: 350 },
+                    { px: 350, py: this.height - 350 },
+                    { px: this.width - 350, py: this.height - 350 }
+                ];
+                for (let corner of corners) {
+                    for (let i = 0; i < 7; i++) {
+                        let w = MathUtils.rand(150, 350);
+                        let h = MathUtils.rand(25, 60);
+                        if (Math.random() > 0.5) { let temp = w; w = h; h = temp; }
+                        let x = corner.px + MathUtils.rand(-250, 250) - w / 2;
+                        let y = corner.py + MathUtils.rand(-250, 250) - h / 2;
+                        x = MathUtils.clamp(x, 100, this.width - w - 100);
+                        y = MathUtils.clamp(y, 100, this.height - h - 100);
+                        if (x < cx + 150 && x + w > cx - 150 && y < cy + 150 && y + h > cy - 150) continue;
+                        this.walls.push({ x, y, w, h });
+                    }
+                }
+                break;
+            }
+            case 3: {
+                // Template 3: The Trench (Wide horizontal tug-of-war)
+                for(let i = 0; i < 6; i++) {
+                    this.walls.push({ x: 300 + i*500, y: cy - 250, w: 250, h: 40 });
+                    this.walls.push({ x: 300 + i*500, y: cy + 210, w: 250, h: 40 });
+                }
+                for(let i = 0; i < 16; i++) {
+                    let w = MathUtils.rand(100, 200);
+                    let h = MathUtils.rand(40, 80);
+                    let x = MathUtils.rand(150, this.width - w - 150);
+                    let y = MathUtils.rand(100, this.height - h - 100);
+                    if (x < cx + 150 && x + w > cx - 150 && y < cy + 150 && y + h > cy - 150) continue;
+                    this.walls.push({ x, y, w, h });
+                }
+                break;
+            }
+            case 4: {
+                // Template 4: The Reactor (Octagon Death-Loop)
+                let cs = 450;
+                this.walls.push({ x: 0, y: 0, w: cs, h: cs });
+                this.walls.push({ x: this.width - cs, y: 0, w: cs, h: cs });
+                this.walls.push({ x: 0, y: this.height - cs, w: cs, h: cs });
+                this.walls.push({ x: this.width - cs, y: this.height - cs, w: cs, h: cs });
+                this.walls.push({ x: cx - 350, y: cy - 350, w: 700, h: 700 });
+                for(let i = 0; i < 12; i++) {
+                    let w = MathUtils.rand(100, 180);
+                    let h = MathUtils.rand(40, 80);
+                    if (Math.random() > 0.5) { let temp = w; w = h; h = temp; }
+                    let x = MathUtils.rand(cs, this.width - w - cs);
+                    let y = MathUtils.rand(cs, this.height - h - cs);
+                    if (x < cx + 450 && x + w > cx - 450 && y < cy + 450 && y + h > cy - 450) continue;
+                    this.walls.push({ x, y, w, h });
+                }
+                break;
+            }
+            case 5: {
+                // Template 5: The Mainframe (Claustrophobic Grid Maze)
+                for(let gx = 200; gx < this.width - 200; gx += 250) {
+                    for(let gy = 200; gy < this.height - 200; gy += 250) {
+                        if (gx > cx - 250 && gx < cx + 250 && gy > cy - 250 && gy < cy + 250) continue;
+                        if (Math.random() < 0.75) {
+                            let isVert = Math.random() > 0.5;
+                            let w = isVert ? 50 : 200;
+                            let h = isVert ? 200 : 50;
+                            let x = gx - w/2;
+                            let y = gy - h/2;
+                            this.walls.push({ x, y, w, h });
+                        }
+                    }
+                }
+                break;
+            }
+            case 6: {
+                // Template 6: The Exec Suite (Hourglass Chokepoint)
+                this.walls.push({ x: 0, y: cy - 100, w: 450, h: 200 });
+                this.walls.push({ x: this.width - 450, y: cy - 100, w: 450, h: 200 });
+                for(let i = 0; i < 12; i++) {
+                    let w = MathUtils.rand(100, 200);
+                    let h = MathUtils.rand(40, 80);
+                    let x = MathUtils.rand(100, this.width - w - 100);
+                    let y = MathUtils.rand(100, cy - 300 - h);
+                    this.walls.push({ x, y, w, h });
+                }
+                for(let i = 0; i < 12; i++) {
+                    let w = MathUtils.rand(100, 200);
+                    let h = MathUtils.rand(40, 80);
+                    let x = MathUtils.rand(100, this.width - w - 100);
+                    let y = MathUtils.rand(cy + 300, this.height - h - 100);
+                    this.walls.push({ x, y, w, h });
+                }
+                break;
+            }
+            case 7: {
+                // Template 7: Quarantine Zone (Plus Sign / Intersection)
+                let voidSize = 850;
+                this.walls.push({ x: 0, y: 0, w: voidSize, h: voidSize });
+                this.walls.push({ x: this.width - voidSize, y: 0, w: voidSize, h: voidSize });
+                this.walls.push({ x: 0, y: this.height - voidSize, w: voidSize, h: voidSize });
+                this.walls.push({ x: this.width - voidSize, y: this.height - voidSize, w: voidSize, h: voidSize });
+                for (let i = 0; i < 16; i++) {
+                    let w = MathUtils.rand(80, 160);
+                    let h = MathUtils.rand(40, 80);
+                    if (Math.random() > 0.5) { let temp = w; w = h; h = temp; }
+                    let x = MathUtils.rand(100, this.width - w - 100);
+                    let y = MathUtils.rand(100, this.height - h - 100);
+                    
+                    let inTL = (x < voidSize && y < voidSize);
+                    let inTR = (x > this.width - voidSize && y < voidSize);
+                    let inBL = (x < voidSize && y > this.height - voidSize);
+                    let inBR = (x > this.width - voidSize && y > this.height - voidSize);
+                    let inCenter = (x > cx - 200 && x < cx + 200 && y > cy - 200 && y < cy + 200);
+                    
+                    if (inTL || inTR || inBL || inBR || inCenter) continue;
+                    this.walls.push({ x, y, w, h });
+                }
+                break;
+            }
+            case 8: {
+                this.walls.push({ x: 1400, y: 0, w: 1400, h: 250 });
+                this.walls.push({ x: 1400, y: 650, w: 1400, h: 250 });
+                this.walls.push({ x: 800, y: 100, w: 150, h: 250 });
+                this.walls.push({ x: 800, y: 550, w: 150, h: 250 });
+                this.walls.push({ x: 300, y: 350, w: 200, h: 200 });
+                this.walls.push({ x: 3250, y: 100, w: 150, h: 250 });
+                this.walls.push({ x: 3250, y: 550, w: 150, h: 250 });
+                this.walls.push({ x: 3700, y: 350, w: 200, h: 200 });
+                for(let i = 0; i < 8; i++) {
+                    this.walls.push({ x: MathUtils.rand(100, 600), y: MathUtils.rand(100, 800), w: 80, h: 80 });
+                    this.walls.push({ x: MathUtils.rand(3500, 4100), y: MathUtils.rand(100, 800), w: 80, h: 80 });
+                }
+                break;
+            }
+            case 9: {
+                let placed = 0;
+                while (placed < 150) {
+                    let w = MathUtils.rand(30, 70);
+                    let h = MathUtils.rand(30, 70);
+                    let x = MathUtils.rand(80, this.width - w - 80);
+                    let y = MathUtils.rand(80, this.height - h - 80);
+                    if (x < cx + 300 && x + w > cx - 300 && y < cy + 300 && y + h > cy - 300) continue;
+                    this.walls.push({ x, y, w, h });
+                    placed++;
+                }
+                break;
+            }
+            case 10: {
+                let zs = 2500;
+                let spillage = 350;
+                let cx = this.width / 2;
+                let cy = this.height / 2;
+                const addW = (x, y, w, h, hex, rgb) => {
+                    x = MathUtils.clamp(x, 100, this.width - w - 100);
+                    y = MathUtils.clamp(y, 100, this.height - h - 100);
+                    if (x < cx + 300 && x + w > cx - 300 && y < cy + 300 && y + h > cy - 300) return;
+                    this.walls.push({ x, y, w, h, colorMain: hex, colorRgb: rgb });
+                };
+                for(let r = 0; r < 3; r++) {
+                    for(let c = 0; c < 3; c++) {
+                        let zx = c * zs;
+                        let zy = r * zs;
+                        if (r === 0 && c === 0) {
+                            for(let i=0; i<180; i++) {
+                                let w = MathUtils.rand(25, 60); let h = MathUtils.rand(25, 60);
+                                addW(zx+MathUtils.rand(-spillage, zs+spillage), zy+MathUtils.rand(-spillage, zs+spillage), w, h, '#39ff14', '57, 255, 20');
+                            }
+                        } else if (r === 0 && c === 1) {
+                            for(let i=0; i<4; i++) {
+                                addW(zx+MathUtils.rand(200, zs-500), zy+MathUtils.rand(200, zs-500), MathUtils.rand(300, 600), MathUtils.rand(200, 400), '#ffea00', '255, 234, 0');
+                            }
+                            for(let i=0; i<45; i++) {
+                                addW(zx+MathUtils.rand(-spillage, zs+spillage), zy+MathUtils.rand(-spillage, zs+spillage), 30, MathUtils.rand(80, 150), '#ffea00', '255, 234, 0');
+                            }
+                        } else if (r === 0 && c === 2) {
+                            for(let i=0; i<30; i++) {
+                                let px = zx+MathUtils.rand(100, zs-300);
+                                let py = zy+MathUtils.rand(100, zs-300);
+                                let w = MathUtils.rand(120, 250); let h = MathUtils.rand(120, 250);
+                                let t = 40;
+                                addW(px, py, w, t, '#808f9c', '128, 143, 156');
+                                addW(px, py, t, h, '#808f9c', '128, 143, 156');
+                                if (Math.random() > 0.5) addW(px, py + h - t, w, t, '#808f9c', '128, 143, 156');
+                            }
+                        } else if (r === 1 && c === 0) {
+                            for(let hx=200; hx<zs-200; hx+=400) {
+                                for(let hy=200; hy<zs-200; hy+=400) {
+                                    if (Math.random() > 0.2) {
+                                        let px = zx + hx + MathUtils.rand(-30, 30);
+                                        let py = zy + hy + MathUtils.rand(-30, 30);
+                                        addW(px, py, 150, 40, '#00e5ff', '0, 229, 255');
+                                        addW(px, py, 40, 150, '#00e5ff', '0, 229, 255');
+                                        addW(px + 110, py, 40, 150, '#00e5ff', '0, 229, 255');
+                                    }
+                                }
+                            }
+                        } else if (r === 1 && c === 1) {
+                            for(let i=0; i<60; i++) {
+                                let w = MathUtils.rand(50, 150); let h = MathUtils.rand(40, 90);
+                                if(Math.random()>0.5){let tmp=w;w=h;h=tmp;}
+                                addW(zx+MathUtils.rand(100, zs-100), zy+MathUtils.rand(100, zs-100), w, h, '#ffffff', '255, 255, 255');
+                            }
+                            addW(zx+400, zy+400, 300, 50, '#ffffff', '255, 255, 255'); addW(zx+400, zy+400, 50, 300, '#ffffff', '255, 255, 255');
+                            addW(zx+zs-700, zy+400, 300, 50, '#ffffff', '255, 255, 255'); addW(zx+zs-450, zy+400, 50, 300, '#ffffff', '255, 255, 255');
+                            addW(zx+400, zy+zs-450, 300, 50, '#ffffff', '255, 255, 255'); addW(zx+400, zy+zs-700, 50, 300, '#ffffff', '255, 255, 255');
+                            addW(zx+zs-700, zy+zs-450, 300, 50, '#ffffff', '255, 255, 255'); addW(zx+zs-450, zy+zs-700, 50, 300, '#ffffff', '255, 255, 255');
+                        } else if (r === 1 && c === 2) {
+                            for(let i=0; i<45; i++) {
+                                let w = MathUtils.rand(200, 550); let h = MathUtils.rand(100, 300);
+                                if(Math.random()>0.5){let t=w;w=h;h=t;}
+                                addW(zx+MathUtils.rand(-spillage, zs-w+spillage), zy+MathUtils.rand(-spillage, zs-h+spillage), w, h, '#ff5722', '255, 87, 34');
+                            }
+                        } else if (r === 2 && c === 0) {
+                            for(let i=0; i<80; i++) {
+                                let w = MathUtils.rand(80, 300); let h = MathUtils.rand(80, 300);
+                                addW(zx+MathUtils.rand(0, zs-w), zy+MathUtils.rand(0, zs-h), w, h, '#0055ff', '0, 85, 255');
+                            }
+                        } else if (r === 2 && c === 1) {
+                            let wT = 60;
+                            addW(zx+200, zy+200, 900, wT, '#4caf50', '76, 175, 80'); addW(zx+1400, zy+200, 900, wT, '#4caf50', '76, 175, 80');
+                            addW(zx+200, zy+zs-260, 900, wT, '#4caf50', '76, 175, 80'); addW(zx+1400, zy+zs-260, 900, wT, '#4caf50', '76, 175, 80');
+                            addW(zx+200, zy+200, wT, 900, '#4caf50', '76, 175, 80'); addW(zx+200, zy+1400, wT, 900, '#4caf50', '76, 175, 80');
+                            addW(zx+zs-260, zy+200, wT, 900, '#4caf50', '76, 175, 80'); addW(zx+zs-260, zy+1400, wT, 900, '#4caf50', '76, 175, 80');
+                            for(let bx=500; bx<zs-500; bx+=350) {
+                                for(let by=500; by<zs-500; by+=450) {
+                                    addW(zx+bx, zy+by, 200, 300, '#4caf50', '76, 175, 80');
+                                }
+                            }
+                        } else if (r === 2 && c === 2) {
+                            for(let pods=0; pods<18; pods++) {
+                                let px = zx+MathUtils.rand(200, zs-200);
+                                let py = zy+MathUtils.rand(200, zs-200);
+                                for(let pieces=0; pieces<8; pieces++) {
+                                    addW(px+MathUtils.rand(-100, 100), py+MathUtils.rand(-100, 100), MathUtils.rand(40, 100), MathUtils.rand(40, 100), '#d500f9', '213, 0, 249');
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+            }
         }
     }
     draw(ctx, cam, viewportW, viewportH) {
-        ctx.strokeStyle = 'rgba(0, 150, 255, 0.05)';
+        if (this.templateId === 10) {
+            let zs = 2500;
+            let zones = [
+                {r:0, c:0, rgb:'57, 255, 20'},   {r:0, c:1, rgb:'255, 234, 0'},  {r:0, c:2, rgb:'128, 143, 156'},
+                {r:1, c:0, rgb:'0, 229, 255'},   {r:1, c:1, rgb:'255, 255, 255'},{r:1, c:2, rgb:'255, 87, 34'},
+                {r:2, c:0, rgb:'0, 85, 255'},    {r:2, c:1, rgb:'76, 175, 80'},  {r:2, c:2, rgb:'213, 0, 249'}
+            ];
+            for (let z of zones) {
+                let zx = z.c * zs;
+                let zy = z.r * zs;
+                let radius = zs * 1.2;
+                let cx = zx + zs/2;
+                let cy = zy + zs/2;
+                if (cx + radius < cam.x || cx - radius > cam.x + viewportW ||
+                    cy + radius < cam.y || cy - radius > cam.y + viewportH) continue;
+                let radGrad = ctx.createRadialGradient(
+                    cx - cam.x, cy - cam.y, 0,
+                    cx - cam.x, cy - cam.y, radius
+                );
+                radGrad.addColorStop(0, `rgba(${z.rgb}, 0.08)`);
+                radGrad.addColorStop(0.6, `rgba(${z.rgb}, 0.03)`);
+                radGrad.addColorStop(1, `rgba(${z.rgb}, 0)`);
+                ctx.fillStyle = radGrad;
+                ctx.fillRect(cx - radius - cam.x, cy - radius - cam.y, radius * 2, radius * 2);
+            }
+        }
+        if (this.biome.splitTheme) {
+            let grad = ctx.createLinearGradient(0, 0, viewportW, 0);
+            grad.addColorStop(0, 'rgba(255, 42, 95, 0.08)');
+            grad.addColorStop(0.5, 'rgba(128, 143, 156, 0.08)');
+            grad.addColorStop(1, 'rgba(0, 229, 255, 0.08)');
+            ctx.strokeStyle = grad;
+        } else {
+            ctx.strokeStyle = this.templateId === 10 ? 'rgba(255, 255, 255, 0.01)' : `rgba(${this.biome.rgb}, 0.05)`;
+        }
         ctx.lineWidth = 1;
         let gridS = 60;
         let visibleW = viewportW / cam.zoom;
         let visibleH = viewportH / cam.zoom;
-        
+
         let startX = Math.floor(cam.x / gridS) * gridS;
         let startY = Math.floor(cam.y / gridS) * gridS;
         ctx.beginPath();
@@ -3859,25 +4363,33 @@ class MapGen {
         ctx.stroke();
 
         ctx.shadowBlur = 10;
-        ctx.shadowColor = 'rgba(0, 229, 255, 0.25)';
         let bufferX = Math.max(150, visibleW * 0.18);
         let bufferY = Math.max(150, visibleH * 0.18);
         for (let wall of this.walls) {
             if (wall.x + wall.w < cam.x - bufferX || wall.x > cam.x + visibleW + bufferX ||
                 wall.y + wall.h < cam.y - bufferY || wall.y > cam.y + visibleH + bufferY) continue;
-            
+
+            let wMain = wall.colorMain || this.biome.main;
+            let wRgb = wall.colorRgb || this.biome.rgb;
+            if (this.biome.splitTheme) {
+                let wx = wall.x + wall.w / 2;
+                if (wx < this.width * 0.35) { wMain = '#ff2a5f'; wRgb = '255, 42, 95'; }
+                else if (wx > this.width * 0.65) { wMain = '#00e5ff'; wRgb = '0, 229, 255'; }
+                else { wMain = '#808f9c'; wRgb = '128, 143, 156'; }
+            }
+            ctx.shadowColor = `rgba(${wRgb}, 0.25)`;
             ctx.fillStyle = '#010c1b';
-            ctx.strokeStyle = '#00e5ff';
+            ctx.strokeStyle = wMain;
             ctx.lineWidth = 2;
             ctx.fillRect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
             ctx.strokeRect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
-            
+
             ctx.beginPath();
             ctx.moveTo(wall.x - cam.x, wall.y - cam.y);
             ctx.lineTo(wall.x + wall.w - cam.x, wall.y + wall.h - cam.y);
             ctx.moveTo(wall.x + wall.w - cam.x, wall.y - cam.y);
             ctx.lineTo(wall.x - cam.x, wall.y + wall.h - cam.y);
-            ctx.strokeStyle = 'rgba(0, 229, 255, 0.05)';
+            ctx.strokeStyle = `rgba(${wRgb}, 0.05)`;
             ctx.stroke();
         }
         ctx.shadowBlur = 0;
@@ -5849,7 +6361,7 @@ class Bullet {
                 if (game.isTwoPlayer && game.player2 && !game.player2.dead) activePlayers.push(game.player2);
                 
                 for (let player of activePlayers) {
-                    if (this.isPlayerBullet === player) continue;
+                    if (this.shooter === player) continue;
                     if (this.whizzedPlayers && this.whizzedPlayers.includes(player)) continue;
 
                     let abx = this.x - prevX;
@@ -6132,7 +6644,7 @@ class Bullet {
                         this.startX = prevX;
                         this.startY = prevY;
                         this.bounces++;
-                        audio.playRicochet();
+                        audio.playRicochet(this.x, this.y);
                         game.addParticle(this.x, this.y, nx*120, ny*120, '#00e5ff', 0.12, 2.5);
                     } else {
                         if (this.isPlayerBullet && this.shooter && this.shooter.perkExplosiveRounds) {
@@ -8713,15 +9225,12 @@ class Game {
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d', { alpha: false });
         this.crosshair = document.getElementById('crosshair');
-        this.bloodCanvas = document.createElement('canvas');
-        this.bloodCtx = this.bloodCanvas.getContext('2d');
-        
         this.width = window.innerWidth;
         this.height = window.innerHeight;
         this.canvas.width = this.width; this.canvas.height = this.height;
         
         this.mapW = 2200; this.mapH = 2200;
-        this.bloodCanvas.width = this.mapW; this.bloodCanvas.height = this.mapH;
+        this.permanentMarks = [];
         
         this.input = { keys: {}, mx: 0, my: 0, mouseDown: false };
         this.state = 'start';
@@ -8757,6 +9266,7 @@ class Game {
         this.roundWinDelay = 0;
         this.winFlashIntensity = 0;
         this.prepTimer = 0;
+        this.selectedMapId = -1;
         this.saveData = {
             movementScheme: 'player',
             highScores: [],
@@ -9140,6 +9650,132 @@ class Game {
         }
     }
     
+    setMap(mapId) {
+        this.selectedMapId = mapId;
+        const ids = ['random', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+        ids.forEach(id => {
+            const btn = document.getElementById('btn-map-' + id);
+            if (btn) {
+                if ((mapId === -1 && id === 'random') || mapId.toString() === id) {
+                    btn.classList.add('active-mode');
+                } else {
+                    btn.classList.remove('active-mode');
+                }
+            }
+        });
+        if (this.previewMap) this.previewMap(mapId);
+        if (audio) audio.playPickup('money');
+    }
+
+    previewMap(mapId) {
+        if (this._lastPreviewedMapId === mapId) return;
+        this._lastPreviewedMapId = mapId;
+
+        const intel = MapIntel[mapId] || MapIntel["-1"];
+        const nameEl = document.getElementById('preview-map-name');
+        if (!nameEl) return;
+
+        nameEl.innerText = intel.name.toUpperCase();
+        nameEl.style.color = intel.color;
+        nameEl.style.textShadow = `0 0 10px ${intel.color}`;
+        document.getElementById('preview-map-desc').innerText = intel.desc;
+        document.getElementById('preview-map-size').innerText = "SIZE: " + intel.size;
+        document.getElementById('preview-map-hex').innerText = intel.color.toUpperCase();
+        document.getElementById('preview-map-hex').style.color = intel.color;
+
+        const pane = document.getElementById('map-preview-pane');
+        pane.style.borderColor = intel.color;
+        pane.style.boxShadow = `0 0 20px ${intel.color}22`;
+
+        const canvas = document.getElementById('map-preview-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width;
+        const h = canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = intel.color;
+        ctx.fillStyle = intel.color;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = intel.color;
+        ctx.shadowBlur = 8;
+
+        ctx.beginPath();
+        switch(mapId) {
+            case 0: // Cross
+                ctx.strokeRect(cx - 15, cy - 60, 30, 120);
+                ctx.strokeRect(cx - 60, cy - 15, 120, 30);
+                break;
+            case 1: // Ring
+                ctx.arc(cx, cy, 50, 0, Math.PI*2); ctx.stroke();
+                ctx.beginPath(); ctx.arc(cx, cy, 15, 0, Math.PI*2); ctx.fill();
+                break;
+            case 2: // Corners
+                ctx.fillRect(cx - 70, cy - 50, 30, 30); ctx.fillRect(cx + 40, cy - 50, 30, 30);
+                ctx.fillRect(cx - 70, cy + 20, 30, 30); ctx.fillRect(cx + 40, cy + 20, 30, 30);
+                ctx.strokeRect(cx - 20, cy - 20, 40, 40);
+                break;
+            case 3: // Trench
+                ctx.fillRect(cx - 100, cy - 40, 200, 15); ctx.fillRect(cx - 100, cy + 25, 200, 15);
+                for(let i=0; i<4; i++) ctx.strokeRect(cx - 70 + i*40, cy - 10, 20, 20);
+                break;
+            case 4: // Reactor
+                for(let i=0; i<8; i++) {
+                    let a = (i/8)*Math.PI*2 + Math.PI/8;
+                    ctx.lineTo(cx + Math.cos(a)*60, cy + Math.sin(a)*60);
+                }
+                ctx.closePath(); ctx.stroke();
+                ctx.beginPath(); ctx.arc(cx, cy, 25, 0, Math.PI*2); ctx.stroke();
+                break;
+            case 5: // Maze
+                ctx.lineWidth = 4;
+                for(let x=cx-60; x<=cx+60; x+=30) {
+                    for(let y=cy-40; y<=cy+40; y+=40) {
+                        ctx.moveTo(x, y); ctx.lineTo(x + (Math.random()>0.5?20:0), y + (Math.random()>0.5?20:0));
+                    }
+                }
+                ctx.stroke();
+                break;
+            case 6: // Exec Suite (Hourglass)
+                ctx.fillRect(cx - 80, cy - 60, 60, 120); ctx.fillRect(cx + 20, cy - 60, 60, 120);
+                ctx.strokeRect(cx - 10, cy - 80, 20, 160);
+                break;
+            case 7: // Quarantine
+                ctx.fillRect(cx - 80, cy - 60, 60, 45); ctx.fillRect(cx + 20, cy - 60, 60, 45);
+                ctx.fillRect(cx - 80, cy + 15, 60, 45); ctx.fillRect(cx + 20, cy + 15, 60, 45);
+                ctx.beginPath(); ctx.arc(cx, cy, 10, 0, Math.PI*2); ctx.stroke();
+                break;
+            case 8: // 2-Fort
+                ctx.fillRect(cx - 100, cy - 40, 40, 80); ctx.fillRect(cx + 60, cy - 40, 40, 80);
+                ctx.strokeRect(cx - 60, cy - 15, 120, 30);
+                break;
+            case 9: // Sieve
+                for(let x=cx-80; x<=cx+80; x+=20) {
+                    for(let y=cy-60; y<=cy+60; y+=20) {
+                        if(Math.random()>0.3) ctx.fillRect(x, y, 6, 6);
+                    }
+                }
+                break;
+            case 10: // Massive Open World
+                ctx.strokeRect(cx - 60, cy - 60, 120, 120);
+                for(let i=1; i<3; i++) {
+                    ctx.moveTo(cx - 60 + i*40, cy - 60); ctx.lineTo(cx - 60 + i*40, cy + 60);
+                    ctx.moveTo(cx - 60, cy - 60 + i*40); ctx.lineTo(cx + 60, cy - 60 + i*40);
+                }
+                ctx.stroke();
+                ctx.fillRect(cx-40, cy-40, 10, 10); ctx.fillRect(cx+30, cy+30, 10, 10);
+                break;
+            default: // Random (-1)
+                ctx.font = 'bold 80px "Courier New"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('?', cx, cy);
+                ctx.lineWidth = 1;
+                for(let i=0; i<6; i++) ctx.strokeRect(cx - 40 + Math.random()*80, cy - 40 + Math.random()*80, Math.random()*40, 2);
+                break;
+        }
+    }
+
     setScheme(type) { 
         this.movementScheme = type;
         const screenBtns = [document.getElementById('btn-scheme-screen'), document.getElementById('btn-scheme-screen-pause')];
@@ -9839,7 +10475,7 @@ class Game {
             document.activeElement.blur();
         }
 
-        const tabs = ['play', 'controls', 'audio', 'leaderboard', 'armory', 'guide'];
+        const tabs = ['play', 'maps', 'controls', 'audio', 'leaderboard', 'armory', 'guide'];
         
         let activeTabElement = document.querySelector('.tab-content.active');
         let activeTab = activeTabElement ? activeTabElement.id.replace('tab-', '') : 'play';
@@ -9861,6 +10497,20 @@ class Game {
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
                 ['btn-start'],
                 ['btn-exit']
+            ],
+            maps: [
+                ['btn-map-random'],
+                ['btn-map-10'],
+                ['btn-map-0'],
+                ['btn-map-1'],
+                ['btn-map-2'],
+                ['btn-map-3'],
+                ['btn-map-4'],
+                ['btn-map-5'],
+                ['btn-map-6'],
+                ['btn-map-7'],
+                ['btn-map-8'],
+                ['btn-map-9']
             ],
             controls: [
                 ['btn-scheme-screen', 'btn-scheme-player']
@@ -10068,6 +10718,11 @@ class Game {
         let targetElement = document.getElementById(targetId);
         if (targetElement) {
             targetElement.classList.add('focused-btn');
+            if (activeTab === 'maps' && targetElement.id.startsWith('btn-map-')) {
+                let mId = targetElement.id.replace('btn-map-', '');
+                if (mId === 'random') mId = '-1';
+                if (this.previewMap) this.previewMap(parseInt(mId));
+            }
         }
     }
 
@@ -10428,18 +11083,8 @@ class Game {
         let sWidth = sRight - sx;
         let sHeight = sBottom - sy;
 
-        if (sWidth > 0 && sHeight > 0) {
-            this.ctx.save();
-            this.ctx.globalAlpha = 0.65;
-            this.ctx.drawImage(
-                this.bloodCanvas,
-                sx, sy, sWidth, sHeight,
-                sx - droneCam.x, sy - droneCam.y,
-                sWidth, sHeight
-            );
-            this.ctx.restore();
-        }
-        
+        this.drawPermanentMarks(this.ctx, droneCam, visibleW, visibleH);
+
         this.map.draw(this.ctx, droneCam, pw, ph);
         
         for (let i of this.items) i.draw(this.ctx, droneCam);
@@ -10660,7 +11305,11 @@ class Game {
         toggleClass('ui-layer', 'hidden', false);
         
         this.camera = new Camera();
-        this.map = new MapGen(this.mapW, this.mapH);
+        this.map = new MapGen();
+        
+        this.mapW = this.map.width;
+        this.mapH = this.map.height;
+        this.permanentMarks = [];
         
         this.friendlyFire = true;
         this.p1Ready = false;
@@ -10732,11 +11381,10 @@ class Game {
         this.heartbeatTimer = 0;
         this.heartbeatPhase = 0;
         this.heartbeatIntensity = 0;
-        this.barriers = []; 
-        this.drone = null;  
-        
-        this.bloodCtx.clearRect(0, 0, this.mapW, this.mapH);
-        
+        this.barriers = [];
+        this.drone = null;
+        this.permanentMarks = [];
+
         toggleClass('pause-screen', 'hidden', true);
         
         if (this.isTestingMode) {
@@ -10907,20 +11555,12 @@ class Game {
 
             if (p.color === '#800a0a' || p.color === '#e60000') {
                 if (p.stopped || p.life <= 0) {
-                    this.bloodCtx.fillStyle = p.color;
-                    this.bloodCtx.beginPath();
-                    this.bloodCtx.arc(p.x, p.y, p.size/1.8, 0, Math.PI*2);
-                    this.bloodCtx.fill();
+                    this.permanentMarks.push({ type: 'blood', x: p.x, y: p.y, r: p.size/1.8, c: p.color });
                     shouldDeactivate = true;
                 }
             } else if (p.isCasing) {
                 if (p.stopped || p.life <= 0) {
-                    this.bloodCtx.save();
-                    this.bloodCtx.translate(p.x, p.y);
-                    this.bloodCtx.fillStyle = p.color;
-                    this.bloodCtx.rotate(p.angle || 0);
-                    this.bloodCtx.fillRect(-2, -0.75, 4, 1.5);
-                    this.bloodCtx.restore();
+                    this.permanentMarks.push({ type: 'casing', x: p.x, y: p.y, a: p.angle || 0, c: p.color });
                     shouldDeactivate = true;
                 }
             } else if (p.isCorpseDebris) {
@@ -10928,30 +11568,20 @@ class Game {
                     let speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
                     if (speed > 20) {
                         let trailAlpha = Math.min(0.25, speed / 600) * (p.life / p.maxLife);
-                        this.bloodCtx.save();
-                        this.bloodCtx.globalAlpha = trailAlpha;
-                        this.bloodCtx.fillStyle = p.debrisColor;
-                        this.bloodCtx.beginPath();
-                        this.bloodCtx.arc(p.x, p.y, p.size * 0.5, 0, Math.PI * 2);
-                        this.bloodCtx.fill();
-                        this.bloodCtx.restore();
+                        this.permanentMarks.push({ type: 'trail', x: p.x, y: p.y, r: p.size * 0.5, c: p.debrisColor, a: trailAlpha });
                     }
                 }
                 if (p.stopped || p.life <= 0) {
-                    this.bloodCtx.save();
-                    this.bloodCtx.globalAlpha = p.finalOpacity;
-                    this.bloodCtx.fillStyle = p.debrisColor;
-                    this.bloodCtx.beginPath();
+                    let circles = [];
                     let count = 2 + Math.floor(Math.random() * 3);
                     for (let j = 0; j < count; j++) {
-                        let ox = (Math.random() - 0.5) * p.size * 1.5;
-                        let oy = (Math.random() - 0.5) * p.size * 1.5;
-                        let r = p.size * (0.4 + Math.random() * 0.6);
-                        this.bloodCtx.moveTo(p.x + ox + r, p.y + oy);
-                        this.bloodCtx.arc(p.x + ox, p.y + oy, r, 0, Math.PI * 2);
+                        circles.push({
+                            ox: (Math.random() - 0.5) * p.size * 1.5,
+                            oy: (Math.random() - 0.5) * p.size * 1.5,
+                            r: p.size * (0.4 + Math.random() * 0.6)
+                        });
                     }
-                    this.bloodCtx.fill();
-                    this.bloodCtx.restore();
+                    this.permanentMarks.push({ type: 'debris', x: p.x, y: p.y, c: p.debrisColor, a: p.finalOpacity, circs: circles });
                     shouldDeactivate = true;
                 }
             } else if (p.life <= 0 || p.stopped) {
@@ -10959,6 +11589,7 @@ class Game {
             }
 
             if (shouldDeactivate) {
+                if (this.permanentMarks.length > 3000) this.permanentMarks.shift();
                 p.active = false;
                 this.inactiveParticles.push(p);
                 this.particles[i] = this.particles[this.particles.length - 1];
@@ -13262,6 +13893,41 @@ class Game {
         return { x: startX + dx * nearestT, y: startY + dy * nearestT };
     }
 
+    drawPermanentMarks(ctx, cam, viewW, viewH) {
+        for (let m of this.permanentMarks) {
+            if (m.x < cam.x - 30 || m.x > cam.x + viewW + 30 || m.y < cam.y - 30 || m.y > cam.y + viewH + 30) continue;
+
+            ctx.fillStyle = m.c;
+            if (m.type === 'blood') {
+                ctx.globalAlpha = 0.65;
+                ctx.beginPath();
+                ctx.arc(m.x - cam.x, m.y - cam.y, m.r, 0, Math.PI*2);
+                ctx.fill();
+            } else if (m.type === 'casing') {
+                ctx.globalAlpha = 0.65;
+                ctx.save();
+                ctx.translate(m.x - cam.x, m.y - cam.y);
+                ctx.rotate(m.a);
+                ctx.fillRect(-2, -0.75, 4, 1.5);
+                ctx.restore();
+            } else if (m.type === 'trail') {
+                ctx.globalAlpha = m.a;
+                ctx.beginPath();
+                ctx.arc(m.x - cam.x, m.y - cam.y, m.r, 0, Math.PI*2);
+                ctx.fill();
+            } else if (m.type === 'debris') {
+                ctx.globalAlpha = m.a;
+                ctx.beginPath();
+                for (let circ of m.circs) {
+                    ctx.moveTo(m.x + circ.ox + circ.r - cam.x, m.y + circ.oy - cam.y);
+                    ctx.arc(m.x + circ.ox - cam.x, m.y + circ.oy - cam.y, circ.r, 0, Math.PI*2);
+                }
+                ctx.fill();
+            }
+        }
+        ctx.globalAlpha = 1.0;
+    }
+
     drawViewport(cam, player, isPlayer2 = false) {
         let viewportW = this.isTwoPlayer ? this.width / 2 : this.width;
         let viewportH = this.height;
@@ -13291,17 +13957,7 @@ class Game {
         let sWidth = sRight - sx;
         let sHeight = sBottom - sy;
 
-        if (sWidth > 0 && sHeight > 0) {
-            this.ctx.save();
-            this.ctx.globalAlpha = 0.65;
-            this.ctx.drawImage(
-                this.bloodCanvas,
-                sx, sy, sWidth, sHeight,
-                sx - cam.x, sy - cam.y,
-                sWidth, sHeight
-            );
-            this.ctx.restore();
-        }
+        this.drawPermanentMarks(this.ctx, cam, visibleW, visibleH);
 
         // DUST MOTES (parallax background)
         this.ctx.save();
