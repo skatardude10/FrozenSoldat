@@ -4,6 +4,8 @@ A tactical, top-down weapon physics simulator and wave survival game. Runs insta
 
 ### [> PLAY IT NOW IN YOUR BROWSER <](https://skatardude10.github.io/FrozenSoldat/LATEST_MASTER.html)
 
+![Frozen Soldat Gameplay](screenshot2.png)
+
 ![Frozen Soldat Gameplay](screenshot.png)
 
 ## The Rundown
