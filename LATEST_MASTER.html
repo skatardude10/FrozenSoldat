@@ -15952,6 +15952,16 @@ class TouchController {
             real === document.documentElement || real.id === 'ui-layer';
         if (isBackground) return false;
 
+        // Only genuinely interactive HUD controls should ever steal a touch
+        // away from joystick placement -- item/weapon slots, not the inert
+        // carousel chrome (track wrapper, mask gradient, labels) around them.
+        // Without this check, elementFromPoint() can resolve to a HUD
+        // ancestor whose bounding box overlaps the joystick's home corner
+        // even when the touch isn't really on a tappable control, which is
+        // what was silently eating every left-stick touch.
+        const realTarget = real.closest('.hud-item-slot, .weapon-slot, #touch-pause-btn, #touch-interact-btn');
+        if (!realTarget) return false;
+
         // Redirect capture so real native pointermove/pointerup events for
         // this touch keep targeting the real UI element (and its listening
         // ancestors) for the rest of the gesture, even though the overlay is
@@ -15999,7 +16009,16 @@ class TouchController {
                 // are real DOM descendants of the overlay, so they already
                 // receive events correctly via their own listeners below --
                 // don't let the catch-all routing here interfere with them.
-                if (e.target.closest('#touch-joystick-left') ||
+                // NOTE: the left stick is the one exception -- unlike the
+                // right stick (which is static and owns its own pointerdown
+                // listener), the left stick has no listener of its own: it's
+                // entirely driven by this catch-all handler so it can pop up
+                // wherever your thumb lands. So only skip this handler for
+                // the left stick while it's already mid-drag (where window's
+                // pointermove/pointerup are what's tracking it) -- otherwise
+                // touching down inside its idle/default circle would hit
+                // this early-return and never activate it at all.
+                if ((e.target.closest('#touch-joystick-left') && this.leftStick.active) ||
                     e.target.closest('#touch-joystick-right') ||
                     e.target.closest('#touch-pause-btn') ||
                     e.target.closest('#touch-interact-btn')) {
@@ -16022,12 +16041,18 @@ class TouchController {
                     leftEl.style.left = (e.clientX - w / 2) + 'px';
                     leftEl.style.top = (e.clientY - h / 2) + 'px';
                     
+                    // Activate the stick immediately so movement has zero
+                    // input lag -- but remember when/where this touch began.
+                    // If it turns out to be a quick, near-stationary tap (see
+                    // endPointer()), we treat it as a world/command tap
+                    // (e.g. Spot waypoint) instead of a movement gesture.
                     this.leftStick.active = true;
                     this.leftStick.pointerId = e.pointerId;
                     this.leftStick.startX = e.clientX;
                     this.leftStick.startY = e.clientY;
                     this.leftStick.curX = e.clientX;
                     this.leftStick.curY = e.clientY;
+                    this.leftStick.downTime = Date.now();
                     leftEl.classList.add('active');
                     this.updateStickDisplacement(this.leftStick);
                 } else {
@@ -16077,8 +16102,21 @@ class TouchController {
             }
         });
         
-        const endPointer = (pointerId) => {
+        const endPointer = (pointerId, upX, upY) => {
             if (this.leftStick.active && pointerId === this.leftStick.pointerId) {
+                // Tap-vs-move disambiguation: a quick, near-stationary touch
+                // on the left side (e.g. tapping to dispatch/recall Spot, or
+                // tap-to-pickup) shouldn't be swallowed as a movement drag.
+                // Movement itself has zero added latency -- the stick is
+                // live the instant you touch down -- this only affects what
+                // happens on release of a touch that never really moved.
+                const isRealRelease = typeof upX === 'number' && typeof upY === 'number';
+                const duration = Date.now() - (this.leftStick.downTime || 0);
+                const liftX = isRealRelease ? upX : this.leftStick.curX;
+                const liftY = isRealRelease ? upY : this.leftStick.curY;
+                const dist = Math.hypot(liftX - this.leftStick.startX, liftY - this.leftStick.startY);
+                const wasTap = isRealRelease && duration < 220 && dist < 18;
+
                 this.leftStick.active = false;
                 this.leftStick.pointerId = null;
                 this.leftStick.dist = 0;
@@ -16095,6 +16133,10 @@ class TouchController {
                 leftEl.style.left = '82px';
                 leftEl.style.bottom = '65px';
                 leftEl.style.top = 'auto';
+
+                if (wasTap) {
+                    this.handleScreenTap(liftX, liftY);
+                }
             }
             if (this.rightStick.active && pointerId === this.rightStick.pointerId) {
                 this.rightStick.active = false;
@@ -16109,7 +16151,7 @@ class TouchController {
             }
         };
         
-        window.addEventListener('pointerup', (e) => endPointer(e.pointerId));
+        window.addEventListener('pointerup', (e) => endPointer(e.pointerId, e.clientX, e.clientY));
         window.addEventListener('pointercancel', (e) => endPointer(e.pointerId));
 
         // --- Finish off any pointer that routeThroughOverlay() handed to a
