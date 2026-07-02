@@ -4996,6 +4996,112 @@ class Entity {
     onDeath() {}
 }
 
+/**
+ * AIM WEIGHT CONFIG — "the aim point is a suggestion, not a command"
+ * ---------------------------------------------------------------------------
+ * See aim_weight_design.md for the full design rationale. Every number here
+ * is a tuning starting point, not a locked-in value — expect to adjust by
+ * feel over several playtest passes (the design brief explicitly calls this
+ * out, especially AIM_TURN_RATE_DEG which is the single most important
+ * number in the system).
+ *
+ * How it fits together (see Player.updateAimWeight()):
+ *   this.angle (the actual facing/reticle everything else keys off) =
+ *       aimChaseAngle (target angle, rate-capped)
+ *     + aimRecoilOffset      (decaying kick from firing)
+ *     + aimHitFlinchOffset   (decaying kick from taking damage)
+ *     + aimExplosionFlinchOffset (decaying kick from nearby explosions)
+ *     + idle sway (continuous, only while target angle is holding still)
+ */
+const AIM_WEIGHT = {
+    // --- Turn-rate cap: how fast the character's actual facing can chase the
+    // target angle. ~800°/sec ≈ a full 180° flick lands in ~225ms. Small
+    // adjustments (<30°) should feel instant at this rate; if normal target
+    // tracking ever looks laggy, this number is too low.
+    TURN_RATE_DEG_PER_SEC: 620,
+
+    // Stretch-goal per-weapon turn-rate feel (design brief calls this a
+    // stretch goal, not MVP) — heavier weapons turn a touch slower when
+    // raised, lighter ones a touch faster. Unlisted weapons default to 1.0.
+    WEAPON_TURN_RATE_MOD: {
+        'LMG': 0.82,
+        'Sniper': 0.75,
+        'Pistol': 1.18,
+        'SMG': 1.08
+    },
+
+    // --- Perturbation channels (recoil / hit-flinch / explosion-flinch) now
+    // run on real spring-damper physics instead of simple exponential decay.
+    // A kick applies an impulse to the channel's VELOCITY (see kickAim()),
+    // and each frame the offset is integrated like a mass on a spring pulling
+    // back to zero: accel = -stiffness*offset - damping*velocity. This is
+    // what actually produces an "elastic" feel — a real kick, then a
+    // rebound that overshoots slightly past center before settling — which
+    // plain exponential decay can never do (it only ever glides smoothly to
+    // zero, no matter how the decay rate is tuned).
+    //
+    // stiffness: how fast/snappy the spring is (higher = faster kick+return).
+    // damping: damping RATIO, not a raw coefficient — 1.0 = critically damped
+    //   (no overshoot), <1.0 = underdamped (bounces past center and rings
+    //   down; lower = bouncier). We want noticeably <1.0 for "elastic."
+    // maxDeg: hard cap on the channel's accumulated offset.
+    SPRINGS: {
+        aimRecoilOffset:          { stiffness: 3600, damping: 0.20, maxDeg: 13 },
+        aimHitFlinchOffset:       { stiffness: 2600, damping: 0.18, maxDeg: 24 },
+        aimExplosionFlinchOffset: { stiffness: 1500, damping: 0.16, maxDeg: 28 }
+    },
+
+    // --- Hit flinch: getting shot knocks the aim off briefly. Should read as
+    // "ow, that startled me," not "I lost control."
+    HIT_FLINCH_DEG_PER_DAMAGE: 0.65,
+    HIT_FLINCH_MAX_DEG: 22,
+
+    // --- Recoil kick: every shot nudges the aim via the spring above (snappy,
+    // per-shot texture). Separately, RECOIL CLIMB is a simple monotonic drift
+    // that builds while you hold the trigger and relaxes shortly after you
+    // stop -- deliberately NOT spring physics, because two oscillators fired
+    // at a fixed interval can land in a phase relationship that partially
+    // cancels instead of reinforcing (the same reason pushing a swing at the
+    // wrong moment kills its momentum instead of adding to it). A plain
+    // leaky integrator has no such resonance failure mode: it reliably climbs
+    // in the burst's bias direction shot after shot, which is what a real
+    // sustained-fire recoil pattern actually feels like.
+    RECOIL_KICK_DEG: {
+        'Pistol': 1.3, 'SMG': 1.7, 'Shotgun': 3.8,
+        'Sniper': 6.5, 'M1A': 2.6, 'LMG': 2.4
+    },
+    RECOIL_KICK_DEG_DEFAULT: 1.4,
+    RECOIL_BIAS_RESET_GAP: 0.25,   // seconds since last shot before re-rolling the bias direction / resetting climb
+    RECOIL_BIAS_STRENGTH: 0.8,     // spring-kick bias: 0 = pure random per shot, 1 = always the burst's bias dir
+    RECOIL_CLIMB_DEG_PER_SHOT: 1.1,  // how far the climb steps per shot, in the burst's bias direction
+    RECOIL_CLIMB_MAX_DEG: 11,        // ceiling on the accumulated climb
+    RECOIL_CLIMB_DECAY_RATE: 3.2,    // per-second exponential relax once you stop firing
+
+    // --- Explosion flinch: larger magnitude, slower-settling spring than a
+    // bullet hit, scaled by the same proximity falloff already used for
+    // blast damage/shake.
+    EXPLOSION_FLINCH_MAX_DEG: 24,
+
+    // --- Idle sway: tiny continuous drift (a held rifle "breathing") when the
+    // target angle hasn't changed in a moment. Amplitude is deliberately small
+    // enough to never meaningfully change where a shot lands.
+    IDLE_SWAY_MAX_DEG: 0.10,
+    IDLE_SWAY_ENGAGE_DELAY: 0.7,   // seconds of stillness before sway starts
+    IDLE_SWAY_FADE_TIME: 1.0,       // seconds to fade the sway envelope in
+    IDLE_SWAY_STILL_THRESHOLD_DEG: 0.6, // target-angle delta below which we count as "still" this frame
+
+    // Below this many radians of residual offset (and this angular velocity,
+    // rad/s), a spring channel is snapped to fully at rest rather than
+    // ringing forever on an invisible tail.
+    NEGLIGIBLE_OFFSET_RAD: 0.0002,
+    NEGLIGIBLE_VEL_RAD: 0.01,
+
+    // Physics safety: clamp the per-frame dt fed to the spring integrator so
+    // a lag spike can't destabilize it (semi-implicit Euler is stable for
+    // normal frame times but not for arbitrarily large ones).
+    SPRING_MAX_DT: 1 / 30
+};
+
 class Player extends Entity {
     constructor(x, y, isPlayer2 = false) {
         super(x, y, 12);
@@ -5017,6 +5123,27 @@ class Player extends Entity {
         this.muzzleFlashX = 0;
         this.muzzleFlashY = 0;
         this.emptyClickCooldown = 0;
+
+        // --- Aim Weight state (see AIM_WEIGHT config + updateAimWeight()) ---
+        // aimTargetAngle: raw input intent (mouse/touch world point, or stick
+        //   direction). aimChaseAngle: rate-capped chase toward that target —
+        //   this is "actual angle" before perturbations. this.angle (inherited
+        //   from Entity) ends up as aimChaseAngle + all perturbation offsets,
+        //   and is what everything else (bullets, facing, LOS) reads.
+        this.aimTargetAngle = 0;
+        this.aimChaseAngle = 0;
+        this.aimRecoilOffset = 0;
+        this.aimRecoilVel = 0;
+        this.aimHitFlinchOffset = 0;
+        this.aimHitFlinchVel = 0;
+        this.aimExplosionFlinchOffset = 0;
+        this.aimExplosionFlinchVel = 0;
+        this.aimIdleStillTimer = 0;
+        // Recoil bias: which way this burst of fire is "climbing." Re-rolled
+        // when there's been a gap since the last shot (see fire()).
+        this.aimRecoilBiasDir = 1;
+        this.aimLastFireForBiasTime = -999;
+        this.aimRecoilClimb = 0;
         
         // Custom vertical scroll selectors
         this.leftSelectIdx = 0;
@@ -5151,45 +5278,61 @@ class Player extends Entity {
         if (this.dead) return;
 
         // --- Aim Angle Determination ---
-        let mouseAngle = 0;
+        // This section only ever determines *intent* (targetAngle). Nothing
+        // here touches this.angle directly — updateAimWeight() below is the
+        // single place that turns intent into the character's actual facing,
+        // via a turn-rate-capped chase plus recoil/flinch/sway perturbations.
+        let targetAngle = this.aimTargetAngle;
         if (!this.isPlayer2) {
             let aimCoords = game.getWorldAimCoords(this);
-            mouseAngle = Math.atan2(aimCoords.y - this.y, aimCoords.x - this.x);
+            targetAngle = Math.atan2(aimCoords.y - this.y, aimCoords.x - this.x);
         }
         let gpAimed = false;
-        
+
         if (gp) {
             game.gamepadConnected = true;
             let ax_aim_x = gp.axes[2];
             let ax_aim_y = gp.axes[3];
             if (Math.abs(ax_aim_x) > 0.20 || Math.abs(ax_aim_y) > 0.20) {
-                this.angle = Math.atan2(ax_aim_y, ax_aim_x);
+                // Raw stick direction is the target; if the stick is centered
+                // we simply don't get here, so targetAngle above (mouse coords,
+                // or last frame's target for isPlayer2) is left untouched
+                // rather than snapping toward wherever the mouse happens to be.
+                targetAngle = Math.atan2(ax_aim_y, ax_aim_x);
                 gpAimed = true;
-                
-                let zoomMult = 1.0;
-                if (this.gamepadZoomIndex === 1) zoomMult = 2.0;
-                else if (this.gamepadZoomIndex === 2) zoomMult = 3.0;
-                let aimRange = (this.weapon.gamepadAimDist || 180) * zoomMult;
-                let targetCrosshairX = this.x + Math.cos(this.angle) * aimRange;
-                let targetCrosshairY = this.y + Math.sin(this.angle) * aimRange;
-                let cam = this.isPlayer2 ? game.camera2 : game.camera;
-                
-                let viewportW = game.isTwoPlayer ? game.width / 2 : game.width;
-                let cx = viewportW / 2;
-                let cy = game.height / 2;
-                
-                input.mx = cx + (targetCrosshairX - cam.x - cx) * cam.zoom;
-                input.my = cy + (targetCrosshairY - cam.y - cy) * cam.zoom;
-                
-                let crossNode = this.isPlayer2 ? document.getElementById('crosshair-p2') : game.crosshair;
-                if (crossNode) {
-                    crossNode.style.left = (this.isPlayer2 ? (game.width / 2 + input.mx) : input.mx) + 'px';
-                    crossNode.style.top = input.my + 'px';
-                }
             }
         }
-        if (!gpAimed && !this.isPlayer2) {
-            this.angle = mouseAngle;
+        this.aimTargetAngle = targetAngle;
+
+        // Turn-rate-capped chase + recoil/flinch/sway perturbations.
+        // Sets this.angle to the final "actual" aim angle for this frame.
+        this.updateAimWeight(dt, targetAngle);
+
+        if (gpAimed) {
+            // No real OS cursor for gamepad aim -- project a virtual crosshair
+            // from the character's ACTUAL (weighted) angle so what's drawn on
+            // screen always matches where the gun (and bullets) really point,
+            // instead of leading the weighted response by a frame.
+            let zoomMult = 1.0;
+            if (this.gamepadZoomIndex === 1) zoomMult = 2.0;
+            else if (this.gamepadZoomIndex === 2) zoomMult = 3.0;
+            let aimRange = (this.weapon.gamepadAimDist || 180) * zoomMult;
+            let targetCrosshairX = this.x + Math.cos(this.angle) * aimRange;
+            let targetCrosshairY = this.y + Math.sin(this.angle) * aimRange;
+            let cam = this.isPlayer2 ? game.camera2 : game.camera;
+
+            let viewportW = game.isTwoPlayer ? game.width / 2 : game.width;
+            let cx = viewportW / 2;
+            let cy = game.height / 2;
+
+            input.mx = cx + (targetCrosshairX - cam.x - cx) * cam.zoom;
+            input.my = cy + (targetCrosshairY - cam.y - cy) * cam.zoom;
+
+            let crossNode = this.isPlayer2 ? document.getElementById('crosshair-p2') : game.crosshair;
+            if (crossNode) {
+                crossNode.style.left = (this.isPlayer2 ? (game.width / 2 + input.mx) : input.mx) + 'px';
+                crossNode.style.top = input.my + 'px';
+            }
         }
 
         // --- Movement Vector Accumulation (Interchangeable Keyboard/Gamepad) ---
@@ -5483,6 +5626,153 @@ class Player extends Entity {
             audio.playPickup('money');
         }
     }
+
+    // --- Aim Weight: turn-rate-capped chase + recoil/flinch/sway ---
+    // Turns raw aim intent (targetAngle) into this.angle, the character's
+    // actual facing that bullets/animations/LOS all key off. See
+    // aim_weight_design.md and the AIM_WEIGHT config block above the class
+    // for the full rationale and tuning notes.
+    updateAimWeight(dt, targetAngle) {
+        // 1) Rate-capped chase toward the target angle.
+        let turnMod = AIM_WEIGHT.WEAPON_TURN_RATE_MOD[this.weapon.name] || 1.0;
+        let maxStep = (AIM_WEIGHT.TURN_RATE_DEG_PER_SEC * Math.PI / 180) * turnMod * dt;
+        let angleDiff = MathUtils.angleDifference(targetAngle, this.aimChaseAngle);
+        if (Math.abs(angleDiff) <= maxStep) {
+            this.aimChaseAngle = targetAngle;
+        } else {
+            this.aimChaseAngle += Math.sign(angleDiff) * maxStep;
+        }
+        // Keep it bounded to [-PI, PI] for float hygiene (safe: aimChaseAngle
+        // only ever feeds Math.cos/sin/atan2-based math, all periodic).
+        this.aimChaseAngle = Math.atan2(Math.sin(this.aimChaseAngle), Math.cos(this.aimChaseAngle));
+
+        // 2) Integrate active perturbations (recoil kick, hit flinch,
+        // explosion flinch) as real damped springs pulling back to zero, not
+        // simple exponential decay -- this is what lets a kick actually
+        // overshoot and rebound instead of just gliding back to center.
+        // Each channel is independent so overlapping triggers (e.g. taking a
+        // hit mid-recoil) simply add rather than fighting each other.
+        // Semi-implicit (symplectic) Euler: update velocity from the CURRENT
+        // offset first, then advance offset using the NEW velocity. This is
+        // the standard stable integrator for spring/oscillator simulation in
+        // games; naive explicit Euler can blow up at these stiffness values.
+        let springDt = Math.min(dt, AIM_WEIGHT.SPRING_MAX_DT);
+        this._stepSpring('aimRecoilOffset', 'aimRecoilVel', AIM_WEIGHT.SPRINGS.aimRecoilOffset, springDt);
+        this._stepSpring('aimHitFlinchOffset', 'aimHitFlinchVel', AIM_WEIGHT.SPRINGS.aimHitFlinchOffset, springDt);
+        this._stepSpring('aimExplosionFlinchOffset', 'aimExplosionFlinchVel', AIM_WEIGHT.SPRINGS.aimExplosionFlinchOffset, springDt);
+
+        // 2b) Recoil climb: a simple monotonic drift (not spring physics --
+        // see the config comment for why) that relaxes back to zero once you
+        // stop firing.
+        this.aimRecoilClimb *= Math.exp(-AIM_WEIGHT.RECOIL_CLIMB_DECAY_RATE * dt);
+        if (Math.abs(this.aimRecoilClimb) < AIM_WEIGHT.NEGLIGIBLE_OFFSET_RAD) this.aimRecoilClimb = 0;
+
+        // 3) Idle sway: only while the raw target angle itself has been
+        // essentially still for a moment (a locked-in aim breathing gently),
+        // never while actively tracking/adjusting onto something.
+        let stillThreshold = AIM_WEIGHT.IDLE_SWAY_STILL_THRESHOLD_DEG * Math.PI / 180;
+        let targetDelta = Math.abs(MathUtils.angleDifference(targetAngle, this._aimLastTargetAngle ?? targetAngle));
+        this._aimLastTargetAngle = targetAngle;
+        if (targetDelta < stillThreshold) {
+            this.aimIdleStillTimer += dt;
+        } else {
+            this.aimIdleStillTimer = 0;
+        }
+        let swayEnvelope = MathUtils.clamp(
+            (this.aimIdleStillTimer - AIM_WEIGHT.IDLE_SWAY_ENGAGE_DELAY) / AIM_WEIGHT.IDLE_SWAY_FADE_TIME,
+            0, 1
+        );
+        let swayAmp = (AIM_WEIGHT.IDLE_SWAY_MAX_DEG * Math.PI / 180) * swayEnvelope;
+        let t = (game ? game.gameTime : 0);
+        let swayOffset = swayAmp * (Math.sin(t * 1.3) * 0.7 + Math.sin(t * 2.9 + 1.3) * 0.3);
+
+        // 4) Final actual angle = rate-capped chase + every perturbation.
+        this.angle = this.aimChaseAngle
+            + this.aimRecoilOffset
+            + this.aimRecoilClimb
+            + this.aimHitFlinchOffset
+            + this.aimExplosionFlinchOffset
+            + swayOffset;
+    }
+
+    // One damped-spring step pulling `this[offsetKey]` back toward zero over
+    // the frame's dt. `cfg` is a { stiffness, damping, maxDeg } entry from
+    // AIM_WEIGHT.SPRINGS -- `damping` is a damping RATIO (see config
+    // comments), converted to an actual damping coefficient here via
+    // 2*ratio*sqrt(stiffness).
+    //
+    // Sub-steps internally: at the stiffness values needed for a snappy kick,
+    // a single ~16ms frame step is too coarse for semi-implicit Euler -- it
+    // artificially over-damps the spring, eating most of a kick's motion
+    // before it can even show up on screen. Breaking the frame into several
+    // smaller physics steps keeps the integration accurate regardless of how
+    // stiff/snappy a channel is configured to be, without slowing the spring
+    // down to compensate (which would undo the point of tuning it snappy).
+    _stepSpring(offsetKey, velKey, cfg, dt) {
+        let offset = this[offsetKey];
+        let vel = this[velKey];
+        let omega0 = Math.sqrt(cfg.stiffness);
+        let dampingCoeff = 2 * cfg.damping * omega0;
+
+        const maxSubstepDt = 1 / 240;
+        let steps = Math.max(1, Math.ceil(dt / maxSubstepDt));
+        let subDt = dt / steps;
+        for (let i = 0; i < steps; i++) {
+            let accel = -cfg.stiffness * offset - dampingCoeff * vel;
+            vel += accel * subDt;
+            offset += vel * subDt;
+        }
+
+        let capRad = cfg.maxDeg * Math.PI / 180;
+        if (offset > capRad) { offset = capRad; if (vel > 0) vel = 0; }
+        else if (offset < -capRad) { offset = -capRad; if (vel < 0) vel = 0; }
+
+        if (Math.abs(offset) < AIM_WEIGHT.NEGLIGIBLE_OFFSET_RAD && Math.abs(vel) < AIM_WEIGHT.NEGLIGIBLE_VEL_RAD) {
+            offset = 0; vel = 0;
+        }
+        this[offsetKey] = offset;
+        this[velKey] = vel;
+    }
+
+    // Kicks a named perturbation channel by applying an IMPULSE TO ITS
+    // VELOCITY (not directly to its offset) -- the spring then accelerates
+    // outward and rebounds on its own, which is what actually reads as
+    // "elastic" rather than an instant teleport-then-glide-back.
+    // kickDeg is converted to an impulse sized so the spring's natural
+    // (lightly-damped) peak displacement lands near that many degrees.
+    // biasDir, if given, is a persistent ±1 direction (see fire()) so
+    // repeated kicks mostly build in the same direction instead of a 50/50
+    // coin-flip fighting itself into looking like nothing happened.
+    kickAim(channel, kickDeg, biasDir = null) {
+        let cfg = AIM_WEIGHT.SPRINGS[channel];
+        if (!cfg) return;
+        let dir;
+        if (biasDir !== null) {
+            let s = AIM_WEIGHT.RECOIL_BIAS_STRENGTH;
+            dir = (Math.random() < s) ? biasDir : (Math.random() < 0.5 ? -1 : 1);
+        } else {
+            dir = (Math.random() < 0.5 ? -1 : 1);
+        }
+        let kickRad = kickDeg * Math.PI / 180;
+        let omega0 = Math.sqrt(cfg.stiffness);
+        let zeta = cfg.damping;
+        // A velocity impulse doesn't translate 1:1 into peak displacement
+        // once damping is involved -- an underdamped spring kicked from rest
+        // peaks at (v0/omega0) * exp(-zeta*acos(zeta)/sqrt(1-zeta^2)), which
+        // is well under v0/omega0 for the bouncy damping ratios this system
+        // uses. Compensate so kickDeg reliably means "the spring will peak
+        // at about this many degrees" regardless of the channel's tuned
+        // damping ratio, instead of silently under-shooting it.
+        let peakRatio = (zeta > 0 && zeta < 1)
+            ? Math.exp(-zeta * Math.acos(zeta) / Math.sqrt(1 - zeta * zeta))
+            : 1;
+        // Channel names end in "...Offset" (e.g. aimRecoilOffset) but their
+        // paired velocity field drops that suffix (aimRecoilVel) -- replace
+        // rather than concatenate, or this silently writes to a phantom
+        // field the spring integrator never reads.
+        let velKey = channel.replace('Offset', 'Vel');
+        this[velKey] = (this[velKey] || 0) + dir * kickRad * omega0 / peakRatio;
+    }
     
     fire(game) {
         let weaponKey = this.weapon.name.toLowerCase();
@@ -5510,6 +5800,25 @@ class Player extends Entity {
         if (this.camera) {
             this.camera.screenShake = Math.max(this.camera.screenShake, this.weapon.name === 'Sniper' ? 32 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : 5);
         }
+        // Aim Weight: every shot nudges the reticle two ways. A spring
+        // impulse gives each shot its own snappy kick-and-rebound texture.
+        // A separate monotonic "climb" builds in the same burst direction
+        // and reliably stacks shot over shot while the trigger's held (the
+        // spring alone can't guarantee that -- see the RECOIL_CLIMB config
+        // comment). Both follow the same per-burst bias direction, re-rolled
+        // whenever there's been a gap since the last shot.
+        if (game.gameTime - this.aimLastFireForBiasTime > AIM_WEIGHT.RECOIL_BIAS_RESET_GAP) {
+            this.aimRecoilBiasDir = Math.random() < 0.5 ? -1 : 1;
+        }
+        this.aimLastFireForBiasTime = game.gameTime;
+        this.kickAim('aimRecoilOffset',
+            AIM_WEIGHT.RECOIL_KICK_DEG[this.weapon.name] || AIM_WEIGHT.RECOIL_KICK_DEG_DEFAULT,
+            this.aimRecoilBiasDir);
+        let climbCapRad = AIM_WEIGHT.RECOIL_CLIMB_MAX_DEG * Math.PI / 180;
+        this.aimRecoilClimb = MathUtils.clamp(
+            this.aimRecoilClimb + this.aimRecoilBiasDir * AIM_WEIGHT.RECOIL_CLIMB_DEG_PER_SHOT * Math.PI / 180,
+            -climbCapRad, climbCapRad
+        );
 
         let aimCoords = game.getWorldAimCoords(this);
         let barrelX = this.x + Math.cos(this.angle)*22 - Math.sin(this.angle)*7;
@@ -5517,7 +5826,16 @@ class Player extends Entity {
         this.muzzleFlashTimer = 0.04;
         this.muzzleFlashX = barrelX;
         this.muzzleFlashY = barrelY;
-        let baseFireAngle = Math.atan2(aimCoords.y - barrelY, aimCoords.x - barrelX);
+        // Aim Weight: bullets fire along the character's actual (weighted)
+        // angle, not the raw input position — this.angle is what everything
+        // downstream should key off, per the design brief. We still project
+        // a virtual aim point at the same distance as the raw target so the
+        // barrel-offset parallax correction (aiming precisely from the gun
+        // muzzle rather than the character's center) is preserved.
+        let aimDist = Math.hypot(aimCoords.x - this.x, aimCoords.y - this.y) || 500;
+        let virtualAimX = this.x + Math.cos(this.angle) * aimDist;
+        let virtualAimY = this.y + Math.sin(this.angle) * aimDist;
+        let baseFireAngle = Math.atan2(virtualAimY - barrelY, virtualAimX - barrelX);
 
         let pellets = this.weapon.pellets || 1;
         for(let i=0; i<pellets; i++) {
@@ -5569,6 +5887,13 @@ class Player extends Entity {
         this.damageFlashIntensity = 1.0; // Trigger damage flash
         if (this.camera && amt > 0) {
             this.camera.screenShake = Math.max(this.camera.screenShake, 10 + amt * 1.5);
+        }
+        if (amt > 0) {
+            // Aim Weight: getting shot knocks the reticle off briefly, right
+            // alongside the damage flash/screenshake the player already gets
+            // — same trigger, same moment, so the cause always reads clearly.
+            let flinchDeg = Math.min(amt * AIM_WEIGHT.HIT_FLINCH_DEG_PER_DAMAGE, AIM_WEIGHT.HIT_FLINCH_MAX_DEG);
+            this.kickAim('aimHitFlinchOffset', flinchDeg);
         }
         if (amt >= 20 && game) {
             // Longer, stronger chromatic aberration on heavy hits
@@ -7099,7 +7424,22 @@ class Bullet {
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
                 let splashDmg = damage * (1.0 - dist / blastRadius);
-                ent.takeDamage(splashDmg, Math.atan2(ent.y - this.y, ent.x - this.x), 200);
+                // Same fix as MiniDrone/FPVDrone detonate(): this can re-hit
+                // the same enemy the bullet just struck directly (Explosive
+                // Rounds calls explode() right after the direct hit above),
+                // at near-zero distance -- unstable position-delta angle, can
+                // point back toward the bullet instead of continuing outward.
+                // Use the bullet's own travel direction for anything that
+                // close, matching the direct-hit knockback a few lines up.
+                let pushDir;
+                let travelSpeed = Math.hypot(this.vx, this.vy);
+                let contactRange = ent.r + (this.r || 3) + 2;
+                if (dist < contactRange && travelSpeed > 5) {
+                    pushDir = Math.atan2(this.vy, this.vx);
+                } else {
+                    pushDir = Math.atan2(ent.y - this.y, ent.x - this.x);
+                }
+                ent.takeDamage(splashDmg, pushDir, 200);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
             }
         }
@@ -7508,7 +7848,21 @@ class FPVDrone {
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
                 let damage = 250 * (1.0 - dist / blastRadius); 
-                ent.takeDamage(damage, Math.atan2(ent.y - this.y, ent.x - this.x), 700);
+                // Same fix as MiniDrone.detonate(): a direct hit (dist tiny,
+                // since this drone crashes straight into contact) makes the
+                // position-delta angle numerically unstable and prone to
+                // pointing back the way the drone came from. Use the drone's
+                // own travel direction for anything that close; farther
+                // splash victims keep the normal radially-outward direction.
+                let pushDir;
+                let travelSpeed = Math.hypot(this.vx, this.vy);
+                let contactRange = ent.r + this.r + 2;
+                if (dist < contactRange && travelSpeed > 5) {
+                    pushDir = Math.atan2(this.vy, this.vx);
+                } else {
+                    pushDir = Math.atan2(ent.y - this.y, ent.x - this.x);
+                }
+                ent.takeDamage(damage, pushDir, 700);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
             }
         }
@@ -9008,7 +9362,28 @@ class MiniDrone extends Entity {
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
                 let damage = 120 * (1.0 - dist / blastRadius);
-                ent.takeDamage(damage, Math.atan2(ent.y - this.y, ent.x - this.x), 400);
+                // A direct hit (dist is tiny -- this is how the drone kills
+                // most of the time, by flying into contact with its target)
+                // makes the position-delta angle numerically unstable: the
+                // drone often overshoots slightly into/through the target
+                // before the collision check catches it a frame later, so
+                // "target minus drone" can easily point back the way the
+                // drone came from instead of continuing outward -- which is
+                // exactly why gore could appear to fly toward the drone.
+                // Use the drone's own direction of travel instead, same as a
+                // regular bullet's direct hit already does. Anything else
+                // caught in the wider blast radius is at a real, stable
+                // distance, so it keeps the normal radially-outward-from-
+                // the-blast direction.
+                let pushDir;
+                let travelSpeed = Math.hypot(this.vx, this.vy);
+                let contactRange = ent.r + this.r + 2;
+                if (dist < contactRange && travelSpeed > 5) {
+                    pushDir = Math.atan2(this.vy, this.vx);
+                } else {
+                    pushDir = Math.atan2(ent.y - this.y, ent.x - this.x);
+                }
+                ent.takeDamage(damage, pushDir, 400);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
             }
         }
@@ -9960,6 +10335,12 @@ class Game {
             if (shake > 0 && this.camera) {
                 this.camera.screenShake = Math.max(this.camera.screenShake, shake);
             }
+            // Aim Weight: nearby explosions also flinch the reticle, scaled by
+            // the same proximity falloff as the screen shake above so both
+            // read as one coherent moment instead of two uncoordinated effects.
+            if (factor > 0 && this.player.kickAim) {
+                this.player.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor);
+            }
         }
         
         if (this.isTwoPlayer && this.player2 && !this.player2.dead) {
@@ -9968,6 +10349,9 @@ class Game {
             let shake = maxShake * factor;
             if (shake > 0 && this.camera2) {
                 this.camera2.screenShake = Math.max(this.camera2.screenShake, shake);
+            }
+            if (factor > 0 && this.player2.kickAim) {
+                this.player2.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor);
             }
         }
     }
@@ -14594,7 +14978,26 @@ class Game {
                 let lAngle = p.angle;
                 let lStartX = p.x + Math.cos(lAngle)*20 - Math.sin(lAngle)*6;
                 let lStartY = p.y + Math.sin(lAngle)*20 + Math.cos(lAngle)*6;
-                let laserAngle = this.isPaused ? lAngle : Math.atan2(aimCoords.y - lStartY, aimCoords.x - lStartX);
+                // Aim Weight: the laser is physically mounted to the gun, so it
+                // must track the character's actual (weighted) facing -- NOT
+                // the raw mouse/touch/gamepad-crosshair target the player is
+                // easing toward. If the laser is on an enemy, the gun is on
+                // that enemy; the raw target is only where the aim will settle
+                // once the turn-rate chase and any recoil/flinch catch up.
+                // We still project a virtual point at the same distance as the
+                // raw target so the barrel-offset parallax correction (aiming
+                // precisely from the muzzle, not the character center) matches
+                // fire()'s baseFireAngle exactly -- the laser dot always lands
+                // exactly where the next shot will.
+                let laserAngle;
+                if (this.isPaused) {
+                    laserAngle = lAngle;
+                } else {
+                    let aimDist = Math.hypot(aimCoords.x - p.x, aimCoords.y - p.y) || 500;
+                    let virtualAimX = p.x + Math.cos(lAngle) * aimDist;
+                    let virtualAimY = p.y + Math.sin(lAngle) * aimDist;
+                    laserAngle = Math.atan2(virtualAimY - lStartY, virtualAimX - lStartX);
+                }
                 let maxLaserDist = 1400;
                 let hitPt = this.getLaserEndPoint(lStartX, lStartY, laserAngle, maxLaserDist, this.map.walls);
                 
@@ -15515,6 +15918,58 @@ class TouchController {
             right: { touchId: null, startY: 0, lastSelectIdx: 0 },
             bottom: { touchId: null, startX: 0, lastWeaponIdx: 0 }
         };
+
+        // Tracks pointers that were handed off to a real HUD element (weapon
+        // slot, item slot, etc.) from underneath the full-screen touch-overlay.
+        // See routeThroughOverlay() for why this hand-off is necessary.
+        this._hudPassthrough = new Map();
+    }
+
+    // The touch-overlay is a full-screen, pointer-events:auto catcher that
+    // sits ABOVE the game's HUD (#ui-layer) in stacking order so the movement
+    // and aim virtual sticks can be placed/dragged anywhere. That's great for
+    // "empty" screen space, but it also means a tap that's visually over a
+    // real HUD control (weapon slot, item slot) hits the overlay first and
+    // never reaches that control at all -- no amount of e.target.closest()
+    // checking on the overlay's own pointerdown can see through itself.
+    //
+    // This peeks behind the overlay (by briefly disabling its own hit-testing
+    // and asking the browser what's really at that point), and if a genuine
+    // piece of game UI is there, redirects this pointer's capture to it so
+    // taps AND drag/swipe gestures on that UI work correctly, instead of
+    // being swallowed by the overlay or misrouted into joystick/canvas input.
+    // Returns true if a real UI element took ownership of this pointer.
+    routeThroughOverlay(e) {
+        const overlayEl = document.getElementById('touch-overlay');
+        if (!overlayEl) return false;
+
+        overlayEl.style.pointerEvents = 'none';
+        const real = document.elementFromPoint(e.clientX, e.clientY);
+        overlayEl.style.pointerEvents = 'auto';
+
+        const canvasEl = document.getElementById('gameCanvas');
+        const isBackground = !real || real === canvasEl || real === document.body ||
+            real === document.documentElement || real.id === 'ui-layer';
+        if (isBackground) return false;
+
+        // Redirect capture so real native pointermove/pointerup events for
+        // this touch keep targeting the real UI element (and its listening
+        // ancestors) for the rest of the gesture, even though the overlay is
+        // visually on top of it everywhere else on screen.
+        const captureTarget = real.closest('#hud-left-p1, #hud-right-p1, #hud-bottom-p1') || real;
+        try { captureTarget.setPointerCapture(e.pointerId); } catch (err) { /* best-effort */ }
+
+        // Seed the real element's own pointerdown handling (HUD swipe-scroll
+        // state, etc.) exactly as a native tap would have.
+        real.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true, cancelable: true, pointerId: e.pointerId,
+            pointerType: e.pointerType || 'touch', clientX: e.clientX, clientY: e.clientY
+        }));
+
+        this._hudPassthrough.set(e.pointerId, {
+            target: real, startX: e.clientX, startY: e.clientY, startTime: Date.now()
+        });
+        return true;
     }
     
     init() {
@@ -15540,17 +15995,24 @@ class TouchController {
         const overlayEl = document.getElementById('touch-overlay');
         if (overlayEl) {
             overlayEl.addEventListener('pointerdown', (e) => {
+                // Raised overlay-owned controls (joystick bodies/knobs, FABs)
+                // are real DOM descendants of the overlay, so they already
+                // receive events correctly via their own listeners below --
+                // don't let the catch-all routing here interfere with them.
+                if (e.target.closest('#touch-joystick-left') ||
+                    e.target.closest('#touch-joystick-right') ||
+                    e.target.closest('#touch-pause-btn') ||
+                    e.target.closest('#touch-interact-btn')) {
+                    return;
+                }
+
+                // Real game UI (weapon slots, item slots, etc.) always wins
+                // over joystick placement / canvas forwarding, no matter
+                // which half of the screen it happens to be on.
+                if (this.routeThroughOverlay(e)) return;
+
                 // If on the left side of the screen
                 if (e.clientX < window.innerWidth / 2) {
-                    // Ignore HUD bars, left scroll containers, pause buttons, interact button
-                    if (e.target.closest('#hud-left-p1') ||
-                        e.target.closest('#hud-bottom-p1') ||
-                        e.target.closest('#touch-pause-btn') ||
-                        e.target.closest('#touch-interact-btn') ||
-                        e.target.closest('.hud-top-bar')) {
-                        return;
-                    }
-                    
                     if (this.leftStick.active) return;
                     overlayEl.releasePointerCapture(e.pointerId);
                     
@@ -15569,25 +16031,18 @@ class TouchController {
                     leftEl.classList.add('active');
                     this.updateStickDisplacement(this.leftStick);
                 } else {
-                    // Right half: Forward pointerdown to gameCanvas for commands or other taps
-                    // (Ensure it's not a tap on the right joystick, interact button, pause button, or right scroll container)
-                    if (!e.target.closest('#touch-joystick-right') &&
-                        !e.target.closest('#touch-interact-btn') &&
-                        !e.target.closest('#touch-pause-btn') &&
-                        !e.target.closest('#hud-right-p1') &&
-                        !e.target.closest('#hud-bottom-p1') &&
-                        !e.target.closest('.hud-top-bar')) {
-                        const canvasEl = document.getElementById('gameCanvas');
-                        if (canvasEl) {
-                            const clonedEvent = new PointerEvent('pointerdown', {
-                                pointerId: e.pointerId,
-                                clientX: e.clientX,
-                                clientY: e.clientY,
-                                bubbles: true,
-                                cancelable: true
-                            });
-                            canvasEl.dispatchEvent(clonedEvent);
-                        }
+                    // Right half: forward pointerdown to gameCanvas for
+                    // aiming/commands/world taps (real UI already handled above).
+                    const canvasEl = document.getElementById('gameCanvas');
+                    if (canvasEl) {
+                        const clonedEvent = new PointerEvent('pointerdown', {
+                            pointerId: e.pointerId,
+                            clientX: e.clientX,
+                            clientY: e.clientY,
+                            bubbles: true,
+                            cancelable: true
+                        });
+                        canvasEl.dispatchEvent(clonedEvent);
                     }
                 }
             });
@@ -15656,6 +16111,41 @@ class TouchController {
         
         window.addEventListener('pointerup', (e) => endPointer(e.pointerId));
         window.addEventListener('pointercancel', (e) => endPointer(e.pointerId));
+
+        // --- Finish off any pointer that routeThroughOverlay() handed to a
+        // real HUD element (see that method for why this hand-off exists) ---
+        window.addEventListener('pointerup', (e) => {
+            const tap = this._hudPassthrough.get(e.pointerId);
+            if (!tap) return;
+            this._hudPassthrough.delete(e.pointerId);
+
+            // Let swipe-gesture listeners (HUD scroll carousels) know this
+            // pointer ended, exactly as a native pointerup would.
+            tap.target.dispatchEvent(new PointerEvent('pointerup', {
+                bubbles: true, cancelable: true, pointerId: e.pointerId,
+                pointerType: e.pointerType || 'touch', clientX: e.clientX, clientY: e.clientY
+            }));
+
+            // A quick, mostly-stationary touch is a tap, not a swipe -- fire
+            // a real click so weapon-slot / item-slot selection (which
+            // listens for 'click' on #ui-layer) triggers just like it does
+            // for mouse users.
+            const duration = Date.now() - tap.startTime;
+            const dist = Math.hypot(e.clientX - tap.startX, e.clientY - tap.startY);
+            if (duration < 350 && dist < 15) {
+                tap.target.dispatchEvent(new MouseEvent('click', {
+                    bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY
+                }));
+            }
+        });
+        window.addEventListener('pointercancel', (e) => {
+            const tap = this._hudPassthrough.get(e.pointerId);
+            if (!tap) return;
+            this._hudPassthrough.delete(e.pointerId);
+            tap.target.dispatchEvent(new PointerEvent('pointercancel', {
+                bubbles: true, cancelable: true, pointerId: e.pointerId, pointerType: e.pointerType || 'touch'
+            }));
+        });
         
         // --- Interact FAB Event ---
         interactEl.addEventListener('pointerdown', (e) => {
@@ -16142,10 +16632,27 @@ class TouchController {
             game.input.mouseDown = false;
         }
         
-        // Set crosshair position based on tax and tay
-        if (game && game.crosshair && game.input.tax !== undefined) {
-            game.crosshair.style.left = game.input.tax + 'px';
-            game.crosshair.style.top = game.input.tay + 'px';
+        // Crosshair position reflects the player's actual (weighted) aim
+        // angle, not the raw stick target -- same principle as the aiming
+        // laser fix in Game.draw(): the visual reticle should always be
+        // honest about where the gun is really pointed right now, since
+        // that's what firing will actually hit. (tax/tay themselves are left
+        // untouched above -- Player.update() still needs the raw stick
+        // target as the intent signal the weighted-aim chase eases toward.)
+        if (game && game.crosshair && game.player && !game.player.dead) {
+            const player = game.player;
+            const cam = player.isPlayer2 ? game.camera2 : game.camera;
+            const viewportW = game.isTwoPlayer ? game.width / 2 : game.width;
+            const cx = viewportW / 2;
+            const cy = game.height / 2;
+            const zoomMult = (player.gamepadZoomIndex === 1) ? 2.0 : (player.gamepadZoomIndex === 2) ? 3.0 : 1.0;
+            const aimRange = (player.weapon.gamepadAimDist || 180) * zoomMult;
+            const px = player.x + Math.cos(player.angle) * aimRange;
+            const py = player.y + Math.sin(player.angle) * aimRange;
+            const screenX = cx + (px - cam.x - cx) * cam.zoom;
+            const screenY = cy + (py - cam.y - cy) * cam.zoom;
+            game.crosshair.style.left = screenX + 'px';
+            game.crosshair.style.top = screenY + 'px';
         }
     }
     
