@@ -706,6 +706,7 @@
                         <button id="btn-ff-off" onclick="game.setFriendlyFireMode('off')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: OFF</button>
                         <button id="btn-ff-standard" class="active-mode" onclick="game.setFriendlyFireMode('standard')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: STANDARD</button>
                         <button id="btn-ff-hardcore" onclick="game.setFriendlyFireMode('hardcore')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: HARDCORE</button>
+                        <button id="btn-ff-pvp" onclick="game.setFriendlyFireMode('pvp')" style="font-size: 11px; padding: 5px 10px; margin: 0;">PvP STRIKE</button>
                     </div>
                 </div>
 
@@ -781,6 +782,37 @@
                     </div>
                 </div>
             </div>
+
+            <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.15);">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px;">GAMEPAD ASSIGNMENT:</label>
+                <div style="font-size: 9px; color: #b0bec5; margin: 4px 0 10px;">Pin a specific controller to a player instead of relying on auto-detect. "None" keeps that player off gamepad entirely (e.g. for touch/KB+M only).</div>
+
+                <div style="margin-bottom: 10px;">
+                    <div style="font-size: 10px; color: var(--neon-blue); margin-bottom: 3px; font-weight: bold;">PLAYER 1</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                        <button id="btn-p1-gp-auto" onclick="game.setGamepadChoice(1, 'auto')" style="font-size: 10px; padding: 4px 8px; margin: 0;">AUTO</button>
+                        <button id="btn-p1-gp-none" onclick="game.setGamepadChoice(1, 'none')" style="font-size: 10px; padding: 4px 8px; margin: 0;">NONE</button>
+                        <button id="btn-p1-gp-0" onclick="game.setGamepadChoice(1, '0')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 1</button>
+                        <button id="btn-p1-gp-1" onclick="game.setGamepadChoice(1, '1')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 2</button>
+                        <button id="btn-p1-gp-2" onclick="game.setGamepadChoice(1, '2')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 3</button>
+                        <button id="btn-p1-gp-3" onclick="game.setGamepadChoice(1, '3')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 4</button>
+                    </div>
+                    <div id="lbl-p1-gp-status" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
+                </div>
+
+                <div>
+                    <div style="font-size: 10px; color: #ffb700; margin-bottom: 3px; font-weight: bold;">PLAYER 2</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                        <button id="btn-p2-gp-auto" onclick="game.setGamepadChoice(2, 'auto')" style="font-size: 10px; padding: 4px 8px; margin: 0;">AUTO</button>
+                        <button id="btn-p2-gp-none" onclick="game.setGamepadChoice(2, 'none')" style="font-size: 10px; padding: 4px 8px; margin: 0;">NONE</button>
+                        <button id="btn-p2-gp-0" onclick="game.setGamepadChoice(2, '0')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 1</button>
+                        <button id="btn-p2-gp-1" onclick="game.setGamepadChoice(2, '1')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 2</button>
+                        <button id="btn-p2-gp-2" onclick="game.setGamepadChoice(2, '2')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 3</button>
+                        <button id="btn-p2-gp-3" onclick="game.setGamepadChoice(2, '3')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 4</button>
+                    </div>
+                    <div id="lbl-p2-gp-status" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
+                </div>
+            </div>
         </div>
 
         <!-- Tab content: AUDIO -->
@@ -795,6 +827,7 @@
                         <button id="btn-bgm-action" onclick="game.setMusicTrack('action')">Action Ops</button>
                         <button id="btn-bgm-agent" onclick="game.setMusicTrack('agent')">Secret Agent</button>
                         <button id="btn-bgm-ambient" onclick="game.setMusicTrack('ambient')">Dystopian Ambient</button>
+                        <button id="btn-bgm-pvp" onclick="game.setMusicTrack('pvp')">Zero Sum</button>
                     </div>
                 </div>
                 
@@ -1113,6 +1146,7 @@
                         <button id="btn-bgm-action-pause" onclick="game.setMusicTrack('action')">Action Ops</button>
                         <button id="btn-bgm-agent-pause" onclick="game.setMusicTrack('agent')">Secret Agent</button>
                         <button id="btn-bgm-ambient-pause" onclick="game.setMusicTrack('ambient')">Dystopian Ambient</button>
+                        <button id="btn-bgm-pvp-pause" onclick="game.setMusicTrack('pvp')">Zero Sum</button>
                     </div>
                 </div>
                 
@@ -1176,6 +1210,37 @@
                         <b>SQUARE (X button)</b> - Pick up item / Land Drone<br>
                         <b>START</b> - Pause operational area
                     </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.15);">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px;">GAMEPAD ASSIGNMENT:</label>
+                <div style="font-size: 9px; color: #b0bec5; margin: 4px 0 10px;">Pin a specific controller to a player instead of relying on auto-detect. "None" keeps that player off gamepad entirely (e.g. for touch/KB+M only).</div>
+
+                <div style="margin-bottom: 10px;">
+                    <div style="font-size: 10px; color: var(--neon-blue); margin-bottom: 3px; font-weight: bold;">PLAYER 1</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                        <button id="btn-p1-gp-auto-pause" onclick="game.setGamepadChoice(1, 'auto')" style="font-size: 10px; padding: 4px 8px; margin: 0;">AUTO</button>
+                        <button id="btn-p1-gp-none-pause" onclick="game.setGamepadChoice(1, 'none')" style="font-size: 10px; padding: 4px 8px; margin: 0;">NONE</button>
+                        <button id="btn-p1-gp-0-pause" onclick="game.setGamepadChoice(1, '0')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 1</button>
+                        <button id="btn-p1-gp-1-pause" onclick="game.setGamepadChoice(1, '1')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 2</button>
+                        <button id="btn-p1-gp-2-pause" onclick="game.setGamepadChoice(1, '2')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 3</button>
+                        <button id="btn-p1-gp-3-pause" onclick="game.setGamepadChoice(1, '3')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 4</button>
+                    </div>
+                    <div id="lbl-p1-gp-status-pause" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
+                </div>
+
+                <div>
+                    <div style="font-size: 10px; color: #ffb700; margin-bottom: 3px; font-weight: bold;">PLAYER 2</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                        <button id="btn-p2-gp-auto-pause" onclick="game.setGamepadChoice(2, 'auto')" style="font-size: 10px; padding: 4px 8px; margin: 0;">AUTO</button>
+                        <button id="btn-p2-gp-none-pause" onclick="game.setGamepadChoice(2, 'none')" style="font-size: 10px; padding: 4px 8px; margin: 0;">NONE</button>
+                        <button id="btn-p2-gp-0-pause" onclick="game.setGamepadChoice(2, '0')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 1</button>
+                        <button id="btn-p2-gp-1-pause" onclick="game.setGamepadChoice(2, '1')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 2</button>
+                        <button id="btn-p2-gp-2-pause" onclick="game.setGamepadChoice(2, '2')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 3</button>
+                        <button id="btn-p2-gp-3-pause" onclick="game.setGamepadChoice(2, '3')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 4</button>
+                    </div>
+                    <div id="lbl-p2-gp-status-pause" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
                 </div>
             </div>
         </div>
@@ -1508,12 +1573,14 @@ function useRightItem(player) {
 function interactPickUpItem(player) {
     if (!player || player.dead) return;
     let interactDist = 45;
-    if (game.drone && !game.drone.dead && game.drone.pilot === player && !game.drone.isPiloted) {
-        let dist = Math.hypot(game.drone.x - player.x, game.drone.y - player.y);
+
+    // Check player's specific drone slot
+    if (player.activeDrone && !player.activeDrone.dead && !player.activeDrone.isPiloted) {
+        let dist = Math.hypot(player.activeDrone.x - player.x, player.activeDrone.y - player.y);
         if (dist < interactDist) {
             player.dronesCount = Math.min(3, (player.dronesCount || 0) + 1);
-            game.drone.stopAudio();
-            game.drone = null;
+            player.activeDrone.stopAudio();
+            player.activeDrone = null;
             audio.playPickup('weapon');
             game.floatingTexts.push(game.spawnFloatingText(
                 player.x, player.y - 15, "+RETRIEVED FPV DRONE",
@@ -1526,6 +1593,7 @@ function interactPickUpItem(player) {
     if (game.barriers) {
         for (let i = 0; i < game.barriers.length; i++) {
             let bar = game.barriers[i];
+            if (game.friendlyFireMode === 'pvp' && bar.owner !== player) continue;
             let col = MathUtils.closestPointOnSegment(player.x, player.y, bar.ax, bar.ay, bar.bx, bar.by);
             let dist = Math.hypot(col.x - player.x, col.y - player.y);
             if (dist < interactDist) {
@@ -1586,8 +1654,8 @@ function getHUDSelectorStateKey(player, suffix) {
     let activeDog = game.dogs ? game.dogs.find(d => d.owner === player && !d.dead) : null;
     
     let droneStatus = 'NONE';
-    if (game.drone && !game.drone.dead && game.drone.pilot === player) {
-        droneStatus = game.drone.isPiloted ? 'FLYING' : 'PLACED';
+    if (player.activeDrone && !player.activeDrone.dead) {
+        droneStatus = player.activeDrone.isPiloted ? 'FLYING' : 'PLACED';
     } else if (player.dronesCount > 0) {
         droneStatus = 'READY';
     }
@@ -1669,9 +1737,9 @@ function renderHUDSelectors(player, suffix) {
             rightTrack.innerHTML = '';
             let droneStatus = 0;
             let droneColor = '#808f9c';
-            if (game.drone && !game.drone.dead && game.drone.pilot === player) {
-                droneStatus = game.drone.isPiloted ? 'FLYING' : 'PLACED';
-                droneColor = game.drone.isPiloted ? '#ff0055' : '#ffb700';
+            if (player.activeDrone && !player.activeDrone.dead) {
+                droneStatus = player.activeDrone.isPiloted ? 'FLYING' : 'PLACED';
+                droneColor = player.activeDrone.isPiloted ? '#ff0055' : '#ffb700';
             } else if (player.dronesCount > 0) {
                 droneStatus = 'READY';
                 droneColor = '#39ff14';
@@ -2963,66 +3031,175 @@ class MusicEngine {
             action: (function() {
                 // "CYBER-BREACH" - 108 BPM Darksynth. 4 Stages: Intro -> Verse -> Drop -> Bridge
                 const rep = (arr, times) => Array(times).fill(arr).flat();
-                const e = [40, 40, 52, 40,  40, 40, 52, 40,  40, 40, 52, 40,  43, 40, 45, 40]; // Em driving riff
-                const c = [36, 36, 48, 36,  36, 36, 48, 36,  36, 36, 48, 36,  39, 36, 41, 36]; // C driving riff
-                const d = [38, 38, 50, 38,  38, 38, 50, 38,  38, 38, 50, 38,  41, 38, 43, 38]; // D driving riff
-                const b = [35, 35, 47, 35,  35, 35, 47, 35,  35, 35, 47, 35,  38, 35, 40, 35]; // Bm driving riff
-                
-                const riff = [...e, ...e, ...c, ...d]; // 4 bars
-                const introBass = rep([40, null, null, null, 40, null, null, null, 40, null, null, null, 40, null, null, null], 32); 
-                
-                // Melodies
-                const lead1 = [...rep(null, 14), 76, null];
-                const lead2 = [...rep(null, 6), 79, null, null, 74, null, null, null, null, null, null, null, 76, null, null, null, null, null, 71, null, null, null, null, null, 74, null, 76, null, null, null, null, null, null, 79, null, null, 83, null, null, null, null, null, null, null, 81, null, null, null, null, null, 79, null, null, null, 74, null, 71, null];
-                
+                const e  = [40, 40, 52, 40,  40, 40, 52, 40,  40, 40, 52, 40,  43, 40, 45, 40]; // Em driving riff
+                const c  = [36, 36, 48, 36,  36, 36, 48, 36,  36, 36, 48, 36,  39, 36, 41, 36]; // C driving riff
+                const d  = [38, 38, 50, 38,  38, 38, 50, 38,  38, 38, 50, 38,  41, 38, 43, 38]; // D driving riff
+                const b  = [35, 35, 47, 35,  35, 35, 47, 35,  35, 35, 47, 35,  38, 35, 40, 35]; // Bm bridge riff
+
+                const riff = [...e, ...e, ...c, ...d]; // 4 bars, 64 steps
+
+                // Intro: sparse pulsing low E, 8 bars.
+                const introBass = rep([40, null, null, null, 40, null, null, null, 40, null, null, null, 40, null, null, null], 8);
+                // Bridge: same riff shape rooted on Bm, thinning out (kick
+                // drops here) into an anticipatory wind-down before the loop.
+                const bridgeRiff = [...b, ...b];
+
+                // Lead hook: an antecedent-consequent pair instead of an
+                // exact repeat -- same core contour and rhythmic DNA as
+                // before (this IS the song's hook), but the second pass
+                // answers with a variation instead of literally repeating.
+                const hookA = [...rep(null, 6), 79, null, null, 74, null, null, null, null, null, null, null, 76, null, null, null, null, null, 71, null, null, null, null, null, 74, null, 76, null, null, null, null, null, null, 79, null, null, 83, null, null, null, null, null, null, null, 81, null, null, null, null, null, 79, null, null, null, 74, null, 71, null]; // 63 steps
+                const hookB = [...rep(null, 6), 83, null, null, 79, null, null, null, null, null, null, null, 81, null, null, null, null, null, 76, null, null, null, null, null, 79, null, 81, null, null, null, null, null, null, 86, null, null, 88, null, null, null, null, null, null, null, 86, null, null, null, null, null, 83, null, null, null, 79, null, 76, null]; // answer phrase, up a 4th -- 63 steps
+                const outroTag = [...rep(null, 14), 76, null]; // 16 steps, the receding tag that closes the drop out
+
+                const introLen = introBass.length;           // 128 steps (8 bars)
+                const riffLen = rep(riff, 4).length;          // 256 steps (16 bars)
+                const hooksLen = hookA.length + hookB.length; // 126 steps
+                const leadSilenceLen = 256;                   // lead enters at bar 17 -- "the drop"
+                const outroRepeats = Math.floor((512 - leadSilenceLen - hooksLen) / outroTag.length);
+                const leadPadding = 512 - (leadSilenceLen + hooksLen + outroRepeats * outroTag.length);
+
                 const EmPad = [52, 55, 59], CPad = [48, 52, 55], DPad = [50, 54, 57], BmPad = [47, 50, 54];
-                
+
                 return {
                     bpm: 108,
-                    // Bass: Bars 1-8 intro, 9-24 driving, 25-32 bridge
-                    bassPattern: [...introBass, ...rep(riff, 4), ...rep(b, 8)],
-                    // Drums build up over the 32 bars
+                    // Bars 1-8 intro -> 9-24 driving riff -> 25-32 Bm bridge wind-down
+                    bassPattern: [...introBass, ...rep(riff, 4), ...rep(bridgeRiff, 4)],
                     drums: {
                         kick:  [...rep([1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0], 24), ...rep([0], 128)], // Drops out at bridge
                         hat:   [...rep([0,0,1,0, 0,0,1,0, 0,0,1,0, 0,0,1,0], 8), ...rep([1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0], 24)],
                         snare: [...rep([0], 128), ...rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0], 24)] // Enters at bar 9
                     },
-                    // Pad Swells: Enter at bar 9
-                    padPattern: [...rep(null, 8), ...rep([EmPad, EmPad, CPad, DPad], 6)],
-                    // Lead Arp: Enters during the drop (Bar 17)
-                    leadPattern: [...rep(null, 256), ...rep(lead2, 2), ...rep(lead1, 16)]
+                    // Pad: enters bar 9 following Em-Em-C-D through the drive,
+                    // resolves through Bm-Bm-Em-Em under the bridge -- locked
+                    // to the bassline the whole way through.
+                    padPattern: [...rep(null, 8), ...rep([EmPad, EmPad, CPad, DPad], 4), ...rep([BmPad, BmPad, EmPad, EmPad], 2)],
+                    // Lead: silent through the build, hookA then hookB (the
+                    // answer phrase) carry the drop, then the tag closes it
+                    // out for its full run.
+                    leadPattern: [...rep(null, leadSilenceLen), ...hookA, ...hookB, ...rep(outroTag, outroRepeats), ...rep(null, leadPadding)]
                 };
             })(),
             
             agent: (function() {
-                // "SHADOW PROTOCOL" - 90 BPM Trip Hop / Stealth
+                // "SHADOW PROTOCOL" - 90 BPM Trip Hop / Stealth. 4 Stages: Intro -> Groove -> Chorus (relative-major lift) -> Wind-down
                 const rep = (arr, times) => Array(times).fill(arr).flat();
-                const groove = [38, null, null, 38,  null, 41, null, null,  38, null, null, 38,  null, null, 45, 41];
-                const arp = [null, null, null, null, 81, null, null, null, null, null, null, null, 79, null, 74, null];
-                const Am = [57, 60, 64], F = [53, 57, 60], E7 = [52, 56, 60];
+                const groove = [38, null, null, 38,  null, 41, null, null,  38, null, null, 38,  null, null, 45, 41]; // core groove -- the track's identity, unchanged
+                const grooveLift = [38, null, null, 38,  null, 43, null, null,  38, null, null, 41,  null, null, 45, 43]; // same DNA, one note raised under the chorus lift
+
+                const arp = [null, null, null, null, 81, null, null, null, null, null, null, null, 79, null, 74, null]; // core motif
+                const arpBright = [null, null, null, null, 84, null, null, null, null, null, null, null, 83, null, 79, null]; // chorus answer, brighter contour matching the major lift
+
+                const Am = [57, 60, 64], F = [53, 57, 60], E7 = [52, 56, 60]; // i-VI-V, core harmony, unchanged
+                const C2 = [60, 64, 67], F2 = [53, 57, 60], G2 = [55, 59, 62]; // relative-major lift for the chorus
+
                 return {
                     bpm: 90,
-                    bassPattern: rep(groove, 32),
+                    // Bars 1-8 sparse intro -> 9-16 full groove -> 17-24 lifted groove under the chorus -> 25-32 core groove wind-down
+                    bassPattern: [...rep(groove, 16), ...rep(grooveLift, 8), ...rep(groove, 8)],
                     drums: {
-                        kick:  rep([1,0,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0], 32),
-                        hat:   rep([1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1], 32),
-                        snare: rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0], 32)
+                        kick:  [...rep([0], 64), ...rep([1,0,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0], 20), ...rep([0], 64), ...rep([1,0,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0], 4)],
+                        hat:   [...rep([1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0], 8), ...rep([1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1], 20), ...rep([1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0], 4)],
+                        snare: [...rep([0], 64), ...rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0], 20), ...rep([0], 64), ...rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0], 4)]
                     },
-                    padPattern: [...rep(null, 16), ...rep([Am, Am, F, E7], 4)],
-                    leadPattern: [...rep(null, 128), ...rep(arp, 8)]
+                    // Pad enters bar 9 (with the full groove), brightens to
+                    // the relative major for the chorus (17-24), resolves
+                    // back to the core minor for the wind-down.
+                    padPattern: [...rep(null, 8), ...rep([Am, Am, F, E7], 2), ...rep([C2, G2, F2, G2], 2), ...rep([Am, F, Am, E7], 2)],
+                    // Lead: core motif carries bars 9-16, the brighter answer
+                    // phrase takes the chorus (17-24), then the core motif
+                    // returns for the wind-down -- call and response across
+                    // the whole arc instead of two disconnected entrances.
+                    leadPattern: [...rep(null, 128), ...rep(arp, 8), ...rep(arpBright, 8), ...rep(arp, 8)]
                 };
             })(),
             
             ambient: (function() {
-                // "FROZEN WASTES" - 65 BPM Atmospheric Drone
+                // "FROZEN WASTES" - 65 BPM Atmospheric Drone. 4 Stages: Home -> Shift -> Desolation -> Swell home
                 const rep = (arr, times) => Array(times).fill(arr).flat();
-                const Dm9 = [50, 53, 57, 64], BbM7 = [46, 53, 57, 62], F = [53, 57, 60, 65], C = [48, 55, 59, 64];
+                const Dm9 = [50, 53, 57, 64], BbM7 = [46, 53, 57, 62], F = [53, 57, 60, 65], C = [48, 55, 59, 64]; // core harmony, unchanged
+                const Gm7 = [43, 50, 53, 57]; // bars 9-16: same chord family, recontextualized from the subdominant side
+                const DmSus = [50, 52, 57]; // bars 17-24: unresolved, suspended -- the coldest point of the piece
+
+                const block = (note) => [note, ...rep(null, 63)]; // one low pulse every 4 bars, matching the original's sparse feel
+                const homeBlockA = [...block(38), ...block(41)]; // bars 1-8, under Dm9->BbM7
+                const shiftBlock  = [...block(43), ...block(38)]; // bars 9-16, under Gm7->Dm9
+                const stillBlock  = [...block(38), ...rep(null, 64)]; // bars 17-24: one lone pulse then held silence
+                const swellBlock  = [...block(41), ...block(38)]; // bars 25-32, return to home under BbM7->Dm9
+
+                // Lead motif -- unchanged core phrase (a single rising 5th),
+                // placed once per section instead of identically 8 times in
+                // a row, so it reads as a recurring visitor, not wallpaper.
+                const motif = [null, null, null, null, 74, ...rep(null, 27), 79, ...rep(null, 31)]; // 64 steps
+                const motifDistant = [null, null, null, null, null, null, null, null, 67, ...rep(null, 55)]; // a lower, more distant echo for the desolate section
+                const silence64 = rep(null, 64);
+
                 return {
                     bpm: 65,
-                    bassPattern: rep([38, ...rep(null, 63)], 8),
-                    drums: { kick: rep([1, ...rep(null, 63)], 8), hat: [], snare: [] },
-                    padPattern: rep([Dm9, BbM7, F, C], 8),
-                    leadPattern: rep([null, null, null, null, 74, ...rep(null, 27), 79, ...rep(null, 31)], 8)
+                    bassPattern: [...homeBlockA, ...shiftBlock, ...stillBlock, ...swellBlock],
+                    drums: {
+                        kick: [...rep([1, ...rep(null, 63)], 2), ...rep([1, ...rep(null, 63)], 2), ...rep([0, ...rep(null, 63)], 2), ...rep([1, ...rep(null, 63)], 2)],
+                        // Hats stay silent for 24 bars (the desolation is the
+                        // point), then a very sparse high shimmer appears
+                        // only for the swell back home in the last 8 bars.
+                        hat: [...rep(0, 384), ...rep([0,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0], 8)],
+                        snare: []
+                    },
+                    padPattern: [
+                        Dm9, Dm9, BbM7, BbM7, F, F, C, C,
+                        Gm7, Gm7, Dm9, Dm9, BbM7, BbM7, F, F,
+                        DmSus, DmSus, DmSus, DmSus, DmSus, DmSus, DmSus, DmSus,
+                        Dm9, Dm9, BbM7, BbM7, F, F, C, C
+                    ],
+                    leadPattern: [...silence64, ...motif, ...silence64, ...motif, ...motifDistant, ...silence64, ...silence64, ...motif]
+                };
+            })(),
+
+            pvp: (function() {
+                // "ZERO SUM" - 130 BPM Industrial / EBM, E Phrygian.
+                // The flat-2 half-step (E->F) is the mode's signature color --
+                // distinct from every other track's harmonic world -- and it
+                // never resolves. Two players, one outcome. 4 Stages:
+                // Intro -> Verse -> Drop -> Breakdown (unresolved tension).
+                const rep = (arr, times) => Array(times).fill(arr).flat();
+
+                const introBass = rep([40, null, null, null, null, null, null, null, 40, null, null, null, null, null, 41, null], 8);
+                const verseRiff  = [40, null, 41, null, 40, null, 38, null, 40, null, 41, null, 40, null, 41, null];
+                const verseRiffB = [40, null, 41, null, 43, null, 41, null, 40, null, 38, null, 40, null, 41, null];
+                const dropRiff   = [40, 41, 40, 41, 40, 43, 40, 41, 40, 41, 40, 38, 40, 41, 40, 50];
+                const breakdownBass = rep([40, ...rep(null, 15)], 8);
+
+                const EStab = [40, 47, 52], FStab = [41, 48, 53], DStab = [38, 45, 50];
+                const TensionDrone = [40, 41, 52]; // held, unresolved half-step under the breakdown
+
+                const stabLead  = [null, null, null, null, 76, null, 77, null, null, null, null, null, 76, null, 74, null];
+                const stabLeadB = [null, null, null, null, 77, null, 76, null, null, null, null, null, 74, null, 72, null];
+
+                return {
+                    bpm: 130,
+                    // Bars 1-8 intro -> 9-16 verse ostinato -> 17-24 drop -> 25-32 breakdown
+                    bassPattern: [...introBass, ...rep([...verseRiff, ...verseRiffB], 4), ...rep(dropRiff, 8), ...breakdownBass],
+                    drums: {
+                        // Halftime industrial stomp through intro+verse,
+                        // driving four-on-the-floor for the drop, stripped
+                        // to almost nothing for the breakdown.
+                        kick:  [...rep([1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0], 16), ...rep([1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0], 8), ...rep([1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0], 8)],
+                        hat:   [...rep([0,0,1,0, 0,0,1,0, 0,0,1,0, 0,0,1,0], 8), ...rep([1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0], 8), ...rep([1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1], 8), ...rep([0,0,0,0, 0,0,1,0, 0,0,0,0, 0,0,0,0], 8)],
+                        snare: [...rep([0,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0], 16), ...rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,1], 8), ...rep([0], 128)]
+                    },
+                    // Pad carries the stab chords: silent through the intro,
+                    // E-F clash stabs through the verse, faster E-F-D stabs
+                    // through the drop, one long unresolved drone for the breakdown.
+                    padPattern: [
+                        ...rep(null, 8),
+                        ...rep([EStab, FStab, EStab, FStab], 2),
+                        ...rep([EStab, FStab, DStab, FStab], 2),
+                        ...rep([TensionDrone], 8)
+                    ],
+                    // Lead stays out until the drop, carries the stab hook
+                    // there, then drops out for the breakdown -- by then the
+                    // tension is harmonic, not melodic.
+                    leadPattern: [...rep(null, 256), ...rep([...stabLead, ...stabLeadB], 4), ...rep(null, 128)]
                 };
             })()
         };
@@ -3042,6 +3219,15 @@ class MusicEngine {
             this.delayGain.connect(this.delayNode);
             
             this.delayNode.connect(audio.musicGain);
+        }
+
+        if (!this.duckBus) {
+            // Shared sidechain bus: bass/pad/lead route through this instead of
+            // straight to musicGain, so every kick can "pump" them down and back
+            // for a punchier, more professionally-mixed feel.
+            this.duckBus = this.ctx.createGain();
+            this.duckBus.gain.value = 1.0;
+            this.duckBus.connect(audio.musicGain);
         }
     }
     
@@ -3119,7 +3305,9 @@ class MusicEngine {
         // 1. Kick drum
         if (track.drums && track.drums.kick && track.drums.kick[step % track.drums.kick.length]) {
             if (this.currentTrack === 'ambient') this.playAmbientKick(time);
+            else if (this.currentTrack === 'pvp') this.playIndustrialKick(time);
             else this.playKick(time);
+            this.duckPump(time);
         }
         
         // 2. Hi-hat
@@ -3177,6 +3365,33 @@ class MusicEngine {
         osc.stop(time + 0.15);
     }
     
+    duckPump(time) {
+        if (!this.duckBus) return;
+        const g = this.duckBus.gain;
+        g.cancelScheduledValues(time);
+        g.setValueAtTime(0.55, time);
+        g.setTargetAtTime(1.0, time + 0.02, 0.09);
+    }
+    
+    playIndustrialKick(time) {
+        if (!audio.ctx) return;
+        const osc = audio.ctx.createOscillator();
+        const gain = audio.ctx.createGain();
+        
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(150, time);
+        osc.frequency.exponentialRampToValueAtTime(45, time + 0.06); // faster, harder snap than the standard kick
+        
+        gain.gain.setValueAtTime(0.8, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.09);
+        
+        osc.connect(gain);
+        gain.connect(audio.musicGain);
+        
+        osc.start(time);
+        osc.stop(time + 0.1);
+    }
+    
     playAmbientKick(time) {
         if (!audio.ctx) return;
         const osc = audio.ctx.createOscillator();
@@ -3210,33 +3425,16 @@ class MusicEngine {
         gain.gain.setValueAtTime(vol, time);
         gain.gain.exponentialRampToValueAtTime(0.001, time + 0.045);
         
+        const pan = audio.ctx.createStereoPanner();
+        pan.pan.value = (Math.random() - 0.5) * 0.5; // subtle natural width, hit to hit
+        
         source.connect(filter);
         filter.connect(gain);
-        gain.connect(audio.musicGain);
+        gain.connect(pan);
+        pan.connect(audio.musicGain);
         
         source.start(time);
         source.stop(time + 0.05);
-    }
-    
-    playActionSnare(time) {
-        if (!audio.ctx || !audio.noiseBuffer) return;
-        const source = audio.ctx.createBufferSource();
-        source.buffer = audio.noiseBuffer;
-        
-        const filter = audio.ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 1000;
-        
-        const gain = audio.ctx.createGain();
-        gain.gain.setValueAtTime(0.2, time);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
-        
-        source.connect(filter);
-        filter.connect(gain);
-        gain.connect(audio.musicGain);
-        
-        source.start(time);
-        source.stop(time + 0.12);
     }
     
     playRimshot(time) {
@@ -3289,8 +3487,18 @@ class MusicEngine {
             osc1.detune.value = -8 + (Math.random() * -5);
             osc2.detune.value = 8 + (Math.random() * 5);
             
-            osc1.connect(filter);
-            osc2.connect(filter);
+            // Wide stereo unison: the two detuned voices sit hard-ish left/right
+            // instead of stacking in mono, which is most of what makes a pad
+            // sound "lush" instead of "thin" for zero extra oscillators.
+            const pan1 = audio.ctx.createStereoPanner();
+            const pan2 = audio.ctx.createStereoPanner();
+            pan1.pan.value = -0.6 + (Math.random() * -0.15);
+            pan2.pan.value = 0.6 + (Math.random() * 0.15);
+            
+            osc1.connect(pan1);
+            osc2.connect(pan2);
+            pan1.connect(filter);
+            pan2.connect(filter);
             osc1.start(time);
             osc2.start(time);
             osc1.stop(time + 3.0);
@@ -3298,7 +3506,7 @@ class MusicEngine {
         });
         
         filter.connect(gain);
-        gain.connect(audio.musicGain);
+        gain.connect(this.duckBus || audio.musicGain);
         if (this.delayNode) gain.connect(this.delayNode); // Drown the pad in delay
     }
 
@@ -3310,30 +3518,32 @@ class MusicEngine {
         const gain = audio.ctx.createGain();
         
         let freq = 440 * Math.pow(2, (note - 69) / 12);
-        osc1.type = 'sawtooth';
-        osc2.type = (this.currentTrack === 'agent') ? 'square' : 'sawtooth';
+        osc1.type = (this.currentTrack === 'pvp') ? 'square' : 'sawtooth';
+        osc2.type = (this.currentTrack === 'agent') ? 'square' : (this.currentTrack === 'pvp') ? 'square' : 'sawtooth';
         osc1.frequency.setValueAtTime(freq, time);
         osc2.frequency.setValueAtTime(freq, time);
         
         // "Reese Bass" effect - heavy, thick detuning
-        osc1.detune.setValueAtTime(-12, time); 
-        osc2.detune.setValueAtTime(12, time);  
+        osc1.detune.setValueAtTime((this.currentTrack === 'pvp') ? -18 : -12, time); 
+        osc2.detune.setValueAtTime((this.currentTrack === 'pvp') ? 18 : 12, time);  
         
         // Snappy Filter Envelope (The Cyberpunk "Pluck")
         filter.type = 'lowpass';
-        let startFilter = (this.currentTrack === 'agent') ? 800 : 3000;
-        let endFilter = (this.currentTrack === 'agent') ? 100 : 300;
+        let startFilter = (this.currentTrack === 'agent') ? 800 : (this.currentTrack === 'pvp') ? 2200 : 3000;
+        let endFilter = (this.currentTrack === 'agent') ? 100 : (this.currentTrack === 'pvp') ? 150 : 300;
         filter.frequency.setValueAtTime(startFilter, time);
-        filter.frequency.exponentialRampToValueAtTime(endFilter, time + 0.12);
+        filter.frequency.exponentialRampToValueAtTime(endFilter, time + ((this.currentTrack === 'pvp') ? 0.07 : 0.12));
         
-        let baseVol = (this.currentTrack === 'agent') ? 0.35 : 0.22;
+        let baseVol = (this.currentTrack === 'agent') ? 0.35 : (this.currentTrack === 'pvp') ? 0.32 : 0.22;
         gain.gain.setValueAtTime(baseVol, time);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.16);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + ((this.currentTrack === 'pvp') ? 0.1 : 0.16));
         
+        // Bass stays centered (mono) -- standard mixing practice, keeps the
+        // low end tight and phase-coherent instead of diffuse.
         osc1.connect(filter);
         osc2.connect(filter);
         filter.connect(gain);
-        gain.connect(audio.musicGain);
+        gain.connect(this.duckBus || audio.musicGain);
         
         osc1.start(time);
         osc2.start(time);
@@ -3347,12 +3557,14 @@ class MusicEngine {
         const osc2 = audio.ctx.createOscillator();
         const filter = audio.ctx.createBiquadFilter();
         const gain = audio.ctx.createGain();
+        const pan = audio.ctx.createStereoPanner();
+        pan.pan.value = 0.18;
         
         let freq = 440 * Math.pow(2, (note - 69) / 12);
-        osc1.type = (this.currentTrack === 'ambient') ? 'sine' : 'square';
-        osc2.type = 'sawtooth'; 
+        osc1.type = (this.currentTrack === 'ambient') ? 'sine' : (this.currentTrack === 'pvp') ? 'square' : 'square';
+        osc2.type = (this.currentTrack === 'pvp') ? 'square' : 'sawtooth'; 
         osc1.frequency.setValueAtTime(freq, time);
-        osc2.frequency.setValueAtTime(freq * 2, time); // Layer an octave up
+        osc2.frequency.setValueAtTime(freq * ((this.currentTrack === 'pvp') ? 1 : 2), time); // pvp stacks in unison instead of an octave up, for a tighter, harder stab
         
         // Vintage Synthesizer Vibrato (LFO)
         const lfo = audio.ctx.createOscillator();
@@ -3377,7 +3589,8 @@ class MusicEngine {
         osc1.connect(filter);
         osc2.connect(filter);
         filter.connect(gain);
-        gain.connect(audio.musicGain);
+        gain.connect(pan);
+        pan.connect(this.duckBus || audio.musicGain);
         if (this.delayNode) gain.connect(this.delayNode);
         
         osc1.start(time);
@@ -3502,6 +3715,11 @@ const MathUtils = {
     _capsuleHitResult: { hit: false, dx: 0, dy: 0, dist: 0, px: 0, py: 0 },
 
     clamp: (val, min, max) => Math.max(min, Math.min(max, val)),
+    lerp: (a, b, t) => a + (b - a) * t,
+    map: (val, inMin, inMax, outMin, outMax) => {
+        let t = Math.max(0, Math.min(1, (val - inMin) / (inMax - inMin)));
+        return outMin + (outMax - outMin) * t;
+    },
     rand: (min, max) => Math.random() * (max - min) + min,
     closestPointOnSegment: (px, py, ax, ay, bx, by) => {
         let abx = bx - ax;
@@ -3930,6 +4148,7 @@ class MapGen {
     constructor() {
         this.walls = [];
         this.currentSearchId = 0;
+        this.hazeAnchors = [];
         
         const blueprints = [
             { id: 0, w: 2200, h: 2200, biome: { main: '#00e5ff', rgb: '0, 229, 255' } },
@@ -3956,7 +4175,27 @@ class MapGen {
         this.height = chosen.h;
         this.biome = chosen.biome;
         this.templateId = chosen.id;
-        
+
+        // Procedural Haze Anchor Setup
+        if (this.templateId !== 10) {
+            const mainRgb = this.biome.rgb;
+            // Define 5 positions: Center, TL, TR, BL, BR
+            const positions = [
+                {xf: 0.5, yf: 0.5, r: 0.9, color: mainRgb}, // Center
+                {xf: 0.0, yf: 0.0, r: 0.7, color: mainRgb}, // Top Left
+                {xf: 1.0, yf: 0.0, r: 0.7, color: mainRgb}, // Top Right
+                {xf: 0.0, yf: 1.0, r: 0.7, color: mainRgb}, // Bottom Left
+                {xf: 1.0, yf: 1.0, r: 0.7, color: mainRgb}  // Bottom Right
+            ];
+
+            this.hazeAnchors = positions.map(pos => ({
+                x: this.width * pos.xf,
+                y: this.height * pos.yf,
+                radius: Math.max(this.width, this.height) * pos.r,
+                color: pos.color
+            }));
+        }
+
         this.generate();
         this.initializeSpatialGrid();
         this.buildNavGrid();
@@ -4311,6 +4550,33 @@ class MapGen {
         }
     }
     draw(ctx, cam, viewportW, viewportH) {
+        // Draw Atmospheric Haze for standard maps (0-9)
+        if (this.templateId !== 10 && this.hazeAnchors.length > 0) {
+            ctx.save();
+            // Create a subtle breathing effect for the atmosphere
+            const pulse = 0.04 + Math.sin((game ? game.gameTime : 0) * 0.5) * 0.01;
+
+            for (let anchor of this.hazeAnchors) {
+                // Viewport culling for massive haze circles
+                const distToCam = Math.hypot(anchor.x - (cam.x + viewportW / (2 * cam.zoom)), anchor.y - (cam.y + viewportH / (2 * cam.zoom)));
+                if (distToCam > anchor.radius + Math.max(viewportW, viewportH)) continue;
+
+                let grad = ctx.createRadialGradient(
+                    anchor.x - cam.x, anchor.y - cam.y, 0,
+                    anchor.x - cam.x, anchor.y - cam.y, anchor.radius
+                );
+
+                grad.addColorStop(0, `rgba(${anchor.color}, ${pulse})`);
+                grad.addColorStop(0.5, `rgba(${anchor.color}, ${pulse * 0.5})`);
+                grad.addColorStop(1, `rgba(${anchor.color}, 0)`);
+
+                ctx.fillStyle = grad;
+                ctx.globalCompositeOperation = 'screen';
+                ctx.fillRect(anchor.x - anchor.radius - cam.x, anchor.y - anchor.radius - cam.y, anchor.radius * 2, anchor.radius * 2);
+            }
+            ctx.restore();
+        }
+
         if (this.templateId === 10) {
             let zs = 2500;
             let zones = [
@@ -4339,12 +4605,14 @@ class MapGen {
         }
         if (this.biome.splitTheme) {
             let grad = ctx.createLinearGradient(0, 0, viewportW, 0);
-            grad.addColorStop(0, 'rgba(255, 42, 95, 0.08)');
-            grad.addColorStop(0.5, 'rgba(128, 143, 156, 0.08)');
-            grad.addColorStop(1, 'rgba(0, 229, 255, 0.08)');
+            grad.addColorStop(0, 'rgba(255, 42, 95, 0.12)');
+            grad.addColorStop(0.5, 'rgba(128, 143, 156, 0.12)');
+            grad.addColorStop(1, 'rgba(0, 229, 255, 0.12)');
             ctx.strokeStyle = grad;
         } else {
-            ctx.strokeStyle = this.templateId === 10 ? 'rgba(255, 255, 255, 0.01)' : `rgba(${this.biome.rgb}, 0.05)`;
+            // Standard maps (0-9) get a slightly more visible grid to pop through the haze
+            const gridOpacity = this.templateId === 10 ? 0.01 : 0.08;
+            ctx.strokeStyle = `rgba(${this.biome.rgb}, ${gridOpacity})`;
         }
         ctx.lineWidth = 1;
         let gridS = 60;
@@ -4797,6 +5065,7 @@ class Player extends Entity {
         this.pistolHP = false; 
         this.barrierUpgraded = false;
         this.droneUpgraded = false;
+        this.activeDrone = null;
         this.semiAutoTriggerReleased = true;
         this.dogsInventory = [];
         this.hunterSwarmCount = 0;
@@ -4983,7 +5252,7 @@ class Player extends Entity {
         }
 
         // Lock movement if player is actively piloting FPV drone
-        if (game.drone && game.drone.pilot === this && game.drone.isPiloted && !game.drone.dead) {
+        if (this.activeDrone && this.activeDrone.isPiloted && !this.activeDrone.dead) {
             moveX = 0;
             moveY = 0;
         }
@@ -5008,7 +5277,7 @@ class Player extends Entity {
         }
 
         // Lock weapons firing if player is actively piloting drone
-        if (game.drone && game.drone.pilot === this && game.drone.isPiloted && !game.drone.dead) {
+        if (this.activeDrone && this.activeDrone.isPiloted && !this.activeDrone.dead) {
             isFiring = false;
         }
 
@@ -5074,6 +5343,37 @@ class Player extends Entity {
         if (this.muzzleFlashTimer > 0) {
             this.muzzleFlashTimer -= dt;
             if (this.muzzleFlashTimer < 0) this.muzzleFlashTimer = 0;
+        }
+
+        // PvP Barrier Blocking: a player is physically stopped by barriers owned
+        // by the OTHER player. Their own barriers (and all barriers in every
+        // non-PvP mode) remain fully walk-through, unchanged.
+        if (typeof game !== 'undefined' && game && game.friendlyFireMode === 'pvp' && game.barriers) {
+            for (let bar of game.barriers) {
+                if (!bar.owner || bar.owner === this) continue;
+                let col = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
+                if (col.hit) {
+                    let nx = 0, ny = 0, overlap = 0;
+                    if (col.dist > 0) {
+                        nx = col.dx / col.dist;
+                        ny = col.dy / col.dist;
+                        overlap = (this.r + bar.r) - col.dist;
+                    } else {
+                        let segmentAngle = Math.atan2(bar.by - bar.ay, bar.bx - bar.ax);
+                        let perpAngle = segmentAngle + Math.PI / 2;
+                        nx = Math.cos(perpAngle);
+                        ny = Math.sin(perpAngle);
+                        overlap = this.r + bar.r;
+                    }
+                    this.x += nx * overlap;
+                    this.y += ny * overlap;
+                    let dot = this.vx * nx + this.vy * ny;
+                    if (dot < 0) {
+                        this.vx -= nx * dot;
+                        this.vy -= ny * dot;
+                    }
+                }
+            }
         }
 
         this.updatePhysics(dt, walls);
@@ -5597,22 +5897,38 @@ class Enemy extends Entity {
             let dyToT = targetY - this.y;
             let distToTarget = Math.sqrt(dxToT*dxToT + dyToT*dyToT);
             
-            // FPV Drone Fear / Scattering Check
+            // FPV Drone Fear / Scattering Check (considers BOTH players' drones)
             let runFromDrone = false;
             let runFromObj = null;
-            if (game && game.drone && !game.drone.dead && game.drone.isPiloted) {
-                let dxDr = game.drone.x - this.x;
-                let dyDr = game.drone.y - this.y;
-                let droneDist = Math.sqrt(dxDr*dxDr + dyDr*dyDr);
-                if (this.willShootDrone && droneDist < 700) {
-                    target = game.drone;
-                    targetX = target.x;
-                    targetY = target.y;
-                    distToTarget = droneDist;
-                    runFromDrone = false;
-                } else if (!this.willShootDrone && droneDist < 250) {
-                    runFromDrone = true;
-                    runFromObj = game.drone;
+            if (game) {
+                let candidateDrones = [];
+                if (game.player && game.player.activeDrone && !game.player.activeDrone.dead && game.player.activeDrone.isPiloted) candidateDrones.push(game.player.activeDrone);
+                if (game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && game.player2.activeDrone.isPiloted) candidateDrones.push(game.player2.activeDrone);
+
+                let nearestPilotedDrone = null;
+                let nearestPilotedDroneDist = Infinity;
+                for (let dCandidate of candidateDrones) {
+                    let dxDr = dCandidate.x - this.x;
+                    let dyDr = dCandidate.y - this.y;
+                    let dDist = Math.sqrt(dxDr*dxDr + dyDr*dyDr);
+                    if (dDist < nearestPilotedDroneDist) {
+                        nearestPilotedDroneDist = dDist;
+                        nearestPilotedDrone = dCandidate;
+                    }
+                }
+
+                if (nearestPilotedDrone) {
+                    let droneDist = nearestPilotedDroneDist;
+                    if (this.willShootDrone && droneDist < 700) {
+                        target = nearestPilotedDrone;
+                        targetX = target.x;
+                        targetY = target.y;
+                        distToTarget = droneDist;
+                        runFromDrone = false;
+                    } else if (!this.willShootDrone && droneDist < 250) {
+                        runFromDrone = true;
+                        runFromObj = nearestPilotedDrone;
+                    }
                 }
             }
 
@@ -5645,7 +5961,10 @@ class Enemy extends Entity {
                 if (game.isTwoPlayer && game.player2 && !game.player2.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player2.x, game.player2.y, w))) {
                     visibleToPlayers = true;
                 }
-                if (game.drone && !game.drone.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.drone.x, game.drone.y, w))) {
+                if (game.player && game.player.activeDrone && !game.player.activeDrone.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y, w))) {
+                    visibleToPlayers = true;
+                }
+                if (game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y, w))) {
                     visibleToPlayers = true;
                 }
                 if (game.dogs) {
@@ -5697,10 +6016,10 @@ class Enemy extends Entity {
             this.cachedVisibleToPlayers = visibleToPlayers;
 
             this.cachedReactingToDrone = false;
-            if (target === (game && game.drone)) {
+            if (target instanceof FPVDrone) {
                 this.cachedReactingToDrone = true;
             } else if (runFromDrone && runFromObj) {
-                if (runFromObj === (game && game.drone) || (game && game.miniDrones && game.miniDrones.includes(runFromObj))) {
+                if (runFromObj instanceof FPVDrone || (game && game.miniDrones && game.miniDrones.includes(runFromObj))) {
                     this.cachedReactingToDrone = true;
                 }
             }
@@ -5882,6 +6201,18 @@ class Enemy extends Entity {
 
         if (game.barriers) {
             for (let bar of game.barriers) {
+                // Friendly Barrier Passage: If you own it or are an ally, you pass through.
+                // In PvP, this means P1 is blocked by P2's barriers.
+                let isHostileBarrier = false;
+                if (game.friendlyFireMode === 'pvp') {
+                    if (bar.owner !== this) isHostileBarrier = true;
+                } else {
+                    // Standard/Hardcore: Only enemies are blocked by barriers.
+                    if (this instanceof Enemy) isHostileBarrier = true;
+                }
+
+                if (!isHostileBarrier) continue;
+
                 let col = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
                 if (col.hit) {
                     if (bar.isMKII) {
@@ -6430,10 +6761,7 @@ class Bullet {
                 if (ent.dead) continue;
                 
                 let canHit = false;
-                let bulletOwner = this.owner;
-                if (!bulletOwner && this.isPlayerBullet && typeof this.isPlayerBullet === 'object') {
-                    bulletOwner = this.isPlayerBullet;
-                }
+                let bulletOwner = this.owner || this.shooter;
                 
                 if (ent === bulletOwner) {
                     canHit = false;
@@ -6452,6 +6780,14 @@ class Bullet {
                             canHit = (bulletOwner instanceof Player && ent instanceof Player);
                         } else if (game.friendlyFireMode === 'hardcore') {
                             canHit = true;
+                        } else if (game.friendlyFireMode === 'pvp') {
+                            // Hit the other player or their stuff.
+                            // Resolve BOTH sides to their owning Player (not the raw asset
+                            // instance) so a player's own turret/dog/drone bullets can
+                            // never strike that same player's other owned assets.
+                            let shooterOwner = (bulletOwner && bulletOwner.owner) ? bulletOwner.owner : bulletOwner;
+                            let targetOwner = ent.owner ? ent.owner : ent;
+                            canHit = (targetOwner !== shooterOwner);
                         }
                     }
                 } else {
@@ -6556,31 +6892,71 @@ class Bullet {
                     }
                 }
             }
-            if (game.barriers && !this.isPlayerBullet && !this.isNeutral) {
-                for (let j = game.barriers.length - 1; j >= 0; j--) {
-                    let bar = game.barriers[j];
-                    let col = MathUtils.circleIntersectCapsule(this.x, this.y, 2, bar);
-                    if (col.hit) {
-                        bar.hp -= this.dmg;
-                        for(let c=0; c<4; c++) {
-                            game.addParticle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#00e5ff', 0.4, 2);
-                        }
-                        
-                        if (bar.hp <= 0) {
-                            game.barriers.splice(j, 1);
-                            audio.playExplosion(1.0, this.x, this.y);
-                            let mx = (bar.ax + bar.bx) / 2;
-                            let my = (bar.ay + bar.by) / 2;
-                            for(let c=0; c<10; c++) {
-                                game.addParticle(mx, my, MathUtils.rand(-150, 150), MathUtils.rand(-150, 150), '#00e5ff', 0.5, 3);
+            if (game.barriers && !this.isNeutral) {
+                if (!this.isPlayerBullet) {
+                    for (let j = game.barriers.length - 1; j >= 0; j--) {
+                        let bar = game.barriers[j];
+                        let col = MathUtils.circleIntersectCapsule(this.x, this.y, 2, bar);
+                        if (col.hit) {
+                            bar.hp -= this.dmg;
+                            for(let c=0; c<4; c++) {
+                                game.addParticle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#00e5ff', 0.4, 2);
                             }
-                        } else {
-                            audio.playRicochet(this.x, this.y);
+                            
+                            if (bar.hp <= 0) {
+                                game.barriers.splice(j, 1);
+                                audio.playExplosion(1.0, this.x, this.y);
+                                let mx = (bar.ax + bar.bx) / 2;
+                                let my = (bar.ay + bar.by) / 2;
+                                for(let c=0; c<10; c++) {
+                                    game.addParticle(mx, my, MathUtils.rand(-150, 150), MathUtils.rand(-150, 150), '#00e5ff', 0.5, 3);
+                                }
+                            } else {
+                                audio.playRicochet(this.x, this.y);
+                            }
+                            
+                            this.active = false;
+                            hitRegistered = true;
+                            break;
                         }
-                        
-                        this.active = false;
-                        hitRegistered = true;
-                        break;
+                    }
+                } else if (game.friendlyFireMode === 'pvp') {
+                    // PvP: a player's own gunfire and their owned turret/dog gunfire is
+                    // blocked by the OPPOSING player's barriers only -- never their own.
+                    // Automated turret/dog fire has a small 3% chance to punch clean
+                    // through instead of being stopped (a player's own aimed shots never do).
+                    let pvpBulletOwner = this.owner || this.shooter;
+                    let pvpShooterOwner = (pvpBulletOwner && pvpBulletOwner.owner) ? pvpBulletOwner.owner : pvpBulletOwner;
+                    let isAutomatedFire = (pvpBulletOwner instanceof AutoTurret || pvpBulletOwner instanceof RobotDog);
+
+                    for (let j = game.barriers.length - 1; j >= 0; j--) {
+                        let bar = game.barriers[j];
+                        if (!bar.owner || bar.owner === pvpShooterOwner) continue;
+                        if (isAutomatedFire && Math.random() < 0.03) continue;
+
+                        let col = MathUtils.circleIntersectCapsule(this.x, this.y, 2, bar);
+                        if (col.hit) {
+                            bar.hp -= this.dmg;
+                            for(let c=0; c<4; c++) {
+                                game.addParticle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#00e5ff', 0.4, 2);
+                            }
+                            
+                            if (bar.hp <= 0) {
+                                game.barriers.splice(j, 1);
+                                audio.playExplosion(1.0, this.x, this.y);
+                                let mx = (bar.ax + bar.bx) / 2;
+                                let my = (bar.ay + bar.by) / 2;
+                                for(let c=0; c<10; c++) {
+                                    game.addParticle(mx, my, MathUtils.rand(-150, 150), MathUtils.rand(-150, 150), '#00e5ff', 0.5, 3);
+                                }
+                            } else {
+                                audio.playRicochet(this.x, this.y);
+                            }
+                            
+                            this.active = false;
+                            hitRegistered = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -6735,6 +7111,7 @@ class FPVDrone {
         this.x = x;
         this.y = y;
         this.pilot = pilot;
+        this.owner = pilot;
         this.vx = 0;
         this.vy = 0;
         this.r = 10;
@@ -6933,19 +7310,8 @@ class FPVDrone {
                     if (gamepads[i]) gpList.push(gamepads[i]);
                 }
                 
-                let gp1 = null;
-                let gp2 = null;
-                if (gpList.length === 1) {
-                    if (game.isTwoPlayer) {
-                        gp2 = gpList[0];
-                    } else {
-                        gp1 = gpList[0];
-                    }
-                } else if (gpList.length >= 2) {
-                    gp1 = gpList[0];
-                    gp2 = gpList[1];
-                }
-                
+                let { gp1, gp2 } = game.resolveGamepadAssignments(gpList);
+
                 gp = (this.pilot === game.player2) ? gp2 : gp1;
             }
             
@@ -7012,6 +7378,21 @@ class FPVDrone {
                 }
             }
             
+            // PvP: hostile barriers act like walls (crash = detonate), but a piloted
+            // drone has a 20% chance to find a gap and slip through unscathed --
+            // a fortified base shouldn't be a perfect, unbeatable dome.
+            if (!exploded && game.friendlyFireMode === 'pvp' && game.barriers) {
+                for (let bar of game.barriers) {
+                    if (!bar.owner || bar.owner === this.owner) continue;
+                    let barCol = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
+                    if (barCol.hit) {
+                        if (Math.random() < 0.20) continue;
+                        exploded = true;
+                        break;
+                    }
+                }
+            }
+            
             if (exploded) {
                 this.detonate();
                 return;
@@ -7043,6 +7424,21 @@ class FPVDrone {
                 if (col.hit) {
                     exploded = true;
                     break;
+                }
+            }
+            
+            // PvP: hostile barriers act like walls (crash = detonate), but a piloted
+            // drone has a 20% chance to find a gap and slip through unscathed --
+            // a fortified base shouldn't be a perfect, unbeatable dome.
+            if (!exploded && game.friendlyFireMode === 'pvp' && game.barriers) {
+                for (let bar of game.barriers) {
+                    if (!bar.owner || bar.owner === this.owner) continue;
+                    let barCol = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
+                    if (barCol.hit) {
+                        if (Math.random() < 0.20) continue;
+                        exploded = true;
+                        break;
+                    }
                 }
             }
             
@@ -7098,7 +7494,8 @@ class FPVDrone {
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
             if (game.miniDrones) entities.push(...game.miniDrones);
-            if (game.drone) entities.push(game.drone);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
         }
         
         let preDead = 0;
@@ -7139,8 +7536,10 @@ class FPVDrone {
             game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffff00', 0.5, 4);
             game.addParticle(this.x, this.y, Math.cos(a)*spd*0.7, Math.sin(a)*spd*0.7, '#ff3d00', 0.7, 5);
         }
-        
-        game.drone = null;
+
+        if (this.pilot) {
+            this.pilot.activeDrone = null;
+        }
     }
     
     draw(ctx, cam) {
@@ -7282,41 +7681,59 @@ class AutoTurret extends Entity {
     
     update(dt, game) {
         if (this.dead) return;
-        
-        let nearestEnemy = null;
+
+        let nearestHostile = null;
         let nearestDist = this.maxRange;
-        
-        for (let enemy of game.enemies) {
-            if (enemy.dead) continue;
-            let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+
+        let hostiles = game.getHostilesFor(this);
+
+        for (let h of hostiles) {
+            if (h.dead) continue;
+            let d = Math.hypot(h.x - this.x, h.y - this.y);
             if (d < nearestDist) {
-                let hasLOS = !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w));
+                let hasLOS = !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w));
                 if (hasLOS) {
                     nearestDist = d;
-                    nearestEnemy = enemy;
+                    nearestHostile = h;
                 }
             }
         }
-        
-        this.target = nearestEnemy;
-        
+
+        this.target = nearestHostile;
+
         if (this.target) {
             let targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
             let diff = MathUtils.angleDifference(targetAngle, this.angle);
             this.angle += Math.sign(diff) * Math.min(Math.abs(diff), this.aimSpeed * dt);
-            
+
             if (this.fireCooldown > 0) {
                 this.fireCooldown -= dt;
             }
-            
+
             if (Math.abs(diff) < 0.25 && this.fireCooldown <= 0) {
-                if (this.burstCount === 0) {
-                    this.burstCount = 3;
-                    this.burstTimer = 0;
+                // PvP Safety: 0.5s lock-on delay if targeting a human player
+                if (this.target instanceof Player) {
+                    if (!this.playerLockTimer) this.playerLockTimer = 0.5;
+                    this.playerLockTimer -= dt;
+                    if (this.playerLockTimer <= 0) {
+                        if (this.burstCount === 0) {
+                            this.burstCount = 3;
+                            this.burstTimer = 0;
+                            this.playerLockTimer = 0.5;
+                        }
+                    }
+                } else {
+                    if (this.burstCount === 0) {
+                        this.burstCount = 3;
+                        this.burstTimer = 0;
+                    }
                 }
+            } else if (Math.abs(diff) >= 0.25) {
+                this.playerLockTimer = 0.5; // Reset delay if LOS broken or tracking too slow
             }
         } else {
             this.angle += 0.8 * dt;
+            this.playerLockTimer = 0.5;
         }
         
         if (this.burstCount > 0) {
@@ -7393,9 +7810,23 @@ class AutoTurret extends Entity {
         }
         
         ctx.rotate(this.angle);
+
+        // Visual telegraph for PvP
+        if (this.target && this.target instanceof Player) {
+            ctx.save();
+            ctx.strokeStyle = '#ff0000';
+            ctx.setLineDash([2, 2]);
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(0,0);
+            ctx.lineTo(this.maxRange, 0);
+            ctx.stroke();
+            ctx.restore();
+        }
+
         if (this.isMKII) {
             // Draw 3 barrels
-            ctx.strokeStyle = '#ffea00';
+            ctx.strokeStyle = (this.target instanceof Player) ? '#ff0000' : '#ffea00';
             ctx.lineWidth = 2;
             
             // Left barrel
@@ -7419,7 +7850,7 @@ class AutoTurret extends Entity {
             ctx.arc(20, 0, 3.5, 0, Math.PI*2);
             ctx.fill();
         } else {
-            ctx.strokeStyle = '#00e5ff';
+            ctx.strokeStyle = (this.target instanceof Player) ? '#ff0000' : '#00e5ff';
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(0, 0);
@@ -7529,13 +7960,22 @@ class RobotDog extends Entity {
             }
         }
         
-        // Find closest visible enemy
-        let closestEnemy = null;
-        if (visibleEnemies.length > 0) {
-            visibleEnemies.sort((a, b) => a.dist - b.dist);
-            closestEnemy = visibleEnemies[0].enemy;
+        // Find closest visible hostile (PvP aware)
+        let hostiles = game.getHostilesFor(this);
+        let visibleHostiles = [];
+        for (let h of hostiles) {
+            if (h.dead) continue;
+            let d = Math.hypot(h.x - this.x, h.y - this.y);
+            let hasLOS = !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w));
+            if (hasLOS) visibleHostiles.push({ target: h, dist: d });
         }
-        this.target = closestEnemy;
+
+        let closestHostile = null;
+        if (visibleHostiles.length > 0) {
+            visibleHostiles.sort((a, b) => a.dist - b.dist);
+            closestHostile = visibleHostiles[0].target;
+        }
+        this.target = closestHostile;
         
         // Determine state based on active threats (enemies within 800px)
         let hpPct = this.hp / this.maxHp;
@@ -7599,22 +8039,35 @@ class RobotDog extends Entity {
         }
         
         // Handle shooting in combat
-        if (closestEnemy) {
-            // Aim at enemy
-            let targetAngle = Math.atan2(closestEnemy.y - this.y, closestEnemy.x - this.x);
+        if (closestHostile) {
+            // Aim at hostile target
+            let targetAngle = Math.atan2(closestHostile.y - this.y, closestHostile.x - this.x);
             let diff = MathUtils.angleDifference(targetAngle, this.angle);
-            this.angle += Math.sign(diff) * Math.min(Math.abs(diff), 6 * dt); // rotate towards enemy
-            
+            this.angle += Math.sign(diff) * Math.min(Math.abs(diff), 6 * dt); // rotate towards hostile
+
             // Firing check: only shoot if within weapon range (800px)
-            let dxE = closestEnemy.x - this.x;
-            let dyE = closestEnemy.y - this.y;
+            let dxE = closestHostile.x - this.x;
+            let dyE = closestHostile.y - this.y;
             let distToEnemySq = dxE*dxE + dyE*dyE;
             if (this.fireCooldown > 0) {
                 this.fireCooldown -= dt;
             }
             if (distToEnemySq < 640000 && Math.abs(diff) < 0.25 && this.fireCooldown <= 0) {
-                this.shoot(game);
-                this.fireCooldown = this.fireRate;
+                // PvP Safety: 0.5s lock-on delay if targeting a human player
+                if (closestHostile instanceof Player) {
+                    if (!this.playerLockTimer) this.playerLockTimer = 0.5;
+                    this.playerLockTimer -= dt;
+                    if (this.playerLockTimer <= 0) {
+                        this.shoot(game);
+                        this.fireCooldown = this.fireRate;
+                        this.playerLockTimer = 0.5;
+                    }
+                } else {
+                    this.shoot(game);
+                    this.fireCooldown = this.fireRate;
+                }
+            } else if (Math.abs(diff) >= 0.25) {
+                this.playerLockTimer = 0.5;
             }
         }
         
@@ -7772,9 +8225,9 @@ class RobotDog extends Entity {
                     moveY = Math.sin(desiredAngle);
                     
                     // Add dodging/strafing offset in Retreat state
-                    if (this.state === 'RETREATING' && closestEnemy) {
-                        let edx = closestEnemy.x - this.x;
-                        let edy = closestEnemy.y - this.y;
+                    if (this.state === 'RETREATING' && closestHostile) {
+                        let edx = closestHostile.x - this.x;
+                        let edy = closestHostile.y - this.y;
                         let edist = Math.hypot(edx, edy);
                         if (edist > 0) {
                             let ex = edx / edist;
@@ -7821,8 +8274,8 @@ class RobotDog extends Entity {
                 this.vx += (moveX / len) * currentSpeed * 4 * dt;
                 this.vy += (moveY / len) * currentSpeed * 4 * dt;
                 
-                // Update angle towards movement direction ONLY if not aiming at enemy
-                if (!closestEnemy) {
+                // Update angle towards movement direction ONLY if not aiming at hostile
+                if (!closestHostile) {
                     let moveAngle = Math.atan2(this.vy, this.vx);
                     let diff = MathUtils.angleDifference(moveAngle, this.angle);
                     this.angle += Math.sign(diff) * Math.min(Math.abs(diff), 8 * dt);
@@ -7858,6 +8311,7 @@ class RobotDog extends Entity {
         // Collision with barriers
         if (game.barriers) {
             for (let bar of game.barriers) {
+                if (game.friendlyFireMode === 'pvp' && bar.owner === this.owner) continue;
                 let col = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
                 if (col.hit) {
                     let nx = 0, ny = 0, overlap = 0;
@@ -7974,7 +8428,12 @@ class RobotDog extends Entity {
         );
         
         let isP2Dog = (this.owner === game.player2);
-        if (this.upgraded) {
+        let isTargetingHostilePlayer = (this.target instanceof Player);
+        if (isTargetingHostilePlayer) {
+            grad.addColorStop(0, `rgba(255, 0, 0, ${startAlpha * 1.6})`);
+            grad.addColorStop(1, `rgba(255, 0, 0, ${endAlpha})`);
+            ctx.fillStyle = `rgba(255, 0, 0, ${dotAlpha})`;
+        } else if (this.upgraded) {
             grad.addColorStop(0, `rgba(255, 0, 220, ${startAlpha * 1.5})`);
             grad.addColorStop(1, `rgba(255, 0, 220, ${endAlpha})`);
             ctx.fillStyle = `rgba(255, 0, 220, ${dotAlpha})`;
@@ -8187,9 +8646,13 @@ class MiniDrone extends Entity {
                 let otherTargets = game.miniDrones
                     .filter(md => md !== this && md.owner === this.owner && md.state === 'HUNTING' && md.target && !md.target.dead)
                     .map(md => md.target);
-                
-                // Phase 1: Try to find a visible enemy NOT in otherTargets and NOT targeted in the last 5 seconds
-                for (let enemy of game.enemies) {
+
+                // Phase 1: Try to find a visible hostile (enemy, or in PvP mode: opposing
+                // player's assets, EXCLUDING the human player themself for fairness/balance
+                // since this drone closes at high speed with no telegraph) NOT in
+                // otherTargets and NOT targeted in the last 5 seconds
+                let huntPool = game.getHostilesFor(this);
+                for (let enemy of huntPool) {
                     if (enemy.dead) continue;
                     if (otherTargets.includes(enemy)) continue;
                     if (enemy.lastMiniDroneTargetTime && game.gameTime - enemy.lastMiniDroneTargetTime < 5.0) continue;
@@ -8204,10 +8667,10 @@ class MiniDrone extends Entity {
                     }
                 }
                 
-                // Phase 2: Fallback to targeted visible enemies if all are targeted, still respecting the 5-second lockout
+                // Phase 2: Fallback to targeted visible hostiles if all are targeted, still respecting the 5-second lockout
                 if (!nearestEnemy) {
                     nearestDist = 600;
-                    for (let enemy of game.enemies) {
+                    for (let enemy of huntPool) {
                         if (enemy.dead) continue;
                         if (enemy.lastMiniDroneTargetTime && game.gameTime - enemy.lastMiniDroneTargetTime < 5.0) continue;
                         
@@ -8330,7 +8793,8 @@ class MiniDrone extends Entity {
                 let nearestEnemy = null;
                 let nearestDist = 600;
                 let walls = game.map.walls;
-                for (let enemy of game.enemies) {
+                let reacquirePool = game.getHostilesFor(this);
+                for (let enemy of reacquirePool) {
                     if (enemy.dead) continue;
                     let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                     if (d < nearestDist) {
@@ -8471,6 +8935,22 @@ class MiniDrone extends Entity {
                     return;
                 }
             }
+            if (game.friendlyFireMode === 'pvp' && game.barriers) {
+                for (let bar of game.barriers) {
+                    if (!bar.owner || bar.owner === this.owner) continue;
+                    let barCol = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
+                    if (barCol.hit) {
+                        if (Math.random() < 0.15) continue;
+                        bar.hp -= 140;
+                        if (bar.hp <= 0) {
+                            let barIdx = game.barriers.indexOf(bar);
+                            if (barIdx !== -1) game.barriers.splice(barIdx, 1);
+                        }
+                        this.detonate();
+                        return;
+                    }
+                }
+            }
             if (this.x < this.r || this.x > game.mapW - this.r || this.y < this.r || this.y > game.mapH - this.r) {
                 this.detonate();
                 return;
@@ -8515,7 +8995,8 @@ class MiniDrone extends Entity {
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
             if (game.miniDrones) entities.push(...game.miniDrones);
-            if (game.drone) entities.push(game.drone);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
         }
         let preDead = 0;
         for (let ent of entities) {
@@ -8660,7 +9141,8 @@ class ShrapnelGrenade {
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
             if (game.miniDrones) entities.push(...game.miniDrones);
-            if (game.drone) entities.push(game.drone);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
         }
         
         let preDead = 0;
@@ -8820,7 +9302,8 @@ class Flashbang {
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
             if (game.miniDrones) entities.push(...game.miniDrones);
-            if (game.drone) entities.push(game.drone);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
         }
         
         for (let ent of entities) {
@@ -8909,7 +9392,8 @@ class TripMine {
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
             if (game.miniDrones) entities.push(...game.miniDrones);
-            if (game.drone) entities.push(game.drone);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
         }
         for (let ent of entities) {
             if (ent.dead) continue;
@@ -8942,7 +9426,8 @@ class TripMine {
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
             if (game.miniDrones) entities.push(...game.miniDrones);
-            if (game.drone) entities.push(game.drone);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
         }
         
         let preDead = 0;
@@ -9809,7 +10294,85 @@ class Game {
             });
         }
     }
-    
+
+    // --- Manual Gamepad-to-Player Assignment ---
+    // Lets the player pin a specific detected controller (by its live browser slot
+    // index) to Player 1 or Player 2, instead of relying purely on auto-detection.
+    // 'auto' preserves the original heuristic; 'none' forces that player to never
+    // use a gamepad at all (e.g. so a connected-but-unused controller can't steal
+    // input from a player using touch or keyboard/mouse).
+    resolveGamepadAssignments(gpList) {
+        let p1Choice = (this.saveData && this.saveData.p1GamepadChoice) || 'auto';
+        let p2Choice = (this.saveData && this.saveData.p2GamepadChoice) || 'auto';
+        let pool = gpList.slice();
+        let gp1 = null, gp2 = null;
+
+        const claim = (choice) => {
+            if (choice === 'none' || choice === 'auto') return null;
+            let idx = parseInt(choice);
+            let found = pool.find(gp => gp.index === idx) || null;
+            if (found) pool = pool.filter(gp => gp !== found);
+            return found;
+        };
+
+        gp1 = claim(p1Choice);
+        gp2 = claim(p2Choice);
+
+        // Original single-controller heuristic, preserved exactly for the default
+        // (both-auto) case: one gamepad in a 2-player game goes to Player 2.
+        if (p1Choice === 'auto' && p2Choice === 'auto' && pool.length === 1 && this.isTwoPlayer) {
+            gp2 = pool[0];
+            pool = [];
+        }
+        if (p1Choice === 'auto' && gp1 === null && pool.length > 0) {
+            gp1 = pool.shift();
+        }
+        if (p2Choice === 'auto' && gp2 === null && pool.length > 0) {
+            gp2 = pool.shift();
+        }
+
+        return { gp1, gp2 };
+    }
+
+    setGamepadChoice(playerNum, choice) {
+        if (playerNum === 1) {
+            this.saveData.p1GamepadChoice = choice;
+        } else {
+            this.saveData.p2GamepadChoice = choice;
+        }
+        this.saveGameData();
+        this.refreshGamepadAssignmentUI();
+    }
+
+    refreshGamepadAssignmentUI() {
+        let p1Choice = (this.saveData && this.saveData.p1GamepadChoice) || 'auto';
+        let p2Choice = (this.saveData && this.saveData.p2GamepadChoice) || 'auto';
+        const suffixes = ['', '-pause'];
+        const choices = ['auto', 'none', '0', '1', '2', '3'];
+
+        for (let suf of suffixes) {
+            for (let c of choices) {
+                let b1 = document.getElementById(`btn-p1-gp-${c}${suf}`);
+                if (b1) b1.classList.toggle('active-mode', p1Choice === c);
+                let b2 = document.getElementById(`btn-p2-gp-${c}${suf}`);
+                if (b2) b2.classList.toggle('active-mode', p2Choice === c);
+            }
+        }
+    }
+
+    refreshGamepadAssignmentStatus(gpList) {
+        let { gp1, gp2 } = this.resolveGamepadAssignments(gpList);
+        const fmt = (gp) => gp ? ('Gamepad ' + (gp.index + 1) + ((gp.id) ? ' — ' + gp.id.substring(0, 24) : '')) : 'No gamepad (keyboard/mouse or touch)';
+        let s1 = 'Currently: ' + fmt(gp1);
+        let s2 = 'Currently: ' + fmt(gp2);
+        for (let suf of ['', '-pause']) {
+            let l1 = document.getElementById(`lbl-p1-gp-status${suf}`);
+            if (l1) l1.textContent = s1;
+            let l2 = document.getElementById(`lbl-p2-gp-status${suf}`);
+            if (l2) l2.textContent = s2;
+        }
+    }
+
     bindInput() {
         window.addEventListener('keydown', e => {
             if ((e.key === 'F1' || e.key === '`' || e.key === '~') && this.devModeEnabled) {
@@ -9821,15 +10384,15 @@ class Game {
             this.input.keys[key] = true;
             
             if (this.state === 'playing' && !this.player.dead) {
-                if (this.drone && this.drone.pilot === this.player && this.drone.isPiloted && !this.drone.dead) {
+                if (this.player.activeDrone && this.player.activeDrone.isPiloted && !this.player.activeDrone.dead) {
                     if (key === 'f') {
                         this.handleDroneInput(this.player);
                     }
                     if (key === 'c') {
-                        if (this.player.droneUpgraded && (this.drone.bombsDropped || 0) < 3) {
-                            this.drone.dropBomb();
+                        if (this.player.droneUpgraded && (this.player.activeDrone.bombsDropped || 0) < 3) {
+                            this.player.activeDrone.dropBomb();
                         } else {
-                            this.drone.detonate();
+                            this.player.activeDrone.detonate();
                         }
                     }
                     if (key === 'p' || e.key === 'Escape') {
@@ -9875,11 +10438,11 @@ class Game {
                     return;
                 }
                 this.input.mouseDown = true; 
-                if (this.state === 'playing' && this.drone && this.drone.pilot === this.player && this.drone.isPiloted && !this.drone.dead) {
-                    if (this.player.droneUpgraded && (this.drone.bombsDropped || 0) < 3) {
-                        this.drone.dropBomb();
+                if (this.state === 'playing' && this.player.activeDrone && this.player.activeDrone.isPiloted && !this.player.activeDrone.dead) {
+                    if (this.player.droneUpgraded && (this.player.activeDrone.bombsDropped || 0) < 3) {
+                        this.player.activeDrone.dropBomb();
                     } else {
-                        this.drone.detonate();
+                        this.player.activeDrone.detonate();
                     }
                 }
             }
@@ -9980,10 +10543,14 @@ class Game {
                 gpList.push({
                     buttons: normalizedButtons,
                     axes: normalizedAxes,
-                    id: gp.id || "Gamepad"
+                    id: gp.id || "Gamepad",
+                    index: i
                 });
             }
         }
+
+        this.refreshGamepadAssignmentStatus(gpList);
+
         if (gpList.length === 0) return false;
 
         this.gamepadConnected = true;
@@ -10006,18 +10573,7 @@ class Game {
         if (this.dpadCooldown > 0) this.dpadCooldown -= dt;
         if (this.gpadPauseCooldown > 0) this.gpadPauseCooldown -= dt;
 
-        let gp1 = null;
-        let gp2 = null;
-        if (gpList.length === 1) {
-            if (this.isTwoPlayer) {
-                gp2 = gpList[0];
-            } else {
-                gp1 = gpList[0];
-            }
-        } else if (gpList.length >= 2) {
-            gp1 = gpList[0];
-            gp2 = gpList[1];
-        }
+        let { gp1, gp2 } = this.resolveGamepadAssignments(gpList);
 
         // --- Sub-Modal Overlay Interception (must be checked before all other states) ---
         if (this.perkSelectingPlayer) {
@@ -10150,13 +10706,13 @@ class Game {
             let pollPlayer = (gp, playerInstance) => {
                 if (!gp || !playerInstance || playerInstance.dead) return;
                 
-                if (this.drone && this.drone.pilot === playerInstance && this.drone.isPiloted && !this.drone.dead) {
+                if (playerInstance.activeDrone && playerInstance.activeDrone.isPiloted && !playerInstance.activeDrone.dead) {
                     if (this.gpadButtonCooldown <= 0) {
                         if (gp.buttons[11].pressed || gp.buttons[7].pressed) { // R3 or RT detonates
-                            if (playerInstance.droneUpgraded && (this.drone.bombsDropped || 0) < 3) {
-                                this.drone.dropBomb();
+                            if (playerInstance.droneUpgraded && (playerInstance.activeDrone.bombsDropped || 0) < 3) {
+                                playerInstance.activeDrone.dropBomb();
                             } else {
-                                this.drone.detonate();
+                                playerInstance.activeDrone.detonate();
                             }
                             this.gpadButtonCooldown = 0.3;
                         } else if (gp.buttons[2].pressed) { // Square lands drone
@@ -10297,12 +10853,14 @@ class Game {
                 ['btn-pause-abandon']
             ],
             audio: [
-                ['btn-bgm-off-pause', 'btn-bgm-action-pause', 'btn-bgm-agent-pause', 'btn-bgm-ambient-pause'],
+                ['btn-bgm-off-pause', 'btn-bgm-action-pause', 'btn-bgm-agent-pause', 'btn-bgm-ambient-pause', 'btn-bgm-pvp-pause'],
                 ['sld-music-vol-pause'],
                 ['sld-sfx-vol-pause']
             ],
             controls: [
-                ['btn-scheme-screen-pause', 'btn-scheme-player-pause']
+                ['btn-scheme-screen-pause', 'btn-scheme-player-pause'],
+                ['btn-p1-gp-auto-pause', 'btn-p1-gp-none-pause', 'btn-p1-gp-0-pause', 'btn-p1-gp-1-pause', 'btn-p1-gp-2-pause', 'btn-p1-gp-3-pause'],
+                ['btn-p2-gp-auto-pause', 'btn-p2-gp-none-pause', 'btn-p2-gp-0-pause', 'btn-p2-gp-1-pause', 'btn-p2-gp-2-pause', 'btn-p2-gp-3-pause']
             ]
         };
 
@@ -10441,12 +10999,14 @@ class Game {
                 ['btn-pause-abandon']
             ],
             audio: [
-                ['btn-bgm-off-pause', 'btn-bgm-action-pause', 'btn-bgm-agent-pause', 'btn-bgm-ambient-pause'],
+                ['btn-bgm-off-pause', 'btn-bgm-action-pause', 'btn-bgm-agent-pause', 'btn-bgm-ambient-pause', 'btn-bgm-pvp-pause'],
                 ['sld-music-vol-pause'],
                 ['sld-sfx-vol-pause']
             ],
             controls: [
-                ['btn-scheme-screen-pause', 'btn-scheme-player-pause']
+                ['btn-scheme-screen-pause', 'btn-scheme-player-pause'],
+                ['btn-p1-gp-auto-pause', 'btn-p1-gp-none-pause', 'btn-p1-gp-0-pause', 'btn-p1-gp-1-pause', 'btn-p1-gp-2-pause', 'btn-p1-gp-3-pause'],
+                ['btn-p2-gp-auto-pause', 'btn-p2-gp-none-pause', 'btn-p2-gp-0-pause', 'btn-p2-gp-1-pause', 'btn-p2-gp-2-pause', 'btn-p2-gp-3-pause']
             ]
         };
 
@@ -10513,10 +11073,12 @@ class Game {
                 ['btn-map-9']
             ],
             controls: [
-                ['btn-scheme-screen', 'btn-scheme-player']
+                ['btn-scheme-screen', 'btn-scheme-player'],
+                ['btn-p1-gp-auto', 'btn-p1-gp-none', 'btn-p1-gp-0', 'btn-p1-gp-1', 'btn-p1-gp-2', 'btn-p1-gp-3'],
+                ['btn-p2-gp-auto', 'btn-p2-gp-none', 'btn-p2-gp-0', 'btn-p2-gp-1', 'btn-p2-gp-2', 'btn-p2-gp-3']
             ],
             audio: [
-                ['btn-bgm-off', 'btn-bgm-action', 'btn-bgm-agent', 'btn-bgm-ambient'],
+                ['btn-bgm-off', 'btn-bgm-action', 'btn-bgm-agent', 'btn-bgm-ambient', 'btn-bgm-pvp'],
                 ['sld-music-vol'],
                 ['sld-sfx-vol']
             ],
@@ -10689,11 +11251,27 @@ class Game {
                 ['btn-start'],
                 ['btn-exit']
             ],
+            maps: [
+                ['btn-map-random'],
+                ['btn-map-10'],
+                ['btn-map-0'],
+                ['btn-map-1'],
+                ['btn-map-2'],
+                ['btn-map-3'],
+                ['btn-map-4'],
+                ['btn-map-5'],
+                ['btn-map-6'],
+                ['btn-map-7'],
+                ['btn-map-8'],
+                ['btn-map-9']
+            ],
             controls: [
-                ['btn-scheme-screen', 'btn-scheme-player']
+                ['btn-scheme-screen', 'btn-scheme-player'],
+                ['btn-p1-gp-auto', 'btn-p1-gp-none', 'btn-p1-gp-0', 'btn-p1-gp-1', 'btn-p1-gp-2', 'btn-p1-gp-3'],
+                ['btn-p2-gp-auto', 'btn-p2-gp-none', 'btn-p2-gp-0', 'btn-p2-gp-1', 'btn-p2-gp-2', 'btn-p2-gp-3']
             ],
             audio: [
-                ['btn-bgm-off', 'btn-bgm-action', 'btn-bgm-agent', 'btn-bgm-ambient'],
+                ['btn-bgm-off', 'btn-bgm-action', 'btn-bgm-agent', 'btn-bgm-ambient', 'btn-bgm-pvp'],
                 ['sld-music-vol'],
                 ['sld-sfx-vol']
             ],
@@ -10764,7 +11342,7 @@ class Game {
         let bx = cx + px * (L / 2);
         let by = cy + py * (L / 2);
         
-        let newBarrier = { ax, ay, bx, by, r: R, hp: 600, maxHp: 600 };
+        let newBarrier = { ax, ay, bx, by, r: R, hp: 600, maxHp: 600, owner: player };
         
         let overlap = false;
         for (let wall of this.map.walls) {
@@ -11009,55 +11587,53 @@ class Game {
 
     handleDroneInput(playerInstance) {
         if (!playerInstance || playerInstance.dead) return;
-        
-        let activeDroneExists = (this.drone && !this.drone.dead && this.drone.pilot === playerInstance);
-        
+
+        let activeDroneExists = (playerInstance.activeDrone && !playerInstance.activeDrone.dead);
+
         if (!activeDroneExists) {
             if (playerInstance.dronesCount > 0) {
                 playerInstance.dronesCount--;
-                this.drone = new FPVDrone(playerInstance.x, playerInstance.y, playerInstance);
-                audio.playPickup('money'); 
-                this.drone.isPiloted = false;
+                playerInstance.activeDrone = new FPVDrone(playerInstance.x, playerInstance.y, playerInstance);
+                audio.playPickup('money');
+                playerInstance.activeDrone.isPiloted = false;
             }
         } else {
-            if (this.drone.pilot === playerInstance) {
-                if (!this.drone.isPiloted) {
-                    this.drone.isPiloted = true;
-                    audio.playPickup('money');
-                } else {
-                    this.drone.isPiloted = false;
-                    audio.playPickup('money');
-                }
+            if (!playerInstance.activeDrone.isPiloted) {
+                playerInstance.activeDrone.isPiloted = true;
+                audio.playPickup('money');
+            } else {
+                playerInstance.activeDrone.isPiloted = false;
+                audio.playPickup('money');
             }
         }
     }
 
-    drawPiPViewport(px, py, pw, ph) {
-        if (!this.drone || this.drone.dead) return;
+    drawPiPViewport(px, py, pw, ph, droneInstance) {
+        if (!droneInstance || droneInstance.dead) return;
 
         this.ctx.save();
-        
-        this.ctx.fillStyle = 'rgba(0, 8, 20, 0.55)'; 
-        this.ctx.strokeStyle = '#ffea00'; 
+
+        this.ctx.fillStyle = 'rgba(0, 8, 20, 0.55)';
+        this.ctx.strokeStyle = '#ffea00';
         this.ctx.lineWidth = 2;
         this.ctx.fillRect(px, py, pw, ph);
         this.ctx.strokeRect(px, py, pw, ph);
-        
+
         this.ctx.beginPath();
         this.ctx.rect(px + 1, py + 1, pw - 2, ph - 2);
         this.ctx.clip();
-        
+
         this.ctx.translate(px, py);
         let pipZoom = 0.55;
         this.ctx.scale(pipZoom, pipZoom);
-        
+
         let lookAheadSeconds = 0.45;
         let maxLookAheadWorld = 100;
-        let shiftX = MathUtils.clamp(this.drone.vx * lookAheadSeconds, -maxLookAheadWorld, maxLookAheadWorld);
-        let shiftY = MathUtils.clamp(this.drone.vy * lookAheadSeconds, -maxLookAheadWorld, maxLookAheadWorld);
-        
-        let camCenterX = this.drone.x + shiftX;
-        let camCenterY = this.drone.y + shiftY;
+        let shiftX = MathUtils.clamp(droneInstance.vx * lookAheadSeconds, -maxLookAheadWorld, maxLookAheadWorld);
+        let shiftY = MathUtils.clamp(droneInstance.vy * lookAheadSeconds, -maxLookAheadWorld, maxLookAheadWorld);
+
+        let camCenterX = droneInstance.x + shiftX;
+        let camCenterY = droneInstance.y + shiftY;
         
         let droneCam = { 
             x: camCenterX - (pw / 2) / pipZoom, 
@@ -11111,7 +11687,7 @@ class Game {
             }
         }
         
-        this.drone.draw(this.ctx, droneCam);
+        droneInstance.draw(this.ctx, droneCam);
         
         if (this.nightMode) {
             // Apply green tint (multiply + screen)
@@ -11142,8 +11718,8 @@ class Game {
         
         this.ctx.restore();
 
-        if (!this.drone.pilot.fiberOpticOwned) {
-            let dist = Math.hypot(this.drone.x - this.drone.pilot.x, this.drone.y - this.drone.pilot.y);
+        if (!droneInstance.pilot.fiberOpticOwned) {
+            let dist = Math.hypot(droneInstance.x - droneInstance.pilot.x, droneInstance.y - droneInstance.pilot.y);
             let staticIntensity = 0;
             if (dist > 400) {
                 staticIntensity = Math.min(1.0, (dist - 400) / 560);
@@ -11172,20 +11748,20 @@ class Game {
         this.ctx.fillStyle = '#ffea00';
         this.ctx.fillText("FPV DRONE FEED", px + 10, py + 18);
 
-        if (this.drone.pilot && this.drone.pilot.droneUpgraded) {
-            let bombsLeft = 3 - (this.drone.bombsDropped || 0);
+        if (droneInstance.pilot && droneInstance.pilot.droneUpgraded) {
+            let bombsLeft = 3 - (droneInstance.bombsDropped || 0);
             this.ctx.fillStyle = '#ff2a5f';
             this.ctx.fillText(`BOMBS: ${bombsLeft}/3`, px + pw - 80, py + 18);
         }
         
-        if (this.drone.isPiloted) {
+        if (droneInstance.isPiloted) {
             this.ctx.fillStyle = '#39ff14';
             this.ctx.fillText("PILOT CONNECTED", px + 10, py + ph - 10);
             
             // Signal telemetry
             let sigPct = 1.0;
-            if (!this.drone.pilot.fiberOpticOwned) {
-                let dist = Math.hypot(this.drone.x - this.drone.pilot.x, this.drone.y - this.drone.pilot.y);
+            if (!droneInstance.pilot.fiberOpticOwned) {
+                let dist = Math.hypot(droneInstance.x - droneInstance.pilot.x, droneInstance.y - droneInstance.pilot.y);
                 if (dist > 400) {
                     sigPct = Math.max(0.0, 1.0 - (dist - 400) / 1100);
                 }
@@ -11382,7 +11958,6 @@ class Game {
         this.heartbeatPhase = 0;
         this.heartbeatIntensity = 0;
         this.barriers = [];
-        this.drone = null;
         this.permanentMarks = [];
 
         toggleClass('pause-screen', 'hidden', true);
@@ -12441,25 +13016,14 @@ class Game {
             }
         }
 
-        let gp1 = null;
-        let gp2 = null;
+        let gpListRaw = [];
         if (navigator.getGamepads) {
             const gamepads = navigator.getGamepads();
-            let gpList = [];
             for (let i = 0; i < gamepads.length; i++) {
-                if (gamepads[i]) gpList.push(gamepads[i]);
-            }
-            if (gpList.length === 1) {
-                if (this.isTwoPlayer) {
-                    gp2 = gpList[0];
-                } else {
-                    gp1 = gpList[0];
-                }
-            } else if (gpList.length >= 2) {
-                gp1 = gpList[0];
-                gp2 = gpList[1];
+                if (gamepads[i]) gpListRaw.push(gamepads[i]);
             }
         }
+        let { gp1, gp2 } = this.resolveGamepadAssignments(gpListRaw);
 
         let p1Walls = this.map.getWallsNear(this.player.x, this.player.y);
         this.player.update(dt, this.input, p1Walls, this.gameTime, gp1);
@@ -12499,8 +13063,11 @@ class Game {
             audio.lowpassFilter.frequency.setValueAtTime(targetFreq, audio.ctx.currentTime);
         }
         
-        if (this.drone && !this.drone.dead) {
-            this.drone.update(dt, this);
+        if (this.player && this.player.activeDrone && !this.player.activeDrone.dead) {
+            this.player.activeDrone.update(dt, this);
+        }
+        if (this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead) {
+            this.player2.activeDrone.update(dt, this);
         }
         
         for (let e of this.enemies) {
@@ -12511,8 +13078,11 @@ class Game {
         if (this.isTwoPlayer && this.player2 && !this.player2.dead) {
             entities.push(this.player2);
         }
-        if (this.drone && !this.drone.dead) {
-            entities.push(this.drone);
+        if (this.player && this.player.activeDrone && !this.player.activeDrone.dead) {
+            entities.push(this.player.activeDrone);
+        }
+        if (this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead) {
+            entities.push(this.player2.activeDrone);
         }
         if (this.turrets) {
             for (let t of this.turrets) {
@@ -12773,9 +13343,13 @@ class Game {
         this._elitesKilledThisWave = 0;
         this.saveGameData();
 
-        if (this.drone) {
-            this.drone.stopAudio();
-            this.drone.isPiloted = false;
+        if (this.player && this.player.activeDrone) {
+            this.player.activeDrone.stopAudio();
+            this.player.activeDrone.isPiloted = false;
+        }
+        if (this.player2 && this.player2.activeDrone) {
+            this.player2.activeDrone.stopAudio();
+            this.player2.activeDrone.isPiloted = false;
         }
         if (this.player) this.player.flashOpacity = 0;
         if (this.player2) this.player2.flashOpacity = 0;
@@ -12795,7 +13369,7 @@ class Game {
             setHtml('shop-stat-grenades-' + suffix, p.grenades);
             setHtml('shop-stat-mines-' + suffix, p.mines);
             setHtml('shop-stat-barriers-' + suffix, (p.barriersCount || 0) + (p.barrierUpgraded ? ' (MK.II)' : ''));
-            setHtml('shop-stat-drones-' + suffix, ((p.dronesCount || 0) + (this.drone && !this.drone.dead && this.drone.pilot === p ? 1 : 0)) + (p.droneUpgraded ? ' (BOMBER)' : ''));
+            setHtml('shop-stat-drones-' + suffix, ((p.dronesCount || 0) + (p.activeDrone && !p.activeDrone.dead ? 1 : 0)) + (p.droneUpgraded ? ' (BOMBER)' : ''));
             let hasMk2Turret = p.turretsInventory.some(t => typeof t === 'object' && t.isMKII);
             setHtml('shop-stat-turrets-' + suffix, (p.turretsCount || 0) + (hasMk2Turret ? ' (MK.II)' : ''));
             setHtml('shop-stat-dogs-' + suffix, p.dogsCount || 0);
@@ -12894,7 +13468,7 @@ class Game {
 
             let droneUpgradeBtn = document.getElementById('btn-buy-drone-upgrade-' + suffix);
             if (droneUpgradeBtn) {
-                let ownsDrone = (p.dronesCount > 0 || (this.drone && !this.drone.dead && this.drone.pilot === p));
+                let ownsDrone = (p.dronesCount > 0 || (p.activeDrone && !p.activeDrone.dead));
                 if (!ownsDrone) {
                     droneUpgradeBtn.classList.remove('maxed');
                     droneUpgradeBtn.innerText = "FPV Drone Bomber ($600)";
@@ -13091,12 +13665,12 @@ class Game {
         } else if (type === 'drone' && p.cash >= 150 && p.dronesCount < 3) {
             p.cash -= 150; p.dronesCount++;
         } else if (type === 'drone_upgrade' && p.cash >= 600 && !p.droneUpgraded) {
-            let ownsDrone = (p.dronesCount > 0 || (this.drone && !this.drone.dead && this.drone.pilot === p));
+            let ownsDrone = (p.dronesCount > 0 || (p.activeDrone && !p.activeDrone.dead));
             if (ownsDrone) {
                 p.cash -= 600;
                 p.droneUpgraded = true;
-                if (this.drone && this.drone.pilot === p) {
-                    this.drone.bombsDropped = 0;
+                if (p.activeDrone) {
+                    p.activeDrone.bombsDropped = 0;
                 }
                 for (let i = 0; i < 30; i++) {
                     let angle = Math.random() * Math.PI * 2;
@@ -13456,6 +14030,10 @@ class Game {
             this.setNightMode(false);
         }
         this.setScheme(this.movementScheme);
+
+        if (this.saveData.p1GamepadChoice === undefined) this.saveData.p1GamepadChoice = 'auto';
+        if (this.saveData.p2GamepadChoice === undefined) this.saveData.p2GamepadChoice = 'auto';
+        this.refreshGamepadAssignmentUI();
     }
 
     saveGameData() {
@@ -13665,7 +14243,7 @@ class Game {
     }
 
     refreshAudioTabUI() {
-        const tracks = ['off', 'action', 'agent', 'ambient'];
+        const tracks = ['off', 'action', 'agent', 'ambient', 'pvp'];
         tracks.forEach(t => {
             let btnMain = document.getElementById('btn-bgm-' + t);
             if (btnMain) {
@@ -13726,7 +14304,7 @@ class Game {
         this.saveData.musicTrack = trackName;
         audio.resume();
         
-        const tracks = ['off', 'action', 'agent', 'ambient'];
+        const tracks = ['off', 'action', 'agent', 'ambient', 'pvp'];
         tracks.forEach(t => {
             let btnMain = document.getElementById('btn-bgm-' + t);
             if (btnMain) {
@@ -13803,7 +14381,7 @@ class Game {
 
     setFriendlyFireMode(mode) {
         this.friendlyFireMode = mode;
-        const modes = ['off', 'standard', 'hardcore'];
+        const modes = ['off', 'standard', 'hardcore', 'pvp'];
         modes.forEach(m => {
             let btn = document.getElementById(`btn-ff-${m}`);
             if (btn) {
@@ -13839,9 +14417,13 @@ class Game {
         this.state = 'start';
         this.isPaused = false;
         
-        if (this.drone) {
-            this.drone.stopAudio();
-            this.drone = null;
+        if (this.player && this.player.activeDrone) {
+            this.player.activeDrone.stopAudio();
+            this.player.activeDrone = null;
+        }
+        if (this.player2 && this.player2.activeDrone) {
+            this.player2.activeDrone.stopAudio();
+            this.player2.activeDrone = null;
         }
         
         toggleClass('pause-screen', 'hidden', true);
@@ -13854,6 +14436,29 @@ class Game {
         if (typeof musicEngine !== 'undefined') {
             musicEngine.setTrack(this.saveData.musicTrack || 'off');
         }
+    }
+
+    getHostilesFor(entity) {
+        let hostiles = [...this.enemies];
+        if (this.friendlyFireMode === 'pvp') {
+            const owner = entity.owner || entity;
+            const otherPlayer = (owner === this.player) ? this.player2 : this.player;
+
+            if (otherPlayer && !otherPlayer.dead) {
+                hostiles.push(otherPlayer);
+            }
+
+            // Assets targeting assets
+            this.turrets.forEach(t => { if (t.owner !== owner && !t.dead) hostiles.push(t); });
+            this.dogs.forEach(d => { if (d.owner !== owner && !d.dead) hostiles.push(d); });
+            if (this.miniDrones) {
+                this.miniDrones.forEach(md => { if (md.owner !== owner && !md.dead) hostiles.push(md); });
+            }
+
+            if (this.player && this.player.activeDrone && owner !== this.player) hostiles.push(this.player.activeDrone);
+            if (this.player2 && this.player2.activeDrone && owner !== this.player2) hostiles.push(this.player2.activeDrone);
+        }
+        return hostiles;
     }
 
     getLaserEndPoint(startX, startY, angle, maxDist, walls) {
@@ -14148,8 +14753,11 @@ class Game {
             }
         }
 
-        if (this.drone && !this.drone.dead) {
-            this.drone.draw(this.ctx, cam);
+        if (this.player && this.player.activeDrone && !this.player.activeDrone.dead) {
+            this.player.activeDrone.draw(this.ctx, cam);
+        }
+        if (this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead) {
+            this.player2.activeDrone.draw(this.ctx, cam);
         }
 
         // === MUZZLE FLASH PASS (world space, additive blending) ===
@@ -14282,15 +14890,21 @@ class Game {
                 nightCtx.restore();
             }
 
-            // 1. RobotDog Flashlight (Short, wide cone)
+            // 1. RobotDog Flashlight (Short, wide cone + Ambient Orb)
             if (this.dogs) {
                 for (let dog of this.dogs) {
                     if (dog.dead) continue;
                     let pos = worldToCanvas(dog.x, dog.y);
                     let coneRadius = 260 * cam.zoom;
+                    let ambientRadius = 70 * cam.zoom;
                     let coneAngle = Math.PI / 1.5;
                     let startAngle = dog.angle - coneAngle / 2;
                     let endAngle = dog.angle + coneAngle / 2;
+
+                    nightCtx.save();
+                    nightCtx.translate(pos.x, pos.y);
+                    nightCtx.drawImage(cachedAmbientLightCanvas, -ambientRadius, -ambientRadius, ambientRadius * 2, ambientRadius * 2);
+                    nightCtx.restore();
 
                     nightCtx.save();
                     nightCtx.beginPath();
@@ -14303,15 +14917,21 @@ class Game {
                 }
             }
 
-            // 2. Auto-Turret Flashlight (Long, narrow cone)
+            // 2. Auto-Turret Flashlight (Long, narrow cone + Ambient Orb)
             if (this.turrets) {
                 for (let turret of this.turrets) {
                     if (turret.dead) continue;
                     let pos = worldToCanvas(turret.x, turret.y);
                     let coneRadius = 500 * cam.zoom;
+                    let ambientRadius = 90 * cam.zoom;
                     let coneAngle = Math.PI / 6.0;
                     let startAngle = turret.angle - coneAngle / 2;
                     let endAngle = turret.angle + coneAngle / 2;
+
+                    nightCtx.save();
+                    nightCtx.translate(pos.x, pos.y);
+                    nightCtx.drawImage(cachedAmbientLightCanvas, -ambientRadius, -ambientRadius, ambientRadius * 2, ambientRadius * 2);
+                    nightCtx.restore();
 
                     nightCtx.save();
                     nightCtx.beginPath();
@@ -14339,6 +14959,19 @@ class Game {
                 }
             }
 
+            // 3b. Item Drop Glimmer (Faint orbs so items are visible in the dark)
+            if (this.items) {
+                for (let item of this.items) {
+                    let pos = worldToCanvas(item.x, item.y);
+                    let radius = 20 * cam.zoom;
+                    nightCtx.save();
+                    nightCtx.translate(pos.x, pos.y);
+                    nightCtx.globalAlpha = 0.5;
+                    nightCtx.drawImage(cachedSoftGlowCanvas, -radius, -radius, radius * 2, radius * 2);
+                    nightCtx.restore();
+                }
+            }
+
             // 4. Trip Mines Blink Glow (destination-out sync with red blink)
             if (this.mines) {
                 for (let mine of this.mines) {
@@ -14351,6 +14984,21 @@ class Game {
                         nightCtx.drawImage(cachedIntenseGlowCanvas, -radius, -radius, radius * 2, radius * 2);
                         nightCtx.restore();
                     }
+                }
+            }
+
+            // 4b. FPV Drone Status Light (Small blinking indicator)
+            let activeDronesForLight = [];
+            if (this.player && this.player.activeDrone && !this.player.activeDrone.dead) activeDronesForLight.push(this.player.activeDrone);
+            if (this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead) activeDronesForLight.push(this.player2.activeDrone);
+            for (let dLight of activeDronesForLight) {
+                let pos = worldToCanvas(dLight.x, dLight.y);
+                let radius = 15 * cam.zoom;
+                if (Math.floor(this.gameTime * 4) % 2 === 0) {
+                    nightCtx.save();
+                    nightCtx.translate(pos.x, pos.y);
+                    nightCtx.drawImage(cachedSoftGlowCanvas, -radius, -radius, radius * 2, radius * 2);
+                    nightCtx.restore();
                 }
             }
 
@@ -14417,6 +15065,7 @@ class Game {
     }
 
     drawScreenOverlays(p, x, y, w, h) {
+        // 1. VIGNETTE
         let vignette = this.ctx.createRadialGradient(
             x + w / 2, y + h / 2, h * 0.25,
             x + w / 2, y + h / 2, w * 0.75
@@ -14426,6 +15075,83 @@ class Game {
         this.ctx.fillStyle = vignette;
         this.ctx.fillRect(x, y, w, h);
 
+        // 2. IODL: TEAMMATE DIRECTION INDICATOR
+        // Disabled in 'hardcore' (full friendly fire) and 'pvp' (the other player is a
+        // hostile target, not a teammate to be guided toward) — only shown when the
+        // other player is an actual ally.
+        if (this.isTwoPlayer && this.friendlyFireMode !== 'hardcore' && this.friendlyFireMode !== 'pvp') {
+            const otherP = (p === this.player) ? this.player2 : this.player;
+            const cam = (p === this.player) ? this.camera : this.camera2;
+            
+            if (otherP) {
+                const visibleW = w / cam.zoom;
+                const visibleH = h / cam.zoom;
+                
+                // Determine if teammate is outside the viewport
+                const isOffScreen = otherP.x < cam.x || otherP.x > cam.x + visibleW ||
+                                    otherP.y < cam.y || otherP.y > cam.y + visibleH;
+                
+                if (isOffScreen) {
+                    const centerX = x + w / 2;
+                    const centerY = y + h / 2;
+                    
+                    // Angle from camera center to teammate
+                    const angle = Math.atan2(otherP.y - (cam.y + visibleH / 2), otherP.x - (cam.x + visibleW / 2));
+                    
+                    // Safety Padding for UI carousels/bars (75px top/bottom, 60px sides)
+                    const padX = 60;
+                    const padY = 75;
+                    const innerW = w - padX * 2;
+                    const innerH = h - padY * 2;
+                    
+                    // Edge Clamping (Elliptical projection for smoothness)
+                    const drawX = centerX + Math.cos(angle) * (innerW / 2);
+                    const drawY = centerY + Math.sin(angle) * (innerH / 2);
+                    
+                    // Proximity Morphing (Fat/Short vs Skinny/Long)
+                    const dist = Math.hypot(otherP.x - p.x, otherP.y - p.y);
+                    const arrowLen = MathUtils.map(dist, 400, 2500, 14, 38);
+                    const arrowWidth = MathUtils.map(dist, 400, 2500, 18, 6);
+                    
+                    this.ctx.save();
+                    this.ctx.translate(drawX, drawY);
+                    this.ctx.rotate(angle);
+                    
+                    // Dim arrow if teammate is dead
+                    if (otherP.dead) {
+                        this.ctx.fillStyle = '#455a64';
+                        this.ctx.strokeStyle = '#263238';
+                    } else {
+                        this.ctx.fillStyle = otherP.color;
+                        this.ctx.strokeStyle = '#fff';
+                        
+                        // Tactical pulse on damage
+                        if (otherP.damageFlashIntensity > 0) {
+                            this.ctx.shadowBlur = 15;
+                            this.ctx.shadowColor = '#ff2a5f';
+                            this.ctx.fillStyle = '#ff2a5f';
+                        }
+                    }
+
+                    // Render stylized arrow/chevron
+                    this.ctx.lineWidth = 1;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(arrowLen/2, 0);
+                    this.ctx.lineTo(-arrowLen/2, -arrowWidth);
+                    this.ctx.lineTo(-arrowLen/4, 0);
+                    this.ctx.lineTo(-arrowLen/2, arrowWidth);
+                    this.ctx.closePath();
+                    
+                    // Draw drop shadow / border for visibility
+                    this.ctx.stroke();
+                    this.ctx.fill();
+                    
+                    this.ctx.restore();
+                }
+            }
+        }
+
+        // 3. LOW HEALTH PULSE
         let hpPct = p.hp / p.maxHp;
         if (hpPct < 0.20 && !p.dead) {
             let baseIntensity = (0.20 - hpPct) / 0.20;
@@ -14445,16 +15171,19 @@ class Game {
             this.ctx.restore();
         }
 
+        // 4. FLASHBANG OVERLAY
         if (p.flashOpacity > 0) {
             this.ctx.fillStyle = `rgba(255, 255, 255, ${p.flashOpacity})`;
             this.ctx.fillRect(x, y, w, h);
         }
 
+        // 5. DAMAGE FLASH
         if (p.damageFlashIntensity > 0) {
             this.ctx.fillStyle = `rgba(255, 0, 0, ${p.damageFlashIntensity * 0.35})`;
             this.ctx.fillRect(x, y, w, h);
         }
         
+        // 6. WIN FLASH
         if (this.winFlashIntensity > 0) {
             this.ctx.fillStyle = `rgba(255, 215, 0, ${this.winFlashIntensity * 0.45})`;
             this.ctx.fillRect(x, y, w, h);
@@ -14560,23 +15289,21 @@ class Game {
             this.drawScreenOverlays(this.player, 0, 0, this.width, this.height);
         }
 
-        if (this.state === 'playing' && !this.isPaused && this.drone && !this.drone.dead) {
+        if (this.state === 'playing' && !this.isPaused) {
             let pw = Math.max(240, Math.min(480, Math.round(this.width * 0.3)));
             if (this.isTwoPlayer) {
                 pw = Math.max(160, Math.min(280, Math.round(this.width * 0.15)));
             }
             let ph = Math.round(pw * 0.75);
-            
-            let pipX = this.width - pw - 20;
-            let pipY = 60;
-            if (this.isTwoPlayer) {
-                if (this.drone.pilot === this.player2) {
-                    pipX = this.width - pw - 20;
-                } else {
-                    pipX = this.width / 2 - pw - 20;
-                }
+
+            if (this.player.activeDrone && !this.player.activeDrone.dead) {
+                let pipX = this.isTwoPlayer ? (this.width / 2 - pw - 20) : (this.width - pw - 20);
+                this.drawPiPViewport(pipX, 60, pw, ph, this.player.activeDrone);
             }
-            this.drawPiPViewport(pipX, pipY, pw, ph);
+            if (this.isTwoPlayer && this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead) {
+                let pipX = this.width - pw - 20;
+                this.drawPiPViewport(pipX, 60, pw, ph, this.player2.activeDrone);
+            }
         }
 
         if (this.state === 'playing' && !this.isPaused && this.dogs) {
@@ -14592,7 +15319,7 @@ class Game {
                 let screenY = 60;
                 
                 // Check if drone feed is active for this player, so we don't overlap but stack below it
-                let isDroneActiveForOwner = this.drone && !this.drone.dead && (this.drone.pilot === dog.owner);
+                let isDroneActiveForOwner = dog.owner && dog.owner.activeDrone && !dog.owner.activeDrone.dead;
                 if (isDroneActiveForOwner) {
                     let pw = Math.max(240, Math.min(480, Math.round(this.width * 0.3)));
                     if (this.isTwoPlayer) {
@@ -15193,11 +15920,11 @@ class TouchController {
         }
         
         // Command 2: Detonate / Bomb FPV Drone (if active & piloted)
-        if (game.drone && game.drone.pilot === game.player && game.drone.isPiloted && !game.drone.dead) {
-            if (game.player.droneUpgraded && (game.drone.bombsDropped || 0) < 3) {
-                game.drone.dropBomb();
+        if (game.player.activeDrone && game.player.activeDrone.isPiloted && !game.player.activeDrone.dead) {
+            if (game.player.droneUpgraded && (game.player.activeDrone.bombsDropped || 0) < 3) {
+                game.player.activeDrone.dropBomb();
             } else {
-                game.drone.detonate();
+                game.player.activeDrone.detonate();
             }
             return;
         }
@@ -15212,6 +15939,7 @@ class TouchController {
         if (game.barriers) {
             for (let i = 0; i < game.barriers.length; i++) {
                 let barrier = game.barriers[i];
+                if (game.friendlyFireMode === 'pvp' && barrier.owner !== game.player) continue;
                 let col = MathUtils.closestPointOnSegment(wx, wy, barrier.ax, barrier.ay, barrier.bx, barrier.by);
                 let d = Math.hypot(col.x - wx, col.y - wy);
                 if (d < minDist) {
@@ -15256,11 +15984,11 @@ class TouchController {
         }
         
         // Check unpiloted drone
-        if (game.drone && !game.drone.dead && game.drone.pilot === game.player && !game.drone.isPiloted) {
-            let d = Math.hypot(game.drone.x - wx, game.drone.y - wy);
+        if (game.player.activeDrone && !game.player.activeDrone.dead && !game.player.activeDrone.isPiloted) {
+            let d = Math.hypot(game.player.activeDrone.x - wx, game.player.activeDrone.y - wy);
             if (d < minDist) {
                 minDist = d;
-                closestItem = game.drone;
+                closestItem = game.player.activeDrone;
                 closestItemType = 'drone';
             }
         }
@@ -15306,8 +16034,8 @@ class TouchController {
                     ));
                 } else if (closestItemType === 'drone') {
                     game.player.dronesCount = Math.min(3, (game.player.dronesCount || 0) + 1);
-                    game.drone.stopAudio();
-                    game.drone = null;
+                    game.player.activeDrone.stopAudio();
+                    game.player.activeDrone = null;
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
                     game.floatingTexts.push(game.spawnFloatingText(
                         game.player.x, game.player.y - 15, "+RETRIEVED FPV DRONE",
