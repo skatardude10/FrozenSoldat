@@ -85,6 +85,43 @@
     #health-bar, #health-bar-p2 { background: var(--red); box-shadow: 0 0 8px var(--red); }
     #armor-bar, #armor-bar-p2 { background: var(--neon-blue); box-shadow: 0 0 8px var(--neon-blue); }
     #stamina-bar, #stamina-bar-p2 { background: #ffb700; box-shadow: 0 0 8px #ffb700; }
+
+    /* Boss HUD -- top-center banner, intentionally separate from the
+       per-player top bars so it reads as "the whole arena" acknowledging
+       the boss, not a per-player stat. Uses the same chevron clip-path
+       language as .hud-top-bar so it feels native to the existing HUD
+       rather than a bolted-on overlay. */
+    @keyframes bossHudIntro {
+        0% { opacity: 0; transform: translate(-50%, -14px) scale(0.96); }
+        100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    }
+    .boss-hud {
+        position: absolute; top: 54px; left: 50%; transform: translate(-50%, 0);
+        width: min(420px, 60%); pointer-events: none; text-align: center;
+        animation: bossHudIntro 0.35s ease-out;
+    }
+    .boss-hud.hidden { display: none; }
+    .boss-hud-name {
+        font-weight: bold; font-size: 13px; letter-spacing: 3px;
+        color: #ff2a5f; text-shadow: 0 0 12px rgba(255, 42, 95, 0.7);
+        margin-bottom: 4px; text-transform: uppercase;
+    }
+    .boss-hud-bar-container {
+        position: relative; width: 100%; height: 10px;
+        background: rgba(0, 5, 12, 0.5); border: 1px solid rgba(255, 42, 95, 0.5);
+        border-radius: 2px; overflow: hidden;
+        box-shadow: 0 0 14px rgba(255, 42, 95, 0.25);
+        clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 8px 100%);
+    }
+    .boss-hud-bar {
+        height: 100%; background: linear-gradient(90deg, #ff2a5f, #ff6b8f);
+        box-shadow: 0 0 10px var(--red);
+        transition: width 0.15s ease-out;
+    }
+    .boss-hud-bar-sheen {
+        position: absolute; top: 0; left: 0; right: 0; height: 40%;
+        background: rgba(255,255,255,0.15); pointer-events: none;
+    }
     
     /* Scroll container for Left & Right vertical carousels */
     .hud-scroll-container {
@@ -457,6 +494,15 @@
 <div id="crosshair"></div>
 
 <div id="ui-layer" class="hidden">
+    <!-- BOSS HUD (top-center, spans both viewports in 2P) -->
+    <div id="boss-hud" class="boss-hud hidden">
+        <div class="boss-hud-name" id="boss-hud-name">BOSS NAME</div>
+        <div class="boss-hud-bar-container">
+            <div id="boss-hud-bar" class="boss-hud-bar" style="width: 100%;"></div>
+            <div class="boss-hud-bar-sheen"></div>
+        </div>
+    </div>
+
     <!-- PLAYER 1 HUD -->
     <div id="hud-top-p1" class="hud-top-bar">
         <div class="hud-top-group">
@@ -1364,6 +1410,21 @@
                     </div>
                 </div>
                 <div>
+                    <span style="font-size: 11px; color: #e0f7fa; display: block; margin-bottom: 5px;">Spawn Boss</span>
+                    <!-- Populated dynamically from BossTypes by populateDevBossGrid() (see initDOM) so
+                         adding a new boss to the BossTypes registry is the only step needed for it to
+                         show up here -- no HTML edits required. Fixed max-height + scroll keeps this
+                         usable even with 10-15+ bosses instead of pushing the rest of the dev menu
+                         off-screen. -->
+                    <div id="dev-boss-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; max-height: 140px; overflow-y: auto; padding-right: 4px;"></div>
+                </div>
+                <div>
+                    <span style="font-size: 11px; color: #e0f7fa; display: block; margin-bottom: 5px;">Boss Wave Control</span>
+                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                        <button class="neon-btn" onclick="game.devForceBossNextWave()" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: var(--red); color: var(--red);">Force Boss Next Wave (Random)</button>
+                    </div>
+                </div>
+                <div>
                     <span style="font-size: 11px; color: #e0f7fa; display: block; margin-bottom: 5px;">Spawn Item Drop</span>
                     <div style="display: flex; gap: 4px; flex-wrap: wrap;">
                         <button class="neon-btn" onclick="game.devSpawnItem('medpack')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Med Pack</button>
@@ -1711,7 +1772,7 @@ function renderHUDSelectors(player, suffix) {
             leftTrack.innerHTML = '';
             let items = [
                 { name: 'Medpack', count: player.medpacks, max: 3, icon: SVGIcons.medpack },
-                { name: 'Energy Drink', count: player.energyDrinks, max: 3, icon: SVGIcons.boost },
+                { name: 'Energy Drink', count: player.energyDrinks, max: 6, icon: SVGIcons.boost },
                 { name: 'Grenade', count: player.grenades, max: 3, icon: SVGIcons.grenade },
                 { name: 'Trip Mine', count: player.mines, max: 3, icon: SVGIcons.mine }
             ];
@@ -3829,6 +3890,52 @@ const EnemyTypes = {
     sapper: { hp: 35, speed: 210, color: '#ffea00', type: 'sapper', score: 20, weapon: 'melee', size: 11 }
 };
 
+// ---- Boss registry ----
+// Pure metadata, deliberately decoupled from the actual Boss subclasses
+// below. Adding a new boss later is a two-step, low-risk process:
+//   1) write a class that `extends Boss` (see the 5 below for the pattern)
+//   2) add one entry here pointing bossClass at it
+// Everything else -- wave-cadence rolls, dev menu buttons, HUD name/color,
+// escort sizing -- reads this table instead of hardcoding boss names, so
+// nothing else needs to change to add boss #6, #7, etc.
+const BossTypes = {
+    infiltrator: {
+        name: 'THE INFILTRATOR',
+        color: '#39ff14',
+        desc: 'Cloaked recon operative. Closes distance fast, strikes, vanishes.',
+        baseHp: 900,
+        get bossClass() { return InfiltratorBoss; }
+    },
+    apc: {
+        name: 'HAMMERHEAD APC',
+        color: '#ffb700',
+        desc: 'Four-seat armored fire-support vehicle. Kill the crew, stop the truck.',
+        baseHp: 1600, // split across 4 gunner seats, ~400 each
+        get bossClass() { return ApcBoss; }
+    },
+    juggernaut: {
+        name: 'JUGGERNAUT GUNNER',
+        color: '#ff2a5f',
+        desc: 'Walking bunker. Absurd armor, telegraphed suppressive fire.',
+        baseHp: 2600,
+        get bossClass() { return JuggernautBoss; }
+    },
+    spot: {
+        name: 'HOUND-9 SENTRY',
+        color: '#00e5ff',
+        desc: 'Quadruped hunter-killer. Twin cannons, deploys hostile drone swarm.',
+        baseHp: 1400,
+        get bossClass() { return SpotBoss; }
+    },
+    sniper_walker: {
+        name: 'WIDOWMAKER WALKER',
+        color: '#d500f9',
+        desc: 'Long-range spider-walker. Keeps its distance, calls in mortar fire.',
+        baseHp: 1000,
+        get bossClass() { return SniperWalkerBoss; }
+    }
+};
+
 const MapIntel = {
     "-1": { name: "[?] Random Generation", color: "#00e5ff", size: "Variable", desc: "Procedural tactical layout. Blueprint parameters unknown until deployment. Stay alert." },
     "0": { name: "The Cross (Classic)", color: "#00e5ff", size: "2200x2200", desc: "Standard intersection. Clear vertical and horizontal lanes for classic engagement." },
@@ -4901,6 +5008,130 @@ class MapGen {
         
         return [{ x: endX, y: endY }];
     }
+
+    // ---- Explosive barrel placement ----
+    // Runs once per run, right after the map/nav grid exist. Returns an array
+    // of {x, y} spawn points. Reuses navNodes (already-computed walkable
+    // cells) as the candidate pool, so "can't spawn outside the level" and
+    // "can't spawn inside a wall" are free correctness -- a navNode only
+    // exists where a character-sized circle already fits with margin.
+    generateExplosiveBarrelSpawns(centerX, centerY) {
+        const BARREL_R = 16;
+        const MIN_SPACING = 140;        // default spacing between separate barrels
+        const CLUSTER_SPACING = 55;     // tight spacing used inside a deliberate chain-reaction cluster
+        const CENTER_EXCLUSION = 260;   // keep clear of the player spawn point
+        const CHOKE_SCAN_R = 130;       // radius used to detect "near walls / choke point"
+
+        // Candidate pool: every unblocked nav node, far enough from spawn and
+        // from the map's outer edge that a 16px-radius circle plus a little
+        // breathing room genuinely fits without clipping a wall the nav grid
+        // didn't margin for.
+        let candidates = [];
+        for (let n of this.navNodes) {
+            if (n.blocked) continue;
+            if (n.x < 80 || n.y < 80 || n.x > this.width - 80 || n.y > this.height - 80) continue;
+            let distToCenter = Math.hypot(n.x - centerX, n.y - centerY);
+            if (distToCenter < CENTER_EXCLUSION) continue;
+
+            // Score: count nearby wall segments within CHOKE_SCAN_R to bias
+            // toward corridors / corners / choke points rather than dead-flat
+            // open ground. A handful of walls nearby = interesting tactical
+            // spot. Zero nearby = boring open field, still eligible but
+            // deprioritized. A wall basically on top of the node just means
+            // it's hugging cover, which is exactly the "near a wall" variable
+            // requested -- that's fine, navNode blocked-checks already ruled
+            // out anything actually overlapping.
+            let nearbyWalls = this.getWallsNear(n.x, n.y);
+            let wallScore = 0;
+            for (let w of nearbyWalls) {
+                let col = MathUtils.circleIntersectAABB(n.x, n.y, CHOKE_SCAN_R, w);
+                if (col.hit) wallScore++;
+            }
+            // Weight: 1 (baseline, open ground can still get picked) up to ~5
+            // for a node ringed by cover/corridor walls.
+            let weight = 1 + Math.min(4, wallScore);
+            candidates.push({ x: n.x, y: n.y, weight });
+        }
+
+        if (candidates.length === 0) return [];
+
+        // How many barrels this run: scale gently with map area, but stay
+        // sparse, and allow zero. A ~2200x2200 map lands around 0-4; the huge
+        // 7500x7500 map lands around 0-9. Small chance of zero regardless of
+        // size, so it never feels like a guaranteed checklist prop.
+        let areaFactor = (this.width * this.height) / (2200 * 2200);
+        let softCap = Math.max(2, Math.round(4 * Math.sqrt(areaFactor)));
+        let targetCount = Math.floor(Math.random() * (softCap + 1)); // inclusive 0..softCap
+        if (targetCount === 0) return [];
+
+        // Occasionally seed one deliberate chain-reaction cluster (2-3
+        // barrels close together) so not every barrel is a solitary prop.
+        // Rare on purpose -- most runs should have zero clusters.
+        let wantsCluster = targetCount >= 3 && Math.random() < 0.35;
+
+        let chosen = [];
+        const farEnough = (px, py, minDist) => chosen.every(c => Math.hypot(c.x - px, c.y - py) >= minDist);
+
+        const pickWeighted = (pool) => {
+            let totalWeight = pool.reduce((s, c) => s + c.weight, 0);
+            if (totalWeight <= 0) return null;
+            let roll = Math.random() * totalWeight;
+            for (let c of pool) {
+                roll -= c.weight;
+                if (roll <= 0) return c;
+            }
+            return pool[pool.length - 1];
+        };
+
+        let attempts = 0;
+        let maxAttempts = candidates.length * 3;
+        while (chosen.length < targetCount && attempts < maxAttempts) {
+            attempts++;
+            let pick = pickWeighted(candidates);
+            if (!pick) break;
+            if (farEnough(pick.x, pick.y, MIN_SPACING)) {
+                chosen.push({ x: pick.x, y: pick.y });
+            }
+        }
+
+        // Cluster pass: pick one already-chosen barrel (or seed a fresh spot)
+        // and add 1-2 close companions that will chain-react together.
+        if (wantsCluster && chosen.length > 0) {
+            let anchor = chosen[Math.floor(Math.random() * chosen.length)];
+            let extra = 1 + (Math.random() < 0.5 ? 1 : 0); // 1 or 2 companions
+            for (let i = 0; i < extra; i++) {
+                let angle = Math.random() * Math.PI * 2;
+                let dist = CLUSTER_SPACING + Math.random() * 30;
+                let px = anchor.x + Math.cos(angle) * dist;
+                let py = anchor.y + Math.sin(angle) * dist;
+
+                // Validate the companion spot: must still land on walkable
+                // ground (nearest nav node unblocked), not overlap a wall,
+                // and not drift inside the spawn exclusion zone.
+                let distToCenter = Math.hypot(px - centerX, py - centerY);
+                if (distToCenter < CENTER_EXCLUSION) continue;
+
+                let nearestNode = null;
+                let nearestDist = Infinity;
+                for (let n of this.navNodes) {
+                    if (n.blocked) continue;
+                    let d = Math.hypot(n.x - px, n.y - py);
+                    if (d < nearestDist) { nearestDist = d; nearestNode = n; }
+                }
+                if (!nearestNode || nearestDist > 60) continue;
+
+                let nearbyWalls = this.getWallsNear(px, py);
+                let overlapsWall = nearbyWalls.some(w => MathUtils.circleIntersectAABB(px, py, BARREL_R + 4, w).hit);
+                if (overlapsWall) continue;
+
+                if (farEnough(px, py, CLUSTER_SPACING - 10)) {
+                    chosen.push({ x: px, y: py });
+                }
+            }
+        }
+
+        return chosen;
+    }
 }
 
 class Entity {
@@ -5047,7 +5278,11 @@ const AIM_WEIGHT = {
     // maxDeg: hard cap on the channel's accumulated offset.
     SPRINGS: {
         aimRecoilOffset:          { stiffness: 3600, damping: 0.20, maxDeg: 13 },
-        aimHitFlinchOffset:       { stiffness: 2600, damping: 0.18, maxDeg: 24 },
+        // Hit flinch: damping raised 0.18 -> 0.26 so it settles noticeably
+        // faster (shorter period of "can't aim") while keeping the same
+        // snap-then-rebound character -- higher damping ratio shortens the
+        // ringing tail without needing to touch the kick strength itself.
+        aimHitFlinchOffset:       { stiffness: 2600, damping: 0.26, maxDeg: 24 },
         aimExplosionFlinchOffset: { stiffness: 1500, damping: 0.16, maxDeg: 28 }
     },
 
@@ -5066,15 +5301,19 @@ const AIM_WEIGHT = {
     // leaky integrator has no such resonance failure mode: it reliably climbs
     // in the burst's bias direction shot after shot, which is what a real
     // sustained-fire recoil pattern actually feels like.
+    // Recoil-affecting-aim toned back a tad across the board (~15%) per
+    // playtesting feedback -- pistol in particular was bouncing around too
+    // much to land follow-up shots. Kept the same relative feel between
+    // weapons, just softer overall.
     RECOIL_KICK_DEG: {
-        'Pistol': 1.3, 'SMG': 1.7, 'Shotgun': 3.8,
-        'Sniper': 6.5, 'M1A': 2.6, 'LMG': 2.4
+        'Pistol': 1.1, 'SMG': 1.45, 'Shotgun': 3.2,
+        'Sniper': 5.5, 'M1A': 2.2, 'LMG': 2.0
     },
-    RECOIL_KICK_DEG_DEFAULT: 1.4,
+    RECOIL_KICK_DEG_DEFAULT: 1.2,
     RECOIL_BIAS_RESET_GAP: 0.25,   // seconds since last shot before re-rolling the bias direction / resetting climb
     RECOIL_BIAS_STRENGTH: 0.8,     // spring-kick bias: 0 = pure random per shot, 1 = always the burst's bias dir
-    RECOIL_CLIMB_DEG_PER_SHOT: 1.1,  // how far the climb steps per shot, in the burst's bias direction
-    RECOIL_CLIMB_MAX_DEG: 11,        // ceiling on the accumulated climb
+    RECOIL_CLIMB_DEG_PER_SHOT: 0.9,  // was 1.1 -- climb builds a bit slower during sustained fire
+    RECOIL_CLIMB_MAX_DEG: 9,         // was 11 -- lower ceiling on accumulated climb
     RECOIL_CLIMB_DECAY_RATE: 3.2,    // per-second exponential relax once you stop firing
 
     // --- Explosion flinch: larger magnitude, slower-settling spring than a
@@ -5112,7 +5351,7 @@ class Player extends Entity {
         this.armor = 50;
         this.maxStamina = 120;
         this.stamina = 120;
-        this.accel = 2800;
+        this.accel = 1814; // was 2800 -- tuned so base (unupgraded) walk speed lands around 260px/s, comfortably above every enemy's speed but no longer wildly so; see sprintSpeedMulti below for the matching sprint-side tuning
         this.speedUpgrades = 0; 
         this.cash = 0;
         this.gamepadZoomIndex = 0;
@@ -5160,7 +5399,7 @@ class Player extends Entity {
         this.dronesCount = 0;
         this.fiberOpticOwned = false;
         this.medpacks = 1;      
-        this.energyDrinks = 1;  
+        this.energyDrinks = 3;  // start with 3 rather than 1 -- players shouldn't need to find their first backup
         this.energyDrinkTimer = 0; 
         this.isExhausted = false; // State tracks zero stamina depletion locks
         this.flashOpacity = 0;
@@ -5538,9 +5777,15 @@ class Player extends Entity {
         let MA = game && game.saveData ? game.saveData.metaUpgrades : null;
         let cardioLvl = MA ? (MA.cardioConditioning || 0) : 0;
         
-        let regenRate = (26.4 / 3.0) * (1 + cardioLvl * 0.12); // 3x slower base regeneration rate
-        let walkDrainRate = 4.5;    // Walking slowly drains stamina
-        let runDrainRate = 38.0 * (1 - cardioLvl * 0.08);    // Running sprinting drains quickly
+        // Stamina drain slowed and regen sped up across the board -- sprint
+        // was draining the full bar in ~3s with a much slower refill, which
+        // read as "always running on empty" rather than "soldiers who can
+        // actually sustain themselves." Getting hit still costs stamina at
+        // the same rate as before (see takeDamage's shock penalty below) --
+        // only movement drain/regen changed here.
+        let regenRate = (26.4 / 3.0) * 1.6 * (1 + cardioLvl * 0.12); // ~60% faster base regen
+        let walkDrainRate = 2.4;    // was 3.2 (originally 4.5) -- walking drains even less now
+        let runDrainRate = 23.0 * (1 - cardioLvl * 0.08);    // was 27.0 (originally 38.0) -- running/sprinting drains quickly, just not THAT quickly
         
         // Exo-Servos stamina efficiency: reduces drain by 6% per level (capped at 30% reduction / 0.70 multiplier)
         const exoStaminaEfficiency = Math.max(0.70, 1.0 - exoServosLvl * 0.06);
@@ -5582,7 +5827,13 @@ class Player extends Entity {
         }
 
         // 7. Speed multipliers
-        let sprintSpeedMulti = (isSprinting && !this.isExhausted) ? 1.55 : 1.0;
+        // Sprint multiplier raised 1.55 -> 2.15 to land closer to a real
+        // jog:sprint ratio (a light jog to an all-out sprint is roughly a
+        // ~2-3x pace increase for a person) now that base accel above has
+        // been pulled back to a more grounded walk speed. This is a base
+        // movement value, not a purchasable perk/Overclock -- those bonuses
+        // (speedUpgrades, Exo-Servos) still stack on top exactly as before.
+        let sprintSpeedMulti = (isSprinting && !this.isExhausted) ? 2.15 : 1.0;
         let exhaustionPenalty = this.isExhausted ? 0.5 : 1.0; // walk twice as slow if exhausted [1]
         let clutchSpeedBuff = (healthPct < 0.20) ? 1.15 : 1.0;
         
@@ -5794,7 +6045,16 @@ class Player extends Entity {
         let caseY = this.y + Math.sin(this.angle)*4 + Math.cos(this.angle)*6;
         this.weapon.name === 'Sniper' ? game.spawnCasing(caseX, caseY, ejectAngle, '#e10') : game.spawnCasing(caseX, caseY, ejectAngle);
         
-        let recoilForce = this.weapon.name === 'Shotgun' ? 420 : this.weapon.name === 'LMG' ? 180 : this.weapon.name === 'Sniper' ? 1200 : this.weapon.name === 'M1A' ? 300 : 120;
+        // Weapon kickback (physical push on the player, separate from the
+        // aim-recoil spring above) cut to ~2/3 of its old values across the
+        // board -- it was fighting forward movement hard enough that most
+        // guns were difficult to fire while walking into them.
+        // SMG gets its own explicit (lower) value -- it was falling into the
+        // generic default (same as pistol), but its high fire rate meant
+        // cumulative kickback per second was actually worse than LMG's,
+        // which felt backwards for a light, fast weapon. Halved from that
+        // default.
+        let recoilForce = this.weapon.name === 'Shotgun' ? 280 : this.weapon.name === 'LMG' ? 120 : this.weapon.name === 'Sniper' ? 800 : this.weapon.name === 'M1A' ? 200 : this.weapon.name === 'SMG' ? 40 : 80;
         this.vx -= Math.cos(this.angle) * recoilForce;
         this.vy -= Math.sin(this.angle) * recoilForce;
         if (this.camera) {
@@ -6882,8 +7142,12 @@ class Enemy extends Entity {
                 eliteAmt_vx, -90, 200, true
             ));
 
-            // Perk case drop chance (10%)
-            if (Math.random() < 0.10) {
+            // Perk case drop chance -- deliberately rare (was 10%, which
+            // stacked with multiple elites per wave to make perk cases feel
+            // routine rather than special, and bosses already guarantee one
+            // every boss wave). This should read as a lucky bonus, not a
+            // reliable farm.
+            if (Math.random() < 0.02) {
                 let perkX = this.x + (Math.random() - 0.5) * 30;
                 let perkY = this.y + (Math.random() - 0.5) * 30;
                 game.items.push(new Item(perkX, perkY, 'perk_case'));
@@ -6899,6 +7163,1431 @@ class Enemy extends Entity {
         if (game && (isLastEnemy || this.isElite)) {
             game.triggerGloryKill(this);
         }
+    }
+}
+
+// ---- Boss base class ----
+// Deliberately `extends Enemy` rather than a fresh Entity subclass: the rest
+// of the codebase (bullet collision, ally/turret/dog targeting, splash
+// damage, blood-on-hit) all keys off `instanceof Enemy` in a couple dozen
+// places. Inheriting gets all of that for free and untouched. Each concrete
+// boss below overrides update()/draw()/onDeath() completely rather than
+// trying to thread boss-only branches through Enemy's already-intricate
+// grunt-scale AI -- that keeps Enemy's existing behavior for every normal
+// enemy type completely unmodified.
+//
+// IMPORTANT: bosses are NOT drawn from the Enemy object pool
+// (game.inactiveEnemies). They're constructed fresh and, on death, must be
+// filtered out of game.enemies WITHOUT being pushed into that pool -- see
+// Game's enemy-cleanup loop, which special-cases `instanceof Boss`.
+class Boss extends Enemy {
+    constructor(x, y, bossKey, hpMultiplier = 1.0) {
+        // Enemy's constructor requires a config with .size; bosses size
+        // themselves per-subclass in setup(), so pass a minimal stub here
+        // and let super's init() run (harmless -- setup() overwrites
+        // everything that matters a moment later).
+        super(x, y, { hp: 100, speed: 0, color: '#ffffff', type: 'boss', score: 0, size: 20, weapon: 'melee' });
+
+        this.isBoss = true;
+        this.bossKey = bossKey;
+        const meta = BossTypes[bossKey];
+        this.bossName = meta ? meta.name : 'UNKNOWN HOSTILE';
+        this.color = meta ? meta.color : '#ff2a5f';
+        this.type = 'boss_' + bossKey;
+        this.weaponType = 'boss'; // opts this out of Enemy.fire()'s melee-only branch entirely -- bosses never call Enemy.fire()
+        this.isElite = false; // bosses never get the random elite roll/glow -- they read as their own thing
+        this.willShootDrone = false;
+        this.scoreVal = 0; // cash payout is handled by Boss.onDeath directly, not the generic per-enemy cash-on-death path
+
+        this.hpMultiplier = hpMultiplier;
+        this.introTimer = 1.2; // brief "arrival" window -- see subclass update()s, most freeze movement/fire during this
+        this.deathHandled = false;
+
+        this.setup();
+        this.hp = Math.round(this.hp * hpMultiplier);
+        this.maxHp = this.hp;
+    }
+
+    // Overridden per-boss: set r, speed, hp (pre-multiplier), and any
+    // boss-specific fields.
+    setup() {
+        this.r = 20;
+        this.hp = 1000;
+        this.speed = 100;
+    }
+
+    // 0..1 remaining health, used by the HUD boss bar. Overridden by bosses
+    // with independently-tracked sub-parts (e.g. the APC's four seats) so
+    // the bar reflects the true remaining threat, not just a raw hp field
+    // that might not mean the same thing once parts are involved.
+    healthFraction() {
+        return MathUtils.clamp(this.hp / this.maxHp, 0, 1);
+    }
+
+    // Shared telegraph helper: returns a 0..1 ramp for "about to fire"
+    // visuals (a growing glow/reticle) given a windup timer counting down
+    // from windupMax to 0. Every boss with a heavy hit-scan/explosive attack
+    // uses this so a player always gets a fair, readable warning beat.
+    static telegraphProgress(windupRemaining, windupMax) {
+        if (windupMax <= 0) return 1;
+        return MathUtils.clamp(1 - (windupRemaining / windupMax), 0, 1);
+    }
+
+    // Common "closest living player" helper -- bosses hunt players, never
+    // other enemies, and (unlike normal grunts) don't care about turrets/dogs
+    // as alternate targets; keeping them player-focused makes fights read
+    // clearly as "you vs the boss."
+    getClosestPlayer() {
+        let best = null;
+        let bestDist = Infinity;
+        if (game.player && !game.player.dead) {
+            best = game.player;
+            bestDist = Math.hypot(game.player.x - this.x, game.player.y - this.y);
+        }
+        if (game.isTwoPlayer && game.player2 && !game.player2.dead) {
+            let d = Math.hypot(game.player2.x - this.x, game.player2.y - this.y);
+            if (d < bestDist) { best = game.player2; bestDist = d; }
+        }
+        return best;
+    }
+
+    hasLineOfSight(target) {
+        if (!target) return false;
+        return !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
+    }
+
+    // Shared cash/removal/banner sequence. Subclasses can override for extra
+    // death spectacle (the APC explodes as a vehicle, for instance) but
+    // should call super.onDeath() so the payout/banner/HUD-close logic isn't
+    // duplicated five times.
+    onDeath() {
+        if (this.deathHandled) return; // guard against being called twice (e.g. a sub-part death path + the hp<=0 path both firing)
+        this.deathHandled = true;
+
+        let baseBounty = 400 + (game.wave || 1) * 35;
+        let amount = Math.round(baseBounty * game.cashMultiplier);
+        if (game.player) game.player.cash += amount;
+        if (game.isTwoPlayer && game.player2) game.player2.cash += amount;
+
+        game.floatingTexts.push(game.spawnFloatingText(
+            this.x, this.y - 40,
+            `${this.bossName} DOWN  +$${amount}`,
+            this.color, 3.0, 0, -70, 120, false
+        ));
+
+        // Bosses always drop a small guaranteed cache -- a real "boss loot"
+        // moment rather than the standard per-grunt money-pinata roll.
+        game.items.push(new Item(this.x - 20, this.y, 'medpack'));
+        game.items.push(new Item(this.x + 20, this.y, 'grenade'));
+        game.items.push(new Item(this.x, this.y + 20, 'perk_case'));
+        for (let i = 0; i < 3; i++) {
+            game.items.push(new Item(this.x + MathUtils.rand(-40, 40), this.y + MathUtils.rand(-40, 40), 'money'));
+        }
+
+        game.applyExplosionShake(this.x, this.y, 45, 260);
+        game.spawnShockwave(this.x, this.y, 260, 0.35);
+        game.camera.punchZoom(0.1);
+        if (game.camera2) game.camera2.punchZoom(0.1);
+        audio.playExplosion(1.0, this.x, this.y);
+        for (let i = 0; i < 28; i++) {
+            let a = Math.random() * Math.PI * 2;
+            let spd = MathUtils.rand(120, 420);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, this.color, 0.7, 4);
+        }
+        game.spawnScorchMark(this.x, this.y, 46);
+
+        game.triggerGloryKill(this);
+
+        if (game.activeBoss === this) {
+            game.activeBoss = null;
+            game.setBossHudVisible(false);
+        }
+    }
+}
+
+// ---- Boss 1: The Infiltrator ----
+// A "Solid Snake"-style stealth striker: low profile, cloaks (fades near-
+// invisible) at range, decloaks and rushes in for fast melee strikes when
+// close, then disengages and re-cloaks rather than slugging it out. Forces
+// players to stay alert to their surroundings instead of tunnel-visioning
+// the crowd -- exactly the kind of threat a "quiet, fast, deadly" operative
+// boss should be, distinct from every other boss's "big and loud" identity.
+class InfiltratorBoss extends Boss {
+    setup() {
+        this.r = 14; // smaller than other bosses -- reads as a person, not a machine
+        this.hp = 1150;
+        this.speed = 290; // faster than any normal enemy (fastest grunt-type is swarmer at 275, but only in a straight line)
+        this.state = 'STALK'; // STALK (cloaked, circling, harasses at range) -> RUSH (decloaked, closing) -> STRIKE (melee) -> RETREAT (disengage + recloak)
+        this.stateTimer = 0;
+        this.cloak = 1.0; // 1 = fully cloaked (near invisible), 0 = fully visible
+        this.strikeCooldown = 0;
+        this.circleDir = Math.random() < 0.5 ? 1 : -1;
+        this.circleAngle = Math.random() * Math.PI * 2;
+        this.dashTelegraph = 0; // brief windup flash right before a rush so it's not a free instant hit
+        this.potshotCooldown = MathUtils.rand(1.0, 2.0); // suppressed pistol harassment while stalking at range
+        this.grenadeCooldown = MathUtils.rand(4.5, 6.5); // thrown grenade -- punishes camping at mid range
+        this.comboStrikesRemaining = 0; // set on entering STRIKE for a chance at a quick 2-hit combo
+    }
+
+    onDeath() {
+        // Extra flavor beat before the shared payout logic: a brief cloak-
+        // flicker "system failure" burst instead of just vanishing.
+        for (let i = 0; i < 3; i++) {
+            setTimeout(() => {
+                if (game) game.addParticle(this.x, this.y, 0, 0, '#39ff14', 0.3, 10);
+            }, i * 90);
+        }
+        super.onDeath();
+    }
+
+    update(dt, player, walls, gameTime, allEnemies) {
+        if (this.dead) return;
+        if (this.muzzleFlashTimer > 0) this.muzzleFlashTimer -= dt;
+
+        if (this.introTimer > 0) {
+            this.introTimer -= dt;
+            this.cloak = 1.0;
+            return;
+        }
+
+        let target = this.getClosestPlayer();
+        if (!target) return;
+
+        let dx = target.x - this.x;
+        let dy = target.y - this.y;
+        let dist = Math.hypot(dx, dy);
+        let angleToTarget = Math.atan2(dy, dx);
+        this.angle = angleToTarget;
+
+        this.stateTimer -= dt;
+        if (this.strikeCooldown > 0) this.strikeCooldown -= dt;
+
+        const nearbyWalls = game.map.getWallsNear(this.x, this.y);
+        let hasLOS = this.hasLineOfSight(target);
+
+        if (this.state === 'STALK') {
+            // Mostly invisible, circles at mid range, closing slowly. Fully
+            // cloaked entities are still solid/hittable (no free invuln --
+            // that would be frustrating, not tense) but very hard to see.
+            this.cloak = Math.min(1.0, this.cloak + dt * 0.8);
+            this.circleAngle += this.circleDir * dt * 0.6;
+            let orbitR = 260;
+            let tx = target.x + Math.cos(this.circleAngle) * orbitR;
+            let ty = target.y + Math.sin(this.circleAngle) * orbitR;
+            let mvAngle = Math.atan2(ty - this.y, tx - this.x);
+            this.vx += Math.cos(mvAngle) * this.speed * 0.6 * dt * 3;
+            this.vy += Math.sin(mvAngle) * this.speed * 0.6 * dt * 3;
+
+            // Suppressed-pistol harassment: a single well-aimed shot every
+            // couple seconds while cloaked and at range. Weaker per-hit than
+            // a real gunner (this isn't its main damage source, melee still
+            // is) but it means standing off at pistol range and plinking the
+            // Infiltrator down is no longer free -- it shoots back.
+            this.potshotCooldown -= dt;
+            if (this.potshotCooldown <= 0 && hasLOS && dist > 200) {
+                this.potshotCooldown = MathUtils.rand(1.6, 2.6);
+                let fireAngle = angleToTarget + (Math.random() - 0.5) * 0.05;
+                game.bullets.push(game.spawnBullet(this.x, this.y, fireAngle, { name: 'Pistol', dmg: 13, speed: 2600, drag: 0.08, color: this.color }, false, false, false, false));
+                game.addParticle(this.x, this.y, Math.cos(fireAngle) * 300, Math.sin(fireAngle) * 300, this.color, 0.05, 2.5);
+                audio.playShoot('Pistol', this.x, this.y);
+                this.muzzleFlashTimer = 0.04;
+                this.muzzleFlashX = this.x; this.muzzleFlashY = this.y;
+                // Firing briefly gives away position even while cloaked --
+                // a fair readability trade for adding ranged pressure.
+                this.cloak = Math.max(0.55, this.cloak - 0.35);
+            }
+
+            // Thrown grenade: punishes sitting still at mid range waiting
+            // out the stalk. Rare enough to be a real "oh no" moment rather
+            // than constant pressure.
+            this.grenadeCooldown -= dt;
+            if (this.grenadeCooldown <= 0 && hasLOS && dist > 150 && dist < 550) {
+                this.grenadeCooldown = MathUtils.rand(6, 9);
+                let throwAngle = angleToTarget + (Math.random() - 0.5) * 0.1;
+                let power = MathUtils.clamp(dist * 1.3, 300, 650);
+                if (!game.grenades) game.grenades = [];
+                game.grenades.push(new EnemyFragGrenade(
+                    this.x, this.y,
+                    Math.cos(throwAngle) * power, Math.sin(throwAngle) * power
+                ));
+                audio.playShoot('Pistol', this.x, this.y); // throw whoosh substitute -- no dedicated throw SFX
+                this.cloak = Math.max(0.4, this.cloak - 0.5); // the throw motion breaks cloak more than a shot does
+            }
+
+            if (this.stateTimer <= 0 && this.strikeCooldown <= 0) {
+                this.state = 'RUSH';
+                this.stateTimer = 999; // RUSH exits on proximity/timeout below, not a fixed timer
+                this.dashTelegraph = 0.3;
+            }
+        } else if (this.state === 'RUSH') {
+            if (this.dashTelegraph > 0) {
+                // Brief plant-and-flash before the dash -- readable warning,
+                // not a surprise instant-gap-close.
+                this.dashTelegraph -= dt;
+                this.cloak = Math.max(0, this.cloak - dt * 3);
+                this.vx *= Math.pow(0.001, dt);
+                this.vy *= Math.pow(0.001, dt);
+            } else {
+                this.cloak = 0; // fully visible while actually closing distance -- fair
+                this.vx += Math.cos(angleToTarget) * this.speed * 2.4 * dt * 3;
+                this.vy += Math.sin(angleToTarget) * this.speed * 2.4 * dt * 3;
+
+                if (dist < this.r + target.r + 18) {
+                    this.state = 'STRIKE';
+                    this.stateTimer = 0.12;
+                    // ~35% chance of a quick 2-hit combo instead of a single
+                    // strike -- keeps a player from treating every RUSH as
+                    // "tank one hit, then it's safe to disengage."
+                    this.comboStrikesRemaining = (Math.random() < 0.35) ? 1 : 0;
+                } else if (dist > 700) {
+                    // Lost them / overshot -- bail back to stalking rather
+                    // than chasing forever off across the map.
+                    this.state = 'RETREAT';
+                    this.stateTimer = 1.2;
+                }
+            }
+        } else if (this.state === 'STRIKE') {
+            if (this.stateTimer <= 0) {
+                if (dist < this.r + target.r + 26) {
+                    let dmg = 26;
+                    target.takeDamage(dmg, angleToTarget, 260);
+                    audio.playHit(this.x, this.y);
+                    for (let c = 0; c < 8; c++) {
+                        game.addParticle(target.x, target.y, MathUtils.rand(-120, 120), MathUtils.rand(-120, 120), '#39ff14', 0.25, 2.5);
+                    }
+                }
+                if (this.comboStrikesRemaining > 0) {
+                    // Immediate follow-up stab -- same target check next
+                    // tick, short re-arm window rather than instant, so it's
+                    // still dodgeable by breaking distance right after the
+                    // first hit lands.
+                    this.comboStrikesRemaining--;
+                    this.stateTimer = 0.16;
+                } else {
+                    this.state = 'RETREAT';
+                    this.stateTimer = 1.3;
+                    this.strikeCooldown = 1.4;
+                    // Knock itself backward off the target -- a strike-and-fade
+                    // silhouette, not standing in the open trading hits.
+                    this.vx -= Math.cos(angleToTarget) * 400;
+                    this.vy -= Math.sin(angleToTarget) * 400;
+                }
+            }
+        } else if (this.state === 'RETREAT') {
+            this.vx -= Math.cos(angleToTarget) * this.speed * 1.4 * dt * 3;
+            this.vy -= Math.sin(angleToTarget) * this.speed * 1.4 * dt * 3;
+            this.cloak = Math.min(1.0, this.cloak + dt * 1.2);
+            if (this.stateTimer <= 0) {
+                this.state = 'STALK';
+                this.stateTimer = MathUtils.rand(1.2, 2.4);
+            }
+        }
+
+        this.updatePhysics(dt, nearbyWalls);
+    }
+
+    draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.1);
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y;
+
+        // Visibility: near-invisible while cloaked, fully opaque while
+        // decloaked/rushing/striking. Never literally 0 -- always at least a
+        // faint shimmer so an attentive player has *something* to spot.
+        let alpha = MathUtils.lerp(1.0, 0.08, this.cloak);
+
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(this.angle);
+        ctx.globalAlpha = alpha;
+
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = '#010a15';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = this.color;
+        ctx.shadowBlur = this.state === 'RUSH' || this.state === 'STRIKE' ? 14 : 4;
+        ctx.shadowColor = this.color;
+        ctx.stroke();
+
+        // Knife silhouette
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(this.r * 0.3, 0);
+        ctx.lineTo(this.r * 1.6, 0);
+        ctx.stroke();
+
+        ctx.restore();
+        ctx.shadowBlur = 0;
+
+        // Dash telegraph: a brief expanding ring right before RUSH actually
+        // closes distance, so the burst of speed is telegraphed, not a
+        // surprise.
+        if (this.state === 'RUSH' && this.dashTelegraph > 0) {
+            let prog = Boss.telegraphProgress(this.dashTelegraph, 0.35);
+            ctx.save();
+            ctx.globalAlpha = 0.5 * (1 - prog);
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 4 + prog * 20, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Boss nameplate glow -- only visible when meaningfully decloaked,
+        // consistent with "this is a stealth unit."
+        if (alpha > 0.4) {
+            ctx.save();
+            ctx.globalAlpha = Math.min(1, alpha) * 0.8;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = this.color;
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(scx, scy - this.r - 10, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+}
+
+// ---- Boss 2: Hammerhead APC ----
+// A four-seat armored vehicle: driver (undamageable, just drives), left
+// gunner, right gunner, roof gunner (20mm HE cannon). Each gunner seat is an
+// independently-trackable quarter of the boss's total HP -- kill a seat and
+// that gun goes silent for good, even though the vehicle keeps driving until
+// all three gunners are down. This is the "kill the crew, stop the truck"
+// boss the roadmap sketched out.
+class ApcBoss extends Boss {
+    setup() {
+        this.r = 38; // vehicle footprint, hitbox kept circular for simplicity/consistency with the rest of the collision system
+        this.speed = 130;
+        this.state = 'HUNT'; // HUNT (drive toward players) -> STRAFE (circle at firing range)
+        this.stateTimer = 0;
+
+        // Three gunner seats, each a third of total HP -- no undamageable
+        // "driver" slot anymore. The vehicle is a lightweight offroad buggy
+        // with special-forces gunners riding it, not an armored personnel
+        // carrier with a separate crew compartment, so there's no in-fiction
+        // reason for a 4th invulnerable seat; the vehicle simply stops once
+        // all three riders are dead, same "kill the crew, stop the truck"
+        // beat as before but without a seat that could never be shot.
+        let seatHp = 260;
+        const mkSeat = (offX, offY, coneOffset) => ({
+            hp: seatHp, maxHp: seatHp, alive: true,
+            offX, offY,              // seat position relative to vehicle center, in vehicle-local space
+            coneOffset,              // firing direction relative to vehicle facing
+            burstRemaining: 0,       // shots left in the current burst
+            burstShotTimer: 0,       // time until the next shot within a burst
+            burstCooldown: MathUtils.rand(0.4, 1.4), // time until the NEXT burst starts
+            fallenT: -1,             // -1 = still seated; >=0 = seconds since this gunner fell out (drives the fall-out animation/corpse)
+            fallVX: 0, fallVY: 0
+        });
+        this.seats = {
+            left:  mkSeat(0, -22, -Math.PI / 2),
+            right: mkSeat(0, 22, Math.PI / 2),
+            roof:  mkSeat(-6, 0, 0)
+        };
+        this.hp = seatHp * 3;
+        this.wheelSpin = 0;
+        this.roofCooldown = MathUtils.rand(2.5, 3.5);
+    }
+
+    healthFraction() {
+        let total = 0, max = 0;
+        for (let key in this.seats) {
+            let s = this.seats[key];
+            total += Math.max(0, s.hp);
+            max += s.maxHp;
+        }
+        return max > 0 ? MathUtils.clamp(total / max, 0, 1) : 0;
+    }
+
+    // Fallback for anything that damages the vehicle generically (explosion
+    // splash) rather than a specific seat (see the Bullet.update seat-routing
+    // hook for the precise-aim path) -- drains whichever seated (not already
+    // fallen) gunner has the most HP left, spreading damage roughly evenly.
+    takeDamage(amt, pushDir, pushForce) {
+        this.damageSeat(null, amt);
+        if (pushDir !== undefined && pushDir !== null) {
+            this.lastHitAngle = pushDir;
+            this.vx += Math.cos(pushDir) * pushForce * 0.3; // heavy vehicle -- barely budges from splash
+            this.vy += Math.sin(pushDir) * pushForce * 0.3;
+        }
+    }
+
+    damageSeat(seatKey, amt) {
+        let seat;
+        if (seatKey && this.seats[seatKey] && this.seats[seatKey].alive) {
+            seat = this.seats[seatKey];
+        } else {
+            let best = null;
+            for (let key in this.seats) {
+                let s = this.seats[key];
+                if (!s.alive) continue;
+                if (!best || s.hp > this.seats[best].hp) best = key;
+            }
+            if (!best) return;
+            seat = this.seats[best];
+            seatKey = best;
+        }
+        if (!seat.alive) return;
+        seat.hp -= amt;
+        this.hp = Math.max(0, this.hp - amt); // keep aggregate hp roughly in sync for anything reading it generically
+        if (seat.hp <= 0) {
+            this.killSeat(seatKey, seat);
+        }
+    }
+
+    // A gunner dying is its own little event: they stop shooting instantly,
+    // get knocked/fall clear of the vehicle with their own velocity, and
+    // land as a normal corpse (blood + debris) a beat later -- reads as "a
+    // person just died" rather than a stat bar emptying.
+    killSeat(seatKey, seat) {
+        seat.alive = false;
+        seat.hp = 0;
+        seat.fallenT = 0;
+        let outwardAngle = this.angle + seat.coneOffset;
+        let seatWorldX = this.x + Math.cos(this.angle) * seat.offX - Math.sin(this.angle) * seat.offY;
+        let seatWorldY = this.y + Math.sin(this.angle) * seat.offX + Math.cos(this.angle) * seat.offY;
+        seat.fallX = seatWorldX;
+        seat.fallY = seatWorldY;
+        seat.fallVX = Math.cos(outwardAngle) * MathUtils.rand(120, 220) + this.vx * 0.4;
+        seat.fallVY = Math.sin(outwardAngle) * MathUtils.rand(120, 220) + this.vy * 0.4;
+
+        game.floatingTexts.push(game.spawnFloatingText(
+            seatWorldX, seatWorldY - 20, `${seatKey.toUpperCase()} GUNNER DOWN`, '#ffb700', 1.6, 0, -60, 100, false
+        ));
+        audio.playHit(seatWorldX, seatWorldY);
+        game.spawnBlood(seatWorldX, seatWorldY, seat.fallVX, seat.fallVY);
+
+        if (!this.seats.left.alive && !this.seats.right.alive && !this.seats.roof.alive && !this.dead) {
+            this.hp = 0;
+            this.dead = true;
+            this.onDeath();
+        }
+    }
+
+    onDeath() {
+        this.speed = 0;
+        this.vx = 0; this.vy = 0;
+        for (let i = 0; i < 4; i++) {
+            setTimeout(() => {
+                if (!game) return;
+                audio.playExplosion(0.85, this.x, this.y);
+                game.addParticle(this.x, this.y, 0, 0, '#ff5500', 0.3, 8);
+            }, i * 130);
+        }
+        super.onDeath();
+    }
+
+    update(dt, player, walls, gameTime, allEnemies) {
+        if (this.dead) return;
+        if (this.muzzleFlashTimer > 0) this.muzzleFlashTimer -= dt;
+
+        // Fallen gunners keep simulating (skid to a stop, settle into a
+        // corpse) even during the intro freeze / regardless of vehicle state.
+        for (let key in this.seats) {
+            let seat = this.seats[key];
+            if (seat.fallenT < 0) continue;
+            seat.fallenT += dt;
+            if (seat.fallenT < 0.4) {
+                seat.fallVX *= Math.pow(0.02, dt);
+                seat.fallVY *= Math.pow(0.02, dt);
+                seat.fallX += seat.fallVX * dt;
+                seat.fallY += seat.fallVY * dt;
+            } else if (seat.fallenT >= 0.4 && seat.fallenT < 0.42 && game) {
+                // Settle into a permanent corpse mark exactly once, the
+                // frame it crosses the 0.4s "landed" threshold.
+                game.spawnCorpseDebris(seat.fallX, seat.fallY, Math.atan2(seat.fallVY, seat.fallVX), '#ffb700', 12);
+            }
+        }
+
+        if (this.introTimer > 0) { this.introTimer -= dt; return; }
+
+        let target = this.getClosestPlayer();
+        if (!target) return;
+
+        let dx = target.x - this.x;
+        let dy = target.y - this.y;
+        let dist = Math.hypot(dx, dy);
+        let angleToTarget = Math.atan2(dy, dx);
+
+        // The vehicle only actually drives while at least one gunner is
+        // still aboard -- an empty vehicle is a dead-in-the-water hulk (still
+        // shootable/rammable, just no longer a moving threat).
+        let anyGunnerAlive = this.seats.left.alive || this.seats.right.alive || this.seats.roof.alive;
+
+        if (anyGunnerAlive) {
+            this.wheelSpin += dt * 8;
+            let desiredRange = 380;
+            if (dist > desiredRange + 60) {
+                this.angle = angleToTarget;
+                this.vx += Math.cos(angleToTarget) * this.speed * dt * 3;
+                this.vy += Math.sin(angleToTarget) * this.speed * dt * 3;
+            } else if (dist < desiredRange - 60) {
+                this.angle = angleToTarget + Math.PI;
+                this.vx -= Math.cos(angleToTarget) * this.speed * dt * 3;
+                this.vy -= Math.sin(angleToTarget) * this.speed * dt * 3;
+            } else {
+                // Strafe broadside so both side gunners get a look at the target
+                this.angle = angleToTarget + Math.PI / 2;
+                this.vx += Math.cos(angleToTarget + Math.PI / 2) * this.speed * 0.7 * dt * 3;
+                this.vy += Math.sin(angleToTarget + Math.PI / 2) * this.speed * 0.7 * dt * 3;
+            }
+            let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+            this.updatePhysics(dt, nearbyWalls);
+        }
+
+        let hasLOS = this.hasLineOfSight(target);
+
+        // Burst-fire per side gunner: 3-round bursts at a moderate per-shot
+        // rate, then a real cooldown before the next burst -- NOT a
+        // continuous stream. Two gunners bursting in overlapping windows
+        // reads as "special forces laying down fire," not a bullet hose.
+        const updateSeatBurst = (seatKey, dmg, speed, color) => {
+            let seat = this.seats[seatKey];
+            if (!seat.alive) return;
+
+            if (seat.burstRemaining > 0) {
+                seat.burstShotTimer -= dt;
+                if (seat.burstShotTimer <= 0 && hasLOS) {
+                    seat.burstShotTimer = 0.13;
+                    seat.burstRemaining--;
+                    let seatWorldX = this.x + Math.cos(this.angle) * seat.offX - Math.sin(this.angle) * seat.offY;
+                    let seatWorldY = this.y + Math.sin(this.angle) * seat.offX + Math.cos(this.angle) * seat.offY;
+                    let fireAngle = Math.atan2(target.y - seatWorldY, target.x - seatWorldX) + (Math.random() - 0.5) * 0.14;
+                    game.bullets.push(game.spawnBullet(seatWorldX, seatWorldY, fireAngle, { name: 'Pistol', dmg, speed, drag: 0.08, color }, false, false, false, false));
+                    game.addParticle(seatWorldX, seatWorldY, Math.cos(fireAngle) * 300, Math.sin(fireAngle) * 300, color, 0.05, 3);
+                    audio.playShoot('Pistol', seatWorldX, seatWorldY);
+                    this.muzzleFlashTimer = 0.04;
+                    this.muzzleFlashX = seatWorldX; this.muzzleFlashY = seatWorldY;
+                } else if (seat.burstShotTimer <= 0 && !hasLOS) {
+                    // Lost sight mid-burst -- don't fire blind, but don't
+                    // resume as if nothing happened either; just end the
+                    // burst early and go back on cooldown.
+                    seat.burstRemaining = 0;
+                    seat.burstCooldown = MathUtils.rand(1.1, 1.8);
+                }
+            } else {
+                seat.burstCooldown -= dt;
+                if (seat.burstCooldown <= 0 && hasLOS) {
+                    seat.burstRemaining = 3;
+                    seat.burstShotTimer = 0;
+                    seat.burstCooldown = MathUtils.rand(1.6, 2.4);
+                }
+            }
+        };
+
+        updateSeatBurst('left', 11, 2000, '#ffb700');
+        updateSeatBurst('right', 11, 2000, '#ffb700');
+
+        // Roof gunner: 20mm HE cannon. Now the APC's signature threat rather
+        // than background noise buried under side-gunner spam -- fires more
+        // often and hits a little harder than before.
+        let roof = this.seats.roof;
+        if (roof.alive) {
+            this.roofCooldown -= dt;
+            if (this.roofCooldown <= 0 && hasLOS) {
+                this.roofCooldown = MathUtils.rand(1.8, 2.6);
+                let roofWorldX = this.x + Math.cos(this.angle) * roof.offX - Math.sin(this.angle) * roof.offY;
+                let roofWorldY = this.y + Math.sin(this.angle) * roof.offX + Math.cos(this.angle) * roof.offY;
+                let fireAngle = Math.atan2(target.y - roofWorldY, target.x - roofWorldX) + (Math.random() - 0.5) * 0.06;
+                if (!game.grenades) game.grenades = [];
+                game.grenades.push(new HeCannonShell(roofWorldX, roofWorldY, Math.cos(fireAngle) * 1500, Math.sin(fireAngle) * 1500));
+                audio.playShoot('M1A', roofWorldX, roofWorldY);
+                game.applyExplosionShake(roofWorldX, roofWorldY, 6, 60);
+                this.muzzleFlashTimer = 0.04;
+                this.muzzleFlashX = roofWorldX; this.muzzleFlashY = roofWorldY;
+            }
+        }
+    }
+
+    draw(ctx, cam) {
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y;
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.2, this.r * 0.6);
+
+        // Fallen gunners draw first (they're on the ground, behind the
+        // vehicle) -- a dark silhouette fading as they settle, same visual
+        // language as a normal enemy corpse.
+        for (let key in this.seats) {
+            let seat = this.seats[key];
+            if (seat.fallenT < 0) continue;
+            let fx = seat.fallX - cam.x;
+            let fy = seat.fallY - cam.y;
+            let settleT = Math.min(1, seat.fallenT / 0.4);
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.fillStyle = '#010a15';
+            ctx.strokeStyle = '#ffb700';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.ellipse(fx, fy, 11 - settleT * 3, 7 - settleT * 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(this.angle);
+
+        // Skeletal offroad buggy frame -- an open roll-cage rectangle (just
+        // struts, not a solid hull) so the gunner circles riding it are
+        // clearly visible, per the "see the enemy circles with their
+        // shouldered guns" request.
+        let frameLen = this.r * 2.0;
+        let frameWid = this.r * 1.1;
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 3;
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        // Roll cage outline
+        ctx.moveTo(-frameLen / 2, -frameWid / 2);
+        ctx.lineTo(frameLen / 2, -frameWid / 2);
+        ctx.lineTo(frameLen / 2, frameWid / 2);
+        ctx.lineTo(-frameLen / 2, frameWid / 2);
+        ctx.closePath();
+        ctx.stroke();
+        // Roll-cage cross braces
+        ctx.beginPath();
+        ctx.moveTo(-frameLen / 2, -frameWid / 2); ctx.lineTo(0, 0);
+        ctx.moveTo(-frameLen / 2, frameWid / 2); ctx.lineTo(0, 0);
+        ctx.moveTo(frameLen / 2, -frameWid / 2); ctx.lineTo(frameLen * 0.15, 0);
+        ctx.moveTo(frameLen / 2, frameWid / 2); ctx.lineTo(frameLen * 0.15, 0);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Wheels
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        for (let wx of [-frameLen * 0.32, frameLen * 0.32]) {
+            for (let wy of [-frameWid / 2 - 4, frameWid / 2 + 4]) {
+                ctx.save();
+                ctx.translate(wx, wy);
+                ctx.rotate(this.wheelSpin);
+                ctx.fillStyle = '#222';
+                ctx.fillRect(-5, -2.5, 10, 5);
+                ctx.restore();
+            }
+        }
+
+        // Gunner occupants: drawn like a normal enemy -- a filled circle
+        // outlined in the boss color, with a small arm+barrel indicating
+        // their firing direction, at grunt-ish scale so they read as
+        // "special forces enemies riding a vehicle," not vehicle furniture.
+        const drawGunner = (seat, gunColor) => {
+            if (!seat.alive) return;
+            let gx = seat.offX, gy = seat.offY;
+            let gunnerAngle = seat.coneOffset;
+
+            ctx.save();
+            ctx.translate(gx, gy);
+            ctx.rotate(gunnerAngle);
+
+            // Shouldered weapon
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(15, 0);
+            ctx.stroke();
+            ctx.fillStyle = gunColor;
+            ctx.fillRect(9, -2, 7, 4);
+
+            // Body
+            ctx.beginPath();
+            ctx.arc(0, 0, 11, 0, Math.PI * 2);
+            ctx.fillStyle = '#010a15';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = this.color;
+            ctx.stroke();
+
+            ctx.restore();
+        };
+
+        drawGunner(this.seats.left, '#ffb700');
+        drawGunner(this.seats.right, '#ffb700');
+        drawGunner(this.seats.roof, '#ff2a5f');
+
+        ctx.restore();
+    }
+}
+
+// ---- Boss 3: Juggernaut Gunner ----
+// A slow, absurdly armored heavy walking straight at whoever it's angriest
+// at, with a wide telegraphed burst-fire attack -- the "wall of a boss" that
+// rewards distance/kiting and punishes standing still, rather than reflexes
+// or precision. Deliberately the simplest AI of the five (advance, telegraph,
+// burst, repeat) since the challenge is entirely attrition and positioning,
+// not tricky behavior.
+class JuggernautBoss extends Boss {
+    setup() {
+        this.r = 26;
+        this.hp = 2600;
+        this.speed = 65; // slowest thing in the game by a wide margin
+        this.state = 'ADVANCE'; // ADVANCE -> WINDUP -> BURST -> COOLDOWN
+        this.stateTimer = MathUtils.rand(1.0, 2.0);
+        this.windupMax = 0.9;
+        this.burstShotsRemaining = 0;
+        this.burstTimer = 0;
+    }
+
+    update(dt, player, walls, gameTime, allEnemies) {
+        if (this.dead) return;
+        if (this.muzzleFlashTimer > 0) this.muzzleFlashTimer -= dt;
+        if (this.introTimer > 0) { this.introTimer -= dt; return; }
+
+        let target = this.getClosestPlayer();
+        if (!target) return;
+
+        let dx = target.x - this.x, dy = target.y - this.y;
+        let dist = Math.hypot(dx, dy);
+        let angleToTarget = Math.atan2(dy, dx);
+        this.angle = angleToTarget;
+
+        this.stateTimer -= dt;
+        let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+
+        if (this.state === 'ADVANCE') {
+            // Lumbers directly at the target, no strafing, no pathing
+            // cleverness -- it's a wall, it just walks toward you.
+            this.vx += Math.cos(angleToTarget) * this.speed * dt * 3;
+            this.vy += Math.sin(angleToTarget) * this.speed * dt * 3;
+            if (this.stateTimer <= 0 && this.hasLineOfSight(target)) {
+                this.state = 'WINDUP';
+                this.stateTimer = this.windupMax;
+            }
+        } else if (this.state === 'WINDUP') {
+            // Fully readable telegraph: plants, glows, doesn't move. A
+            // player watching for it has a full ~0.9s to break line of
+            // sight or get behind cover before the burst actually fires.
+            this.vx *= Math.pow(0.001, dt);
+            this.vy *= Math.pow(0.001, dt);
+            if (this.stateTimer <= 0) {
+                this.state = 'BURST';
+                this.burstShotsRemaining = 9; // bumped from 6 -- a bit closer to a real "bullet storm" moment once the telegraph pays off
+                this.burstTimer = 0;
+            }
+        } else if (this.state === 'BURST') {
+            this.burstTimer -= dt;
+            if (this.burstTimer <= 0 && this.burstShotsRemaining > 0) {
+                this.burstTimer = 0.09; // slightly faster than before (was 0.11) for a denser stream during the burst window
+                this.burstShotsRemaining--;
+                let fireAngle = angleToTarget + (Math.random() - 0.5) * 0.12;
+                let bx = this.x + Math.cos(this.angle) * (this.r + 8);
+                let by = this.y + Math.sin(this.angle) * (this.r + 8);
+                game.bullets.push(game.spawnBullet(bx, by, fireAngle, { name: 'LMG', dmg: 16, speed: 2400, drag: 0.05, color: this.color }, false, false, false, false));
+                game.addParticle(bx, by, Math.cos(fireAngle) * 300, Math.sin(fireAngle) * 300, this.color, 0.05, 3);
+                audio.playShoot('LMG', bx, by);
+                this.muzzleFlashTimer = 0.04;
+                this.muzzleFlashX = bx; this.muzzleFlashY = by;
+            }
+            if (this.burstShotsRemaining <= 0 && this.burstTimer <= 0) {
+                this.state = 'COOLDOWN';
+                this.stateTimer = MathUtils.rand(0.8, 1.4);
+            }
+        } else if (this.state === 'COOLDOWN') {
+            this.vx += Math.cos(angleToTarget) * this.speed * 0.5 * dt * 3;
+            this.vy += Math.sin(angleToTarget) * this.speed * 0.5 * dt * 3;
+            if (this.stateTimer <= 0) {
+                this.state = 'ADVANCE';
+                this.stateTimer = MathUtils.rand(1.0, 2.0);
+            }
+        }
+
+        this.updatePhysics(dt, nearbyWalls);
+    }
+
+    draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.2);
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y;
+
+        // Windup telegraph: a slowly filling red ring around the boss so a
+        // burst is never a surprise -- readable from any angle, not just
+        // down the barrel.
+        if (this.state === 'WINDUP') {
+            let prog = Boss.telegraphProgress(this.stateTimer, this.windupMax);
+            ctx.save();
+            ctx.globalAlpha = 0.25 + prog * 0.5;
+            ctx.strokeStyle = '#ff2a5f';
+            ctx.lineWidth = 3 + prog * 3;
+            ctx.shadowBlur = 10 + prog * 15;
+            ctx.shadowColor = '#ff2a5f';
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 10, 0, Math.PI * 2 * prog);
+            ctx.stroke();
+            ctx.restore();
+            ctx.shadowBlur = 0;
+        }
+
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(this.angle);
+
+        // Heavy armor plating -- octagonal silhouette rather than a plain
+        // circle, reads as "armored" at a glance.
+        ctx.fillStyle = '#1a1a1a';
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 3;
+        ctx.shadowBlur = this.state === 'BURST' ? 16 : 6;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        let sides = 8;
+        for (let i = 0; i <= sides; i++) {
+            let a = (i / sides) * Math.PI * 2;
+            let px = Math.cos(a) * this.r;
+            let py = Math.sin(a) * this.r;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Barrel/cannon
+        ctx.fillStyle = '#333';
+        ctx.fillRect(this.r * 0.3, -4, this.r * 0.9, 8);
+
+        ctx.restore();
+    }
+}
+
+// Lightweight hostile drone spawned by SpotBoss (below). Deliberately NOT a
+// reuse of the player's MiniDrone class -- MiniDrone is built entirely
+// around orbiting/hunting FOR a Player owner via game.getHostilesFor(),
+// which always hunts from game.enemies outward. A boss-owned drone needs
+// the opposite direction (hunt players), and trying to thread that through
+// MiniDrone's owner-assumes-Player state machine would be far riskier than
+// just writing the ~30 lines this actually needs. It does NOT extend
+// Enemy/Boss -- it's small enough (1 hp, contact-damage only) that it isn't
+// meaningfully "an enemy" for targeting purposes, and keeping it out of
+// game.enemies means the boss-wave-count and wave-clear logic (which count
+// game.enemies) aren't affected by these disposable spawns.
+class BossDrone {
+    constructor(x, y, owner) {
+        this.x = x; this.y = y;
+        this.vx = 0; this.vy = 0;
+        this.r = 7;
+        this.hp = 1;
+        this.dead = false;
+        this.owner = owner;
+        this.speed = 240;
+        this.life = 12; // despawns on its own well before it could become a permanent nuisance
+        this.spinPhase = Math.random() * Math.PI * 2;
+    }
+    // Shot down by a player bullet -- a real (small) explosion, not a fizzle:
+    // it's a live explosive drone, so getting shot out of the air should
+    // feel like a legitimate kill, with a scorch mark and a bit of punch,
+    // just scaled well below the boss's own weapons since these are meant
+    // to be individually cheap threats, not mini-bosses in their own right.
+    takeDamage() {
+        if (this.dead) return;
+        this.explode(false);
+    }
+    explode(hitPlayer) {
+        if (this.dead) return;
+        this.dead = true;
+        if (!game) return;
+
+        if (audio.playMiniExplosion) {
+            audio.playMiniExplosion(this.x, this.y);
+        } else {
+            audio.playExplosion(0.5, this.x, this.y);
+        }
+        game.applyExplosionShake(this.x, this.y, 10, 55);
+        game.spawnShockwave(this.x, this.y, 55, 0.2);
+
+        // Splash a small blast radius around the detonation point rather
+        // than only damaging on exact contact -- a shot-down drone that was
+        // already close to a player should still be able to tag them, same
+        // as any other small explosive.
+        if (!hitPlayer) {
+            let blastRadius = 45;
+            let targets = [game.player];
+            if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+            for (let ent of targets) {
+                if (!ent || ent.dead) continue;
+                let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
+                if (dist < blastRadius) {
+                    let dmg = 14 * (1.0 - dist / blastRadius);
+                    ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 220);
+                }
+            }
+        }
+
+        for (let c = 0; c < 14; c++) {
+            let a = Math.random() * Math.PI * 2;
+            let spd = MathUtils.rand(80, 220);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#00e5ff', 0.35, 3);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.6, Math.sin(a) * spd * 0.6, '#ffffff', 0.25, 2);
+        }
+        game.spawnScorchMark(this.x, this.y, 16);
+        game.triggerBarrelsInRadius(this.x, this.y, 45);
+    }
+    update(dt, game) {
+        if (this.dead) return;
+        this.life -= dt;
+        if (this.life <= 0) { this.dead = true; return; }
+
+        let target = null;
+        let bestDist = Infinity;
+        if (game.player && !game.player.dead) { target = game.player; bestDist = Math.hypot(game.player.x - this.x, game.player.y - this.y); }
+        if (game.isTwoPlayer && game.player2 && !game.player2.dead) {
+            let d = Math.hypot(game.player2.x - this.x, game.player2.y - this.y);
+            if (d < bestDist) { target = game.player2; bestDist = d; }
+        }
+        if (!target) return;
+
+        let angleToTarget = Math.atan2(target.y - this.y, target.x - this.x);
+        this.vx += Math.cos(angleToTarget) * this.speed * dt * 3;
+        this.vy += Math.sin(angleToTarget) * this.speed * dt * 3;
+        this.vx *= Math.pow(0.02, dt);
+        this.vy *= Math.pow(0.02, dt);
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        if (bestDist < this.r + target.r + 4) {
+            this.explode(true);
+            // Direct contact hits harder than the splash-only shot-down
+            // case above -- it detonated right on top of the player, not
+            // at arm's length.
+            target.takeDamage(20, angleToTarget, 220);
+        }
+    }
+    draw(ctx, cam) {
+        if (this.dead) return;
+        let scx = this.x - cam.x, scy = this.y - cam.y;
+        this.spinPhase += 0.3;
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(this.spinPhase);
+
+        // Small hazard-striped body so it visually reads as "this thing is
+        // explosive," not just a drifting light like the player's own
+        // MiniDrone.
+        ctx.shadowBlur = 9;
+        ctx.shadowColor = '#00e5ff';
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = '#0a0a0a';
+        ctx.fill();
+        ctx.strokeStyle = '#00e5ff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffea00';
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+        ctx.shadowBlur = 0;
+    }
+}
+
+// ---- Boss 4: Hound-9 Sentry ----
+// A huge quadruped robot (Boston-Dynamics-"Spot"-shaped, scaled way up):
+// twin side cannons for sustained pressure, and periodically launches 2-3
+// BossDrones that peel off to hunt players independently -- forces players
+// to either burn time swatting drones or tank chip damage while focusing
+// the boss. Moves at a steady medium pace, unlike the Juggernaut's crawl or
+// the Infiltrator's bursts, so it reads as a relentless hunter rather than
+// either a wall or a striker.
+class SpotBoss extends Boss {
+    setup() {
+        this.r = 32;
+        this.hp = 1400;
+        this.speed = 155;
+        this.fireCooldown = MathUtils.rand(0.5, 1.0);
+        this.droneCooldown = MathUtils.rand(4, 6);
+        this.legPhase = 0;
+        this.myDrones = [];
+    }
+
+    onDeath() {
+        // Any drones this boss launched go inert (not instantly deleted --
+        // they just stop being able to do anything and fade via their own
+        // life timer) so killing the boss doesn't leave orphaned drones
+        // referencing a dead owner.
+        for (let d of this.myDrones) {
+            if (!d.dead) d.owner = null;
+        }
+        super.onDeath();
+    }
+
+    update(dt, player, walls, gameTime, allEnemies) {
+        if (this.dead) return;
+        if (this.muzzleFlashTimer > 0) this.muzzleFlashTimer -= dt;
+        if (this.introTimer > 0) { this.introTimer -= dt; return; }
+
+        let target = this.getClosestPlayer();
+        if (!target) return;
+
+        let dx = target.x - this.x, dy = target.y - this.y;
+        let dist = Math.hypot(dx, dy);
+        let angleToTarget = Math.atan2(dy, dx);
+        this.angle = angleToTarget;
+
+        // Holds a mid-range band rather than closing to melee -- it's a
+        // gunner, not a brawler.
+        let desiredRange = 380;
+        if (dist > desiredRange + 50) {
+            this.vx += Math.cos(angleToTarget) * this.speed * dt * 3;
+            this.vy += Math.sin(angleToTarget) * this.speed * dt * 3;
+        } else if (dist < desiredRange - 50) {
+            this.vx -= Math.cos(angleToTarget) * this.speed * 0.6 * dt * 3;
+            this.vy -= Math.sin(angleToTarget) * this.speed * 0.6 * dt * 3;
+        } else {
+            let strafeAngle = angleToTarget + Math.PI / 2;
+            this.vx += Math.cos(strafeAngle) * this.speed * 0.7 * dt * 3;
+            this.vy += Math.sin(strafeAngle) * this.speed * 0.7 * dt * 3;
+        }
+        let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+        this.updatePhysics(dt, nearbyWalls);
+        this.legPhase += dt * Math.hypot(this.vx, this.vy) * 0.01;
+
+        let hasLOS = this.hasLineOfSight(target);
+        this.fireCooldown -= dt;
+        if (this.fireCooldown <= 0 && hasLOS) {
+            this.fireCooldown = MathUtils.rand(0.35, 0.5);
+            for (let side of [-1, 1]) {
+                let barrelAngle = this.angle + side * 0.3;
+                let bx = this.x + Math.cos(barrelAngle) * this.r;
+                let by = this.y + Math.sin(barrelAngle) * this.r;
+                let fireAngle = angleToTarget + (Math.random() - 0.5) * 0.1;
+                game.bullets.push(game.spawnBullet(bx, by, fireAngle, { name: 'SMG', dmg: 10, speed: 2200, drag: 0.1, color: this.color }, false, false, false, false));
+                game.addParticle(bx, by, Math.cos(fireAngle) * 300, Math.sin(fireAngle) * 300, this.color, 0.05, 2.5);
+            }
+            audio.playShoot('SMG', this.x, this.y);
+            this.muzzleFlashTimer = 0.04;
+            this.muzzleFlashX = this.x; this.muzzleFlashY = this.y;
+        }
+
+        this.droneCooldown -= dt;
+        if (this.droneCooldown <= 0) {
+            this.droneCooldown = MathUtils.rand(7, 10);
+            // Cap concurrent live drones from this boss so a player who
+            // ignores them indefinitely doesn't get buried -- old ones
+            // naturally expire via their own life timer anyway, but this
+            // keeps worst-case pressure bounded even under bad luck.
+            this.myDrones = this.myDrones.filter(d => !d.dead);
+            if (this.myDrones.length < 4) {
+                let count = 2 + (Math.random() < 0.4 ? 1 : 0);
+                for (let i = 0; i < count; i++) {
+                    let a = Math.random() * Math.PI * 2;
+                    let d = new BossDrone(this.x + Math.cos(a) * 30, this.y + Math.sin(a) * 30, this);
+                    game.bossDrones.push(d);
+                    this.myDrones.push(d);
+                }
+                game.floatingTexts.push(game.spawnFloatingText(
+                    this.x, this.y - 40, 'DRONE SWARM DEPLOYED', this.color, 1.4, 0, -60, 100, false
+                ));
+                audio.playPickup('weapon');
+            }
+        }
+    }
+
+    draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.3, this.r * 0.7);
+        let scx = this.x - cam.x, scy = this.y - cam.y;
+
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(this.angle);
+
+        // Four simple articulated legs, phase-offset for a quadruped gait
+        let legReach = this.r * 0.9;
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 4; i++) {
+            let side = i < 2 ? -1 : 1;
+            let front = (i % 2 === 0) ? -1 : 1;
+            let phase = this.legPhase + (i % 2 === 0 ? 0 : Math.PI);
+            let lift = Math.max(0, Math.sin(phase)) * 6;
+            let lx = front * this.r * 0.6;
+            let ly = side * this.r * 0.8;
+            ctx.beginPath();
+            ctx.moveTo(lx, ly);
+            ctx.lineTo(lx + front * 6, ly + side * (10 - lift));
+            ctx.stroke();
+        }
+
+        // Body
+        ctx.fillStyle = '#1a1a1a';
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 2.5;
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.r * 0.85, this.r * 0.55, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Twin side cannons
+        ctx.fillStyle = '#333';
+        ctx.fillRect(this.r * 0.2, -this.r * 0.55 - 4, this.r * 0.7, 5);
+        ctx.fillRect(this.r * 0.2, this.r * 0.55 - 1, this.r * 0.7, 5);
+
+        // "Head" sensor cluster
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.r * 0.75, 0, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+}
+
+// Telegraphed ground-targeted mortar impact -- not a flying projectile like
+// HeCannonShell, since a mortar arrives from off-map. Shows a growing warning
+// ring at the target point for warningTime seconds, then detonates. Lives in
+// game.grenades alongside every other timed-explosive so it gets updated and
+// drawn for free through the existing loop.
+class MortarMarker {
+    constructor(x, y, warningTime = 1.6, radius = 70) {
+        this.x = x; this.y = y;
+        this.vx = 0; this.vy = 0; // grenades-array contract expects these for getWallsNear(g.x,g.y) style lookups elsewhere; unused for actual movement
+        this.r = radius;
+        this.warningTime = warningTime;
+        this.timer = warningTime;
+    }
+    update(dt, walls, game) {
+        this.timer -= dt;
+        if (this.timer <= 0) {
+            this.explode(game);
+            return false;
+        }
+        return true;
+    }
+    explode(game) {
+        audio.playExplosion(1.0, this.x, this.y);
+        game.applyExplosionShake(this.x, this.y, 28, this.r * 1.5);
+        game.spawnShockwave(this.x, this.y, this.r * 1.3, 0.3);
+
+        let targets = [game.player];
+        if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+        if (game.turrets) targets.push(...game.turrets);
+        if (game.dogs) targets.push(...game.dogs);
+        for (let ent of targets) {
+            if (!ent || ent.dead) continue;
+            let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
+            if (dist < this.r) {
+                // Slightly lower per-shell damage than the old single-mortar
+                // version -- multiple shells can now land close enough to
+                // overlap, so this keeps a full salvo's worst case in line
+                // with the original single-mortar's worst case instead of
+                // compounding into an unavoidable near-instant kill.
+                let dmg = 52 * (1.0 - dist / this.r);
+                ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 450);
+            }
+        }
+        for (let i = 0; i < 24; i++) {
+            let a = Math.random() * Math.PI * 2;
+            let spd = MathUtils.rand(150, 450);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#d500f9', 0.55, 4);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.6, Math.sin(a) * spd * 0.6, '#8000c0', 0.4, 3);
+        }
+        game.spawnScorchMark(this.x, this.y, 42);
+        game.triggerBarrelsInRadius(this.x, this.y, this.r);
+    }
+    draw(ctx, cam) {
+        let scx = this.x - cam.x, scy = this.y - cam.y;
+        let prog = Boss.telegraphProgress(this.timer, this.warningTime);
+        ctx.save();
+        // Expanding, brightening ring so the danger zone is unambiguous and
+        // gives the player the full warning window to leave the circle.
+        ctx.globalAlpha = 0.25 + prog * 0.5;
+        ctx.strokeStyle = '#d500f9';
+        ctx.lineWidth = 2 + prog * 3;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.arc(scx, scy, this.r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.globalAlpha = 0.06 + prog * 0.12;
+        ctx.fillStyle = '#d500f9';
+        ctx.beginPath();
+        ctx.arc(scx, scy, this.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+// ---- Boss 5: Widowmaker Walker ----
+// A spider-legged long-range walker that actively maintains max distance
+// (the opposite instinct of every other boss here), peppers with precise
+// sniper shots when it has a clean line, and periodically calls in a
+// telegraphed mortar strike on the player's position -- forces players to
+// close distance aggressively or constantly reposition out of the mortar
+// zone, which is a very different pressure than "big scary thing walks at
+// you."
+class SniperWalkerBoss extends Boss {
+    setup() {
+        this.r = 24;
+        this.hp = 1000;
+        this.speed = 145;
+        this.fireCooldown = MathUtils.rand(1.0, 1.8);
+        this.mortarCooldown = MathUtils.rand(5, 7);
+        this.legPhase = 0;
+        this.aimWindup = 0; // brief laser-sight telegraph before each shot
+    }
+
+    update(dt, player, walls, gameTime, allEnemies) {
+        if (this.dead) return;
+        if (this.muzzleFlashTimer > 0) this.muzzleFlashTimer -= dt;
+        if (this.introTimer > 0) { this.introTimer -= dt; return; }
+
+        let target = this.getClosestPlayer();
+        if (!target) return;
+
+        let dx = target.x - this.x, dy = target.y - this.y;
+        let dist = Math.hypot(dx, dy);
+        let angleToTarget = Math.atan2(dy, dx);
+        this.angle = angleToTarget;
+
+        // Always tries to open distance -- the opposite movement instinct
+        // from every other boss, which is what makes it feel distinct even
+        // though mechanically it's "just" a kiting shooter.
+        let keepAwayRange = 620;
+        if (dist < keepAwayRange) {
+            this.vx -= Math.cos(angleToTarget) * this.speed * dt * 3;
+            this.vy -= Math.sin(angleToTarget) * this.speed * dt * 3;
+        } else if (dist > keepAwayRange + 150) {
+            this.vx += Math.cos(angleToTarget) * this.speed * 0.5 * dt * 3;
+            this.vy += Math.sin(angleToTarget) * this.speed * 0.5 * dt * 3;
+        } else {
+            let strafeAngle = angleToTarget + Math.PI / 2;
+            this.vx += Math.cos(strafeAngle) * this.speed * 0.5 * dt * 3;
+            this.vy += Math.sin(strafeAngle) * this.speed * 0.5 * dt * 3;
+        }
+        let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+        this.updatePhysics(dt, nearbyWalls);
+        this.legPhase += dt * Math.hypot(this.vx, this.vy) * 0.012;
+
+        let hasLOS = this.hasLineOfSight(target);
+
+        if (this.aimWindup > 0) {
+            this.aimWindup -= dt;
+            if (this.aimWindup <= 0) {
+                if (hasLOS) {
+                    let fireAngle = angleToTarget + (Math.random() - 0.5) * 0.01;
+                    game.bullets.push(game.spawnBullet(this.x, this.y, fireAngle, { name: 'Sniper', dmg: 34, speed: 3600, drag: 0.02, color: this.color }, false, false, false, false));
+                    audio.playShoot('Sniper', this.x, this.y);
+                    this.muzzleFlashTimer = 0.04;
+                    this.muzzleFlashX = this.x; this.muzzleFlashY = this.y;
+                    game.applyExplosionShake(this.x, this.y, 3, 40);
+                }
+                this.fireCooldown = MathUtils.rand(1.3, 2.0);
+            }
+        } else {
+            this.fireCooldown -= dt;
+            if (this.fireCooldown <= 0 && hasLOS) {
+                this.aimWindup = 0.45; // laser-sight telegraph window -- see draw()
+            }
+        }
+
+        this.mortarCooldown -= dt;
+        if (this.mortarCooldown <= 0) {
+            this.mortarCooldown = MathUtils.rand(9, 12);
+            if (!game.grenades) game.grenades = [];
+
+            // Salvo of 2-3 shells landing in a loose cluster around the
+            // target's current position rather than one single circle --
+            // meaningfully harder to fully sidestep (you have to actually
+            // relocate, not just take one step out of one ring), while each
+            // individual shell stays roughly as strong as before so it's
+            // "harder to evade," not "one shot kills you."
+            let shellCount = 2 + (Math.random() < 0.4 ? 1 : 0);
+            let baseX = target.x, baseY = target.y;
+            for (let i = 0; i < shellCount; i++) {
+                // Stagger both the landing offset and the warning time
+                // slightly so the shells don't all resolve in perfect
+                // unison -- reads as an actual barrage walking across the
+                // area instead of one blast triplicated in place.
+                let offAngle = Math.random() * Math.PI * 2;
+                let offDist = i === 0 ? 0 : MathUtils.rand(70, 150); // first shell always targets dead-on; rest scatter around it
+                let lx = baseX + Math.cos(offAngle) * offDist;
+                let ly = baseY + Math.sin(offAngle) * offDist;
+                let warn = 1.6 + i * 0.25;
+                game.grenades.push(new MortarMarker(lx, ly, warn, 85));
+            }
+            game.floatingTexts.push(game.spawnFloatingText(
+                this.x, this.y - 40, shellCount > 2 ? 'MORTAR BARRAGE INBOUND' : 'MORTAR INBOUND', this.color, 1.4, 0, -60, 100, false
+            ));
+            audio.playPickup('weapon');
+        }
+    }
+
+    draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.3, this.r * 0.6);
+        let scx = this.x - cam.x, scy = this.y - cam.y;
+
+        // Laser-sight telegraph: a thin line toward the target during the
+        // aim windup, so the sniper shot is dodgeable/coverable, matching
+        // the same fairness principle every other boss's telegraph follows.
+        if (this.aimWindup > 0) {
+            let target = this.getClosestPlayer();
+            if (target) {
+                let prog = 1 - Boss.telegraphProgress(this.aimWindup, 0.45);
+                ctx.save();
+                ctx.globalAlpha = 0.5 * prog;
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(scx, scy);
+                ctx.lineTo(target.x - cam.x, target.y - cam.y);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(this.angle);
+
+        // Six thin spider legs, more insectile than SpotBoss's four blocky ones
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 6; i++) {
+            let side = i % 2 === 0 ? -1 : 1;
+            let along = (Math.floor(i / 2) - 1) * this.r * 0.6;
+            let phase = this.legPhase + i * 1.1;
+            let lift = Math.sin(phase) * 5;
+            ctx.beginPath();
+            ctx.moveTo(along, side * this.r * 0.4);
+            ctx.lineTo(along + lift, side * (this.r * 0.9));
+            ctx.stroke();
+        }
+
+        // Body -- narrow, angular
+        ctx.fillStyle = '#1a1a1a';
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        ctx.moveTo(this.r, 0);
+        ctx.lineTo(-this.r * 0.6, -this.r * 0.5);
+        ctx.lineTo(-this.r * 0.6, this.r * 0.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Long sniper barrel
+        ctx.fillStyle = '#333';
+        ctx.fillRect(this.r * 0.2, -2, this.r * 1.3, 4);
+
+        ctx.restore();
     }
 }
 
@@ -7135,7 +8824,24 @@ class Bullet {
                     }
                     
                     let wasDeadBefore = ent.dead;
-                    ent.takeDamage(calculatedDmg, Math.atan2(this.vy, this.vx), 180);
+                    if (ent instanceof ApcBoss) {
+                        // Route damage to whichever seat the shot actually
+                        // came in on, so shooting the left side reliably
+                        // hurts the left gunner rather than a random seat --
+                        // makes "focus down one gunner" a real, readable
+                        // player choice instead of a coin flip.
+                        let hitAngle = Math.atan2(this.y - ent.y, this.x - ent.x);
+                        let relAngle = MathUtils.angleDifference(hitAngle, ent.angle);
+                        let seatKey = null;
+                        if (relAngle > -Math.PI / 4 && relAngle < Math.PI / 4) seatKey = 'roof';
+                        else if (relAngle >= Math.PI / 4 && relAngle < 3 * Math.PI / 4) seatKey = 'right';
+                        else if (relAngle <= -Math.PI / 4 && relAngle > -3 * Math.PI / 4) seatKey = 'left';
+                        else seatKey = 'roof'; // rear hits also land on the roof seat -- there's no "driver" gun to protect back there
+                        ent.damageSeat(seatKey, calculatedDmg);
+                        if (ent.lastHitAngle !== undefined) ent.lastHitAngle = Math.atan2(this.vy, this.vx);
+                    } else {
+                        ent.takeDamage(calculatedDmg, Math.atan2(this.vy, this.vx), 180);
+                    }
                     
                     if (ent instanceof Enemy && ent.dead && !wasDeadBefore) {
                         let isTurret = (this.owner instanceof AutoTurret);
@@ -7214,6 +8920,37 @@ class Bullet {
                         this.vx *= 0.75;
                         this.vy *= 0.75;
                         this.dmg *= 0.75;
+                    }
+                }
+            }
+            if (!hitRegistered && game.explosiveBarrels && game.explosiveBarrels.length > 0) {
+                for (let bar of game.explosiveBarrels) {
+                    if (bar.dead) continue;
+                    let dx = this.x - bar.x;
+                    let dy = this.y - bar.y;
+                    if (dx * dx + dy * dy < bar.r * bar.r) {
+                        bar.explode(game);
+                        this.active = false;
+                        hitRegistered = true;
+                        break;
+                    }
+                }
+            }
+            if (!hitRegistered && this.isPlayerBullet && game.bossDrones && game.bossDrones.length > 0) {
+                // BossDrones aren't in the generic entities/canHit chain (see
+                // the BossDrone class comment) since they don't cleanly fit
+                // the Enemy/Player/asset taxonomy that chain assumes -- they
+                // get a small dedicated collision pass here instead, same
+                // pattern as explosive barrels just above.
+                for (let d of game.bossDrones) {
+                    if (d.dead) continue;
+                    let dx = this.x - d.x;
+                    let dy = this.y - d.y;
+                    if (dx * dx + dy * dy < d.r * d.r) {
+                        d.takeDamage();
+                        this.active = false;
+                        hitRegistered = true;
+                        break;
                     }
                 }
             }
@@ -7443,6 +9180,7 @@ class Bullet {
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
             }
         }
+        game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
 }
 
@@ -7894,6 +9632,8 @@ class FPVDrone {
         if (this.pilot) {
             this.pilot.activeDrone = null;
         }
+        game.spawnScorchMark(this.x, this.y, 55);
+        game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     
     draw(ctx, cam) {
@@ -9403,6 +11143,7 @@ class MiniDrone extends Entity {
             let color = Math.random() > 0.5 ? '#ffea00' : '#ff3d00';
             game.addParticle(this.x, this.y, Math.cos(angle)*speed, Math.sin(angle)*speed, color, 0.3, 2);
         }
+        game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     
     draw(ctx, cam) {
@@ -9558,6 +11299,8 @@ class ShrapnelGrenade {
             game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ff5500', 0.6, 5);
             game.addParticle(this.x, this.y, Math.cos(a)*spd*0.5, Math.sin(a)*spd*0.5, '#ffff00', 0.4, 4);
         }
+        game.spawnScorchMark(this.x, this.y, 38);
+        game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     draw(ctx, cam) {
         let shadowX = this.x - cam.x;
@@ -9576,6 +11319,201 @@ class ShrapnelGrenade {
         ctx.beginPath();
         ctx.arc(scx, scy, this.r, 0, Math.PI * 2);
         ctx.fillStyle = '#ff3d00';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+}
+
+// 20mm HE cannon shell -- the Hammerhead APC's roof gunner weapon. Modeled
+// on ShrapnelGrenade's update/explode contract (so it drops straight into
+// game.grenades and gets updated/drawn for free) but flies flat and fast
+// like a cannon round rather than lobbing in an arc, and explodes the
+// instant it touches a wall or any hostile-to-the-boss target rather than
+// on a timed fuse. This is a genuinely enemy-owned explosive, so it doesn't
+// route through Bullet's perk-gated explosive-rounds path at all.
+class HeCannonShell {
+    constructor(x, y, vx, vy) {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+        this.r = 5;
+        this.life = 2.5; // safety timeout if it somehow never hits anything
+        this.spawnedAt = (game ? game.gameTime : 0);
+    }
+    update(dt, walls, game) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.life -= dt;
+
+        for (let wall of walls) {
+            let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
+            if (col.hit) {
+                this.explode(game);
+                return false;
+            }
+        }
+
+        // Explodes on contact with any player or player-owned asset -- it's
+        // an enemy weapon, so its valid targets mirror what enemy Bullets
+        // can hit (see Bullet.update's canHit logic for the same list).
+        let targets = [game.player];
+        if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+        if (game.turrets) targets.push(...game.turrets);
+        if (game.dogs) targets.push(...game.dogs);
+        for (let ent of targets) {
+            if (!ent || ent.dead) continue;
+            let dx = this.x - ent.x, dy = this.y - ent.y;
+            if (dx * dx + dy * dy < (this.r + ent.r) * (this.r + ent.r)) {
+                this.explode(game);
+                return false;
+            }
+        }
+
+        if (this.life <= 0) {
+            this.explode(game);
+            return false;
+        }
+        return true;
+    }
+    explode(game) {
+        audio.playExplosion(0.8, this.x, this.y);
+        game.applyExplosionShake(this.x, this.y, 22, 110);
+        game.spawnShockwave(this.x, this.y, 110, 0.25);
+
+        let blastRadius = 110;
+        let targets = [game.player];
+        if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+        if (game.turrets) targets.push(...game.turrets);
+        if (game.dogs) targets.push(...game.dogs);
+        for (let ent of targets) {
+            if (!ent || ent.dead) continue;
+            let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
+            if (dist < blastRadius) {
+                let dmg = 55 * (1.0 - dist / blastRadius);
+                ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 400);
+            }
+        }
+
+        for (let i = 0; i < 18; i++) {
+            let a = Math.random() * Math.PI * 2;
+            let spd = MathUtils.rand(150, 400);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ff2a5f', 0.5, 4);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.6, Math.sin(a) * spd * 0.6, '#ffb700', 0.35, 3);
+        }
+        game.spawnScorchMark(this.x, this.y, 26);
+        game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
+    }
+    draw(ctx, cam) {
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y;
+        let angle = Math.atan2(this.vy, this.vx);
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(angle);
+        ctx.fillStyle = '#ff2a5f';
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = '#ff2a5f';
+        ctx.fillRect(-6, -2, 12, 4);
+        ctx.restore();
+        ctx.shadowBlur = 0;
+    }
+}
+
+// Thrown frag grenade for enemy-owned throwers (currently just
+// InfiltratorBoss). Physically modeled on ShrapnelGrenade (arc/bounce/fuse)
+// but NOT a reuse of that class -- ShrapnelGrenade's explode() only damages
+// game.enemies when friendlyFireMode is 'off' (the default), since it's
+// built for the PLAYER's own thrown grenades hurting enemies. An
+// enemy-thrown grenade needs the opposite targeting direction regardless of
+// friendly-fire mode, so this gets its own small class, same pattern as
+// HeCannonShell/MortarMarker.
+class EnemyFragGrenade {
+    constructor(x, y, vx, vy) {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+        this.fuse = 1.5;
+        this.r = 6;
+        this.z = 0;
+        this.vz = 260;
+    }
+    update(dt, walls, game) {
+        this.vx *= Math.pow(0.01, dt);
+        this.vy *= Math.pow(0.01, dt);
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        for (let wall of walls) {
+            let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
+            if (col.hit && col.dist > 0) {
+                let nx = col.dx / col.dist;
+                let ny = col.dy / col.dist;
+                let overlap = this.r - col.dist;
+                this.x += nx * overlap;
+                this.y += ny * overlap;
+                if (nx !== 0) this.vx *= -0.5;
+                if (ny !== 0) this.vy *= -0.5;
+            }
+        }
+
+        const GRAVITY = 680;
+        this.vz -= GRAVITY * dt;
+        this.z += this.vz * dt;
+        if (this.z < 0) {
+            this.z = 0;
+            this.vz *= -0.42;
+            if (Math.abs(this.vz) < 30) this.vz = 0;
+        }
+
+        this.fuse -= dt;
+        if (this.fuse <= 0) {
+            this.explode(game);
+            return false;
+        }
+        return true;
+    }
+    explode(game) {
+        audio.playExplosion(0.9, this.x, this.y);
+        game.applyExplosionShake(this.x, this.y, 25, 150);
+        game.spawnShockwave(this.x, this.y, 150, 0.28);
+
+        let blastRadius = 150;
+        let targets = [game.player];
+        if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+        if (game.turrets) targets.push(...game.turrets);
+        if (game.dogs) targets.push(...game.dogs);
+        for (let ent of targets) {
+            if (!ent || ent.dead) continue;
+            let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
+            if (dist < blastRadius) {
+                let dmg = 48 * (1.0 - dist / blastRadius);
+                ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 400);
+            }
+        }
+        for (let i = 0; i < 16; i++) {
+            let a = Math.random() * Math.PI * 2;
+            let spd = MathUtils.rand(150, 350);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ff5500', 0.5, 4);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.5, Math.sin(a) * spd * 0.5, '#39ff14', 0.35, 3);
+        }
+        game.spawnScorchMark(this.x, this.y, 30);
+        game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
+    }
+    draw(ctx, cam) {
+        let shadowX = this.x - cam.x;
+        let shadowY = this.y - cam.y;
+        let shadowScale = Math.max(0.3, 1.0 - this.z / 200);
+        ctx.save();
+        ctx.globalAlpha = 0.35 * shadowScale;
+        ctx.fillStyle = 'rgba(0, 5, 12, 1)';
+        ctx.beginPath();
+        ctx.ellipse(shadowX, shadowY, this.r * 1.6 * shadowScale, this.r * 0.5 * shadowScale, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y - this.z;
+        ctx.beginPath();
+        ctx.arc(scx, scy, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = '#39ff14';
         ctx.fill();
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 1.5;
@@ -9842,6 +11780,8 @@ class TripMine {
             let spd = Math.random() * 300 + 80;
             game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#d500f9', 0.5, 4);
         }
+        game.spawnScorchMark(this.x, this.y, 32);
+        game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     draw(ctx, cam) {
         let scx = this.x - cam.x;
@@ -9897,7 +11837,7 @@ class Item {
                 } else if (this.type === 'medpack') {
                     canCollect = (p.medpacks < 3);
                 } else if (this.type === 'redbull') {
-                    canCollect = (p.energyDrinks < 3);
+                    canCollect = (p.energyDrinks < 6); // max settled at 6 (stamina drain/regen improved, so fewer backups are needed)
                 } else if (this.type === 'perk_case' || this.type === 'intel') {
                     canCollect = true;
                 } else {
@@ -9980,6 +11920,215 @@ class Item {
             ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(-8,-4,16,8);
             ctx.shadowBlur = 8; ctx.shadowColor = col;
         }
+        ctx.restore();
+        ctx.shadowBlur = 0;
+    }
+}
+
+class ExplosiveBarrel {
+    constructor(x, y) {
+        this.x = x; this.y = y;
+        this.r = 16;
+        this.vx = 0; this.vy = 0;
+        this.dead = false;
+        this.hp = 1; // any qualifying hit destroys it -- it's a prop, not a bullet sponge
+        this.rockOffset = Math.random() * Math.PI * 2; // desync idle wobble between barrels
+    }
+
+    // Heavy physics prop: pushed by players/enemies walking into it, but
+    // drags hard, like a full 50-gallon drum, not a hockey puck. Also
+    // blocked by walls exactly like any other entity.
+    updatePhysics(dt, walls) {
+        // Strong drag -- heavy barrel, not slippery
+        this.vx *= Math.pow(0.0015, dt);
+        this.vy *= Math.pow(0.0015, dt);
+
+        let mapW = game ? game.mapW : 2200;
+        let mapH = game ? game.mapH : 2200;
+
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.x = MathUtils.clamp(this.x, this.r, mapW - this.r);
+        this.y = MathUtils.clamp(this.y, this.r, mapH - this.r);
+
+        for (let wall of walls) {
+            let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
+            if (col.hit && col.dist > 0) {
+                let nx = col.dx / col.dist;
+                let ny = col.dy / col.dist;
+                let overlap = this.r - col.dist;
+                this.x += nx * overlap;
+                this.y += ny * overlap;
+                let dot = this.vx * nx + this.vy * ny;
+                if (dot < 0) {
+                    this.vx -= nx * dot;
+                    this.vy -= ny * dot;
+                }
+            }
+        }
+    }
+
+    // Called every frame by the game loop with everything that can shove a
+    // heavy prop around: players, enemies, turrets, dogs. Pure circle-circle
+    // push -- doesn't touch the pusher's own velocity, just displaces both
+    // bodies apart so walking into a barrel visibly shoves it.
+    resolveBodyPush(ent) {
+        if (!ent || ent.dead) return;
+        let dx = this.x - ent.x;
+        let dy = this.y - ent.y;
+        let dist = Math.hypot(dx, dy);
+        let minDist = this.r + (ent.r || 12);
+        if (dist > 0 && dist < minDist) {
+            let nx = dx / dist;
+            let ny = dy / dist;
+            let overlap = minDist - dist;
+            // Barrel is heavy: it gives way less than the entity pushing it.
+            this.x += nx * overlap * 0.65;
+            this.y += ny * overlap * 0.65;
+            ent.x -= nx * overlap * 0.35;
+            ent.y -= ny * overlap * 0.35;
+            // Nudge barrel velocity in the push direction so a sprinting
+            // player visibly rolls it, rather than just clipping through.
+            let entSpeed = Math.hypot(ent.vx || 0, ent.vy || 0);
+            if (entSpeed > 20) {
+                this.vx += nx * entSpeed * 0.35 * (1 / 60);
+                this.vy += ny * entSpeed * 0.35 * (1 / 60);
+            }
+        }
+    }
+
+    explode(game, chainDepth = 0) {
+        if (this.dead) return;
+        this.dead = true;
+
+        audio.playExplosion(1.0, this.x, this.y);
+        game.applyExplosionShake(this.x, this.y, 50, 300);
+        game.spawnShockwave(this.x, this.y, 300 * 1.2, 0.3);
+        game.camera.punchZoom(0.12);
+        if (game.camera2) game.camera2.punchZoom(0.12);
+
+        let blastRadius = 300; // same footprint as the FPV drone's detonation
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
+        }
+
+        let preDead = 0;
+        for (let ent of entities) {
+            if (ent instanceof Enemy && ent.dead) preDead++;
+        }
+
+        for (let ent of entities) {
+            if (!ent || ent.dead) continue;
+            let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
+            if (dist < blastRadius) {
+                let damage = 250 * (1.0 - dist / blastRadius);
+                let pushDir = Math.atan2(ent.y - this.y, ent.x - this.x);
+                ent.takeDamage(damage, pushDir, 700);
+                if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+            }
+        }
+
+        let postDead = 0;
+        for (let ent of entities) {
+            if (ent instanceof Enemy && ent.dead) postDead++;
+        }
+        let killCount = postDead - preDead;
+        if (killCount > 0) {
+            game.triggerHitStop(0.04 + killCount * 0.015);
+        }
+
+        let fragments = 36;
+        for (let i = 0; i < fragments; i++) {
+            let angle = (i / fragments) * Math.PI * 2 + (Math.random() - 0.5) * 0.15;
+            let speed = MathUtils.rand(2000, 3000);
+            let b = game.spawnBullet(this.x, this.y, angle, { name: 'Pistol', dmg: 35, speed: speed, drag: 0.12, color: '#ff5500' }, true, false, false, true);
+            game.bullets.push(b);
+        }
+
+        for (let i = 0; i < 30; i++) {
+            let a = Math.random() * Math.PI * 2;
+            let spd = Math.random() * 600 + 150;
+            game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ffff00', 0.5, 4);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.7, Math.sin(a) * spd * 0.7, '#ff3d00', 0.7, 5);
+        }
+        game.spawnScorchMark(this.x, this.y, 55);
+
+        // Chain reaction: any other live barrel caught in this blast goes up
+        // too, with a tiny stagger so clustered barrels read as a cascade
+        // instead of a single simultaneous blob. Depth-limited as a safety
+        // net against pathological overlapping placements.
+        if (game.explosiveBarrels && chainDepth < 8) {
+            for (let other of game.explosiveBarrels) {
+                if (other === this || other.dead) continue;
+                let dist = Math.hypot(other.x - this.x, other.y - this.y);
+                if (dist < blastRadius * 0.85) {
+                    other.dead = true; // claim immediately so nothing double-triggers it
+                    let delay = 0.08 + (dist / blastRadius) * 0.12;
+                    setTimeout(() => {
+                        other.dead = false; // allow explode() to run its course once
+                        other.explode(game, chainDepth + 1);
+                    }, delay * 1000);
+                }
+            }
+        }
+    }
+
+    draw(ctx, cam) {
+        if (this.dead) return;
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.15, this.r * 0.5);
+
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y;
+        let wobble = Math.sin((game ? game.gameTime : 0) * 1.3 + this.rockOffset) * 0.02;
+
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(wobble);
+
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#ff5500';
+
+        // Barrel body
+        ctx.fillStyle = '#3a2410';
+        ctx.strokeStyle = '#ff5500';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Ribbing bands (drum detail)
+        ctx.strokeStyle = 'rgba(255, 85, 0, 0.4)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r * 0.6, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Hazard placard
+        ctx.fillStyle = '#ffea00';
+        ctx.beginPath();
+        ctx.moveTo(0, -this.r * 0.5);
+        ctx.lineTo(this.r * 0.45, this.r * 0.3);
+        ctx.lineTo(-this.r * 0.45, this.r * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#1a0f00';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('!', 0, this.r * 0.14);
+
         ctx.restore();
         ctx.shadowBlur = 0;
     }
@@ -10103,6 +12252,7 @@ class Game {
         this.devGodMode = false;
         this.devModeEnabled = false;
         this.forcedMutator = null;
+        this.forcedBossKey = null;
         this.isDevShopActive = false;
         
         // Game-feel variables
@@ -10202,6 +12352,7 @@ class Game {
         this.gpadPauseCooldown = 0;
         
         this.initDOM();
+        this.populateDevBossGrid();
         this.bindInput();
 
         // Secret developer mode toggle: 10 rapid clicks on the title
@@ -10218,6 +12369,9 @@ class Game {
                 if (this._devClickCount >= 10) {
                     this._devClickCount = 0;
                     this.devModeEnabled = !this.devModeEnabled;
+                    if (window.touchController) {
+                        window.touchController.updateDevBtnVisibility();
+                    }
 
                     // Transient notification banner
                     const notif = document.createElement('div');
@@ -10356,6 +12510,21 @@ class Game {
         }
     }
 
+    // Central hook for "any explosion source should also set off nearby
+    // barrels" -- called from grenades, mines, drones, explosive rounds, etc.
+    // so that logic lives in one place instead of being duplicated in every
+    // explode()/detonate() method. Safe to call even if no barrels exist.
+    triggerBarrelsInRadius(x, y, radius) {
+        if (!this.explosiveBarrels || this.explosiveBarrels.length === 0) return;
+        for (let bar of this.explosiveBarrels) {
+            if (bar.dead) continue;
+            let dist = Math.hypot(bar.x - x, bar.y - y);
+            if (dist < radius) {
+                bar.explode(this);
+            }
+        }
+    }
+
     triggerGloryKill(enemy) {
         if (this.gloryKillTimer > 0) return;
         this.baseTimeScale = this.timeScale;
@@ -10477,6 +12646,40 @@ class Game {
                 this.particles.push(p);
             }
         }
+    }
+
+    // Permanent scorch/pothole mark left by an explosion. Unlike blood/debris
+    // (which are simulated particles that settle into permanentMarks once
+    // they stop moving), a scorch mark is instantaneous -- there's nothing to
+    // animate, it just appears where the blast went off -- so this pushes
+    // straight into permanentMarks. Because permanentMarks is drawn in
+    // array/append order (see drawPermanentMarks), anything spawned after
+    // this call (blood, corpse debris from an enemy that dies standing on
+    // the mark, etc.) naturally paints over it, and this mark itself paints
+    // over any earlier blood/debris already there -- exactly the layering
+    // the ground-truth visual should have, with no z-index bookkeeping.
+    spawnScorchMark(x, y, radius = 40) {
+        // A handful of overlapping irregular blotches reads as a scorch
+        // crater far better than one perfect circle, while staying cheap:
+        // it's still just a handful of arcs on an existing draw call, not a
+        // new draw pass.
+        let blotches = [];
+        let count = 3 + Math.floor(Math.random() * 3); // 3-5
+        for (let i = 0; i < count; i++) {
+            blotches.push({
+                ox: (Math.random() - 0.5) * radius * 0.7,
+                oy: (Math.random() - 0.5) * radius * 0.7,
+                r: radius * (0.45 + Math.random() * 0.55)
+            });
+        }
+        this.permanentMarks.push({
+            type: 'scorch',
+            x, y,
+            blotches,
+            r: radius,
+            a: 0.55 + Math.random() * 0.15
+        });
+        if (this.permanentMarks.length > 3000) this.permanentMarks.shift();
     }
     
     initDOM() {
@@ -12311,7 +14514,16 @@ class Game {
             for (let b of this.bullets) this.inactiveBullets.push(b);
         }
         if (this.enemies) {
-            for (let e of this.enemies) this.inactiveEnemies.push(e);
+            // Bosses are never pool-recycled (see the Boss class comment) --
+            // a pooled Boss instance handed back out via spawnEnemy()'s
+            // generic Enemy.init() would silently corrupt into a broken
+            // plain grunt. This should be structurally impossible already
+            // (bosses are always removed from game.enemies on death via the
+            // matching guard in the death-cleanup loop below), but this
+            // reset path guards it too since it's cheap insurance.
+            for (let e of this.enemies) {
+                if (!(e instanceof Boss)) this.inactiveEnemies.push(e);
+            }
         }
         if (this.floatingTexts) {
             for (let ft of this.floatingTexts) this.inactiveFloatingTexts.push(ft);
@@ -12343,6 +14555,25 @@ class Game {
         this.heartbeatIntensity = 0;
         this.barriers = [];
         this.permanentMarks = [];
+        this.explosiveBarrels = [];
+        if (!this.isTestingMode) {
+            // Spawn once, here, at run start -- explosive barrels never
+            // respawn or get re-rolled between waves.
+            let centerX = this.mapW / 2;
+            let centerY = this.mapH / 2;
+            let spawnPoints = this.map.generateExplosiveBarrelSpawns(centerX, centerY);
+            for (let pt of spawnPoints) {
+                this.explosiveBarrels.push(new ExplosiveBarrel(pt.x, pt.y));
+            }
+        }
+
+        // ---- Boss run-state reset ----
+        this.bossDrones = [];       // hostile drones launched by SpotBoss instances
+        this.activeBoss = null;     // the currently-alive boss this run, if any (drives the boss HUD bar)
+        this.bossesDefeatedThisRun = 0; // feeds escort-size scaling for the next boss wave
+        this.wavesSinceLastBoss = 0;    // drives boss-wave cadence rolls
+        this.isBossWave = false;
+        this.setBossHudVisible(false);
 
         toggleClass('pause-screen', 'hidden', true);
         
@@ -12421,8 +14652,123 @@ class Game {
         this.prepTimer = 15.0;
         
         this.enemiesToSpawn = 5 + this.wave * 4;
-        this.rollWaveMutator();
+        this.rollBossWave(); // may reduce enemiesToSpawn to an escort-sized fraction and set this.isBossWave/pendingBoss
+        if (!this.isBossWave) {
+            this.rollWaveMutator();
+        } else {
+            // Boss waves don't also roll a mutator -- e.g. Juggernaut Protocol
+            // (few, elite-scaled enemies) stacked on an actual boss fight
+            // would make wave pacing unpredictable in the wrong way, and
+            // Blackout/Swarm would undercut a boss's own telegraphs. The
+            // boss itself is the wave's "special" already.
+            this.activeMutator = null;
+            this.allEnemiesAreElite = false;
+        }
         this.spawnTimer = 0;
+        this.updateHUD();
+    }
+
+    // Decides whether this wave is a boss wave and, if so, sets up the
+    // escort-sized enemy count. Bosses always increment the wave number like
+    // any other wave -- there's no separate "boss round" counter -- they
+    // just make that particular wave number a special one.
+    rollBossWave() {
+        this.isBossWave = false;
+        this.pendingBossKey = null;
+
+        if (this.isTestingMode) return; // sandbox never auto-rolls a boss; use the dev menu instead
+        if (this.wave < 4 && !this.forcedBossKey) return; // no organic bosses before the player has a basic loadout -- forced (dev menu) bosses bypass this for testing
+
+        this.wavesSinceLastBoss = (this.wavesSinceLastBoss || 0) + 1;
+
+        // Escalating-chance roll: never happens two waves running, always
+        // happens eventually. Minimum 6-wave gap, chance climbs from there
+        // so it settles around an 7-10 wave cadence on average (median ~8)
+        // rather than the tighter 4-6 spacing this started at -- bosses stay
+        // a genuine event instead of something you cycle through twice by
+        // wave 20.
+        let roll = false;
+        if (this.forcedBossKey) {
+            roll = true;
+        } else if (this.wavesSinceLastBoss >= 6) {
+            let chance = Math.min(0.9, 0.16 * (this.wavesSinceLastBoss - 5));
+            roll = Math.random() < chance;
+        }
+        if (!roll) return;
+
+        this.isBossWave = true;
+        this.wavesSinceLastBoss = 0;
+
+        let bossKeys = Object.keys(BossTypes);
+        let chosenKey = this.forcedBossKey || bossKeys[Math.floor(Math.random() * bossKeys.length)];
+        this.forcedBossKey = null;
+        this.pendingBossKey = chosenKey;
+
+        // Escort size: a reduced percentage of the wave's normal enemy
+        // count, scaling up with how many bosses this run has already
+        // survived (so wave 20's boss brings a much bigger escort than
+        // wave 4's, per the brief) -- NOT scaling off raw wave number alone,
+        // since two players who rush straight to wave 20 without meeting a
+        // boss yet should still get a reasonably tame first one.
+        let escortPct = 0.30 + Math.min(0.15, (this.bossesDefeatedThisRun || 0) * 0.03);
+        this.enemiesToSpawn = Math.max(2, Math.round(this.enemiesToSpawn * escortPct));
+
+        let meta = BossTypes[chosenKey];
+        this.floatingTexts.push(this.spawnFloatingText(
+            this.mapW / 2, this.mapH / 2 - 100,
+            `WARNING: ${meta.name} INBOUND`,
+            meta.color, 4.0, 0, 0, 100, false
+        ));
+        if (audio) audio.playExplosion(0.5, this.mapW / 2, this.mapH / 2);
+    }
+
+    // Difficulty-mode-aware HP scaling for bosses, separate from
+    // cashMultiplier (which is inverted -- easy pays MORE cash -- and
+    // shouldn't double as a combat difficulty knob). Hard is the baseline
+    // (1.0x); easy softens boss HP, legendary hardens it.
+    bossDifficultyMultiplier() {
+        switch (this.difficultyMode) {
+            case 'easy': return 0.75;
+            case 'medium': return 0.9;
+            case 'legendary': return 1.25;
+            case 'hard':
+            default: return 1.0;
+        }
+    }
+
+    // Actually constructs and places the boss for the wave that
+    // rollBossWave() flagged. Called from the spawn-timer tick once the prep
+    // countdown ends, same as a normal enemy spawn, so the boss doesn't just
+    // appear mid-prep-screen.
+    spawnPendingBoss() {
+        if (!this.pendingBossKey) return;
+        let key = this.pendingBossKey;
+        this.pendingBossKey = null;
+
+        let meta = BossTypes[key];
+        if (!meta || !meta.bossClass) return;
+
+        // Spawn at a map edge point, same general logic as a normal enemy
+        // spawn (far enough from players to not be an unfair ambush), but
+        // biased toward the map center-ish so a boss doesn't have to trek
+        // across a huge map before a fight actually starts.
+        let sx = this.mapW / 2 + (Math.random() - 0.5) * this.mapW * 0.5;
+        let sy = this.mapH / 2 + (Math.random() - 0.5) * this.mapH * 0.5;
+        sx = MathUtils.clamp(sx, 100, this.mapW - 100);
+        sy = MathUtils.clamp(sy, 100, this.mapH - 100);
+
+        // Wave-based HP scaling mirrors the normal enemy curve (see the
+        // scaleHP formula used for regular enemies) so bosses keep pace with
+        // how tanky the escort has become, layered with the difficulty-mode
+        // multiplier above.
+        let waveScale = 1.0 + (this.wave - 1) * 0.05;
+        let hpMult = waveScale * this.bossDifficultyMultiplier();
+
+        let BossClass = meta.bossClass;
+        let boss = new BossClass(sx, sy, key, hpMult);
+        this.enemies.push(boss);
+        this.activeBoss = boss;
+        this.setBossHudVisible(true);
         this.updateHUD();
     }
 
@@ -12598,7 +14944,7 @@ class Game {
                 pickedUp = true;
             }
         } else if (it.type === 'redbull') {
-            if (p.energyDrinks < 3) {
+            if (p.energyDrinks < 6) { // max settled at 6
                 p.energyDrinks++;
                 audio.playPickup('weapon');
                 pickedUp = true;
@@ -13210,6 +15556,75 @@ class Game {
         }
         this.toggleDevDashboard();
     }
+
+    // Dev-menu boss spawner. Reads BossTypes directly, so it automatically
+    // picks up any new boss added to that registry -- no per-boss wiring
+    // needed here beyond the one registry entry.
+    devSpawnBoss(bossKey) {
+        if (!this.player) { this.toggleDevDashboard(); return; }
+
+        let meta = BossTypes[bossKey];
+        if (!meta || !meta.bossClass) { this.toggleDevDashboard(); return; }
+
+        let spawnX = this.player.x + Math.cos(this.player.angle) * 220;
+        let spawnY = this.player.y + Math.sin(this.player.angle) * 220;
+        spawnX = MathUtils.clamp(spawnX, 100, this.mapW - 100);
+        spawnY = MathUtils.clamp(spawnY, 100, this.mapH - 100);
+
+        let hpMult = this.bossDifficultyMultiplier();
+        let BossClass = meta.bossClass;
+        let boss = new BossClass(spawnX, spawnY, bossKey, hpMult);
+        this.enemies.push(boss);
+
+        // Only take over the HUD boss bar if nothing else is already
+        // claiming it -- dev-spawning a second boss on top of a real boss
+        // wave shouldn't steal the bar out from under the actual fight.
+        if (!this.activeBoss || this.activeBoss.dead) {
+            this.activeBoss = boss;
+            this.setBossHudVisible(true);
+        }
+
+        this.updateHUD();
+        if (audio) audio.playPickup('money');
+        this.toggleDevDashboard();
+    }
+
+    // Builds the dev-menu "Spawn Boss" grid from the BossTypes registry.
+    // Called once at startup. Because it reads the registry rather than
+    // having buttons hand-written in the HTML, adding boss #6 later needs
+    // nothing here -- just a new BossTypes entry. The grid container has a
+    // fixed max-height + overflow-y:auto (see the CSS/HTML), so this scales
+    // to 10-15+ bosses without pushing the rest of the dev dashboard off
+    // screen or requiring layout changes.
+    populateDevBossGrid() {
+        const container = document.getElementById('dev-boss-grid');
+        if (!container) return;
+        container.innerHTML = '';
+        for (let key in BossTypes) {
+            let meta = BossTypes[key];
+            let btn = document.createElement('button');
+            btn.className = 'neon-btn';
+            btn.style.cssText = `margin:0; font-size:9px; padding:4px 4px; border-color:${meta.color}; color:${meta.color}; white-space:normal; line-height:1.3;`;
+            btn.title = meta.desc || '';
+            btn.innerText = meta.name;
+            btn.onclick = () => this.devSpawnBoss(key);
+            container.appendChild(btn);
+        }
+    }
+
+    // Forces the NEXT wave started (via startNextWave) to be a boss wave,
+    // regardless of the normal cadence roll -- lets a dev jump straight to
+    // testing boss-wave pacing/escort sizing without waiting out the
+    // organic wavesSinceLastBoss climb. Picks a random boss unless
+    // rollBossWave's forcedBossKey has already been set some other way.
+    devForceBossNextWave() {
+        this.forcedBossKey = this.forcedBossKey || Object.keys(BossTypes)[Math.floor(Math.random() * Object.keys(BossTypes).length)];
+        // Reuse the same escalating-roll path by guaranteeing this.wavesSinceLastBoss
+        // clears the threshold rollBossWave checks against.
+        this.wavesSinceLastBoss = 999;
+        if (audio) audio.playPickup('money');
+        this.toggleDevDashboard();
+    }
     
     devSpawnItem(itemType) {
         if (this.player) {
@@ -13317,7 +15732,12 @@ class Game {
         
         if (this.prepTimer > 0) {
             this.prepTimer -= dt;
-            if (this.prepTimer < 0) this.prepTimer = 0;
+            if (this.prepTimer <= 0) {
+                this.prepTimer = 0;
+                if (this.isBossWave && this.pendingBossKey) {
+                    this.spawnPendingBoss();
+                }
+            }
         }
         
         if (this.prepTimer <= 0 && this.enemiesToSpawn > 0) {
@@ -13458,6 +15878,17 @@ class Game {
             e.update(dt, this.player, this.map.walls, this.gameTime, this.enemies);
         }
 
+        if (this.bossDrones && this.bossDrones.length > 0) {
+            for (let i = this.bossDrones.length - 1; i >= 0; i--) {
+                let d = this.bossDrones[i];
+                d.update(dt, this);
+                if (d.dead) {
+                    this.bossDrones[i] = this.bossDrones[this.bossDrones.length - 1];
+                    this.bossDrones.pop();
+                }
+            }
+        }
+
         let entities = [this.player];
         if (this.isTwoPlayer && this.player2 && !this.player2.dead) {
             entities.push(this.player2);
@@ -13479,6 +15910,35 @@ class Game {
             }
         }
         entities.push(...this.enemies);
+
+        if (this.explosiveBarrels && this.explosiveBarrels.length > 0) {
+            for (let i = this.explosiveBarrels.length - 1; i >= 0; i--) {
+                let bar = this.explosiveBarrels[i];
+                if (bar.dead) {
+                    this.explosiveBarrels[i] = this.explosiveBarrels[this.explosiveBarrels.length - 1];
+                    this.explosiveBarrels.pop();
+                    continue;
+                }
+                let nearbyWalls = this.map.getWallsNear(bar.x, bar.y);
+                bar.updatePhysics(dt, nearbyWalls);
+                // Heavy prop gets shoved by anything with a body -- players,
+                // enemies, turrets, dogs -- and also detonates on contact
+                // with any living enemy (walking/melee into it is as lethal
+                // as shooting it).
+                for (let ent of entities) {
+                    bar.resolveBodyPush(ent);
+                }
+                for (let e of this.enemies) {
+                    if (e.dead) continue;
+                    let dist = Math.hypot(e.x - bar.x, e.y - bar.y);
+                    if (dist < bar.r + e.r) {
+                        bar.explode(this);
+                        break;
+                    }
+                }
+            }
+        }
+
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             let b = this.bullets[i];
             b.update(dt, this.map.walls, entities, this);
@@ -13610,6 +16070,18 @@ class Game {
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             if (this.enemies[i].dead) {
                 let e = this.enemies[i];
+
+                if (e instanceof Boss) {
+                    // Boss.onDeath() already paid out its own loot/cash/banner.
+                    // Just drop it from the active list -- no generic money
+                    // pinata, and critically, NOT into the Enemy object pool
+                    // (see the Boss class comment for why that would corrupt
+                    // pooled reuse).
+                    this.enemies[i] = this.enemies[this.enemies.length - 1];
+                    this.enemies.pop();
+                    continue;
+                }
+
                 this.items.push(new Item(e.x, e.y, 'money'));
                 
                 let dropRoll = Math.random();
@@ -13695,6 +16167,16 @@ class Game {
         for (let b of this.bullets) this.inactiveBullets.push(b);
         this.bullets = [];
         this.grenades = [];
+        if (this.bossDrones && this.bossDrones.length > 0) {
+            this.bossDrones = [];
+        }
+        if (this.isBossWave) {
+            // The wave only clears once the boss (and its escort) are dead,
+            // so reaching here on a boss wave means the boss was beaten --
+            // feeds the escort-size scaling for the next boss wave.
+            this.bossesDefeatedThisRun = (this.bossesDefeatedThisRun || 0) + 1;
+            this.isBossWave = false;
+        }
         
         let spawnX = this.player.x;
         let spawnY = this.player.y;
@@ -13815,7 +16297,7 @@ class Game {
 
             let boostBtn = document.getElementById('btn-buy-boost-' + suffix);
             if (boostBtn) {
-                if (p.energyDrinks >= 3) { boostBtn.classList.add('maxed'); boostBtn.innerText = "BOOST (MAX)"; boostBtn.disabled = true; }
+                if (p.energyDrinks >= 6) { boostBtn.classList.add('maxed'); boostBtn.innerText = "BOOST (MAX)"; boostBtn.disabled = true; }
                 else { boostBtn.classList.remove('maxed'); boostBtn.innerText = "Energy Drink ($40)"; boostBtn.disabled = false; }
             }
 
@@ -14042,7 +16524,7 @@ class Game {
             p.cash -= 45; p.mines++;
         } else if (type === 'medpack' && p.cash >= 40 && p.medpacks < 3) {
             p.cash -= 40; p.medpacks++;
-        } else if (type === 'boost' && p.cash >= 40 && p.energyDrinks < 3) {
+        } else if (type === 'boost' && p.cash >= 40 && p.energyDrinks < 6) {
             p.cash -= 40; p.energyDrinks++;
         } else if (type === 'barrier' && p.cash >= 75 && p.barriersCount < 5) {
             p.cash -= 75; p.barriersCount++;
@@ -14350,6 +16832,39 @@ class Game {
 
             // Render Carousels for Player 2
             renderHUDSelectors(this.player2, 'p2');
+        }
+
+        this.updateBossHud();
+    }
+
+    // ---- Boss HUD ----
+    setBossHudVisible(visible) {
+        toggleClass('boss-hud', 'hidden', !visible);
+    }
+
+    updateBossHud() {
+        const nameEl = document.getElementById('boss-hud-name');
+        const barEl = document.getElementById('boss-hud-bar');
+        if (!nameEl || !barEl) return;
+
+        if (!this.activeBoss || this.activeBoss.dead) {
+            if (this.activeBoss && this.activeBoss.dead) {
+                this.activeBoss = null;
+                this.setBossHudVisible(false);
+            }
+            return;
+        }
+
+        let pct = MathUtils.clamp(this.activeBoss.healthFraction() * 100, 0, 100);
+        let nameStr = `BOSS: ${this.activeBoss.bossName}`;
+        if (this.hudState['boss-hud-name'] !== nameStr) {
+            nameEl.innerText = nameStr;
+            this.hudState['boss-hud-name'] = nameStr;
+        }
+        let widthStr = pct + '%';
+        if (this.hudState['boss-hud-bar_width'] !== widthStr) {
+            barEl.style.width = widthStr;
+            this.hudState['boss-hud-bar_width'] = widthStr;
         }
     }
 
@@ -14884,7 +17399,8 @@ class Game {
 
     drawPermanentMarks(ctx, cam, viewW, viewH) {
         for (let m of this.permanentMarks) {
-            if (m.x < cam.x - 30 || m.x > cam.x + viewW + 30 || m.y < cam.y - 30 || m.y > cam.y + viewH + 30) continue;
+            let margin = 30 + (m.r || 0);
+            if (m.x < cam.x - margin || m.x > cam.x + viewW + margin || m.y < cam.y - margin || m.y > cam.y + viewH + margin) continue;
 
             ctx.fillStyle = m.c;
             if (m.type === 'blood') {
@@ -14911,6 +17427,30 @@ class Game {
                     ctx.moveTo(m.x + circ.ox + circ.r - cam.x, m.y + circ.oy - cam.y);
                     ctx.arc(m.x + circ.ox - cam.x, m.y + circ.oy - cam.y, circ.r, 0, Math.PI*2);
                 }
+                ctx.fill();
+            } else if (m.type === 'scorch') {
+                // Charred pothole: a dark irregular blotch cluster plus a
+                // faint soot-fade ring so it reads as scorched ground rather
+                // than a flat black circle.
+                ctx.globalAlpha = m.a;
+                ctx.fillStyle = '#0a0806';
+                ctx.beginPath();
+                for (let b of m.blotches) {
+                    ctx.moveTo(m.x + b.ox + b.r - cam.x, m.y + b.oy - cam.y);
+                    ctx.arc(m.x + b.ox - cam.x, m.y + b.oy - cam.y, b.r, 0, Math.PI*2);
+                }
+                ctx.fill();
+
+                ctx.globalAlpha = m.a * 0.35;
+                let grad = ctx.createRadialGradient(
+                    m.x - cam.x, m.y - cam.y, 0,
+                    m.x - cam.x, m.y - cam.y, m.r * 1.4
+                );
+                grad.addColorStop(0, 'rgba(20, 14, 8, 0.8)');
+                grad.addColorStop(1, 'rgba(20, 14, 8, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(m.x - cam.x, m.y - cam.y, m.r * 1.4, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
@@ -14965,6 +17505,10 @@ class Game {
         this.ctx.restore();
 
         this.map.draw(this.ctx, cam, viewportW, viewportH);
+
+        if (this.explosiveBarrels) {
+            for (let bar of this.explosiveBarrels) bar.draw(this.ctx, cam);
+        }
 
         if (this.state === 'playing') {
             let activePlayersForLaser = [this.player];
@@ -15069,6 +17613,9 @@ class Game {
         this.ctx.shadowBlur = 0;
         this.ctx.restore();
         for (let e of this.enemies) e.draw(this.ctx, cam);
+        if (this.bossDrones) {
+            for (let d of this.bossDrones) d.draw(this.ctx, cam);
+        }
         if (this.enemies.length === 1 && this.enemiesToSpawn === 0) {
             let lastEnemy = this.enemies[0];
             if (lastEnemy && !lastEnemy.dead) {
@@ -15959,7 +18506,7 @@ class TouchController {
         // ancestor whose bounding box overlaps the joystick's home corner
         // even when the touch isn't really on a tappable control, which is
         // what was silently eating every left-stick touch.
-        const realTarget = real.closest('.hud-item-slot, .weapon-slot, #touch-pause-btn, #touch-interact-btn');
+        const realTarget = real.closest('.hud-item-slot, .weapon-slot, #touch-pause-btn, #touch-interact-btn, #touch-dev-btn');
         if (!realTarget) return false;
 
         // Redirect capture so real native pointermove/pointerup events for
@@ -15997,6 +18544,7 @@ class TouchController {
         const rightEl = document.getElementById('touch-joystick-right');
         const interactEl = document.getElementById('touch-interact-btn');
         const pauseEl = document.getElementById('touch-pause-btn');
+        const devEl = document.getElementById('touch-dev-btn');
         const canvas = document.getElementById('gameCanvas');
         
         if (!leftEl || !rightEl || !interactEl || !pauseEl) return;
@@ -16021,6 +18569,7 @@ class TouchController {
                 if ((e.target.closest('#touch-joystick-left') && this.leftStick.active) ||
                     e.target.closest('#touch-joystick-right') ||
                     e.target.closest('#touch-pause-btn') ||
+                    e.target.closest('#touch-dev-btn') ||
                     e.target.closest('#touch-interact-btn')) {
                     return;
                 }
@@ -16211,6 +18760,20 @@ class TouchController {
                 game.togglePause();
             }
         });
+
+        // --- Dev Dashboard FAB Event ---
+        // Touch-only equivalent of the F1/backtick keybind in bindInput().
+        // Same devModeEnabled gate as that keybind -- see updateDevBtnVisibility().
+        if (devEl) {
+            devEl.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (game && game.devModeEnabled) {
+                    game.toggleDevDashboard();
+                }
+            });
+            this.updateDevBtnVisibility();
+        }
         
         // --- Game Canvas Taps (Aiming/Commands/Pickup) ---
         if (canvas) {
@@ -16727,6 +19290,20 @@ class TouchController {
         if (!show) {
             this.hideOverlay();
         }
+        this.updateDevBtnVisibility();
+    }
+
+    // The dev FAB has a second, independent gate on top of the overlay's own
+    // touch-mode visibility: game.devModeEnabled, the same 10-tap-the-title
+    // secret that gates the F1/backtick keybind on desktop. Called whenever
+    // either condition could have changed -- touch mode toggling, and the
+    // secret unlock itself (see the title click-counter in the Game
+    // constructor, which calls this directly).
+    updateDevBtnVisibility() {
+        const devEl = document.getElementById('touch-dev-btn');
+        if (!devEl) return;
+        const shouldShow = this.enabled && !!(game && game.devModeEnabled);
+        devEl.classList.toggle('hidden', !shouldShow);
     }
 }
 
@@ -16913,6 +19490,27 @@ game = new Game();
     border-radius: 4px;
 }
 
+#touch-dev-btn {
+    top: 15px;
+    left: 25px;
+    width: 42px;
+    height: 42px;
+    border-radius: 4px;
+    color: var(--red);
+    border-color: rgba(255, 42, 95, 0.35);
+    box-shadow: 0 0 15px rgba(255, 42, 95, 0.1);
+}
+
+#touch-dev-btn:active {
+    border-color: var(--red);
+    box-shadow: 0 0 20px rgba(255, 42, 95, 0.4);
+    background: rgba(255, 42, 95, 0.12);
+}
+
+#touch-dev-btn.hidden {
+    display: none;
+}
+
 #touch-interact-btn {
     right: 138px;
     bottom: 290px;
@@ -16947,6 +19545,17 @@ game = new Game();
         <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="6" y="4" width="4" height="16" rx="1"></rect>
             <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+        </svg>
+    </div>
+
+    <!-- Touch-only shortcut into the dev dashboard, mirroring the desktop
+         F1/backtick keybind (see bindInput()) -- both are gated behind
+         devModeEnabled (the 10-tap secret unlock on the title), so this
+         stays hidden by default and only appears once that's unlocked. -->
+    <div id="touch-dev-btn" class="touch-fab hidden">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
         </svg>
     </div>
     
