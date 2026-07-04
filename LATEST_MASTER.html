@@ -726,12 +726,13 @@
             <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
                 <h3 style="color: #808f9c; font-size: 11px; text-align: left; letter-spacing: 2px; margin-top: 0; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; text-transform: uppercase;">ADVANCED MODIFIERS</h3>
 
-                <!-- Sandbox -->
+                <!-- Game Mode -->
                 <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">TESTING SANDBOX MODE:</label>
-                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                        <button id="btn-sandbox-no" class="active-mode" onclick="game.setTestingMode(false)" style="font-size: 11px; padding: 5px 10px; margin: 0;">OFF (Normal Wave Ops)</button>
-                        <button id="btn-sandbox-yes" onclick="game.setTestingMode(true)" style="font-size: 11px; padding: 5px 10px; margin: 0;">ON (God Mode & Pickups)</button>
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">GAME MODE:</label>
+                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1; flex-wrap: wrap;">
+                        <button id="btn-gm-normal" class="active-mode" onclick="game.setGameMode('normal')" style="font-size: 11px; padding: 5px 10px; margin: 0;">NORMAL WAVE OPS</button>
+                        <button id="btn-gm-sandbox" onclick="game.setGameMode('sandbox')" style="font-size: 11px; padding: 5px 10px; margin: 0;">TESTING SANDBOX</button>
+                        <button id="btn-gm-operator" onclick="game.setGameMode('operator')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff7a00; color: #ff7a00;">FPV OPERATOR</button>
                     </div>
                 </div>
 
@@ -980,6 +981,9 @@
             <div style="font-size: 18px; color: var(--green); font-weight: bold; margin-bottom: 15px; letter-spacing: 1px;">
                 AVAILABLE FUNDS: $<span id="shop-cash-p1">0</span>
             </div>
+            <div id="operator-resupply-notice-p1" style="display:none; font-size: 11px; color: #ff5555; letter-spacing: 1px; margin-bottom: 10px; border: 1px solid #ff5555; padding: 6px; text-align: center;">
+                ⚠ OUTSIDE BASE PERIMETER -- RETURN TO BASE TO RESUPPLY
+            </div>
             <div class="shop-container">
                 <!-- Left: Current Stats -->
                 <div class="shop-panel-stats" style="font-size: 11px;">
@@ -1059,6 +1063,9 @@
                     </div>
                 </div>
             </div>
+            <div id="operator-shop-timer-wrap" class="hidden" style="text-align:center; margin-top:8px; font-size:11px; color:#39ff14; letter-spacing:1px;">
+                DEPLOYMENT IN <span id="operator-shop-timer">60</span>s
+            </div>
             <button id="btn-ready-p1" onclick="game.setReady(1)" style="width:100%; border-color:var(--green); color:var(--green); margin-top: 10px;">READY (P1)</button>
         </div>
         
@@ -1067,6 +1074,9 @@
             <h1 id="shop-title-p2" style="color: #ffb700; text-shadow: 0 0 15px #ffb700;">P2 ARMORY</h1>
             <div style="font-size: 18px; color: var(--green); font-weight: bold; margin-bottom: 15px; letter-spacing: 1px;">
                 AVAILABLE FUNDS: $<span id="shop-cash-p2">0</span>
+            </div>
+            <div id="operator-resupply-notice-p2" style="display:none; font-size: 11px; color: #ff5555; letter-spacing: 1px; margin-bottom: 10px; border: 1px solid #ff5555; padding: 6px; text-align: center;">
+                ⚠ OUTSIDE BASE PERIMETER -- RETURN TO BASE TO RESUPPLY
             </div>
             <div class="shop-container">
                 <!-- Left: Current Stats -->
@@ -1717,6 +1727,10 @@ function getHUDSelectorStateKey(player, suffix) {
     let droneStatus = 'NONE';
     if (player.activeDrone && !player.activeDrone.dead) {
         droneStatus = player.activeDrone.isPiloted ? 'FLYING' : 'PLACED';
+    } else if (game && game.operatorMode) {
+        // Unlimited drones in operator mode -- "READY" reflects the launch
+        // cooldown instead of an inventory count (see handleDroneInput).
+        droneStatus = ((player._opLaunchCooldown || 0) <= 0) ? 'READY' : 'COOLDOWN';
     } else if (player.dronesCount > 0) {
         droneStatus = 'READY';
     }
@@ -1801,14 +1815,21 @@ function renderHUDSelectors(player, suffix) {
             if (player.activeDrone && !player.activeDrone.dead) {
                 droneStatus = player.activeDrone.isPiloted ? 'FLYING' : 'PLACED';
                 droneColor = player.activeDrone.isPiloted ? '#ff0055' : '#ffb700';
+            } else if (game && game.operatorMode) {
+                // Unlimited drones (cooldown-gated, not inventory-gated) --
+                // see handleDroneInput. dronesCount stays 0 the whole run in
+                // operator mode, so it can't drive this readout.
+                let onCooldown = (player._opLaunchCooldown || 0) > 0;
+                droneStatus = onCooldown ? 'RECHARGE' : 'READY';
+                droneColor = onCooldown ? '#ff2a5f' : '#39ff14';
             } else if (player.dronesCount > 0) {
                 droneStatus = 'READY';
                 droneColor = '#39ff14';
             } else {
                 droneStatus = 'NONE';
             }
-            let droneCountText = (player.dronesCount || 0).toString();
-            let droneCountColor = (player.dronesCount > 0) ? '#39ff14' : '#ff2a5f';
+            let droneCountText = (game && game.operatorMode) ? '∞' : (player.dronesCount || 0).toString();
+            let droneCountColor = (game && game.operatorMode) ? '#39ff14' : ((player.dronesCount > 0) ? '#39ff14' : '#ff2a5f');
             if (droneStatus === 'FLYING') droneCountColor = '#ff0055';
             else if (droneStatus === 'PLACED') droneCountColor = '#ffb700';
             
@@ -2793,7 +2814,14 @@ class AudioEngine {
     getSpatialSettings(type, distance) {
         let minD = 100, maxD = 1000, minVol = 0.0, minCutoff = 1000;
         if (type === 'shoot') {
-            minD = 150; maxD = 2000; minVol = 0.18; minCutoff = 1100;
+            // minVol was 0.18 -- gunshots never fully faded out no matter how
+            // far away, so a screenful of distant enemies (each individually
+            // quiet) summed into an audible constant "wall of gunfire" in
+            // the background. Now fades fully to silence by maxD, same as
+            // ricochet/hit already did. Paired with the engagement-range
+            // fire cap above (enemies stop shooting past ~1000-1600px), the
+            // two together should remove the distant-minigun effect.
+            minD = 150; maxD = 2000; minVol = 0.0; minCutoff = 1100;
         } else if (type === 'explosion') {
             minD = 250; maxD = 2500; minVol = 0.25; minCutoff = 800;
         } else if (type === 'ricochet') {
@@ -3936,6 +3964,98 @@ const BossTypes = {
     }
 };
 
+// ---- FPV OPERATOR MODE: tuning constants ----
+// Single source of truth for every balance lever in Operator mode, per
+// FPV_OPERATOR_SPEC.md section 6. Nothing here affects Normal/Sandbox/PvP.
+const OP_TUNING = {
+    MAP_SIZE: 7500,
+    BATTERY_SECONDS: 60,
+    LAUNCH_COOLDOWN: 4.0,
+    HEAR_MIN: 700,
+    HEAR_MAX: 1500,
+    CONCEALMENT_REVEAL_DIST: 140,
+    // Raised alongside WAVE_BASE_COUNT/WAVE_PER_WAVE_COUNT (see below) so the
+    // larger waves can actually be active on-screen at once instead of
+    // mostly queued up waiting -- otherwise a bigger wave count alone
+    // wouldn't feel more intense, just longer.
+    CONCURRENCY_CAP: 30,
+    INTERMISSION_SECONDS: 60,
+    TURRET_CAP: 3,
+    STAMINA_REGEN_MULT: 0.45,
+    STAMINA_MAXSPRINT_MULT: 0.7,
+    PAYOUT_BASE: 220,
+    PAYOUT_PER_WAVE: 90,
+    PAYOUT_PER_KILL_CREDIT: 20,     // per-kill flat credit standing in for "damage dealt" (see onDeath hook)
+    CLEAN_WAVE_BONUS: 180,          // awarded if the player took zero HP damage the whole wave
+    STARTING_BARRIERS: 3,
+    // Wave sizing was 10 + wave*5 (15 -> 35 -> 60 @ waves 1/5/10). Bumped to
+    // ~1.8x across the curve per player feedback that the mode felt too easy
+    // and should start more intense and escalate harder over time:
+    // 18 + wave*9 = 27 -> 63 -> 108 @ waves 1/5/10. Only touches Operator
+    // mode -- Normal/Sandbox/PvP wave sizing (startNextWave's
+    // `5 + this.wave * 4` branch) is untouched.
+    WAVE_BASE_COUNT: 18,
+    WAVE_PER_WAVE_COUNT: 9,
+    SPEED_SCALE_PER_WAVE: 0.02,
+    SPEED_SCALE_CAP: 1.4,
+    APPROACH_SPEED_MULT: 1.2,       // flat operator-mode speed bump on top of wave scaling -- corridor marches are long, this keeps pacing brisk (see FPV_OPERATOR_SPEC.md brainstorm notes on pacing)
+    PACK_MIN: 1,
+    PACK_MAX: 3,
+    ANTI_TURTLE_SECONDS: 240,
+    BASE_ZONE_RADIUS: 620,
+    ROOF_HIDDEN_ALPHA: 0.12,
+    ROOF_FADE_SPEED: 8,
+    CANOPY_ALPHA: 0.85,
+    CANOPY_HIDDEN_ALPHA: 0.35
+};
+
+function isOp() {
+    return typeof game !== 'undefined' && game && game.operatorMode === true;
+}
+
+// ==== FPV OPERATOR MODE: biome bands ====
+// The operator map is a long north-south corridor (base always south,
+// enemies always approach from the north/far end -- see MapGen case 11).
+// yFrac is a building/foliage/haze-anchor's Y position expressed as a
+// fraction of map height (0 = far north edge, 1 = south edge at the base).
+// Ordered north-to-south; getOperatorBiome scans for the first band whose
+// yMax the point falls within, so bands must be listed in ascending yMax
+// order and the last band's yMax must be >= 1.
+const OP_BIOMES = [
+    {
+        key: 'wastes', name: 'The Wastes', yMax: 0.22,
+        haze: '107, 92, 68', hazeGlow: '150, 128, 90',
+        canopy: ['#5a4a34', '#463a26'], bush: '#4a4230', trunk: '#332a1c',
+        wallMain: '#8a7a5e', wallRgb: '138, 122, 94', roofFill: '#241f18',
+        treeDensity: 0.35, bushDensity: 0.55, radiusMod: 0.85
+    },
+    {
+        key: 'deepforest', name: 'Deep Forest', yMax: 0.5,
+        haze: '16, 42, 20', hazeGlow: '28, 66, 32',
+        canopy: ['#123312', '#0c260e'], bush: '#173617', trunk: '#1c140a',
+        wallMain: '#3c4a3a', wallRgb: '60, 74, 58', roofFill: '#0a140a',
+        treeDensity: 1.55, bushDensity: 1.3, radiusMod: 1.2
+    },
+    {
+        key: 'woodland', name: 'Woodland', yMax: 0.78,
+        haze: '44, 80, 44', hazeGlow: '68, 108, 58',
+        canopy: ['#2d5a2d', '#3a6b2a'], bush: '#2d5a2d', trunk: '#2b1d10',
+        wallMain: '#5a6a4a', wallRgb: '90, 106, 74', roofFill: '#16240f',
+        treeDensity: 1.0, bushDensity: 1.0, radiusMod: 1.0
+    },
+    {
+        key: 'homefront', name: 'Homefront', yMax: 1.01,
+        haze: '138, 128, 92', hazeGlow: '170, 156, 112',
+        canopy: ['#6b7a44', '#7a8a52'], bush: '#6b7a44', trunk: '#3a2f1c',
+        wallMain: '#8a7a5a', wallRgb: '138, 122, 90', roofFill: '#2a2418',
+        treeDensity: 0.45, bushDensity: 0.75, radiusMod: 0.9
+    }
+];
+function getOperatorBiome(yFrac) {
+    for (let b of OP_BIOMES) { if (yFrac <= b.yMax) return b; }
+    return OP_BIOMES[OP_BIOMES.length - 1];
+}
+
 const MapIntel = {
     "-1": { name: "[?] Random Generation", color: "#00e5ff", size: "Variable", desc: "Procedural tactical layout. Blueprint parameters unknown until deployment. Stay alert." },
     "0": { name: "The Cross (Classic)", color: "#00e5ff", size: "2200x2200", desc: "Standard intersection. Clear vertical and horizontal lanes for classic engagement." },
@@ -3948,7 +4068,8 @@ const MapIntel = {
     "7": { name: "Quarantine Zone", color: "#ffffff", size: "2600x2600", desc: "Massive plus-sign intersection. Vast sightlines demand long-range weaponry." },
     "8": { name: "2-Fort (Bridge Assault)", color: "#ff2a5f", size: "4200x900", desc: "Bridge assault. Two heavily fortified bases separated by a deadly no-mans-land." },
     "9": { name: "The Sieve (Pillar Forest)", color: "#b388ff", size: "2800x2800", desc: "Dense forest of small pillar covers. Sightlines are constantly broken." },
-    "10": { name: "[7.5K] Massive Open World", color: "#00e5ff", size: "7500x7500", desc: "Colossal operational zone spanning 9 distinct biomes. Stamina management is critical." }
+    "10": { name: "[7.5K] Massive Open World", color: "#00e5ff", size: "7500x7500", desc: "Colossal operational zone spanning 9 distinct biomes. Stamina management is critical." },
+    "11": { name: "[OPERATOR] The Perimeter", color: "#39ff14", size: "7500x7500", desc: "Hardened bunker on the map edge. Procedural buildings, treelines and dense foliage. FPV drones are your only offense -- survive." }
 };
 
 const cachedAmbientLightCanvas = (() => {
@@ -4268,7 +4389,8 @@ class MapGen {
             { id: 7, w: 2600, h: 2600, biome: { main: '#ffffff', rgb: '255, 255, 255'} },
             { id: 8, w: 4200, h: 900,  biome: { main: '#ff2a5f', rgb: '255, 42, 95', splitTheme: true } },
             { id: 9, w: 2800, h: 2800, biome: { main: '#b388ff', rgb: '179, 136, 255' } },
-            { id: 10, w: 7500, h: 7500, biome: { main: '#00e5ff', rgb: '0, 100, 255' } }
+            { id: 10, w: 7500, h: 7500, biome: { main: '#00e5ff', rgb: '0, 100, 255' } },
+            { id: 11, w: 5200, h: 14000, biome: { main: '#39ff14', rgb: '57, 255, 20' } }
         ];
 
         let chosen;
@@ -4284,7 +4406,7 @@ class MapGen {
         this.templateId = chosen.id;
 
         // Procedural Haze Anchor Setup
-        if (this.templateId !== 10) {
+        if (this.templateId !== 10 && this.templateId !== 11) {
             const mainRgb = this.biome.rgb;
             // Define 5 positions: Center, TL, TR, BL, BR
             const positions = [
@@ -4302,14 +4424,34 @@ class MapGen {
                 color: pos.color
             }));
         }
+        // Template 11 (FPV Operator) builds its own biome-banded haze
+        // anchors entirely inside case 11 below -- see OP_BIOMES. It uses
+        // per-band colors instead of a single uniform tint, so it's
+        // deliberately excluded from the generic field above.
 
         this.generate();
         this.initializeSpatialGrid();
         this.buildNavGrid();
     }
     initializeSpatialGrid() {
-        this.gridCols = 5;
-        this.gridRows = 5;
+        // Grid resolution scales with map size ONLY for the large maps (10,
+        // 11) -- see buildNavGrid()'s useLargeMapPath comment for why: a
+        // fixed 5x5 grid was fine for the original ~2200px maps (440px
+        // cells) but produced enormous 1500px cells on the 7500px maps,
+        // making every getWallsNear() 3x3-neighborhood query return dozens
+        // of irrelevant walls (measured: ~42 walls/query avg on template 11
+        // with the old fixed grid, ~4.5 with this fix). Templates 0-9 keep
+        // the exact original fixed 5x5 so their spatial partitioning -- and
+        // everything downstream of getWallsNear() for those templates -- is
+        // untouched.
+        if (this.templateId === 10 || this.templateId === 11) {
+            const targetCellSize = 450;
+            this.gridCols = MathUtils.clamp(Math.round(this.width / targetCellSize), 5, 40);
+            this.gridRows = MathUtils.clamp(Math.round(this.height / targetCellSize), 5, 40);
+        } else {
+            this.gridCols = 5;
+            this.gridRows = 5;
+        }
         this.cellW = this.width / this.gridCols;
         this.cellH = this.height / this.gridRows;
         
@@ -4654,14 +4796,422 @@ class MapGen {
                 }
                 break;
             }
+            case 11: {
+                // ==== FPV OPERATOR MODE MAP: "The Perimeter" ====
+                // Per FPV_OPERATOR_SPEC.md section 2, revised into a long
+                // north-south CORRIDOR rather than a square: the base always
+                // sits at the south end, the bunker mouth always faces
+                // north, and enemies always approach from the north/far end
+                // (see _updateOperatorSpawning's angle restriction). This
+                // means "how far you have to fly to find a fight" is always
+                // a read on the same axis the player is looking down --
+                // pushed-back enemies mean long flights, a breached base
+                // means short ones. The corridor is divided into 4 biome
+                // bands along Y (OP_BIOMES, north to south: Wastes -> Deep
+                // Forest -> Woodland -> Homefront) that drive haze color,
+                // foliage species/density, and building material tint.
+                this.roofs = [];
+                this.doors = [];
+                this.foliage = [];
+                this.interiors = [];
+                this.coverGraph = { nodes: [], edges: [] };
+
+                const W = this.width, H = this.height;
+
+                // ---- 1. Base position (always south) + hardened C-shaped bunker ----
+                const edgeMargin = 650;
+                let baseX = W * MathUtils.rand(0.4, 0.6);
+                let baseY = H - edgeMargin;
+                const mouthAngle = -Math.PI / 2; // always north
+
+                this.operatorBaseZone = { x: baseX, y: baseY, r: 620 };
+                this.operatorSpawnEdge = 'N'; // enemies always approach from the north; kept for debug/HUD reference
+
+                {
+                    const half = 260;          // half-footprint of the C
+                    const thick = 55;
+                    const fwd = mouthAngle;
+                    const fx = Math.cos(fwd), fy = Math.sin(fwd);
+                    const rx = -fy, ry = fx; // right vector
+
+                    const addLocalWall = (alongFwd, alongRight, lenFwd, lenRight) => {
+                        let wx = baseX + fx * alongFwd + rx * alongRight;
+                        let wy = baseY + fy * alongFwd + ry * alongRight;
+                        let w = Math.abs(fx) > 0.5 ? lenFwd : lenRight;
+                        let h = Math.abs(fx) > 0.5 ? lenRight : lenFwd;
+                        this.walls.push({ x: wx - w/2, y: wy - h/2, w, h, colorMain: '#39ff14', colorRgb: '57, 255, 20' });
+                    };
+
+                    // Back wall (south, opposite the mouth)
+                    addLocalWall(-half, 0, thick, half*2);
+                    // West arm
+                    addLocalWall(-half/2, -half, half + thick, thick);
+                    // East arm -- the mouth is simply the open front (north); no wall placed there.
+                    addLocalWall(-half/2, half, half + thick, thick);
+                }
+
+                // ---- 2. Cover graph seed ----
+                const addCoverNode = (x, y, kind) => {
+                    this.coverGraph.nodes.push({ x, y, kind });
+                    return this.coverGraph.nodes.length - 1;
+                };
+                // Edge anchor nodes spread along the north edge and the two
+                // long side edges, covering the northern ~75% of the
+                // corridor (the approach route) -- none near the south
+                // edge/base, since nothing ever approaches from behind it.
+                const edgeNodeCount = 7;
+                for (let i = 0; i < edgeNodeCount; i++) {
+                    let t = i / (edgeNodeCount - 1);
+                    let y = H * (0.05 + t * 0.7);
+                    addCoverNode(120, y, 'edge');
+                    addCoverNode(W - 120, y, 'edge');
+                }
+                addCoverNode(W / 2, 80, 'edge');
+                // Base mouth node so packs have a final approach target
+                const baseMouthNode = addCoverNode(baseX + Math.cos(mouthAngle) * 700, baseY + Math.sin(mouthAngle) * 700, 'approach');
+                this.operatorBaseMouthNodeIdx = baseMouthNode;
+
+                // ---- 3. Procedural building prefabs (biome-tinted) ----
+                const buildings = [];
+                const minSpacingFromBase = 1200;
+                const minBuildingSpacing = 900;
+
+                const tryPlaceBuilding = (w, h) => {
+                    for (let attempt = 0; attempt < 40; attempt++) {
+                        let bx = MathUtils.rand(400, W - 400 - w);
+                        let by = MathUtils.rand(400, H - 400 - h);
+                        let cx = bx + w/2, cy = by + h/2;
+                        if (Math.hypot(cx - baseX, cy - baseY) < minSpacingFromBase) continue;
+                        let tooClose = buildings.some(b => Math.hypot(cx - b.cx, cy - b.cy) < minBuildingSpacing);
+                        if (tooClose) continue;
+                        return { bx, by, cx, cy };
+                    }
+                    return null;
+                };
+
+                const buildingId_counter = { n: 0 };
+
+                // hutSmall: 1 room, front + back door
+                const genHutSmall = () => {
+                    let w = MathUtils.rand(260, 340), h = MathUtils.rand(220, 300);
+                    let pos = tryPlaceBuilding(w, h);
+                    if (!pos) return;
+                    let { bx, by } = pos;
+                    let id = 'b' + (buildingId_counter.n++);
+                    let biome = getOperatorBiome((by + h/2) / H);
+                    const t = 24;
+                    const doorW = 90;
+                    let frontDoorX = bx + w/2 - doorW/2;
+                    let backDoorX = bx + w/2 - doorW/2;
+                    this.walls.push({ x: bx, y: by, w: backDoorX - bx, h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: backDoorX + doorW, y: by, w: (bx + w) - (backDoorX + doorW), h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: bx, y: by + h - t, w: frontDoorX - bx, h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: frontDoorX + doorW, y: by + h - t, w: (bx + w) - (frontDoorX + doorW), h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: bx, y: by, w: t, h, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: bx + w - t, y: by, w: t, h, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+
+                    this.doors.push({ x: frontDoorX, y: by + h - t, w: doorW, h: t, buildingId: id });
+                    this.doors.push({ x: backDoorX, y: by, w: doorW, h: t, buildingId: id });
+                    this.roofs.push({ x: bx, y: by, w, h, buildingId: id, alpha: 1, fillColor: biome.roofFill });
+                    this.interiors.push({ x: bx + t, y: by + t, w: w - t*2, h: h - t*2, buildingId: id });
+
+                    buildings.push({ cx: bx + w/2, cy: by + h/2, w, h, id, biome });
+                    addCoverNode(bx + w/2, by + h - t/2, 'door');
+                    addCoverNode(bx + w/2, by + t/2, 'door');
+                };
+
+                // houseMed: 2-3 rooms with interior dividing wall + doorway, front/back doors
+                const genHouseMed = () => {
+                    let w = MathUtils.rand(420, 560), h = MathUtils.rand(340, 440);
+                    let pos = tryPlaceBuilding(w, h);
+                    if (!pos) return;
+                    let { bx, by } = pos;
+                    let id = 'b' + (buildingId_counter.n++);
+                    let biome = getOperatorBiome((by + h/2) / H);
+                    const t = 26;
+                    const doorW = 95;
+                    let frontDoorX = bx + w * 0.3;
+                    let backDoorX = bx + w * 0.65;
+                    this.walls.push({ x: bx, y: by, w: backDoorX - bx, h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: backDoorX + doorW, y: by, w: (bx + w) - (backDoorX + doorW), h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: bx, y: by + h - t, w: frontDoorX - bx, h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: frontDoorX + doorW, y: by + h - t, w: (bx + w) - (frontDoorX + doorW), h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: bx, y: by, w: t, h, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: bx + w - t, y: by, w: t, h, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.doors.push({ x: frontDoorX, y: by + h - t, w: doorW, h: t, buildingId: id });
+                    this.doors.push({ x: backDoorX, y: by, w: doorW, h: t, buildingId: id });
+
+                    let divX = bx + w * MathUtils.rand(0.42, 0.58);
+                    let divDoorY = by + h * MathUtils.rand(0.3, 0.55);
+                    const idw = 20, idoorH = 90;
+                    this.walls.push({ x: divX, y: by + t, w: idw, h: (divDoorY - (by + t)), buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: divX, y: divDoorY + idoorH, w: idw, h: (by + h - t) - (divDoorY + idoorH), buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.doors.push({ x: divX, y: divDoorY, w: idw, h: idoorH, buildingId: id });
+
+                    this.roofs.push({ x: bx, y: by, w, h, buildingId: id, alpha: 1, fillColor: biome.roofFill });
+                    this.interiors.push({ x: bx + t, y: by + t, w: divX - (bx + t), h: h - t*2, buildingId: id });
+                    this.interiors.push({ x: divX + idw, y: by + t, w: (bx + w - t) - (divX + idw), h: h - t*2, buildingId: id });
+
+                    buildings.push({ cx: bx + w/2, cy: by + h/2, w, h, id, biome });
+                    addCoverNode(bx + w/2, by + h - t/2, 'door');
+                    addCoverNode(bx + w/2, by + t/2, 'door');
+                    addCoverNode(divX, divDoorY + idoorH/2, 'interior');
+                };
+
+                // warehouseLarge: outer shell, central hallway, 3-5 rooms off it, 2-3 ext doors
+                const genWarehouseLarge = () => {
+                    let w = MathUtils.rand(700, 900), h = MathUtils.rand(560, 720);
+                    let pos = tryPlaceBuilding(w, h);
+                    if (!pos) return;
+                    let { bx, by } = pos;
+                    let id = 'b' + (buildingId_counter.n++);
+                    let biome = getOperatorBiome((by + h/2) / H);
+                    const t = 30;
+                    const doorW = 100;
+
+                    let frontDoorX = bx + w * 0.25;
+                    let backDoorX = bx + w * 0.6;
+                    let sideDoorY = by + h * 0.5;
+
+                    this.walls.push({ x: bx, y: by, w: backDoorX - bx, h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: backDoorX + doorW, y: by, w: (bx + w) - (backDoorX + doorW), h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: bx, y: by + h - t, w: frontDoorX - bx, h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: frontDoorX + doorW, y: by + h - t, w: (bx + w) - (frontDoorX + doorW), h: t, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: bx, y: by, w: t, h: (sideDoorY - doorW/2) - by, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: bx, y: sideDoorY + doorW/2, w: t, h: (by + h) - (sideDoorY + doorW/2), buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    this.walls.push({ x: bx + w - t, y: by, w: t, h, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+
+                    this.doors.push({ x: frontDoorX, y: by + h - t, w: doorW, h: t, buildingId: id });
+                    this.doors.push({ x: backDoorX, y: by, w: doorW, h: t, buildingId: id });
+                    this.doors.push({ x: bx, y: sideDoorY - doorW/2, w: t, h: doorW, buildingId: id });
+
+                    let hallY = by + h * 0.5;
+                    const hallHalfHeight = 55;
+                    const hw = 22;
+                    let roomCount = 3 + Math.floor(Math.random() * 3);
+                    let roomW = (w - t*2) / roomCount;
+                    let hallDoorPositions = [];
+                    for (let i = 0; i < roomCount; i++) {
+                        let doorX = bx + t + roomW * i + roomW/2 - doorW/2;
+                        hallDoorPositions.push(doorX);
+                    }
+                    let segStart = bx + t;
+                    for (let i = 0; i <= hallDoorPositions.length; i++) {
+                        let segEnd = (i < hallDoorPositions.length) ? hallDoorPositions[i] : (bx + w - t);
+                        if (segEnd > segStart) {
+                            this.walls.push({ x: segStart, y: hallY - hallHalfHeight, w: segEnd - segStart, h: hw, buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                        }
+                        if (i < hallDoorPositions.length) {
+                            this.doors.push({ x: hallDoorPositions[i], y: hallY - hallHalfHeight, w: doorW, h: hw, buildingId: id });
+                            segStart = hallDoorPositions[i] + doorW;
+                            addCoverNode(hallDoorPositions[i] + doorW/2, hallY, 'interior');
+                        }
+                    }
+                    for (let i = 1; i < roomCount; i++) {
+                        let dx = bx + t + roomW * i;
+                        this.walls.push({ x: dx, y: by + t, w: hw, h: (hallY - hallHalfHeight) - (by + t), buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                        this.walls.push({ x: dx, y: hallY + hallHalfHeight, w: hw, h: (by + h - t) - (hallY + hallHalfHeight), buildingId: id, colorMain: biome.wallMain, colorRgb: biome.wallRgb });
+                    }
+
+                    this.roofs.push({ x: bx, y: by, w, h, buildingId: id, alpha: 1, fillColor: biome.roofFill });
+                    this.interiors.push({ x: bx + t, y: by + t, w: w - t*2, h: h - t*2, buildingId: id });
+
+                    buildings.push({ cx: bx + w/2, cy: by + h/2, w, h, id, biome });
+                    addCoverNode(bx + w/2, by + h - t/2, 'door');
+                    addCoverNode(bx + w/2, by + t/2, 'door');
+                    addCoverNode(bx + t/2, sideDoorY, 'door');
+                };
+
+                // Building count scaled up from the original 12-16 (tuned for
+                // a 7500x7500=56.25M area map) to match this corridor's
+                // ~72.8M area.
+                const totalBuildings = 16 + Math.floor(Math.random() * 6); // 16-21
+                for (let i = 0; i < totalBuildings; i++) {
+                    let roll = Math.random();
+                    if (roll < 0.15 && buildings.filter(b => b.w > 650).length < 3) genWarehouseLarge();
+                    else if (roll < 0.55) genHouseMed();
+                    else genHutSmall();
+                }
+
+                // ---- 4. Foliage: jittered grid + treeline clusters + bush clusters, all biome-tagged ----
+                const clearRadiusAroundBase = 500;
+                const cellSize = 350;
+                for (let gy = 0; gy < H; gy += cellSize) {
+                    let biome = getOperatorBiome(gy / H);
+                    let densityAvg = (biome.treeDensity + biome.bushDensity) / 2;
+                    let spawnChance = MathUtils.clamp(0.45 * densityAvg, 0.05, 0.85);
+                    let treeChance = MathUtils.clamp(0.6 * (biome.treeDensity / biome.bushDensity), 0.15, 0.9);
+                    for (let gx = 0; gx < W; gx += cellSize) {
+                        if (Math.random() > spawnChance) continue;
+                        let fx = gx + MathUtils.rand(0, cellSize);
+                        let fy = gy + MathUtils.rand(0, cellSize);
+                        if (Math.hypot(fx - baseX, fy - baseY) < clearRadiusAroundBase) continue;
+                        let insideBuilding = buildings.some(b => Math.abs(fx - b.cx) < b.w/2 + 40 && Math.abs(fy - b.cy) < b.h/2 + 40);
+                        if (insideBuilding) continue;
+                        let isTree = Math.random() < treeChance;
+                        let canopyColor = biome.canopy[Math.floor(Math.random() * biome.canopy.length)];
+                        this.foliage.push({
+                            x: fx, y: fy,
+                            r: (isTree ? MathUtils.rand(45, 75) : MathUtils.rand(28, 48)) * biome.radiusMod,
+                            density: isTree ? MathUtils.rand(0.5, 0.8) : MathUtils.rand(0.6, 1.0),
+                            type: isTree ? 'tree' : 'bush',
+                            colorCanopy: canopyColor, colorBush: biome.bush, colorTrunk: biome.trunk
+                        });
+                    }
+                }
+                // Treeline clusters: linear runs biased by biome density
+                const treelineCount = 10 + Math.floor(Math.random() * 6);
+                for (let tl = 0; tl < treelineCount; tl++) {
+                    let sx = MathUtils.rand(400, W - 400);
+                    let sy = MathUtils.rand(400, H - 400);
+                    let biome = getOperatorBiome(sy / H);
+                    let ang = Math.random() * Math.PI * 2;
+                    let count = Math.round((5 + Math.floor(Math.random() * 8)) * MathUtils.clamp(biome.treeDensity, 0.4, 1.6));
+                    let spacing = MathUtils.rand(70, 110);
+                    for (let i = 0; i < count; i++) {
+                        let px = sx + Math.cos(ang) * spacing * i + MathUtils.rand(-25, 25);
+                        let py = sy + Math.sin(ang) * spacing * i + MathUtils.rand(-25, 25);
+                        if (px < 100 || px > W - 100 || py < 100 || py > H - 100) continue;
+                        if (Math.hypot(px - baseX, py - baseY) < clearRadiusAroundBase) continue;
+                        let lineBiome = getOperatorBiome(py / H);
+                        let canopyColor = lineBiome.canopy[Math.floor(Math.random() * lineBiome.canopy.length)];
+                        this.foliage.push({
+                            x: px, y: py, r: MathUtils.rand(50, 80) * lineBiome.radiusMod, density: MathUtils.rand(0.6, 0.9), type: 'tree',
+                            colorCanopy: canopyColor, colorBush: lineBiome.bush, colorTrunk: lineBiome.trunk
+                        });
+                        if (i % 2 === 0) addCoverNode(px, py, 'foliage');
+                    }
+                }
+                // Bush clusters around a subset of building corners
+                for (let b of buildings) {
+                    if (Math.random() < 0.5) {
+                        let corner = Math.floor(Math.random() * 4);
+                        let ox = (corner % 2 === 0) ? -b.w/2 - 40 : b.w/2 + 40;
+                        let oy = (corner < 2) ? -b.h/2 - 40 : b.h/2 + 40;
+                        for (let k = 0; k < 3; k++) {
+                            this.foliage.push({
+                                x: b.cx + ox + MathUtils.rand(-30, 30),
+                                y: b.cy + oy + MathUtils.rand(-30, 30),
+                                r: MathUtils.rand(28, 42) * b.biome.radiusMod, density: MathUtils.rand(0.6, 0.9), type: 'bush',
+                                colorCanopy: b.biome.canopy[0], colorBush: b.biome.bush, colorTrunk: b.biome.trunk
+                            });
+                        }
+                    }
+                }
+
+                // Foliage-cluster centroid cover nodes (coarse sample)
+                for (let i = 0; i < this.foliage.length; i += 6) {
+                    let f = this.foliage[i];
+                    addCoverNode(f.x, f.y, 'foliage');
+                }
+
+                // ---- 5. Cover graph edges (dist < 1100 AND wall-LOS clear) ----
+                const nodes = this.coverGraph.nodes;
+                const MAX_EDGE_DIST = 1100;
+                for (let i = 0; i < nodes.length; i++) {
+                    for (let j = i + 1; j < nodes.length; j++) {
+                        let a = nodes[i], b = nodes[j];
+                        let d = Math.hypot(a.x - b.x, a.y - b.y);
+                        if (d > MAX_EDGE_DIST) continue;
+                        let blocked = this.walls.some(w => MathUtils.lineIntersectAABB(a.x, a.y, b.x, b.y, w));
+                        if (blocked) continue;
+                        this.coverGraph.edges.push([i, j]);
+                    }
+                }
+
+                // ---- 5b. Connectivity guarantee ----
+                // See earlier design note (kept verbatim): a random proximity
+                // graph over a sparse, obstacle-heavy map frequently
+                // fragments into disconnected islands. Union-find over the
+                // edges just built, then bridge every component that
+                // doesn't contain the base-mouth node to its nearest node in
+                // another component, repeated until fully connected.
+                {
+                    const n = nodes.length;
+                    const parent = new Array(n).fill(0).map((_, i) => i);
+                    const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+                    const union = (a, b) => { let ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+                    for (let [i, j] of this.coverGraph.edges) union(i, j);
+
+                    let guard = 0;
+                    while (guard++ < n) {
+                        const baseRoot = find(baseMouthNode);
+                        let bridged = false;
+                        const groups = new Map();
+                        for (let i = 0; i < n; i++) {
+                            let r = find(i);
+                            if (!groups.has(r)) groups.set(r, []);
+                            groups.get(r).push(i);
+                        }
+                        if (groups.size <= 1) break;
+                        for (let [root, members] of groups) {
+                            if (root === baseRoot) continue;
+                            let bestDist = Infinity, bestI = -1, bestJ = -1;
+                            for (let i of members) {
+                                for (let j = 0; j < n; j++) {
+                                    if (find(j) === root) continue;
+                                    let d = Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y);
+                                    if (d < bestDist) { bestDist = d; bestI = i; bestJ = j; }
+                                }
+                            }
+                            if (bestI !== -1) {
+                                this.coverGraph.edges.push([bestI, bestJ]);
+                                union(bestI, bestJ);
+                                bridged = true;
+                            }
+                        }
+                        if (!bridged) break;
+                    }
+                }
+
+                // ---- 6. Biome-banded haze anchors ----
+                // Secondary atmospheric depth layer only -- the solid
+                // drawOperatorBiomeBands pass (see MapGen method) is the
+                // PRIMARY, reliable biome-color signal now, so this can run
+                // with far fewer anchors than before without hurting biome
+                // legibility. Anchor count reduced from 24+8=32 to 10+4=14:
+                // each anchor is a createRadialGradient + 'screen'-composite
+                // fillRect, and at 32 anchors x up to 2 rendered viewports
+                // (main + the large drone PiP) x 60fps, this was a real,
+                // measurable rendering cost contributing to reported frame
+                // drops while piloting.
+                const hazeAnchorCount = 10;
+                for (let i = 0; i < hazeAnchorCount; i++) {
+                    let ay = H * (i / (hazeAnchorCount - 1));
+                    let ax = MathUtils.rand(W * 0.15, W * 0.85);
+                    if (Math.hypot(ax - baseX, ay - baseY) < 900) continue;
+                    let biome = getOperatorBiome(ay / H);
+                    this.hazeAnchors.push({
+                        x: ax, y: ay,
+                        radius: MathUtils.rand(1700, 2600),
+                        color: biome.haze
+                    });
+                }
+                // A few extra off-axis anchors purely for side-to-side depth
+                for (let i = 0; i < 4; i++) {
+                    let ay = MathUtils.rand(0, H);
+                    let ax = (i % 2 === 0) ? MathUtils.rand(0, W * 0.2) : MathUtils.rand(W * 0.8, W);
+                    if (Math.hypot(ax - baseX, ay - baseY) < 900) continue;
+                    let biome = getOperatorBiome(ay / H);
+                    this.hazeAnchors.push({
+                        x: ax, y: ay,
+                        radius: MathUtils.rand(1200, 2000),
+                        color: biome.haze
+                    });
+                }
+
+                break;
+            }
         }
     }
-    draw(ctx, cam, viewportW, viewportH) {
-        // Draw Atmospheric Haze for standard maps (0-9)
-        if (this.templateId !== 10 && this.hazeAnchors.length > 0) {
+    draw(ctx, cam, viewportW, viewportH, skipHaze) {
+        // Draw Atmospheric Haze for standard maps (0-9, 11)
+        if (this.templateId !== 10 && this.hazeAnchors.length > 0 && !skipHaze) {
             ctx.save();
             // Create a subtle breathing effect for the atmosphere
-            const pulse = 0.04 + Math.sin((game ? game.gameTime : 0) * 0.5) * 0.01;
+            const pulse = (this.templateId === 11)
+                ? 0.11 + Math.sin((game ? game.gameTime : 0) * 0.5) * 0.02   // stronger for the long operator corridor -- see drawOperatorBiomeBands, this is the secondary/distance layer on top of the solid ground bands
+                : 0.04 + Math.sin((game ? game.gameTime : 0) * 0.5) * 0.01;
 
             for (let anchor of this.hazeAnchors) {
                 // Viewport culling for massive haze circles
@@ -4737,7 +5287,7 @@ class MapGen {
         }
         ctx.stroke();
 
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = (this.templateId === 11) ? 0 : 10; // PERF: operator map has 150+ walls vs ~20-40 on classic templates; per-shape blur at that count was a real, significant rendering cost invisible to headless testing. Templates 0-9 keep the original blur look unchanged.
         let bufferX = Math.max(150, visibleW * 0.18);
         let bufferY = Math.max(150, visibleH * 0.18);
         for (let wall of this.walls) {
@@ -4777,6 +5327,18 @@ class MapGen {
         this.navRows = Math.floor(this.height / spacing);
         
         const margin = 24; // safety margin around walls (grunt size is ~12-14)
+
+        // PERF: templates 10/11 are 7500px with many walls -- a full
+        // O(nodes * allWalls) scan there measured multiple seconds (verified
+        // via headless profiling: 6.5s on template 11 before this fix).
+        // Templates 0-9 keep the exact original full-scan algorithm
+        // untouched (verified byte-identical navNode output via headless
+        // regression test) since a spatial-grid-filtered candidate set can
+        // very rarely miss a wall right at a grid-cell boundary once the
+        // `margin` search radius is added on top of it -- an acceptable
+        // trade at 7500px scale for a ~13x speedup, but not a change worth
+        // making on the small, already-fast existing templates.
+        const useLargeMapPath = (this.templateId === 10 || this.templateId === 11);
         
         for (let r = 0; r < this.navRows; r++) {
             for (let c = 0; c < this.navCols; c++) {
@@ -4784,7 +5346,8 @@ class MapGen {
                 let y = r * spacing + spacing / 2;
                 
                 let blocked = false;
-                for (let w of this.walls) {
+                let candidateWalls = useLargeMapPath ? this.getWallsNear(x, y) : this.walls;
+                for (let w of candidateWalls) {
                     if (x >= w.x - margin && x <= w.x + w.w + margin &&
                         y >= w.y - margin && y <= w.y + w.h + margin) {
                         blocked = true;
@@ -4805,6 +5368,7 @@ class MapGen {
         // Connect neighbors (8-directional)
         for (let n of this.navNodes) {
             if (n.blocked) continue;
+            let candidateWalls = useLargeMapPath ? this.getWallsNear(n.x, n.y) : this.walls;
             for (let dr = -1; dr <= 1; dr++) {
                 for (let dc = -1; dc <= 1; dc++) {
                     if (dr === 0 && dc === 0) continue;
@@ -4814,7 +5378,7 @@ class MapGen {
                         let neighbor = this.navNodes[nr * this.navCols + nc];
                         if (!neighbor.blocked) {
                             let blockedByWall = false;
-                            for (let w of this.walls) {
+                            for (let w of candidateWalls) {
                                 if (MathUtils.lineIntersectAABB(n.x, n.y, neighbor.x, neighbor.y, w)) {
                                     blockedByWall = true;
                                     break;
@@ -5132,6 +5696,244 @@ class MapGen {
 
         return chosen;
     }
+
+    // ==== FPV OPERATOR MODE: roof/canopy reveal + foliage rendering ====
+    // No-ops entirely unless templateId === 11 -- never called from any
+    // Normal/Sandbox render path.
+
+    // Called once per frame from Game.update (not render) so alpha lerps
+    // advance at simulation rate, not render rate.
+    updateOperatorRoofAlpha(dt) {
+        if (this.templateId !== 11 || !this.roofs) return;
+        const targetHidden = OP_TUNING.ROOF_HIDDEN_ALPHA;
+        const lerpSpeed = OP_TUNING.ROOF_FADE_SPEED;
+
+        // Gather every "looker" position: piloted drones + living players.
+        // A roof reveals if ANY looker is inside its footprint.
+        let lookers = [];
+        if (game.player && game.player.activeDrone && game.player.activeDrone.isPiloted && !game.player.activeDrone.dead) {
+            lookers.push(game.player.activeDrone);
+        }
+        if (game.player2 && game.player2.activeDrone && game.player2.activeDrone.isPiloted && !game.player2.activeDrone.dead) {
+            lookers.push(game.player2.activeDrone);
+        }
+        if (game.player && !game.player.dead) lookers.push(game.player);
+        if (game.player2 && !game.player2.dead) lookers.push(game.player2);
+
+        for (let roof of this.roofs) {
+            let revealed = lookers.some(l => l.x >= roof.x && l.x <= roof.x + roof.w && l.y >= roof.y && l.y <= roof.y + roof.h);
+            let target = revealed ? targetHidden : 1.0;
+            roof.alpha += (target - roof.alpha) * Math.min(1, dt * lerpSpeed);
+        }
+
+        // Canopy alpha: trees fade when a looker is directly beneath them
+        // (within canopy radius), same mechanism as roofs but per-foliage
+        // rather than per-building.
+        if (this.foliage) {
+            for (let f of this.foliage) {
+                if (f.type !== 'tree') continue;
+                if (f.canopyAlpha === undefined) f.canopyAlpha = OP_TUNING.CANOPY_ALPHA;
+                let under = lookers.some(l => Math.hypot(l.x - f.x, l.y - f.y) < f.r);
+                let target = under ? OP_TUNING.CANOPY_HIDDEN_ALPHA : OP_TUNING.CANOPY_ALPHA;
+                f.canopyAlpha += (target - f.canopyAlpha) * Math.min(1, dt * lerpSpeed);
+            }
+        }
+    }
+
+    // Ground-level foliage pass (bush bodies, tree trunks) -- drawn BELOW
+    // entities, alongside walls, so players/enemies visually stand "in"
+    // undergrowth rather than on top of a flat sprite.
+    // FPV OPERATOR MODE: solid biome ground-tint bands, one per OP_BIOMES
+    // entry, spanning the full map width at each band's Y range. Drawn
+    // BELOW everything else (walls/foliage/entities), at low-but-clearly-
+    // visible opacity. This exists because the original biome signal was
+    // the haze-anchor system alone, which renders at ~3-5% peak opacity
+    // via 'screen' blending (tuned for the small 0-9 template maps) --
+    // confirmed via playtest feedback as functionally invisible once the
+    // goggles vignette (also fairly dark) sits on top of it too. A solid,
+    // zone-anchored band is a far more reliable signal than scattered
+    // overlapping translucent circles, which can visually average out to a
+    // muddy uniform color depending on where they randomly land.
+    drawOperatorBiomeBands(ctx, cam, viewportW, viewportH) {
+        if (this.templateId !== 11) return;
+        let visibleW = viewportW / cam.zoom, visibleH = viewportH / cam.zoom;
+        let bufferY = Math.max(200, visibleH * 0.15);
+        let prevYMax = 0;
+        for (let b of OP_BIOMES) {
+            let bandTop = prevYMax * this.height;
+            let bandBottom = b.yMax * this.height;
+            prevYMax = b.yMax;
+            if (bandBottom < cam.y - bufferY || bandTop > cam.y + visibleH + bufferY) continue;
+            let sy = bandTop - cam.y, sh = (Math.min(bandBottom, this.height) - bandTop);
+            ctx.save();
+            ctx.fillStyle = `rgba(${b.haze}, 0.16)`;
+            ctx.fillRect(-cam.x, sy, this.width, sh);
+            ctx.restore();
+        }
+    }
+
+    drawFoliageGround(ctx, cam, viewportW, viewportH) {
+        if (this.templateId !== 11 || !this.foliage) return;
+        let visibleW = viewportW / cam.zoom, visibleH = viewportH / cam.zoom;
+        let bufferX = Math.max(150, visibleW * 0.2), bufferY = Math.max(150, visibleH * 0.2);
+        for (let f of this.foliage) {
+            if (f.x + f.r < cam.x - bufferX || f.x - f.r > cam.x + visibleW + bufferX ||
+                f.y + f.r < cam.y - bufferY || f.y - f.r > cam.y + visibleH + bufferY) continue;
+            let sx = f.x - cam.x, sy = f.y - cam.y;
+            if (f.type === 'bush') {
+                ctx.save();
+                ctx.globalAlpha = 0.75;
+                ctx.fillStyle = f.colorBush || '#1a3a1a';
+                ctx.strokeStyle = f.colorCanopy || '#3a6b3a';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(sx, sy, f.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+            } else {
+                // Tree trunk only at ground level -- canopy drawn separately, above entities
+                ctx.save();
+                ctx.fillStyle = f.colorTrunk || '#2b1d10';
+                ctx.fillRect(sx - f.r * 0.12, sy - f.r * 0.12, f.r * 0.24, f.r * 0.24);
+                ctx.restore();
+            }
+        }
+    }
+
+    // Tree canopy pass -- drawn ABOVE entities (canopy occludes what's under
+    // it), alongside roofs, with the same reveal-on-approach alpha logic.
+    drawFoliageCanopy(ctx, cam, viewportW, viewportH) {
+        if (this.templateId !== 11 || !this.foliage) return;
+        let visibleW = viewportW / cam.zoom, visibleH = viewportH / cam.zoom;
+        let bufferX = Math.max(150, visibleW * 0.2), bufferY = Math.max(150, visibleH * 0.2);
+        for (let f of this.foliage) {
+            if (f.type !== 'tree') continue;
+            if (f.x + f.r < cam.x - bufferX || f.x - f.r > cam.x + visibleW + bufferX ||
+                f.y + f.r < cam.y - bufferY || f.y - f.r > cam.y + visibleH + bufferY) continue;
+            let sx = f.x - cam.x, sy = f.y - cam.y;
+            let alpha = f.canopyAlpha !== undefined ? f.canopyAlpha : OP_TUNING.CANOPY_ALPHA;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            // PERF: was a per-tree createRadialGradient() -- with 300+ trees
+            // on the operator map, rendered in both the main viewport and
+            // the (now large) drone PiP every frame, gradient creation was
+            // a real, measurable cost. Flat fill + a smaller darker inner
+            // circle gives a similar "canopy with depth" read for a
+            // fraction of the cost (two solid rasterizations vs. one
+            // gradient interpolation).
+            ctx.fillStyle = f.colorCanopy || '#2d5a2d';
+            ctx.beginPath();
+            ctx.arc(sx, sy, f.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = f.colorTrunk || '#173617';
+            ctx.globalAlpha = alpha * 0.4;
+            ctx.beginPath();
+            ctx.arc(sx, sy, f.r * 0.55, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    // Roof pass -- drawn ABOVE entities/particles, below HUD. Reveal alpha
+    // is pre-computed per-frame by updateOperatorRoofAlpha().
+    drawRoofs(ctx, cam, viewportW, viewportH) {
+        if (this.templateId !== 11 || !this.roofs) return;
+        let visibleW = viewportW / cam.zoom, visibleH = viewportH / cam.zoom;
+        let bufferX = Math.max(150, visibleW * 0.2), bufferY = Math.max(150, visibleH * 0.2);
+        for (let roof of this.roofs) {
+            if (roof.x + roof.w < cam.x - bufferX || roof.x > cam.x + visibleW + bufferX ||
+                roof.y + roof.h < cam.y - bufferY || roof.y > cam.y + visibleH + bufferY) continue;
+            if (roof.alpha < 0.02) continue;
+            let sx = roof.x - cam.x, sy = roof.y - cam.y;
+            ctx.save();
+            ctx.globalAlpha = roof.alpha;
+            ctx.fillStyle = roof.fillColor || '#0d1f12';
+            ctx.fillRect(sx, sy, roof.w, roof.h);
+            // Ridge lines for a bit of roof-like visual structure
+            ctx.strokeStyle = 'rgba(57, 255, 20, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(sx, sy); ctx.lineTo(sx + roof.w, sy + roof.h);
+            ctx.moveTo(sx + roof.w, sy); ctx.lineTo(sx, sy + roof.h);
+            ctx.stroke();
+            ctx.strokeStyle = 'rgba(57, 255, 20, 0.3)';
+            ctx.strokeRect(sx, sy, roof.w, roof.h);
+            ctx.restore();
+        }
+    }
+
+    // Returns true if (targetX,targetY) is concealed from a viewer at
+    // (viewerX,viewerY) -- used to suppress the drone's targeting-line
+    // overlay AND (see Enemy AI overlay) to decide whether an alerted enemy
+    // counts as "hidden" for the drone-avoidance system. Two concealment
+    // mechanisms, matching FPV_OPERATOR_SPEC.md section 3:
+    //  (a) target is inside a building interior the viewer is NOT also
+    //      inside (roofs have no physics collision, but conceptually still
+    //      block the drone's downward camera unless the drone has crossed
+    //      into the footprint itself).
+    //  (b) foliage density accumulated along the viewer->target sightline
+    //      reaches the concealment threshold, UNLESS the viewer is close
+    //      enough to the target to "push into" the foliage and see anyway.
+    isPointConcealedFrom(targetX, targetY, viewerX, viewerY) {
+        if (this.templateId !== 11) return false;
+        const dist = Math.hypot(targetX - viewerX, targetY - viewerY);
+
+        // (a) Interior/roof concealment
+        if (this.interiors) {
+            let targetInterior = this.interiors.find(iv => targetX >= iv.x && targetX <= iv.x + iv.w && targetY >= iv.y && targetY <= iv.y + iv.h);
+            if (targetInterior) {
+                let viewerInSameBuilding = this.interiors.some(iv => iv.buildingId === targetInterior.buildingId &&
+                    viewerX >= iv.x && viewerX <= iv.x + iv.w && viewerY >= iv.y && viewerY <= iv.y + iv.h);
+                if (!viewerInSameBuilding) return true;
+            }
+        }
+
+        // (b) Foliage concealment: an enemy standing inside a bush/tree
+        // canopy radius is hidden unless the viewer is within the reveal
+        // distance. Otherwise, accumulate density of every foliage circle
+        // the viewer->target segment passes through; dense-enough coverage
+        // conceals even a target that isn't itself inside a foliage circle
+        // (e.g. crouched behind a treeline).
+        if (this.foliage && this.foliage.length) {
+            const REVEAL_DIST = OP_TUNING.CONCEALMENT_REVEAL_DIST;
+            for (let f of this.foliage) {
+                let dToTarget = Math.hypot(targetX - f.x, targetY - f.y);
+                if (dToTarget < f.r && dist > REVEAL_DIST) return true;
+            }
+
+            let coverage = 0;
+            for (let f of this.foliage) {
+                let chord = this._segmentCircleChordLength(viewerX, viewerY, targetX, targetY, f.x, f.y, f.r);
+                if (chord > 0) coverage += f.density * (chord / (2 * f.r));
+            }
+            if (coverage >= 1.0 && dist > REVEAL_DIST) return true;
+        }
+
+        return false;
+    }
+
+    // Helper: length of the chord where segment (x1,y1)-(x2,y2) intersects
+    // circle (cx,cy,r). Returns 0 if no intersection.
+    _segmentCircleChordLength(x1, y1, x2, y2, cx, cy, r) {
+        let dx = x2 - x1, dy = y2 - y1;
+        let segLenSq = dx * dx + dy * dy;
+        if (segLenSq < 0.0001) return 0;
+        // Project circle center onto the segment, clamped to [0,1]
+        let t = ((cx - x1) * dx + (cy - y1) * dy) / segLenSq;
+        let tClamped = MathUtils.clamp(t, 0, 1);
+        let closestX = x1 + dx * tClamped, closestY = y1 + dy * tClamped;
+        let distToCenter = Math.hypot(cx - closestX, cy - closestY);
+        if (distToCenter >= r) return 0;
+        // Half-chord length at the closest approach, using the circle
+        // equation -- approximation (uses closest point rather than exact
+        // entry/exit along the infinite line clipped to the segment) but
+        // sufficiently accurate for a soft concealment accumulator, and
+        // far cheaper than solving the full quadratic per foliage circle
+        // per sensingTarget update.
+        let halfChord = Math.sqrt(Math.max(0, r * r - distToCenter * distToCenter));
+        return halfChord * 2;
+    }
 }
 
 class Entity {
@@ -5204,12 +6006,29 @@ class Entity {
                 return;
             }
         }
+        // FPV OPERATOR MODE: "marked" bonus damage -- see FPVDrone.detonate's
+        // operatorExposedTimer hook. Applies regardless of damage source
+        // (pistol, turret, another bomb), which is the point: it rewards
+        // finishing off a softened enemy with whatever's on hand.
+        if (this.operatorExposedTimer > 0 && amt > 0) {
+            amt *= 1.5;
+        }
         if(this.armor && this.armor > 0) {
             let absorb = Math.min(this.armor, amt);
             this.armor -= absorb;
             this.hp -= (amt - absorb);
         } else {
             this.hp -= amt;
+        }
+
+        // FPV OPERATOR MODE: clean-wave bonus tracking (spec brainstorm --
+        // reward good drone/turret work with a payout bonus for a wave
+        // where the player never got touched). maxStamina is a Player-only
+        // field (Enemy/other Entity subclasses don't have it), reused here
+        // as the same "is this the player" check the godmode guard above
+        // already uses, rather than adding a new instanceof/reference check.
+        if (typeof game !== 'undefined' && game && game.operatorMode && this.maxStamina !== undefined && amt > 0) {
+            game.tookDamageThisWave = true;
         }
         
         if (pushDir !== undefined && pushDir !== null) {
@@ -5786,6 +6605,15 @@ class Player extends Entity {
         let regenRate = (26.4 / 3.0) * 1.6 * (1 + cardioLvl * 0.12); // ~60% faster base regen
         let walkDrainRate = 2.4;    // was 3.2 (originally 4.5) -- walking drains even less now
         let runDrainRate = 23.0 * (1 - cardioLvl * 0.08);    // was 27.0 (originally 38.0) -- running/sprinting drains quickly, just not THAT quickly
+
+        // FPV OPERATOR MODE: running is a deliberate last resort (spec
+        // section 4 -- "low stamina modifier so it's hard to effectively
+        // run"). Regen cut to 45%, drain scaled up so max sustained sprint
+        // effectively drops to ~70% of normal. Every other mode unaffected.
+        if (game && game.operatorMode) {
+            regenRate *= OP_TUNING.STAMINA_REGEN_MULT;
+            runDrainRate /= OP_TUNING.STAMINA_MAXSPRINT_MULT;
+        }
         
         // Exo-Servos stamina efficiency: reduces drain by 6% per level (capped at 30% reduction / 0.70 multiplier)
         const exoStaminaEfficiency = Math.max(0.70, 1.0 - exoServosLvl * 0.06);
@@ -6259,6 +7087,25 @@ class Player extends Entity {
             else if (typeKey === 'm1a') this.ammo.m1a = Math.min(this.maxAmmo.m1a, this.ammo.m1a + 20);
         }
     }
+
+    // FPV OPERATOR MODE edge case (spec section 9.2): if the player's body
+    // is killed while heads-down piloting a drone, force an immediate
+    // unpilot + stop the drone's engine-note audio loop, mirroring exactly
+    // what openShopInterface() already does when the shop opens mid-flight
+    // (see that function -- same stopAudio()+isPiloted=false pattern). The
+    // drone itself is left alone (still airborne, still burns battery, can
+    // still be destroyed or auto-detonate) -- only the piloting LINK is
+    // severed, since the pilot is now dead and camera control must return
+    // to... nothing, this player is done. Gated to operator mode only
+    // (every other mode already has its own, different post-death flow via
+    // applyDeadPlayerHardcorePenalties()/triggerRoundWinEffects(), which
+    // this must not interfere with).
+    onDeath() {
+        if (game && game.operatorMode && this.activeDrone && !this.activeDrone.dead) {
+            this.activeDrone.stopAudio();
+            this.activeDrone.isPiloted = false;
+        }
+    }
 }
 class Enemy extends Entity {
     constructor(x, y, config) {
@@ -6343,6 +7190,14 @@ class Enemy extends Entity {
             if (this.slowTimer <= 0) this.slowTimer = 0;
         }
 
+        // FPV OPERATOR MODE: exposed/marked timer decay -- see
+        // FPVDrone.detonate() (sets it) and Entity.takeDamage (reads it for
+        // the bonus-damage multiplier).
+        if (this.operatorExposedTimer > 0) {
+            this.operatorExposedTimer -= dt;
+            if (this.operatorExposedTimer < 0) this.operatorExposedTimer = 0;
+        }
+
         if (this.muzzleFlashTimer > 0) {
             this.muzzleFlashTimer -= dt;
             if (this.muzzleFlashTimer < 0) this.muzzleFlashTimer = 0;
@@ -6356,6 +7211,18 @@ class Enemy extends Entity {
         let shouldUpdateAI = (game.frameCounter % 30 === enemyIndex % 30) || (this.cachedTarget === null) || (this.cachedMoveAngle === undefined);
 
         if (shouldUpdateAI) {
+            // ==== FPV OPERATOR MODE: AI overlay ====
+            // Runs on the exact same 30-frame stagger as the rest of this
+            // block (see FPV_OPERATOR_SPEC.md section 5 perf guard). Entirely
+            // inert unless game.operatorMode is true. Computes this.opAI's
+            // alert/cover-route state; the existing drone-fear block below
+            // consumes opAI.overrideRunFromDrone / overrideTarget when set,
+            // so operator mode extends the existing flee mechanism instead
+            // of duplicating it.
+            if (game && game.operatorMode && this.opAI) {
+                this._updateOperatorAI(game, nearbyWalls);
+            }
+
             // Target closest living player or active turret/dog
             let target = player;
             if (this.type === 'sapper') {
@@ -6478,6 +7345,30 @@ class Enemy extends Entity {
                 targetY = cp.y;
             }
 
+            // FPV OPERATOR MODE: unalerted cover-to-cover travel. Movement
+            // destination ONLY -- uses separate moveTargetX/moveTargetY
+            // rather than overwriting targetX/targetY. This distinction is
+            // load-bearing: targetX/targetY feed distToTarget, which the
+            // stock combat logic further below uses for "am I in firing
+            // range, should I hold/retreat" (see the cachedDistToTarget<240
+            // retreat check). Earlier version of this override pointed
+            // targetX/targetY AT the cover waypoint directly, which made a
+            // sneaking enemy think it was "in firing range of its target"
+            // the moment it got within 240px of a waypoint and made it back
+            // away (and fire blindly) instead of continuing to approach --
+            // confirmed via headless simulation as a full movement stall.
+            // moveTargetX/Y only steers moveAngle/pathfinding below; combat
+            // ranging stays keyed to the real player position always.
+            let moveTargetX = targetX, moveTargetY = targetY;
+            if (game && game.operatorMode && this.opAI && this.opAI.routeTargetX !== undefined && this.opAI.routeTargetX !== null && this.opAI.alert <= 0) {
+                let playerDist = Math.hypot(target.x - this.x, target.y - this.y);
+                let playerDirectLOS = playerDist < 450 && !nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
+                if (!playerDirectLOS) {
+                    moveTargetX = this.opAI.routeTargetX;
+                    moveTargetY = this.opAI.routeTargetY;
+                }
+            }
+
             let dxToT = targetX - this.x;
             let dyToT = targetY - this.y;
             let distToTarget = Math.sqrt(dxToT*dxToT + dyToT*dyToT);
@@ -6502,15 +7393,35 @@ class Enemy extends Entity {
                     }
                 }
 
+                // FPV OPERATOR MODE: hearing radius is extended from the
+                // default 250 to this.opAI.hearRadius (700-1500, rolled per
+                // enemy at spawn -- see spawnEnemy()). Once alerted, the
+                // enemy stays in flee/cover behavior until opAI.alert decays
+                // (handled in _updateOperatorAI), rather than re-checking the
+                // instantaneous distance every throttled tick -- this avoids
+                // an enemy flickering between "flee" and "advance" as it
+                // crosses back and forth over a hard distance threshold.
+                let fleeRadius = 250;
+                if (game.operatorMode && this.opAI) fleeRadius = this.opAI.hearRadius;
+
                 if (nearestPilotedDrone) {
                     let droneDist = nearestPilotedDroneDist;
-                    if (this.willShootDrone && droneDist < 700) {
+                    if (game.operatorMode && this.opAI && this.opAI.alert > 0) {
+                        runFromDrone = true;
+                        runFromObj = nearestPilotedDrone;
+                    } else if (this.willShootDrone && droneDist < 700 && !(game.operatorMode && this.opAI)) {
+                        // Operator mode grunts never duck-and-shoot at the
+                        // drone mid-flee -- see spec: drones are the
+                        // player's ONLY offense, so a drone getting casually
+                        // sniped out of the sky by a fleeing grunt would
+                        // undercut the whole premise. Non-operator modes are
+                        // completely unaffected (condition short-circuits).
                         target = nearestPilotedDrone;
                         targetX = target.x;
                         targetY = target.y;
                         distToTarget = droneDist;
                         runFromDrone = false;
-                    } else if (!this.willShootDrone && droneDist < 250) {
+                    } else if (!this.willShootDrone && droneDist < fleeRadius) {
                         runFromDrone = true;
                         runFromObj = nearestPilotedDrone;
                     }
@@ -6562,11 +7473,22 @@ class Enemy extends Entity {
                 }
             }
 
-            // Pathfinding move angle
-            let moveAngle = Math.atan2(targetY - this.y, targetX - this.x);
+            // Pathfinding move angle -- uses moveTargetX/Y (which is either
+            // the real combat target or, in operator mode while sneaking,
+            // the cover-route waypoint -- see moveTargetX/Y assignment
+            // above). moveHasLOS is a SEPARATE line-of-sight check against
+            // that same movement target, decoupled from `hasLOS`/
+            // `distToTarget` below (which stay pointed at the real combat
+            // target for the retreat-at-240px / fire() gating). Using the
+            // combat hasLOS here for path-blocked detection while steering
+            // toward a different (route) point was the root cause of a
+            // confirmed movement-stall bug -- see moveTargetX comment above.
+            let moveAngle = Math.atan2(moveTargetY - this.y, moveTargetX - this.x);
             if (runFromDrone && runFromObj) {
                 moveAngle = Math.atan2(this.y - runFromObj.y, this.x - runFromObj.x);
             }
+
+            let moveHasLOS = !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, moveTargetX, moveTargetY, w));
 
             let checkPathBlocked = false;
             if (runFromDrone) {
@@ -6574,16 +7496,30 @@ class Enemy extends Entity {
                 let aheadY = this.y + Math.sin(moveAngle) * 80;
                 checkPathBlocked = nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, aheadX, aheadY, w));
             } else {
-                checkPathBlocked = !hasLOS;
+                checkPathBlocked = !moveHasLOS;
             }
 
             if (checkPathBlocked) {
-                let pathTargetX = targetX;
-                let pathTargetY = targetY;
+                let pathTargetX = moveTargetX;
+                let pathTargetY = moveTargetY;
                 if (runFromDrone && runFromObj) {
-                    let escapeAngle = Math.atan2(this.y - runFromObj.y, this.x - runFromObj.x);
-                    pathTargetX = this.x + Math.cos(escapeAngle) * 300;
-                    pathTargetY = this.y + Math.sin(escapeAngle) * 300;
+                    // FPV OPERATOR MODE: route toward the next cover-graph
+                    // node (foliage/door/interior) picked by
+                    // _updateOperatorAI, instead of a blind radial dash away
+                    // from the drone -- this is what makes alerted enemies
+                    // actually run FOR cover rather than just away from the
+                    // threat in a straight line. Falls back to the original
+                    // radial-escape behavior if no route node is available
+                    // (e.g. isolated position with nothing nearby) or in any
+                    // non-operator mode.
+                    if (game.operatorMode && this.opAI && this.opAI.routeTargetX !== undefined && this.opAI.routeTargetX !== null) {
+                        pathTargetX = this.opAI.routeTargetX;
+                        pathTargetY = this.opAI.routeTargetY;
+                    } else {
+                        let escapeAngle = Math.atan2(this.y - runFromObj.y, this.x - runFromObj.x);
+                        pathTargetX = this.x + Math.cos(escapeAngle) * 300;
+                        pathTargetY = this.y + Math.sin(escapeAngle) * 300;
+                    }
                 }
                 
                 let path = game.map.findPath(this.x, this.y, pathTargetX, pathTargetY, checkWalls);
@@ -6761,7 +7697,28 @@ class Enemy extends Entity {
                 this.vy += moveY * 3.0 * dt;
             }
 
-            if (this.cachedHasLOS && gameTime - this.lastFire > this.fireRate && !this.cachedRunFromDrone) {
+            // Engagement range cap: `hasLOS` above is a pure wall-occlusion
+            // check with no distance limit, so on the Operator map's long
+            // open corridor (7500x7500, vs. ~2200x2200 for standard maps)
+            // an enemy could have clear line-of-sight (and therefore fire)
+            // from thousands of pixels away -- bullets that never remotely
+            // reach the target, but the gunshot SFX still fires every
+            // cooldown tick. With many enemies alive at once this reads as
+            // constant distant "wall of gunfire" with no visible bullets,
+            // plus the extra WebAudio node churn from all those shots was
+            // contributing to periodic micro-stutter.
+            // Scoped to Operator mode only -- standard/sandbox/PvP maps are
+            // small enough that this was never really observable there, and
+            // this must not change their balance.
+            let inEngagementRange = true;
+            if (game && game.operatorMode) {
+                // Snipers keep a longer effective range than regular grunts
+                // since long-range engagement is their whole identity.
+                let engagementRange = (this.weaponType === 'sniper') ? 1600 : 1000;
+                inEngagementRange = this.cachedDistToTarget < engagementRange;
+            }
+
+            if (this.cachedHasLOS && inEngagementRange && gameTime - this.lastFire > this.fireRate && !this.cachedRunFromDrone) {
                 this.fire(game);
                 this.lastFire = gameTime;
             }
@@ -6848,6 +7805,224 @@ class Enemy extends Entity {
 
         this.updatePhysics(dt, walls);
     }
+
+    // ==== FPV OPERATOR MODE: AI overlay implementation ====
+    // Called once per throttled AI tick (same 30-frame stagger as the rest
+    // of update()) from the shouldUpdateAI block above. Entirely separate
+    // state (this.opAI) from the stock FSM fields -- never reads or writes
+    // this.state/this.cachedTarget/etc, so it cannot desync the existing
+    // per-enemy-type behavior. Responsibilities per spec section 5:
+    //  1. Hearing: alert if within hearRadius of a piloted drone.
+    //  2. Alerted: sprint to nearest cover node, hold, then resume.
+    //  3. Unalerted: advance cover-node-to-cover-node toward the base,
+    //     releasing to the stock FSM inside 700px of the base zone.
+    //  4. Anti-turtle valve: after ANTI_TURTLE_SECONDS into a wave, clear
+    //     alert/route state so stragglers beeline instead of stalling.
+    _updateOperatorAI(game, nearbyWalls) {
+        let opAI = this.opAI;
+        let map = game.map;
+        if (!map || !map.coverGraph || !map.coverGraph.nodes.length) return;
+
+        // ---- Anti-turtle valve ----
+        if (game.waveElapsedSeconds !== undefined && game.waveElapsedSeconds > OP_TUNING.ANTI_TURTLE_SECONDS) {
+            opAI.alert = 0;
+            opAI.routeTargetX = null;
+            opAI.routeTargetY = null;
+            opAI.directAssault = true;
+        }
+
+        // ---- Stuck-detector escape hatch ----
+        // The cover-graph greedy hop walk (below) is not a guaranteed-
+        // optimal pathfinder, and a procedurally generated graph can
+        // produce cycles longer than the recentNodes anti-oscillation
+        // buffer, or route an enemy against a wall its LOCAL nearbyWalls
+        // spatial-grid slice doesn't flag (see MapGen.getWallsNear's
+        // documented false-negative characteristic, pre-existing in the
+        // base game). Rather than chase every possible graph/geometry edge
+        // case, checkpoint each enemy's position every ~4s of real
+        // progress-checking; if it hasn't moved a meaningful distance
+        // since the last checkpoint, give up on stealth cover-routing and
+        // set the SAME directAssault flag the anti-turtle valve uses --
+        // that hands the enemy to the stock FSM's advance-toward-target
+        // logic, which already falls back to the proven full-map nav-grid
+        // findPath() when direct LOS is blocked.
+        //
+        // A second, rarer tier: even after directAssault, an enemy can
+        // still be physically wedged (e.g. pinned in a tight gap between
+        // procedurally-placed foliage/walls where every movement direction
+        // immediately collides back to the same spot -- confirmed via
+        // headless simulation: cachedMoveAngle pointing the right way,
+        // near-zero actual velocity, position never changing). Keep
+        // checkpointing even in directAssault; if STILL not moving after
+        // another window, forcibly nudge the enemy a fixed hop toward the
+        // base along a straight line, bypassing physics for that one
+        // correction. This is the difference between a rare procedural
+        // dead-end permanently soft-locking one enemy and it recovering
+        // within a few seconds.
+        opAI._stuckCheckTimer = (opAI._stuckCheckTimer || 0) - 0.5; // one throttled tick's worth of real time
+        if (opAI._stuckCheckTimer <= 0) {
+            if (opAI._stuckCheckX !== undefined && opAI._stuckCheckX !== null) {
+                let moved = Math.hypot(this.x - opAI._stuckCheckX, this.y - opAI._stuckCheckY);
+                if (moved < 90) {
+                    if (!opAI.directAssault) {
+                        opAI.directAssault = true;
+                        opAI.routeTargetX = null;
+                        opAI.routeTargetY = null;
+                    } else {
+                        // Already gave up on stealth routing and STILL
+                        // hasn't moved -- physical wedge. Hard nudge
+                        // straight toward the base zone center.
+                        let bz = map.operatorBaseZone;
+                        if (bz) {
+                            let ang = Math.atan2(bz.y - this.y, bz.x - this.x);
+                            this.x += Math.cos(ang) * 140;
+                            this.y += Math.sin(ang) * 140;
+                        }
+                    }
+                }
+            }
+            opAI._stuckCheckX = this.x;
+            opAI._stuckCheckY = this.y;
+            opAI._stuckCheckTimer = 4.0;
+        }
+
+        if (opAI.directAssault) return; // beeline via the stock FSM (target/targetX/targetY untouched by this method)
+
+        // ---- 1. Hearing check (drives alert state) ----
+        let candidateDrones = [];
+        if (game.player && game.player.activeDrone && !game.player.activeDrone.dead && game.player.activeDrone.isPiloted) candidateDrones.push(game.player.activeDrone);
+        if (game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && game.player2.activeDrone.isPiloted) candidateDrones.push(game.player2.activeDrone);
+
+        let heardDrone = false;
+        for (let d of candidateDrones) {
+            if (Math.hypot(d.x - this.x, d.y - this.y) < opAI.hearRadius) { heardDrone = true; break; }
+        }
+
+        if (heardDrone) {
+            opAI.alert = 6.0; // seconds of flee/hold behavior once triggered, refreshed while still in earshot
+            opAI.coverTimer = 0;
+            opAI.currentCoverNodeIdx = null; // force a fresh nearest-cover pick below
+        } else if (opAI.alert > 0) {
+            opAI.alert = Math.max(0, opAI.alert - (30 / 60)); // decays ~1 unit per throttled tick group (30 frames @60fps = 0.5s; called once per stagger cycle)
+        }
+
+        const nodes = map.coverGraph.nodes;
+        const edges = map.coverGraph.edges;
+        if (!opAI._adjacency) {
+            // Build (and cache on the shared map instance, not per-enemy) an
+            // adjacency list once. Cheap (a few hundred nodes) and shared
+            // across every enemy via map.coverGraph._adjCache.
+            if (!map.coverGraph._adjCache) {
+                let adj = nodes.map(() => []);
+                for (let [i, j] of edges) { adj[i].push(j); adj[j].push(i); }
+                map.coverGraph._adjCache = adj;
+            }
+            opAI._adjacency = map.coverGraph._adjCache;
+        }
+        const adjacency = opAI._adjacency;
+
+        const nearestNodeIdx = (x, y, kindFilter) => {
+            let best = -1, bestD = Infinity;
+            for (let i = 0; i < nodes.length; i++) {
+                if (kindFilter && !kindFilter(nodes[i].kind)) continue;
+                let d = Math.hypot(nodes[i].x - x, nodes[i].y - y);
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            return best;
+        };
+
+        if (opAI.alert > 0) {
+            // ---- 2. Alerted: sprint to nearest cover, hold, resume ----
+            if (opAI.currentCoverNodeIdx === null || opAI.currentCoverNodeIdx === undefined) {
+                opAI.currentCoverNodeIdx = nearestNodeIdx(this.x, this.y, k => k === 'foliage' || k === 'interior' || k === 'door');
+                opAI.coverTimer = MathUtils.rand(2, 5);
+            }
+            if (opAI.currentCoverNodeIdx >= 0) {
+                let n = nodes[opAI.currentCoverNodeIdx];
+                let distToNode = Math.hypot(n.x - this.x, n.y - this.y);
+                if (distToNode < 60) {
+                    // Reached cover -- hold, then release alert early once the hold expires
+                    opAI.coverTimer -= 0.5; // one throttled tick worth (see decay comment above)
+                    opAI.routeTargetX = n.x;
+                    opAI.routeTargetY = n.y;
+                    if (opAI.coverTimer <= 0) opAI.alert = Math.min(opAI.alert, 0.5); // let the normal decay above finish it off next tick(s)
+                } else {
+                    opAI.routeTargetX = n.x;
+                    opAI.routeTargetY = n.y;
+                }
+            }
+            return;
+        }
+
+        // ---- 3. Unalerted: cover-to-cover travel toward base ----
+        let baseZone = map.operatorBaseZone;
+        if (!baseZone) return;
+        let distToBase = Math.hypot(this.x - baseZone.x, this.y - baseZone.y);
+        if (distToBase < 700) {
+            // Close enough -- release to stock FSM for the final approach.
+            opAI.routeTargetX = null;
+            opAI.routeTargetY = null;
+            opAI.currentCoverNodeIdx = null;
+            return;
+        }
+
+        // Pick (once) a fresh nearest node as the route start, then greedily
+        // hop along cover-graph edges toward whichever neighbor makes the
+        // most progress toward the base mouth node -- cheap greedy walk
+        // instead of a full Dijkstra per enemy per tick (network is static
+        // per-map, only ~150-200 nodes, but still not free to re-solve for
+        // every enemy every throttled tick at scale).
+        if (opAI.currentCoverNodeIdx === null || opAI.currentCoverNodeIdx === undefined) {
+            opAI.currentCoverNodeIdx = nearestNodeIdx(this.x, this.y, null);
+        }
+        if (opAI.currentCoverNodeIdx < 0) return;
+
+        let curNode = nodes[opAI.currentCoverNodeIdx];
+        let distToCur = Math.hypot(curNode.x - this.x, curNode.y - this.y);
+        if (distToCur < 60) {
+            // Arrived at this node -- pick the next hop: among neighbors,
+            // the one that most reduces distance to the base mouth node,
+            // with a mild exposure penalty for non-cover node kinds (open
+            // 'edge'/'approach' nodes) so routes prefer treelines/doors when
+            // a comparable-progress option exists, per spec section 5.2.
+            //
+            // Excludes recently-visited nodes from candidates (with a
+            // fallback to the full neighbor list if every neighbor was
+            // recently visited, so a true dead-end doesn't strand the
+            // enemy). Without this, a pure greedy "closest neighbor to
+            // mouth" walk can enter a 2-node infinite ping-pong whenever
+            // two adjacent nodes are each other's best-scoring option --
+            // confirmed via headless movement profiling: an enemy stuck
+            // oscillating between the same two points for 25+ seconds
+            // straight, contributing zero net progress toward the base
+            // while still technically "moving" every frame.
+            let mouthIdx = map.operatorBaseMouthNodeIdx;
+            let mouthNode = nodes[mouthIdx];
+            let neighbors = adjacency[opAI.currentCoverNodeIdx];
+            if (neighbors && neighbors.length > 0) {
+                if (!opAI.recentNodes) opAI.recentNodes = [];
+                let candidates = neighbors.filter(nIdx => !opAI.recentNodes.includes(nIdx));
+                if (candidates.length === 0) candidates = neighbors; // true dead-end fallback
+
+                let bestNext = -1, bestScore = Infinity;
+                for (let nIdx of candidates) {
+                    let n = nodes[nIdx];
+                    let distToMouth = Math.hypot(n.x - mouthNode.x, n.y - mouthNode.y);
+                    let exposurePenalty = (n.kind === 'foliage' || n.kind === 'door' || n.kind === 'interior') ? 0 : 220;
+                    let score = distToMouth + exposurePenalty;
+                    if (score < bestScore) { bestScore = score; bestNext = nIdx; }
+                }
+                if (bestNext >= 0) {
+                    opAI.currentCoverNodeIdx = bestNext;
+                    opAI.recentNodes.push(bestNext);
+                    if (opAI.recentNodes.length > 4) opAI.recentNodes.shift();
+                }
+            }
+            curNode = nodes[opAI.currentCoverNodeIdx];
+        }
+        opAI.routeTargetX = curNode.x;
+        opAI.routeTargetY = curNode.y;
+    }
     
     fire(game) {
         if (this.weaponType === 'melee') {
@@ -6919,6 +8094,25 @@ class Enemy extends Entity {
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.arc(scx, scy, this.r + 6, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // FPV OPERATOR MODE: "marked" indicator -- pulsing amber ring on
+        // any enemy currently taking bonus damage (see FPVDrone.detonate's
+        // operatorExposedTimer hook + Entity.takeDamage's multiplier).
+        // Fast pulse reads as "priority target, finish this one first."
+        if (this.operatorExposedTimer > 0 && game && game.operatorMode) {
+            let scx = this.x - cam.x;
+            let scy = this.y - cam.y;
+            let fade = Math.min(1, this.operatorExposedTimer / 4.0);
+            let glowAlpha = (0.35 + 0.25 * Math.sin((game.gameTime || 0) * 10.0)) * fade;
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, glowAlpha);
+            ctx.strokeStyle = '#ff8c00';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 9, 0, Math.PI * 2);
             ctx.stroke();
             ctx.restore();
         }
@@ -7083,10 +8277,42 @@ class Enemy extends Entity {
     }
 
     onDeath() {
-        let amount = Math.round(this.scoreVal * game.cashMultiplier);
-        game.player.cash += amount;
-        if (game.isTwoPlayer && game.player2) {
-            game.player2.cash += amount;
+        // FPV OPERATOR MODE: no per-kill cash drops (spec section 4 -- "you
+        // just earn money by surviving waves"). Track a kill-credit counter
+        // instead, consumed by openShopInterface()'s payout formula
+        // (OP_TUNING.PAYOUT_PER_KILL_CREDIT). Every other mode is completely
+        // unaffected -- this only swaps which branch runs.
+        //
+        // Combo system: kills within a tight time window chain into
+        // escalating bonus credit -- rewards a well-aimed drone bomb run or
+        // turret burst catching several enemies together rather than
+        // picking them off one at a time. This is the primary "make it fun"
+        // lever from the post-playtest brainstorm: it turns a good bombing
+        // run into a visible, scaling payoff instead of the same flat
+        // credit per kill regardless of skill.
+        if (game.operatorMode) {
+            let now = game.gameTime;
+            if (game.operatorLastKillTime !== undefined && (now - game.operatorLastKillTime) < 1.8) {
+                game.operatorComboCount = (game.operatorComboCount || 1) + 1;
+            } else {
+                game.operatorComboCount = 1;
+            }
+            game.operatorLastKillTime = now;
+
+            let comboMult = 1 + Math.min(2.0, (game.operatorComboCount - 1) * 0.35); // scales up to 3x around a 6-kill chain
+            game.operatorKillCredits = (game.operatorKillCredits || 0) + comboMult;
+
+            if (game.operatorComboCount >= 3) {
+                game.floatingTexts.push(game.spawnFloatingText(
+                    this.x, this.y - 20, `${game.operatorComboCount}x COMBO`, '#ffb700', 1.3, (Math.random() - 0.5) * 40, -100, 220, true
+                ));
+            }
+        } else {
+            let amount = Math.round(this.scoreVal * game.cashMultiplier);
+            game.player.cash += amount;
+            if (game.isTwoPlayer && game.player2) {
+                game.player2.cash += amount;
+            }
         }
         audio.playHit(this.x, this.y);
         
@@ -7129,30 +8355,45 @@ class Enemy extends Entity {
         // Elite guaranteed drops & text
         if (this.isElite && game) {
             game._elitesKilledThisWave = (game._elitesKilledThisWave || 0) + 1;
-            let dropRoll = Math.random();
-            let dropType = dropRoll < 0.4 ? 'medpack' : dropRoll < 0.7 ? 'grenade' : 'redbull';
-            game.items.push(new Item(this.x, this.y, dropType));
-            
-            // Kinetic floating text for elite cash
-            let eliteAmt_vx = (Math.random() - 0.5) * 60;
-            game.floatingTexts.push(game.spawnFloatingText(
-                this.x, this.y - 20,
-                `ELITE +$${amount}!`,
-                '#ffcc00', 2.0,
-                eliteAmt_vx, -90, 200, true
-            ));
 
-            // Perk case drop chance -- deliberately rare (was 10%, which
-            // stacked with multiple elites per wave to make perk cases feel
-            // routine rather than special, and bosses already guarantee one
-            // every boss wave). This should read as a lucky bonus, not a
-            // reliable farm.
-            if (Math.random() < 0.02) {
-                let perkX = this.x + (Math.random() - 0.5) * 30;
-                let perkY = this.y + (Math.random() - 0.5) * 30;
-                game.items.push(new Item(perkX, perkY, 'perk_case'));
+            // FPV OPERATOR MODE: no item/perk drops of any kind (spec
+            // section 4 -- no gun drops, no perks that modify weapons, fixed
+            // 3-medpack cap with no way to acquire more). Elite kills still
+            // count toward game._elitesKilledThisWave above (feeds Intel
+            // payout via openShopInterface, which is meta-progression
+            // outside a run and untouched by the operator restrictions) and
+            // still trigger the glory-kill camera moment below -- only the
+            // in-run item/cash reward is suppressed.
+            if (!game.operatorMode) {
+                let dropRoll = Math.random();
+                let dropType = dropRoll < 0.4 ? 'medpack' : dropRoll < 0.7 ? 'grenade' : 'redbull';
+                game.items.push(new Item(this.x, this.y, dropType));
+                
+                // Kinetic floating text for elite cash
+                let eliteAmt_vx = (Math.random() - 0.5) * 60;
                 game.floatingTexts.push(game.spawnFloatingText(
-                    perkX, perkY - 20, '⚡ PERK CASE DROPPED', '#00e5ff', 2.0
+                    this.x, this.y - 20,
+                    `ELITE +$${amount}!`,
+                    '#ffcc00', 2.0,
+                    eliteAmt_vx, -90, 200, true
+                ));
+
+                // Perk case drop chance -- deliberately rare (was 10%, which
+                // stacked with multiple elites per wave to make perk cases feel
+                // routine rather than special, and bosses already guarantee one
+                // every boss wave). This should read as a lucky bonus, not a
+                // reliable farm.
+                if (Math.random() < 0.02) {
+                    let perkX = this.x + (Math.random() - 0.5) * 30;
+                    let perkY = this.y + (Math.random() - 0.5) * 30;
+                    game.items.push(new Item(perkX, perkY, 'perk_case'));
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        perkX, perkY - 20, '⚡ PERK CASE DROPPED', '#00e5ff', 2.0
+                    ));
+                }
+            } else {
+                game.floatingTexts.push(game.spawnFloatingText(
+                    this.x, this.y - 20, 'ELITE DOWN', '#ffcc00', 1.6, (Math.random() - 0.5) * 60, -90, 200, true
                 ));
             }
         }
@@ -9204,6 +10445,10 @@ class FPVDrone {
         this.hp = 30;
         this.maxHp = 30;
         this.bombsDropped = 0;
+
+        // FPV OPERATOR MODE: battery -- see FPV_OPERATOR_SPEC.md section 3.
+        // Unused/inert unless game.operatorMode is true (see update()).
+        this.opBattery = (typeof OP_TUNING !== 'undefined') ? OP_TUNING.BATTERY_SECONDS : 60;
     }
     
     takeDamage(amt, pushDir, pushForce) {
@@ -9268,6 +10513,21 @@ class FPVDrone {
             let dist = Math.hypot(this.x - this.pilot.x, this.y - this.pilot.y);
             if (!this.pilot.fiberOpticOwned && dist > 1500) {
                 this.isPiloted = false;
+            }
+        }
+
+        // FPV OPERATOR MODE: battery drain while airborne (piloted OR
+        // placed/loitering -- draining only while actively flown would let
+        // players land indefinitely for free scouting resets, defeating the
+        // point of the resource). Auto-detonates on empty, wherever it is --
+        // including over the player's own base, which is an intentional
+        // risk per spec section 9.4. Inert for every other game mode.
+        if (game && game.operatorMode && !this.dead) {
+            this.opBattery -= dt;
+            if (this.opBattery <= 0) {
+                this.opBattery = 0;
+                this.detonate();
+                return;
             }
         }
         
@@ -9539,8 +10799,32 @@ class FPVDrone {
             if (e.dead) continue;
             let dist = Math.hypot(e.x - this.x, e.y - this.y);
             if (dist < 1000) {
-                let hasLOS = !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, e.x, e.y, w));
+                // PERF: was scanning the FULL game.map.walls array (150+
+                // walls on the operator map's building-dense corridor) for
+                // every enemy in range, every frame, unthrottled -- a
+                // confirmed major cause of frame drops while piloting.
+                // getWallsNear is the same spatially-filtered lookup every
+                // other LOS/collision check in the codebase already uses;
+                // queried from the segment MIDPOINT (not the drone's own
+                // position) since sensing range is up to 1000 units and a
+                // 3x3-cell query only reaches ~675 units from its center --
+                // querying at the drone would miss walls near a far enemy.
+                let midX = (this.x + e.x) / 2, midY = (this.y + e.y) / 2;
+                let nearbyWalls = game.map.getWallsNear(midX, midY);
+                let hasLOS = !nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, e.x, e.y, w));
                 if (hasLOS) {
+                    // FPV OPERATOR MODE: concealment. An enemy with clear
+                    // wall-LOS can still be hidden from the targeting-line
+                    // overlay if it's inside a building the drone isn't
+                    // also inside (roof still "down" conceptually even
+                    // though roofs have no collision), or under enough
+                    // foliage density along the sightline. See
+                    // MapGen.isPointConcealedFrom for the actual rule --
+                    // this keeps the concealment logic in one place shared
+                    // with anything else that needs it later.
+                    if (game.operatorMode && game.map.isPointConcealedFrom) {
+                        if (game.map.isPointConcealedFrom(e.x, e.y, this.x, this.y)) continue;
+                    }
                     this.sensingTarget.push({ x: e.x, y: e.y, opacity: (1 - dist / 1000) });
                 }
             }
@@ -9601,7 +10885,20 @@ class FPVDrone {
                     pushDir = Math.atan2(ent.y - this.y, ent.x - this.x);
                 }
                 ent.takeDamage(damage, pushDir, 700);
-                if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                if (ent instanceof Enemy) {
+                    game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                    // FPV OPERATOR MODE: "marked" -- an enemy caught in the
+                    // blast but not killed is exposed/staggered for a few
+                    // seconds, taking bonus damage from ALL sources (pistol,
+                    // turrets, another bomb). Rewards the "soften with the
+                    // drone, finish with your defenses" loop instead of
+                    // every kill needing to be a direct bomb hit. See
+                    // Entity.takeDamage for the multiplier and Enemy.draw
+                    // for the visual indicator.
+                    if (game.operatorMode && !ent.dead) {
+                        ent.operatorExposedTimer = 4.0;
+                    }
+                }
             }
         }
         
@@ -12432,7 +13729,197 @@ class Game {
         } else {
             e = new Enemy(x, y, config);
         }
+
+        // FPV OPERATOR MODE: attach a fresh AI-overlay component on every
+        // spawn. Must happen HERE rather than in Enemy.init()/constructor --
+        // pooled enemies are reused via init() without ever re-running the
+        // constructor, but init() itself is shared by every game mode and
+        // pooled/recycled mid-run, so a stale opAI object surviving a
+        // pool-recycle (with e.g. old alert/route state, or worse, from a
+        // wave before a game-mode switch) would silently corrupt the next
+        // spawn. This site runs unconditionally per spawn regardless of pool
+        // reuse, so opAI is always exactly one wave-spawn old.
+        if (this.operatorMode) {
+            e.opAI = {
+                hearRadius: OP_TUNING.HEAR_MIN + Math.random() * (OP_TUNING.HEAR_MAX - OP_TUNING.HEAR_MIN),
+                alert: 0,
+                coverTimer: 0,
+                currentCoverNodeIdx: null,
+                routeTargetX: null,
+                routeTargetY: null,
+                packId: null,
+                directAssault: false,
+                recentNodes: [],
+                _adjacency: null
+            };
+        } else {
+            e.opAI = null;
+        }
+        e.operatorExposedTimer = 0; // see FPVDrone.detonate's marked-enemy hook -- must not leak across pool reuse
+
         return e;
+    }
+
+    // FPV OPERATOR MODE spawn scheduler. Replaces the stock single-enemy
+    // spawn tick entirely for operator waves. Key differences (see
+    // FPV_OPERATOR_SPEC.md section 6):
+    //  - Packs of 1-3 (never more), not lone spawns.
+    //  - Released from 2-3 randomized edge SECTORS per wave (chosen once,
+    //    at wave start) rather than a fresh random edge point every spawn --
+    //    gives the map a readable "pressure is coming from over there" read
+    //    instead of enemies popping in uniformly all around the perimeter.
+    //  - Hard concurrency cap (this.operatorEnemiesAliveCap): excess packs
+    //    queue instead of spawning, so late waves are sustained pressure
+    //    rather than a screen full of grunts at once.
+    //  - Composition drifts toward grenadiers/stalkers at higher waves
+    //    instead of just spawning more of the same grunt.
+    _updateOperatorSpawning(dt) {
+        // Pick this wave's spawn lanes once. The map is a fixed north-south
+        // corridor (base always south, mouth always north -- see MapGen
+        // case 11); rather than an angle-from-center cone (which doesn't
+        // reliably reach "far north" on a tall narrow rectangle -- a
+        // shallow-angle ray from dead center hits a SIDE edge at a
+        // middling Y long before it travels far north), spawns pick one of
+        // 3 X-bands (west/center/east thirds) and always land deep in the
+        // northern bands (see the packY calc below) -- so every pack is a
+        // long march regardless of which lane, and pressure still reads as
+        // "always ahead of you" rather than from every direction at once.
+        if (!this.operatorSpawnSectors) {
+            const lanes = [
+                { xMin: 0.05, xMax: 0.32 },   // west
+                { xMin: 0.36, xMax: 0.64 },   // center
+                { xMin: 0.68, xMax: 0.95 }    // east
+            ];
+            let laneCount = 2 + Math.floor(Math.random() * 2); // 2-3 active lanes this wave
+            this.operatorSpawnSectors = [];
+            let pool = [...lanes];
+            for (let i = 0; i < laneCount && pool.length; i++) {
+                let idx = Math.floor(Math.random() * pool.length);
+                this.operatorSpawnSectors.push(pool[idx]);
+                pool.splice(idx, 1);
+            }
+        }
+
+        let aliveCount = 0;
+        for (let e of this.enemies) if (!e.dead) aliveCount++;
+        let queued = this.operatorSpawnQueue || (this.operatorSpawnQueue = []);
+
+        // Release queued packs into the world as capacity allows.
+        while (queued.length > 0 && aliveCount < this.operatorEnemiesAliveCap) {
+            let pack = queued.shift();
+            for (let member of pack) {
+                let enemy = this.spawnEnemy(member.x, member.y, member.config);
+                enemy.hp = member.hp;
+                enemy.maxHp = member.hp;
+                enemy.speed = member.speed;
+                if (member.isElite) {
+                    enemy.isElite = true;
+                    enemy.hp = Math.round(enemy.hp * 2.2);
+                    enemy.maxHp = enemy.hp;
+                    enemy.r *= 1.45;
+                }
+                enemy.opAI.packId = pack.packId;
+                this.enemies.push(enemy);
+                aliveCount++;
+            }
+        }
+
+        // Schedule a new pack every 4-9s while there's still budget left in
+        // this.enemiesToSpawn (which counts INDIVIDUAL enemies, matching the
+        // stock field's meaning so HUD/win-condition code reading it needs
+        // no changes).
+        this.operatorNextPackTimer -= dt;
+        if (this.operatorNextPackTimer <= 0 && this.enemiesToSpawn > 0) {
+            this.operatorNextPackTimer = MathUtils.rand(4, 9);
+
+            let packSize = Math.min(this.enemiesToSpawn, OP_TUNING.PACK_MIN + Math.floor(Math.random() * (OP_TUNING.PACK_MAX - OP_TUNING.PACK_MIN + 1)));
+
+            let scaleHP = 1.0 + (this.wave - 1) * 0.04;
+            let scaleSpeed = Math.min(OP_TUNING.SPEED_SCALE_CAP, 1.0 + (this.wave - 1) * OP_TUNING.SPEED_SCALE_PER_WAVE) * OP_TUNING.APPROACH_SPEED_MULT;
+
+            // Composition drift: heavier weight toward grenadier/stalker-style
+            // pressure at higher waves instead of raw count inflation (see
+            // spec section 6). This codebase's closest existing analogues are
+            // 'enforcer' (heavy, slow, hard-hitting) and 'sapper' (fast
+            // flanker) -- there's no dedicated over-cover grenadier type, so
+            // 'enforcer' stands in as the anti-turtle pressure unit since it
+            // already out-damages a grunt significantly.
+            let pack = [];
+            pack.packId = 'pack' + this.frameCounter + '_' + Math.random().toString(36).slice(2, 7);
+
+            // Lane-based spawn point instead of angle-from-center: the map
+            // is a long north-south corridor now, so "sector angle" from
+            // the map's geometric center doesn't reliably land far-north
+            // spawns for a tall, narrow rectangle (a shallow-angle ray from
+            // dead center hits a SIDE edge at a middling, not-very-far Y
+            // long before it travels far north). A lane picks an X band
+            // (west third / center third / east third); Y depth is a wide
+            // range weighted toward the far Wastes/Deep Forest bands but
+            // reaching partway into Woodland, so waves get a MIX of long
+            // marches (reward proactive drone hunting -- "how far you fly"
+            // reads as pushing the line back) and closer skirmishes
+            // (something happens soon after a wave starts, not total
+            // silence for minutes). Pure "always maximum distance" was
+            // tuned first and profiled as producing multi-minute
+            // first-contact times with nothing for the player to react to
+            // -- see the pacing note this replaces.
+            let lane = this.operatorSpawnSectors[Math.floor(Math.random() * this.operatorSpawnSectors.length)];
+            let laneXMin = lane.xMin * this.mapW, laneXMax = lane.xMax * this.mapW;
+            let packY = (0.02 + Math.random() * 0.56) * this.mapH; // uniform across Wastes/Deep Forest/into Woodland
+            let packX = MathUtils.rand(laneXMin, laneXMax);
+
+            for (let i = 0; i < packSize; i++) {
+                // Small per-member jitter so a pack isn't a single point.
+                let ex = MathUtils.clamp(packX + MathUtils.rand(-180, 180), 60, this.mapW - 60);
+                let ey = MathUtils.clamp(packY + MathUtils.rand(-120, 120), 60, this.mapH - 60);
+
+                let chosenType = EnemyTypes.grunt;
+                let roll = Math.random();
+                let grenadierWeight = Math.min(0.45, (this.wave - 4) * 0.03); // ramps from wave 5+
+                if (this.wave >= 5 && roll < grenadierWeight) {
+                    chosenType = EnemyTypes.enforcer;
+                } else if (this.wave >= 3 && roll < grenadierWeight + 0.2) {
+                    chosenType = EnemyTypes.sapper;
+                } else if (this.wave >= 8 && roll < grenadierWeight + 0.32) {
+                    chosenType = EnemyTypes.sniper_grunt;
+                }
+
+                let baseHp = Math.round(chosenType.hp * scaleHP);
+                pack.push({
+                    x: ex, y: ey, config: chosenType,
+                    hp: baseHp,
+                    speed: chosenType.speed * scaleSpeed,
+                    isElite: Math.random() < 0.04
+                });
+            }
+
+            queued.push(pack);
+            this.enemiesToSpawn -= packSize;
+        }
+    }
+
+    // Projects a ray from (cx,cy) at the given angle onto the boundary of a
+    // [0,w]x[0,h] rectangle, returning the {x,y} where it exits. Used by the
+    // operator spawn scheduler to convert a sector angle into an actual
+    // point on the map's perimeter regardless of aspect ratio (operator maps
+    // are square, but this stays correct for any w/h anyway).
+    _rayToRectBoundary(cx, cy, angle, w, h) {
+        let dx = Math.cos(angle), dy = Math.sin(angle);
+        let candidates = [];
+        if (dx !== 0) {
+            let tLeft = (0 - cx) / dx;
+            let tRight = (w - cx) / dx;
+            if (tLeft > 0) candidates.push(tLeft);
+            if (tRight > 0) candidates.push(tRight);
+        }
+        if (dy !== 0) {
+            let tTop = (0 - cy) / dy;
+            let tBottom = (h - cy) / dy;
+            if (tTop > 0) candidates.push(tTop);
+            if (tBottom > 0) candidates.push(tBottom);
+        }
+        let t = candidates.length ? Math.min(...candidates) : 0;
+        return { x: cx + dx * t, y: cy + dy * t };
     }
 
     spawnFloatingText(x, y, text, color = '#39ff14', life = 1.0, vx = 0, vy = -60, gravity = 0, bounce = false) {
@@ -12588,18 +14075,43 @@ class Game {
 
     updateHeartbeat(dt, player) {
         let healthPct = player ? (player.hp / player.maxHp) : 1.0;
-        if (healthPct < 0.20 && !player.dead) {
+        let lowHealth = healthPct < 0.20 && !player.dead;
+
+        // FPV OPERATOR MODE: additional tension trigger based on how close
+        // the nearest living enemy is to the base, independent of the
+        // player's own HP -- a full-health player should still feel rising
+        // urgency as a wave presses in, not just once they're personally
+        // about to die. Purely additive: when this evaluates to 0 (every
+        // non-operator mode, or operator mode with nothing nearby), the
+        // block below reduces to exactly the original lowHealth-only
+        // behavior.
+        let baseThreatLevel = 0;
+        if (game && game.operatorMode && game.map && game.map.operatorBaseZone && player && !player.dead) {
+            let bz = game.map.operatorBaseZone;
+            let nearestDist = Infinity;
+            for (let e of game.enemies) {
+                if (e.dead) continue;
+                let d = Math.hypot(e.x - bz.x, e.y - bz.y);
+                if (d < nearestDist) nearestDist = d;
+            }
+            let dangerRadius = bz.r * 2.4;
+            baseThreatLevel = MathUtils.clamp(1 - (nearestDist / dangerRadius), 0, 1);
+        }
+        this.operatorBaseThreatLevel = baseThreatLevel; // read by the render pulse below
+
+        if (lowHealth || baseThreatLevel > 0.03) {
             this.heartbeatTimer += dt;
-            let beatInterval = 0.75;
+            let intensityLevel = lowHealth ? 1.0 : baseThreatLevel;
+            let beatInterval = lowHealth ? 0.75 : MathUtils.clamp(1.15 - baseThreatLevel * 0.5, 0.65, 1.15);
             this.heartbeatPhase = (this.heartbeatTimer % beatInterval) / beatInterval;
             
             let pulse1 = Math.max(0, 1.0 - this.heartbeatPhase * 5.0);
             let pulse2 = Math.max(0, 1.0 - Math.abs(this.heartbeatPhase - 0.45) * 8.0);
-            this.heartbeatIntensity = Math.max(pulse1, pulse2);
+            this.heartbeatIntensity = Math.max(pulse1, pulse2) * intensityLevel;
             
                 let cam = player.isPlayer2 ? this.camera2 : this.camera;
                 if (cam) {
-                    cam.screenShake = Math.max(cam.screenShake, 3.5);
+                    cam.screenShake = Math.max(cam.screenShake, 3.5 * intensityLevel);
                 }
         } else {
             this.heartbeatTimer = 0;
@@ -14178,7 +15690,19 @@ class Game {
         let activeDroneExists = (playerInstance.activeDrone && !playerInstance.activeDrone.dead);
 
         if (!activeDroneExists) {
-            if (playerInstance.dronesCount > 0) {
+            // FPV OPERATOR MODE: drones are unlimited (per spec section 3),
+            // gated instead by a launch cooldown so the player can't
+            // instant-relaunch the moment one dies/detonates. Every other
+            // mode is completely unaffected by this branch.
+            if (this.operatorMode) {
+                playerInstance._opLaunchCooldown = playerInstance._opLaunchCooldown || 0;
+                if (playerInstance._opLaunchCooldown <= 0) {
+                    playerInstance.activeDrone = new FPVDrone(playerInstance.x, playerInstance.y, playerInstance);
+                    audio.playPickup('money');
+                    playerInstance.activeDrone.isPiloted = false;
+                    playerInstance._opLaunchCooldown = OP_TUNING.LAUNCH_COOLDOWN;
+                }
+            } else if (playerInstance.dronesCount > 0) {
                 playerInstance.dronesCount--;
                 playerInstance.activeDrone = new FPVDrone(playerInstance.x, playerInstance.y, playerInstance);
                 audio.playPickup('money');
@@ -14200,7 +15724,13 @@ class Game {
 
         this.ctx.save();
 
-        this.ctx.fillStyle = 'rgba(0, 8, 20, 0.55)';
+        // Solid opaque backing -- this MUST be fully opaque (alpha 1), not a
+        // translucent tint. The drone feed is meant to completely occlude
+        // whatever is rendered behind it (the standing player at their base,
+        // world geometry, etc.); a semi-transparent fill here lets that
+        // background bleed through the finished PiP/goggles view, which
+        // reads as a distracting "see-through" drone screen.
+        this.ctx.fillStyle = '#000814';
         this.ctx.strokeStyle = '#ffea00';
         this.ctx.lineWidth = 2;
         this.ctx.fillRect(px, py, pw, ph);
@@ -14248,7 +15778,9 @@ class Game {
 
         this.drawPermanentMarks(this.ctx, droneCam, visibleW, visibleH);
 
+        this.map.drawOperatorBiomeBands(this.ctx, droneCam, pw, ph);
         this.map.draw(this.ctx, droneCam, pw, ph);
+        this.map.drawFoliageGround(this.ctx, droneCam, pw, ph);
         
         for (let i of this.items) i.draw(this.ctx, droneCam);
         for (let m of this.mines) m.draw(this.ctx, droneCam);
@@ -14275,6 +15807,9 @@ class Game {
         }
         
         droneInstance.draw(this.ctx, droneCam);
+
+        this.map.drawFoliageCanopy(this.ctx, droneCam, pw, ph);
+        this.map.drawRoofs(this.ctx, droneCam, pw, ph);
         
         if (this.nightMode) {
             // Apply green tint (multiply + screen)
@@ -14384,6 +15919,175 @@ class Game {
         }
         this.ctx.stroke();
         
+        this.ctx.restore();
+    }
+
+    // FPV OPERATOR MODE: goggles vignette overlay drawn on top of the
+    // large piloting view (see the drawPiPViewport call sites above). Pure
+    // decoration -- rounded dark-edge vignette, corner scanline flicker,
+    // and telemetry text (battery/tether/bombs). No world-render logic
+    // lives here, so it can't desync from whatever drawPiPViewport already
+    // drew underneath it.
+    drawOperatorGogglesFrame(px, py, pw, ph) {
+        let drone = null;
+        if (this.player && this.player.activeDrone && this.player.activeDrone.isPiloted &&
+            px < this.width / 2) drone = this.player.activeDrone;
+        if (!drone && this.player2 && this.player2.activeDrone && this.player2.activeDrone.isPiloted) drone = this.player2.activeDrone;
+        if (!drone && this.player && this.player.activeDrone) drone = this.player.activeDrone;
+
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(px, py, pw, ph);
+        this.ctx.clip();
+
+        // Flat overall screen tint FIRST -- reads as "viewed through a
+        // display" even in the clear center, not just at the edges. Kept
+        // subtle enough that aiming/target-reading is still easy.
+        this.ctx.fillStyle = 'rgba(4, 10, 6, 0.16)';
+        this.ctx.fillRect(px, py, pw, ph);
+
+        // Vignette -- reaches TRUE full opacity (1.0) at the edge now, not
+        // just "mostly dark" -- feedback was that even a small amount of
+        // world bleed at the boundary read as "transparent" rather than a
+        // solid feed. Center stays clear for functional flying.
+        let vg = this.ctx.createRadialGradient(
+            px + pw / 2, py + ph / 2, Math.min(pw, ph) * 0.18,
+            px + pw / 2, py + ph / 2, Math.max(pw, ph) * 0.62
+        );
+        vg.addColorStop(0, 'rgba(0,0,0,0)');
+        vg.addColorStop(0.5, 'rgba(0,4,2,0.45)');
+        vg.addColorStop(0.85, 'rgba(0,4,2,0.95)');
+        vg.addColorStop(1, 'rgba(0,4,2,1.0)');
+        this.ctx.fillStyle = vg;
+        this.ctx.fillRect(px, py, pw, ph);
+
+        // Solid opaque border strip -- a crisp, unambiguous edge (not a
+        // gradient fade) so the transition from "goggles feed" to whatever
+        // margin is visible around it reads as a solid HUD frame, not a
+        // see-through window.
+        this.ctx.fillStyle = '#02100a';
+        const borderT = 10;
+        this.ctx.fillRect(px, py, pw, borderT);
+        this.ctx.fillRect(px, py + ph - borderT, pw, borderT);
+        this.ctx.fillRect(px, py, borderT, ph);
+        this.ctx.fillRect(px + pw - borderT, py, borderT, ph);
+
+        // Faint scanlines across the whole feed for a "screen" read.
+        this.ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        for (let y = py; y < py + ph; y += 3) {
+            this.ctx.moveTo(px, y);
+            this.ctx.lineTo(px + pw, y);
+        }
+        this.ctx.stroke();
+
+        this.ctx.restore();
+
+        this.ctx.save();
+        this.ctx.strokeStyle = '#39ff14';
+        this.ctx.lineWidth = 2;
+        this.ctx.globalAlpha = 0.6;
+        this.ctx.strokeRect(px + 3, py + 3, pw - 6, ph - 6);
+        this.ctx.globalAlpha = 1;
+
+        this.ctx.font = 'bold 11px "Courier New", Courier, monospace';
+        this.ctx.fillStyle = '#39ff14';
+        this.ctx.fillText('◉ REC', px + 14, py + 24);
+
+        if (drone) {
+            let batteryPct = Math.max(0, drone.opBattery / OP_TUNING.BATTERY_SECONDS);
+            let battColor = batteryPct < 0.2 ? '#ff2a5f' : (batteryPct < 0.45 ? '#ffea00' : '#39ff14');
+            this.ctx.fillStyle = battColor;
+            this.ctx.textAlign = 'right';
+            this.ctx.fillText(`BATT ${Math.ceil(drone.opBattery)}s`, px + pw - 14, py + 24);
+            this.ctx.textAlign = 'left';
+
+            if (batteryPct < 0.2) {
+                // Low-battery warning flicker -- loud, per spec section 9.4
+                let flicker = (Math.sin(this.gameTime * 14) + 1) / 2;
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.15 + flicker * 0.2;
+                this.ctx.fillStyle = '#ff2a5f';
+                this.ctx.fillRect(px, py, pw, ph);
+                this.ctx.restore();
+                this.ctx.fillStyle = '#ff2a5f';
+                this.ctx.font = 'bold 13px "Courier New", Courier, monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('⚠ BATTERY CRITICAL -- RTB', px + pw / 2, py + ph - 16);
+                this.ctx.textAlign = 'left';
+            }
+        }
+
+        this.ctx.restore();
+    }
+
+    // FPV OPERATOR MODE: small base-cam inset shown alongside the large
+    // goggles view, centered on the pilot's own (stationary, vulnerable)
+    // body -- see spec section 7. Deliberately does NOT reuse
+    // drawPiPViewport wholesale (that draws a drone-following camera with
+    // drone-specific HUD text); this is a plain fixed-camera world snippet
+    // around the player instead. Restyled to be a deliberately LOW-key
+    // "security feed" (desaturated blue tint, scanlines, no foliage
+    // clutter) rather than a second fully-detailed viewport -- it should
+    // read as a quick glance for "is the base still standing", not compete
+    // with the drone feed for attention.
+    drawOperatorBaseCam(player, px, py, pw, ph) {
+        if (!player || player.dead) return;
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(2, 10, 18, 0.88)';
+        this.ctx.strokeStyle = player.hp < player.maxHp * 0.3 ? '#ff2a5f' : '#3a5a70';
+        this.ctx.lineWidth = 2;
+        this.ctx.fillRect(px, py, pw, ph);
+        this.ctx.strokeRect(px, py, pw, ph);
+
+        this.ctx.beginPath();
+        this.ctx.rect(px + 1, py + 1, pw - 2, ph - 2);
+        this.ctx.clip();
+
+        let zoom = 0.8;
+        let baseCam = { x: player.x - (pw / 2) / zoom, y: player.y - (ph / 2) / zoom, zoom };
+
+        this.ctx.translate(px, py);
+        this.ctx.scale(zoom, zoom);
+
+        // Deliberately skip drawFoliageGround/Canopy here -- ground
+        // clutter and canopy occlusion add visual noise this inset doesn't
+        // need; it only has to answer "is the perimeter holding".
+        this.map.draw(this.ctx, baseCam, pw, ph, true);
+        if (this.barriers) for (let bar of this.barriers) this.drawBarrier(bar, baseCam);
+        if (this.turrets) for (let t of this.turrets) t.draw(this.ctx, baseCam);
+        if (this.dogs) for (let d of this.dogs) d.draw(this.ctx, baseCam);
+        for (let e of this.enemies) e.draw(this.ctx, baseCam);
+        player.draw(this.ctx, baseCam);
+        this.map.drawRoofs(this.ctx, baseCam, pw, ph);
+
+        this.ctx.restore();
+
+        // Blue-grey desaturating tint over the whole rendered scene so it
+        // reads as a security monitor, not a second live viewport.
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(px + 1, py + 1, pw - 2, ph - 2);
+        this.ctx.clip();
+        this.ctx.fillStyle = 'rgba(10, 30, 45, 0.38)';
+        this.ctx.fillRect(px, py, pw, ph);
+        this.ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        for (let y = py; y < py + ph; y += 3) {
+            this.ctx.moveTo(px, y);
+            this.ctx.lineTo(px + pw, y);
+        }
+        this.ctx.stroke();
+        this.ctx.restore();
+
+        this.ctx.save();
+        this.ctx.font = 'bold 9px "Courier New", Courier, monospace';
+        this.ctx.fillStyle = '#5a8aa0';
+        this.ctx.fillText('BASE CAM', px + 8, py + 14);
+        this.ctx.restore();
+
         this.ctx.restore();
     }
 
@@ -14509,6 +16213,38 @@ class Game {
         if (this.isTwoPlayer && this.player2) {
             this._applyMetaStatsToPlayer(this.player2);
         }
+
+        // FPV OPERATOR MODE: spawn inside the hardened bunker (not map
+        // center) and strip down to the last-stand loadout described in
+        // spec section 4. Applied AFTER _applyMetaStatsToPlayer so meta
+        // progression bonuses (persistent upgrades from other runs) don't
+        // re-introduce armor/extra medpacks/etc that operator mode
+        // deliberately excludes -- operator mode always starts from the
+        // same fixed baseline regardless of meta progress.
+        if (this.operatorMode && this.map.operatorBaseZone) {
+            let bz = this.map.operatorBaseZone;
+            let setupOperatorPlayer = (p) => {
+                if (!p) return;
+                p.x = bz.x;
+                p.y = bz.y;
+                p.armor = 0;
+                p.maxArmor = 0;
+                p.medpacks = 3;
+                p.energyDrinks = 0;
+                p.grenades = 0;
+                p.mines = 0;
+                p.barriersCount = OP_TUNING.STARTING_BARRIERS;
+                p.turretsCount = 0;
+                p.dronesCount = 0;
+                p.fiberOpticOwned = true;   // tether removed -- see FPVDrone.update, 1500px unpilot check
+                p.droneUpgraded = true;     // Bomber payload (3 bombs) granted from wave 1, see bombsDropped checks throughout Game
+                p.inventory = [{ ...Weapons.pistol }];
+                p.weaponIdx = 0;
+                p.ammo = { shotgun: 0, smg: 0, lmg: 0, sniper: 0, m1a: 0 };
+            };
+            setupOperatorPlayer(this.player);
+            setupOperatorPlayer(this.player2);
+        }
         
         if (this.bullets) {
             for (let b of this.bullets) this.inactiveBullets.push(b);
@@ -14556,6 +16292,50 @@ class Game {
         this.barriers = [];
         this.permanentMarks = [];
         this.explosiveBarrels = [];
+
+        // FPV OPERATOR MODE: pre-placed defensive barrier formations around
+        // the bunker mouth, on top of the 3 barriers the player starts with
+        // in inventory to place themselves. Positions are in LOCAL bunker
+        // coordinates (fwd = distance north of base center, toward the
+        // mouth and beyond; right = lateral offset) since the bunker
+        // orientation is always fixed north -- see MapGen case 11. Layout,
+        // north to south:
+        //  - Forward tripwire (2): furthest out, first contact/early warning
+        //  - Flanking funnel (2): angled walls that guide approaching
+        //    enemies toward the chicane instead of a wide flank
+        //  - Inner chicane (2): staggered zig-zag right at the mouth,
+        //    forces enemies to slow and turn broadside into fire
+        //  - Side cover nubs (2): hug the bunker arms, give the player
+        //    peek-cover and protect a flanking turret's exposed side
+        if (this.operatorMode && this.map.operatorBaseZone) {
+            let bz = this.map.operatorBaseZone;
+            const formations = [
+                { fwd: 560, right: -220, angle: 0.3, len: 90 },
+                { fwd: 560, right: 220, angle: -0.3, len: 90 },
+                { fwd: 380, right: -260, angle: 1.0, len: 110 },
+                { fwd: 380, right: 260, angle: -1.0, len: 110 },
+                { fwd: 190, right: -90, angle: 0.4, len: 90 },
+                { fwd: 260, right: 100, angle: -0.4, len: 90 },
+                { fwd: 70, right: -300, angle: 0, len: 70 },
+                { fwd: 70, right: 300, angle: 0, len: 70 }
+            ];
+            for (let f of formations) {
+                // Bunker mouth always faces north (fx=0,fy=-1 / rx=1,ry=0
+                // in the fixed orientation MapGen case 11 uses), so local
+                // (fwd,right) maps to world as (baseX+right, baseY-fwd),
+                // and a local direction angle theta (0 = along the "right"
+                // axis, i.e. a pure east-west wall) maps to world direction
+                // (cos(theta), -sin(theta)).
+                let cx = bz.x + f.right, cy = bz.y - f.fwd;
+                let dx = Math.cos(f.angle), dy = -Math.sin(f.angle);
+                this.barriers.push({
+                    ax: cx - dx * (f.len / 2), ay: cy - dy * (f.len / 2),
+                    bx: cx + dx * (f.len / 2), by: cy + dy * (f.len / 2),
+                    r: 8, hp: 600, maxHp: 600, owner: this.player
+                });
+            }
+        }
+
         if (!this.isTestingMode) {
             // Spawn once, here, at run start -- explosive barrels never
             // respawn or get re-rolled between waves.
@@ -14653,7 +16433,26 @@ class Game {
         
         this.enemiesToSpawn = 5 + this.wave * 4;
         this.rollBossWave(); // may reduce enemiesToSpawn to an escort-sized fraction and set this.isBossWave/pendingBoss
-        if (!this.isBossWave) {
+
+        // FPV OPERATOR MODE: own escalation curve entirely -- overwrite
+        // whatever the stock formula above produced. No boss waves (already
+        // guaranteed by rollBossWave's early-return), no random mutators
+        // (Blackout/Swarm/Adrenaline/Juggernaut don't fit the "hunker in
+        // your bunker" premise and would fight the concurrency-cap pacing
+        // below). See FPV_OPERATOR_SPEC.md section 6.
+        if (this.operatorMode) {
+            this.enemiesToSpawn = OP_TUNING.WAVE_BASE_COUNT + this.wave * OP_TUNING.WAVE_PER_WAVE_COUNT;
+            this.activeMutator = null;
+            this.allEnemiesAreElite = false;
+            this.isBossWave = false;
+            this.pendingBossKey = null;
+            this.waveElapsedSeconds = 0;             // anti-turtle valve clock, see Enemy._updateOperatorAI
+            this.operatorEnemiesAliveCap = OP_TUNING.CONCURRENCY_CAP;
+            this.operatorSpawnQueue = [];             // packs waiting to be released, see the spawn-tick branch in update()
+            this.operatorNextPackTimer = 0;
+            this.operatorSpawnSectors = null;         // re-roll spawn lanes each wave, see _updateOperatorSpawning
+            this.tookDamageThisWave = false;          // clean-wave bonus tracker, see Entity.takeDamage + openShopInterface
+        } else if (!this.isBossWave) {
             this.rollWaveMutator();
         } else {
             // Boss waves don't also roll a mutator -- e.g. Juggernaut Protocol
@@ -14677,6 +16476,7 @@ class Game {
         this.pendingBossKey = null;
 
         if (this.isTestingMode) return; // sandbox never auto-rolls a boss; use the dev menu instead
+        if (this.operatorMode) return;  // FPV OPERATOR MODE: no boss waves -- per spec, escalating grunt pressure only (see startNextWave's operator branch)
         if (this.wave < 4 && !this.forcedBossKey) return; // no organic bosses before the player has a basic loadout -- forced (dev menu) bosses bypass this for testing
 
         this.wavesSinceLastBoss = (this.wavesSinceLastBoss || 0) + 1;
@@ -15684,12 +17484,49 @@ class Game {
                         this.floatingTexts.pop();
                     }
                 }
+
+                // Operator mode: intermission auto-advances after
+                // OP_TUNING.INTERMISSION_SECONDS even if the player never
+                // hits READY, per spec section 4 ("60s to build"). Normal/
+                // Sandbox shop screens are untouched -- they wait
+                // indefinitely for setReady(). Clicking READY still works
+                // normally (setReady(1) synchronously calls startNextWave()
+                // itself when solo, which resets this.state away from
+                // 'shop' before this timer block runs again) -- this timer
+                // only fires the auto-advance for the case where the player
+                // never clicks it.
+                if (this.operatorMode && !this.isDevShopActive) {
+                    if (this.operatorShopTimer === undefined || this.operatorShopTimer === null) {
+                        this.operatorShopTimer = OP_TUNING.INTERMISSION_SECONDS;
+                    }
+                    this.operatorShopTimer -= dt;
+                    let timerEl = document.getElementById('operator-shop-timer');
+                    if (timerEl) timerEl.textContent = Math.max(0, Math.ceil(this.operatorShopTimer));
+                    if (this.operatorShopTimer <= 0) {
+                        this.operatorShopTimer = null;
+                        this.startNextWave();
+                    }
+                }
             }
             return;
+        }
+
+        // Reset the intermission timer as soon as we're back in 'playing'
+        // (covers both the ready-up path and the auto-advance path above).
+        if (this.operatorMode && this.operatorShopTimer !== undefined) {
+            this.operatorShopTimer = null;
         }
         
         this.frameCounter = (this.frameCounter || 0) + 1;
         this.gameTime += dt;
+
+        if (this.operatorMode && this.map && this.map.updateOperatorRoofAlpha) {
+            this.map.updateOperatorRoofAlpha(dt);
+        }
+        if (this.operatorMode) {
+            if (this.player && this.player._opLaunchCooldown > 0) this.player._opLaunchCooldown -= dt;
+            if (this.player2 && this.player2._opLaunchCooldown > 0) this.player2._opLaunchCooldown -= dt;
+        }
 
         if (this.winFlashIntensity > 0) {
             this.winFlashIntensity -= dt * 0.7;
@@ -15715,6 +17552,7 @@ class Game {
             if (this.roundWinDelay <= 0) {
                 this.roundWinDelay = 0;
                 this.state = 'shop';
+                this.grantOperatorWavePayout();
                 this.openShopInterface();
             }
             return;
@@ -15739,8 +17577,14 @@ class Game {
                 }
             }
         }
+
+        if (this.operatorMode && this.prepTimer <= 0) {
+            this.waveElapsedSeconds = (this.waveElapsedSeconds || 0) + dt;
+        }
         
-        if (this.prepTimer <= 0 && this.enemiesToSpawn > 0) {
+        if (this.operatorMode && this.prepTimer <= 0 && this.enemiesToSpawn > 0) {
+            this._updateOperatorSpawning(dt);
+        } else if (this.prepTimer <= 0 && this.enemiesToSpawn > 0) {
             this.spawnTimer -= dt;
             if (this.spawnTimer <= 0) {
                 let ex = 0, ey = 0;
@@ -16151,6 +17995,22 @@ class Game {
             // Apply the hardcore HP penalty on top of the restored maxHp
             p.hp = Math.min(70, p.maxHp);
             p.armor = 0; // Strip all armor on hardcore death
+
+            // FPV OPERATOR MODE: a death mid-wave is revived under the
+            // SAME hardcore-strip-and-rebuild flow above (it's the correct
+            // base behavior -- lose your cash, come back weaker), but the
+            // baseline to rebuild TO is the operator loadout, not the
+            // standard hardcore baseline: no armor either way (already 0
+            // above), but fiber-optic and the drone Bomber payload are
+            // supposed to be permanent grants for the whole run, not
+            // consumable purchases -- without this, dying once would
+            // silently re-tether every subsequent drone flight and drop the
+            // Bomber payload for the rest of the run.
+            if (this.operatorMode) {
+                p.fiberOpticOwned = true;
+                p.droneUpgraded = true;
+                p.maxArmor = 0;
+            }
         };
         resetPlayer(this.player);
         if (this.isTwoPlayer) {
@@ -16201,6 +18061,127 @@ class Game {
         }
     }
     
+    // FPV OPERATOR MODE shop whitelist. Per spec section 4: barriers +
+    // barrier upgrade, trip mines, grenades, auto turret (cap raised to 3
+    // elsewhere in buyItem), spot robot (cap 1, no upgrade). Everything else
+    // (HP/armor/speed purchases, drone purchase/upgrade/fiber-optic -- all
+    // granted free at run start instead -- turret MK.II, dog upgrade, swarm
+    // drones, all ammo, all overclocks) is hidden. Self-restores when NOT in
+    // operator mode so a mid-session mode switch (impossible mid-run today
+    // since setGameMode is only reachable from the title screen, but cheap
+    // insurance) never leaves buttons stuck hidden for Normal/Sandbox.
+    applyOperatorShopWhitelist() {
+        const whitelist = new Set(['grenade', 'mine', 'barrier', 'barrier-upgrade', 'turret', 'dog']);
+        // Every btn-buy-* id suffix that currently exists in the shop DOM,
+        // enumerated explicitly rather than derived, so a future button
+        // addition defaults to HIDDEN in operator mode unless someone
+        // deliberately adds it here -- safer default for a mode this
+        // restrictive.
+        const allIds = ['hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost',
+            'barrier', 'barrier-upgrade', 'drone', 'drone-upgrade', 'fiber-optic',
+            'turret', 'turret-mk2', 'dog', 'dog-upgrade', 'swarm-drone', 'swarm-pack',
+            'ammo-shotgun', 'ammo-smg-std', 'ammo-lmg-std', 'ammo-sniper-std', 'ammo-m1a-std',
+            'ammo-smg-hp', 'ammo-lmg-ap', 'ammo-sniper-ap', 'ammo-pistol-hp', 'ammo-m1a-ap',
+            'oc-hollow', 'oc-servos', 'oc-mags', 'oc-firerate', 'oc-maxhp'];
+
+        for (let suffix of ['p1', 'p2']) {
+            let p = (suffix === 'p1') ? this.player : this.player2;
+
+            // FPV OPERATOR MODE: resupply only works from inside the base
+            // zone (spec section 4). The shop screen freezes simulation
+            // (state !== 'playing'), so the player's position at the instant
+            // openShopInterface() ran is exactly their position for the
+            // whole shop visit -- one check here is sufficient, no need to
+            // re-poll while the shop is open.
+            let inBaseZone = true;
+            if (this.operatorMode && p && this.map && this.map.operatorBaseZone) {
+                let bz = this.map.operatorBaseZone;
+                inBaseZone = Math.hypot(p.x - bz.x, p.y - bz.y) < bz.r;
+            }
+
+            for (let id of allIds) {
+                let btn = document.getElementById('btn-buy-' + id + '-' + suffix);
+                if (!btn) continue;
+                if (this.operatorMode) {
+                    let onWhitelist = whitelist.has(id);
+                    btn.style.display = onWhitelist ? '' : 'none';
+                    if (onWhitelist) {
+                        btn.disabled = !inBaseZone;
+                        btn.style.opacity = inBaseZone ? '' : '0.35';
+                        btn.title = inBaseZone ? '' : 'Return to base to resupply';
+                    }
+                } else {
+                    btn.style.display = '';
+                    btn.disabled = false;
+                    btn.style.opacity = '';
+                    btn.title = '';
+                }
+            }
+
+            let noticeId = 'operator-resupply-notice-' + suffix;
+            let notice = document.getElementById(noticeId);
+            if (notice) notice.style.display = (this.operatorMode && !inBaseZone) ? '' : 'none';
+
+            // Overclocks use a different id pattern (btn-buy-oc-*) already
+            // covered above. Fully-hidden sections in operator mode:
+            // Standard Munitions, Specialty Ammunition, Weapon Overclocks
+            // (every button in each is off-whitelist, so hide the header
+            // too rather than leaving an empty titled section).
+            let panel = document.getElementById('shop-box-' + suffix);
+            if (!panel) continue;
+            let headers = panel.querySelectorAll('.shop-section-title');
+            for (let h of headers) {
+                let text = h.textContent.trim();
+                let hideHeader = this.operatorMode && (text === 'Standard Munitions' || text === 'Specialty Ammunition' || text === 'Weapon Overclocks' || text === 'Inventory Ammunition');
+                h.style.display = hideHeader ? 'none' : '';
+            }
+        }
+    }
+
+    // FPV OPERATOR MODE: wave-clear payout, since per-kill cash is
+    // gated off in Enemy.onDeath (spec section 4 -- "you just earn
+    // money by surviving waves"). Uses accumulated kill-credits
+    // (incremented once per kill in onDeath) rather than raw
+    // damage-dealt tracking -- see FPV_OPERATOR_SPEC.md section 6 for
+    // why (a single choke point instead of touching every damage call
+    // site). Split evenly in 2P (not doubled) so co-op doesn't out-earn
+    // solo per-wave.
+    //
+    // IMPORTANT: this must run exactly once per wave clear -- call it only
+    // from the roundWinDelay transition into state 'shop'. openShopInterface()
+    // itself gets called repeatedly while the shop is open (after every
+    // purchase, after cancelling an overclock/ext-mags picker, from the dev
+    // dashboard, etc.) just to refresh the panel, so payout logic used to
+    // live there and re-granted a full wave payout on every single re-render
+    // -- e.g. clicking "buy" would deduct the item cost but then immediately
+    // re-award ~$220+ from this block, making purchases look like they
+    // ADD money instead of subtracting it. Keeping payout separate from the
+    // panel refresh fixes that.
+    grantOperatorWavePayout() {
+        if (!this.operatorMode) return;
+        let credits = this.operatorKillCredits || 0;
+        let payout = OP_TUNING.PAYOUT_BASE + this.wave * OP_TUNING.PAYOUT_PER_WAVE + Math.round(credits * OP_TUNING.PAYOUT_PER_KILL_CREDIT);
+        let cleanWave = !this.tookDamageThisWave;
+        if (cleanWave) payout += OP_TUNING.CLEAN_WAVE_BONUS;
+        this.operatorKillCredits = 0;
+        this.tookDamageThisWave = false;
+        if (this.isTwoPlayer && this.player2) {
+            let half = Math.round(payout / 2);
+            if (this.player) this.player.cash += half;
+            this.player2.cash += payout - half;
+        } else if (this.player) {
+            this.player.cash += payout;
+        }
+        this.floatingTexts.push(this.spawnFloatingText(
+            this.player.x, this.player.y - 30, `WAVE CLEAR +$${payout}`, '#39ff14', 2.2, 0, -90, 200, true
+        ));
+        if (cleanWave) {
+            this.floatingTexts.push(this.spawnFloatingText(
+                this.player.x, this.player.y - 55, `PERIMETER HOLD BONUS +$${OP_TUNING.CLEAN_WAVE_BONUS}`, '#00e5ff', 2.4, 0, -70, 180, true
+            ));
+        }
+    }
+
     openShopInterface() {
         // Award Intel: 2 per completed wave, +3 per Elite killed this wave
         let intelGained = 2 + (this._elitesKilledThisWave || 0) * 3;
@@ -16222,6 +18203,16 @@ class Game {
 
         // Toggle P2 shop visibility
         toggleClass('shop-box-p2', 'hidden', !this.isTwoPlayer);
+
+        // Operator mode intermission timer display -- see update()'s
+        // state==='shop' branch for the actual countdown/auto-advance logic.
+        toggleClass('operator-shop-timer-wrap', 'hidden', !this.operatorMode);
+        if (this.operatorMode) {
+            this.operatorShopTimer = OP_TUNING.INTERMISSION_SECONDS;
+            let timerEl = document.getElementById('operator-shop-timer');
+            if (timerEl) timerEl.textContent = OP_TUNING.INTERMISSION_SECONDS;
+        }
+        this.applyOperatorShopWhitelist();
         
         let updatePanel = (p, suffix) => {
             if (!p) return;
@@ -16235,7 +18226,17 @@ class Game {
             setHtml('shop-stat-grenades-' + suffix, p.grenades);
             setHtml('shop-stat-mines-' + suffix, p.mines);
             setHtml('shop-stat-barriers-' + suffix, (p.barriersCount || 0) + (p.barrierUpgraded ? ' (MK.II)' : ''));
-            setHtml('shop-stat-drones-' + suffix, ((p.dronesCount || 0) + (p.activeDrone && !p.activeDrone.dead ? 1 : 0)) + (p.droneUpgraded ? ' (BOMBER)' : ''));
+            // FPV OPERATOR MODE: drones are unlimited (launch-cooldown gated,
+            // not inventory-gated -- see handleDroneInput), so the normal
+            // "N / 3" inventory readout would be permanently misleading
+            // (always 0/3 even though the player can always launch another).
+            if (this.operatorMode) {
+                let onCooldown = (p._opLaunchCooldown || 0) > 0;
+                let statusText = (p.activeDrone && !p.activeDrone.dead) ? 'AIRBORNE' : (onCooldown ? 'RECHARGING' : 'READY');
+                setHtml('shop-stat-drones-' + suffix, '∞ (' + statusText + ')');
+            } else {
+                setHtml('shop-stat-drones-' + suffix, ((p.dronesCount || 0) + (p.activeDrone && !p.activeDrone.dead ? 1 : 0)) + (p.droneUpgraded ? ' (BOMBER)' : ''));
+            }
             let hasMk2Turret = p.turretsInventory.some(t => typeof t === 'object' && t.isMKII);
             setHtml('shop-stat-turrets-' + suffix, (p.turretsCount || 0) + (hasMk2Turret ? ' (MK.II)' : ''));
             setHtml('shop-stat-dogs-' + suffix, p.dogsCount || 0);
@@ -16554,7 +18555,7 @@ class Game {
                 this.addParticle(p.x, p.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#39ff14', 0.6, 3);
             }
             audio.playPickup('weapon');
-        } else if (type === 'turret' && p.cash >= 650 && (p.turretsCount || 0) < 1) {
+        } else if (type === 'turret' && p.cash >= 650 && (p.turretsCount || 0) < (this.operatorMode ? OP_TUNING.TURRET_CAP : 1)) {
             p.cash -= 650; p.turretsCount = (p.turretsCount || 0) + 1;
         } else if (type === 'turret_mk2' && p.cash >= 1200 && p.turretsCount < 1) {
             p.cash -= 1200;
@@ -17234,14 +19235,47 @@ class Game {
     }
 
     setTestingMode(enabled) {
-        this.isTestingMode = enabled;
-        if (enabled) {
-            document.getElementById('btn-sandbox-yes').classList.add('active-mode');
-            document.getElementById('btn-sandbox-no').classList.remove('active-mode');
+        // Back-compat shim: old dev-menu / touch bindings may still call
+        // this directly. Routes into the new tri-state setter.
+        this.setGameMode(enabled ? 'sandbox' : 'normal');
+    }
+
+    setGameMode(mode) {
+        // mode: 'normal' | 'sandbox' | 'operator'
+        this.gameMode = mode;
+        this.isTestingMode = (mode === 'sandbox');
+        this.operatorMode = (mode === 'operator');
+
+        ['normal', 'sandbox', 'operator'].forEach(m => {
+            const btn = document.getElementById('btn-gm-' + m);
+            if (btn) btn.classList.toggle('active-mode', m === mode);
+        });
+
+        // Operator mode forces template 11, hardcore FF, and 1P -- lock the
+        // relevant selectors so the player can't pick an inconsistent combo.
+        const mapListEl = document.querySelector('.map-list-scroll');
+        const ffButtons = ['off', 'standard', 'hardcore', 'pvp'].map(m => document.getElementById('btn-ff-' + m));
+        const coopBtn = document.getElementById('btn-mode-2p');
+        const soloBtn = document.getElementById('btn-mode-1p');
+
+        if (mode === 'operator') {
+            this.setMap(11);
+            this.setFriendlyFireMode('hardcore');
+            this.setMode(1);
+            if (mapListEl) mapListEl.style.opacity = '0.35';
+            if (mapListEl) mapListEl.style.pointerEvents = 'none';
+            ffButtons.forEach(b => { if (b) { b.disabled = true; b.style.opacity = '0.35'; } });
+            if (coopBtn) { coopBtn.disabled = true; coopBtn.style.opacity = '0.35'; }
+            if (soloBtn) soloBtn.style.opacity = '1';
         } else {
-            document.getElementById('btn-sandbox-no').classList.add('active-mode');
-            document.getElementById('btn-sandbox-yes').classList.remove('active-mode');
+            if (mapListEl) mapListEl.style.opacity = '1';
+            if (mapListEl) mapListEl.style.pointerEvents = 'auto';
+            ffButtons.forEach(b => { if (b) { b.disabled = false; b.style.opacity = '1'; } });
+            if (coopBtn) { coopBtn.disabled = false; coopBtn.style.opacity = '1'; }
+            // Only reset off the forced operator map if we were actually on it
+            if (this.selectedMapId === 11) this.setMap(-1);
         }
+        this.saveGameData();
     }
 
     setDifficulty(mode) {
@@ -17504,7 +19538,9 @@ class Game {
         }
         this.ctx.restore();
 
+        this.map.drawOperatorBiomeBands(this.ctx, cam, viewportW, viewportH);
         this.map.draw(this.ctx, cam, viewportW, viewportH);
+        this.map.drawFoliageGround(this.ctx, cam, viewportW, viewportH);
 
         if (this.explosiveBarrels) {
             for (let bar of this.explosiveBarrels) bar.draw(this.ctx, cam);
@@ -17709,6 +19745,9 @@ class Game {
         if (this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead) {
             this.player2.activeDrone.draw(this.ctx, cam);
         }
+
+        this.map.drawFoliageCanopy(this.ctx, cam, viewportW, viewportH);
+        this.map.drawRoofs(this.ctx, cam, viewportW, viewportH);
 
         // === MUZZLE FLASH PASS (world space, additive blending) ===
         {
@@ -18121,6 +20160,29 @@ class Game {
             this.ctx.restore();
         }
 
+        // 3b. FPV OPERATOR MODE: base-threat pulse, amber instead of red so
+        // it reads as "incoming" rather than "you personally are dying"
+        // (the red low-HP pulse above still fires independently on its own
+        // condition). Uses the same operatorBaseThreatLevel/heartbeatIntensity
+        // pairing computed in updateHeartbeat -- no separate distance calc.
+        if (this.operatorMode && !p.dead && (this.operatorBaseThreatLevel || 0) > 0.03 && hpPct >= 0.20) {
+            let threatLevel = this.operatorBaseThreatLevel;
+            let pulseFactor = this.heartbeatIntensity || 0;
+            let vigAlpha = threatLevel * (0.14 + 0.22 * pulseFactor);
+
+            this.ctx.save();
+            this.ctx.globalAlpha = Math.max(0, vigAlpha);
+            let radGrad = this.ctx.createRadialGradient(
+                x + w / 2, y + h / 2, h * 0.20,
+                x + w / 2, y + h / 2, w * 0.70
+            );
+            radGrad.addColorStop(0, 'rgba(255, 140, 0, 0)');
+            radGrad.addColorStop(1, 'rgba(255, 140, 0, 1.0)');
+            this.ctx.fillStyle = radGrad;
+            this.ctx.fillRect(x, y, w, h);
+            this.ctx.restore();
+        }
+
         // 4. FLASHBANG OVERLAY
         if (p.flashOpacity > 0) {
             this.ctx.fillStyle = `rgba(255, 255, 255, ${p.flashOpacity})`;
@@ -18240,17 +20302,58 @@ class Game {
         }
 
         if (this.state === 'playing' && !this.isPaused) {
+            // FPV OPERATOR MODE: while actively piloting, the drone feed
+            // becomes the large, centered "goggles" view instead of a small
+            // corner PiP (spec section 7) -- drawPiPViewport() takes
+            // arbitrary px/py/pw/ph and is otherwise a complete, self
+            // contained world-render pass, so this is a sizing/position
+            // change only, not new rendering logic. A small base-cam inset
+            // (bottom-left) takes over the corner-PiP slot so the operator
+            // can still see their own body/bunker while heads-down -- see
+            // drawOperatorBaseCam(). Non-piloted drones (placed/loitering)
+            // still use the small corner PiP exactly like every other mode.
+            let p1PilotingGoggles = this.operatorMode && this.player.activeDrone && !this.player.activeDrone.dead && this.player.activeDrone.isPiloted;
+            let p2PilotingGoggles = this.operatorMode && this.isTwoPlayer && this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead && this.player2.activeDrone.isPiloted;
+
+            if (p1PilotingGoggles || p2PilotingGoggles) {
+                if (p1PilotingGoggles) {
+                    // Near-fullscreen while piloting solo -- the previous
+                    // 0.86w x (0.65 of that)h sizing left visible margins
+                    // around the frame where the real body-cam viewport
+                    // showed through, which read as distracting "world
+                    // bleed" rather than the goggles being the dominant
+                    // view. Tiny margin left only so the frame border reads
+                    // as a border, not literally 0px.
+                    let gw = this.isTwoPlayer ? Math.round(this.width * 0.48) : Math.round(this.width * 0.88);
+                    let gh = this.isTwoPlayer ? Math.round(this.height * 0.86) : Math.round(this.height * 0.86);
+                    let gx = this.isTwoPlayer ? Math.round(this.width * 0.01) : Math.round((this.width - gw) / 2);
+                    let gy = Math.round((this.height - gh) / 2);
+                    this.drawPiPViewport(gx, gy, gw, gh, this.player.activeDrone);
+                    this.drawOperatorGogglesFrame(gx, gy, gw, gh);
+                    this.drawOperatorBaseCam(this.player, gx + 10, gy + gh - 122, 150, 110);
+                }
+                if (p2PilotingGoggles) {
+                    let gw = Math.round(this.width * 0.48);
+                    let gh = Math.round(this.height * 0.86);
+                    let gx = Math.round(this.width * 0.51);
+                    let gy = Math.round((this.height - gh) / 2);
+                    this.drawPiPViewport(gx, gy, gw, gh, this.player2.activeDrone);
+                    this.drawOperatorGogglesFrame(gx, gy, gw, gh);
+                    this.drawOperatorBaseCam(this.player2, gx + 10, gy + gh - 122, 150, 110);
+                }
+            }
+
             let pw = Math.max(240, Math.min(480, Math.round(this.width * 0.3)));
             if (this.isTwoPlayer) {
                 pw = Math.max(160, Math.min(280, Math.round(this.width * 0.15)));
             }
             let ph = Math.round(pw * 0.75);
 
-            if (this.player.activeDrone && !this.player.activeDrone.dead) {
+            if (this.player.activeDrone && !this.player.activeDrone.dead && !p1PilotingGoggles) {
                 let pipX = this.isTwoPlayer ? (this.width / 2 - pw - 20) : (this.width - pw - 20);
                 this.drawPiPViewport(pipX, 60, pw, ph, this.player.activeDrone);
             }
-            if (this.isTwoPlayer && this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead) {
+            if (this.isTwoPlayer && this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead && !p2PilotingGoggles) {
                 let pipX = this.width - pw - 20;
                 this.drawPiPViewport(pipX, 60, pw, ph, this.player2.activeDrone);
             }
