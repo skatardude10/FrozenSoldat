@@ -5394,6 +5394,56 @@ class MapGen {
         }
     }
 
+    // Finds the nearest unblocked nav node to (x,y) that has clear line of
+    // sight from (x,y), falling back to the plain nearest unblocked node if
+    // none qualify -- same contract as the two duplicated searches this
+    // replaces (see findPath below).
+    //
+    // PERF: the code this replaces looped over EVERY nav node and, for any
+    // node that was "currently closest" during that unsorted scan, ran a
+    // full wall-intersection test against the ENTIRE passed-in wall list
+    // (sometimes the whole map's walls, not just nearby ones) before
+    // possibly discarding it for a later, actually-closer node. That's
+    // O(navNodes x walls) in the worst case, done TWICE per findPath() call
+    // (once for the start node, once for the end node) -- measured at up to
+    // several tens of milliseconds for a single call on a busy map, easily
+    // the single most expensive thing in the whole game per call. Fixed by:
+    // (1) sorting candidates by distance first (cheap -- no wall checks) so
+    // we only pay for a wall scan on the few nearest candidates and can
+    // stop at the first clear one, instead of every node that was ever the
+    // running minimum during an unsorted pass, and (2) using
+    // getWallsNear()'s spatially-filtered wall list (queried from the
+    // segment midpoint, same pattern already used elsewhere for long
+    // sensing/LOS lines -- see FPVDrone's sensingTarget) instead of
+    // scanning every wall on the map for every candidate.
+    _findNearestClearNode(x, y, walls) {
+        let candidates = [];
+        for (let n of this.navNodes) {
+            if (n.blocked) continue;
+            candidates.push({ n, d: Math.hypot(n.x - x, n.y - y) });
+        }
+        if (candidates.length === 0) return null;
+        candidates.sort((a, b) => a.d - b.d);
+
+        for (let { n } of candidates) {
+            let midX = (x + n.x) / 2, midY = (y + n.y) / 2;
+            let localWalls = this.getWallsNear(midX, midY);
+            let clear = !localWalls.some(w => MathUtils.lineIntersectAABB(x, y, n.x, n.y, w));
+            if (clear && typeof game !== 'undefined' && game.barriers) {
+                for (let b of game.barriers) {
+                    if (MathUtils.lineIntersectCapsule(x, y, n.x, n.y, b)) {
+                        clear = false;
+                        break;
+                    }
+                }
+            }
+            if (clear) return n;
+        }
+        // Fallback: no node had clear LOS -- nearest one regardless (same
+        // as the original fallback behavior).
+        return candidates[0].n;
+    }
+
     findPath(startX, startY, endX, endY, walls) {
         // 1. Check direct line of sight first
         let hasDirectLOS = !walls.some(w => MathUtils.lineIntersectAABB(startX, startY, endX, endY, w));
@@ -5409,76 +5459,11 @@ class MapGen {
             return [{ x: endX, y: endY }];
         }
         
-        // 2. Find start node (closest node with line of sight)
-        let startNode = null;
-        let minDistStart = Infinity;
-        for (let n of this.navNodes) {
-            if (n.blocked) continue;
-            let d = Math.hypot(n.x - startX, n.y - startY);
-            if (d < minDistStart) {
-                let clear = !walls.some(w => MathUtils.lineIntersectAABB(startX, startY, n.x, n.y, w));
-                if (clear && typeof game !== 'undefined' && game.barriers) {
-                    for (let b of game.barriers) {
-                        if (MathUtils.lineIntersectCapsule(startX, startY, n.x, n.y, b)) {
-                            clear = false;
-                            break;
-                        }
-                    }
-                }
-                if (clear) {
-                    minDistStart = d;
-                    startNode = n;
-                }
-            }
-        }
-        
-        // 3. Find end node (closest node with line of sight)
-        let endNode = null;
-        let minDistEnd = Infinity;
-        for (let n of this.navNodes) {
-            if (n.blocked) continue;
-            let d = Math.hypot(n.x - endX, n.y - endY);
-            if (d < minDistEnd) {
-                let clear = !walls.some(w => MathUtils.lineIntersectAABB(endX, endY, n.x, n.y, w));
-                if (clear && typeof game !== 'undefined' && game.barriers) {
-                    for (let b of game.barriers) {
-                        if (MathUtils.lineIntersectCapsule(endX, endY, n.x, n.y, b)) {
-                            clear = false;
-                            break;
-                        }
-                    }
-                }
-                if (clear) {
-                    minDistEnd = d;
-                    endNode = n;
-                }
-            }
-        }
-        
-        // Fallback if no node has line of sight
-        if (!startNode) {
-            minDistStart = Infinity;
-            for (let n of this.navNodes) {
-                if (n.blocked) continue;
-                let d = Math.hypot(n.x - startX, n.y - startY);
-                if (d < minDistStart) {
-                    minDistStart = d;
-                    startNode = n;
-                }
-            }
-        }
-        if (!endNode) {
-            minDistEnd = Infinity;
-            for (let n of this.navNodes) {
-                if (n.blocked) continue;
-                let d = Math.hypot(n.x - endX, n.y - endY);
-                if (d < minDistEnd) {
-                    minDistEnd = d;
-                    endNode = n;
-                }
-            }
-        }
-        
+        // 2. Find start and end nodes (closest node with line of sight,
+        // falling back to plain-nearest if none qualify).
+        let startNode = this._findNearestClearNode(startX, startY, walls);
+        let endNode = this._findNearestClearNode(endX, endY, walls);
+
         if (!startNode || !endNode || startNode === endNode) {
             return [{ x: endX, y: endY }];
         }
@@ -6379,12 +6364,10 @@ class Player extends Entity {
             let targetCrosshairY = this.y + Math.sin(this.angle) * aimRange;
             let cam = this.isPlayer2 ? game.camera2 : game.camera;
 
-            let viewportW = game.isTwoPlayer ? game.width / 2 : game.width;
-            let cx = viewportW / 2;
-            let cy = game.height / 2;
-
-            input.mx = cx + (targetCrosshairX - cam.x - cx) * cam.zoom;
-            input.my = cy + (targetCrosshairY - cam.y - cy) * cam.zoom;
+            // World-space -> screen-pixel, matching the corrected camera
+            // transform (single ctx.scale(zoom), no center-pivot term).
+            input.mx = (targetCrosshairX - cam.x) * cam.zoom;
+            input.my = (targetCrosshairY - cam.y) * cam.zoom;
 
             let crossNode = this.isPlayer2 ? document.getElementById('crosshair-p2') : game.crosshair;
             if (crossNode) {
@@ -7205,8 +7188,7 @@ class Enemy extends Entity {
 
         let nearbyWalls = game.map.getWallsNear(this.x, this.y);
 
-        let enemyIndex = allEnemies.indexOf(this);
-        if (enemyIndex === -1) enemyIndex = 0;
+        let enemyIndex = this._aiStaggerId || 0;
 
         let shouldUpdateAI = (game.frameCounter % 30 === enemyIndex % 30) || (this.cachedTarget === null) || (this.cachedMoveAngle === undefined);
 
@@ -9942,7 +9924,17 @@ class Bullet {
 
             // Near-miss flyby audio check
             if (game) {
-                let activePlayers = [];
+                // PERF: this substep loop runs for every active bullet, every
+                // frame (and multiple times per bullet at high speed, via
+                // stepCount above) -- was allocating a brand-new 0-2 element
+                // array here on every single pass, which is a lot of GC
+                // pressure during a firefight with dozens of bullets in
+                // flight. Reuse a scratch array on `game` instead; it's
+                // rebuilt in place and fully consumed before this loop
+                // iteration ends, so sharing it across bullets/substeps is
+                // safe (nothing holds onto a reference past this block).
+                let activePlayers = game._scratchBulletPlayers || (game._scratchBulletPlayers = []);
+                activePlayers.length = 0;
                 if (game.player && !game.player.dead) activePlayers.push(game.player);
                 if (game.isTwoPlayer && game.player2 && !game.player2.dead) activePlayers.push(game.player2);
                 
@@ -10641,15 +10633,8 @@ class FPVDrone {
         if (this.isPiloted) {
             let input = (this.pilot === game.player2) ? game.input2 : game.input;
             let gp = null;
-            if (navigator.getGamepads) {
-                const gamepads = navigator.getGamepads();
-                let gpList = [];
-                for (let i = 0; i < gamepads.length; i++) {
-                    if (gamepads[i]) gpList.push(gamepads[i]);
-                }
-                
-                let { gp1, gp2 } = game.resolveGamepadAssignments(gpList);
-
+            if (game._gpFrame) {
+                let { gp1, gp2 } = game._gpFrame.resolved;
                 gp = (this.pilot === game.player2) ? gp2 : gp1;
             }
             
@@ -11280,6 +11265,14 @@ class RobotDog extends Entity {
         this.fireCooldown = 0;
         this.fireRate = 0.5; // 2 shots per second
         this.target = null;
+        // Companion field for this.target, and a cache for the threat count
+        // it's paired with -- see the staggered threat/target scan at the
+        // top of update() for why these exist (mirrors MiniDrone's
+        // targetGenId: Enemy instances are pooled/recycled, so a raw
+        // reference + .dead check alone can't detect "this is a different
+        // enemy now").
+        this.targetGenId = undefined;
+        this._cachedActiveThreatCount = undefined;
         
         // Leg animation step variables
         this.walkCycle = 0;
@@ -11338,40 +11331,92 @@ class RobotDog extends Entity {
         let dy = owner.y - this.y;
         let distToOwner = Math.hypot(dx, dy);
         let hasLOSOwner = !nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, owner.x, owner.y, w));
-        
-        // 1. Threat calculation: count visible enemies across the map for spotting!
-        let enemies = game.enemies;
-        let visibleEnemies = [];
-        for (let enemy of enemies) {
-            if (enemy.dead) continue;
-            let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
-            let hasLOS = !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w));
-            if (hasLOS) {
-                visibleEnemies.push({ enemy, dist: d });
+
+        // PERF: the threat-count + target-acquisition scan below was
+        // running EVERY FRAME for EVERY dog with no throttling at all --
+        // unlike Enemy AI, which deliberately staggers this exact class of
+        // work (per-entity wall-intersection LOS checks against every other
+        // combatant) across 30 frames via _aiStaggerId. It also used to pay
+        // for it TWICE: getHostilesFor()'s non-PvP return value is just a
+        // fresh copy of game.enemies, so "visible enemies" (for the
+        // hunker/retreat threat count) and "visible hostiles" (for
+        // targeting) were two full scans over the same entities, each with
+        // its own wall.some() check against the ENTIRE map wall list.
+        // Fixed by: (1) reusing the dog's existing _aiStaggerId stagger
+        // cadence (already used for its pathfinding below) so this only
+        // runs ~2/frame for the whole scene instead of once per dog per
+        // frame, (2) merging the two enemy scans into one, and (3) using
+        // getWallsNear's spatially-filtered wall list instead of the full
+        // map every time. Re-runs immediately (ignoring the stagger) if the
+        // cached target died or was pool-recycled into a different enemy
+        // (same generation-id check as MiniDrone's HUNTING target
+        // validation) so combat responsiveness doesn't visibly lag behind
+        // the 30-frame cadence.
+        let dogIndex = this._aiStaggerId || 0;
+        let targetStaleRecycle = this.target && this.target._aiStaggerId !== undefined && this.target._aiStaggerId !== this.targetGenId;
+        let shouldRescanThreats = (game.frameCounter % 30 === (dogIndex * 15) % 30) ||
+            this._cachedActiveThreatCount === undefined || !this.target || this.target.dead || targetStaleRecycle;
+
+        if (shouldRescanThreats) {
+            // Single pass over game.enemies computes both "how many are
+            // threatening me" (feeds the hunker/retreat decision below,
+            // exactly matching the original distance<800 threat radius)
+            // and "who's my closest target regardless of range" (matching
+            // the original uncapped-distance targeting/aim behavior) --
+            // same qualifying sets and same tie-break (closest wins) as
+            // before, just computed together instead of twice.
+            let activeThreatCount = 0;
+            let closestHostile = null;
+            let closestDist = Infinity;
+
+            for (let enemy of game.enemies) {
+                if (enemy.dead) continue;
+                let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+                let midX = (this.x + enemy.x) / 2, midY = (this.y + enemy.y) / 2;
+                let localWalls = game.map.getWallsNear(midX, midY);
+                let hasLOS = !localWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w));
+                if (!hasLOS) continue;
+                if (d < 800) activeThreatCount++;
+                if (d < closestDist) { closestDist = d; closestHostile = enemy; }
             }
-        }
-        
-        // Find closest visible hostile (PvP aware)
-        let hostiles = game.getHostilesFor(this);
-        let visibleHostiles = [];
-        for (let h of hostiles) {
-            if (h.dead) continue;
-            let d = Math.hypot(h.x - this.x, h.y - this.y);
-            let hasLOS = !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w));
-            if (hasLOS) visibleHostiles.push({ target: h, dist: d });
+
+            // PvP mode adds a handful of extra targetable assets (the
+            // opposing player and their turrets/dogs/drones) -- never more
+            // than a few objects, so this stays a plain scan. These never
+            // count toward activeThreatCount, matching the original
+            // behavior where only real Enemy instances trigger the dog's
+            // hunker/retreat response.
+            if (game.friendlyFireMode === 'pvp') {
+                const pvpOwner = this.owner;
+                const otherPlayer = (pvpOwner === game.player) ? game.player2 : game.player;
+                let pvpTargets = [];
+                if (otherPlayer && !otherPlayer.dead) pvpTargets.push(otherPlayer);
+                if (game.turrets) game.turrets.forEach(t => { if (t.owner !== pvpOwner && !t.dead) pvpTargets.push(t); });
+                if (game.dogs) game.dogs.forEach(d => { if (d !== this && d.owner !== pvpOwner && !d.dead) pvpTargets.push(d); });
+                if (game.miniDrones) game.miniDrones.forEach(md => { if (md.owner !== pvpOwner && !md.dead) pvpTargets.push(md); });
+                if (game.player && game.player.activeDrone && pvpOwner !== game.player) pvpTargets.push(game.player.activeDrone);
+                if (game.player2 && game.player2.activeDrone && pvpOwner !== game.player2) pvpTargets.push(game.player2.activeDrone);
+
+                for (let h of pvpTargets) {
+                    let d = Math.hypot(h.x - this.x, h.y - this.y);
+                    let midX = (this.x + h.x) / 2, midY = (this.y + h.y) / 2;
+                    let localWalls = game.map.getWallsNear(midX, midY);
+                    if (localWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w))) continue;
+                    if (d < closestDist) { closestDist = d; closestHostile = h; }
+                }
+            }
+
+            this.target = closestHostile;
+            this.targetGenId = closestHostile ? closestHostile._aiStaggerId : undefined;
+            this._cachedActiveThreatCount = activeThreatCount;
         }
 
-        let closestHostile = null;
-        if (visibleHostiles.length > 0) {
-            visibleHostiles.sort((a, b) => a.dist - b.dist);
-            closestHostile = visibleHostiles[0].target;
-        }
-        this.target = closestHostile;
-        
+        let closestHostile = this.target;
+        let activeThreatCount = this._cachedActiveThreatCount || 0;
+
         // Determine state based on active threats (enemies within 800px)
         let hpPct = this.hp / this.maxHp;
-        let activeThreats = visibleEnemies.filter(ve => ve.dist < 800);
-        let isThreatened = activeThreats.length > 0;
+        let isThreatened = activeThreatCount > 0;
         
         if (this.waypoint) {
             this.waypointTimer -= dt;
@@ -11396,7 +11441,7 @@ class RobotDog extends Entity {
             this.targetItem = null;
         } else if (isThreatened) {
             // Hunkered condition: HP > 40% and manageable enemies (<= 2)
-            if (hpPct > 0.4 && activeThreats.length <= 2) {
+            if (hpPct > 0.4 && activeThreatCount <= 2) {
                 this.state = 'HUNKERED';
             } else {
                 this.state = 'RETREATING';
@@ -11575,8 +11620,9 @@ class RobotDog extends Entity {
                 let distToDest = Math.hypot(destX - this.x, destY - this.y);
                 
                 if (distToDest > 5) {
-                    let dogIndex = game.dogs ? game.dogs.indexOf(this) : 0;
-                    if (dogIndex === -1) dogIndex = 0;
+                    // dogIndex already computed near the top of update() for
+                    // the threat-scan stagger; reused here for the same
+                    // per-dog pathfinding stagger cadence as before.
                     
                     // Construct unique key for tracking target change
                     let targetKey = "";
@@ -11974,6 +12020,11 @@ class MiniDrone extends Entity {
         this.hp = 1;
         this.state = 'ORBITING';
         this.target = null;
+        // Companion field for this.target -- see the HUNTING-state target
+        // validation below for why this exists (Enemy instances are pooled
+        // and reused, so a raw reference + .dead check alone isn't enough
+        // to detect "this is a different enemy now").
+        this.targetGenId = null;
         this.vx = 0;
         this.vy = 0;
         this.orbitAngle = Math.random() * Math.PI * 2;
@@ -12079,6 +12130,7 @@ class MiniDrone extends Entity {
                 if (nearestEnemy) {
                     this.state = 'HUNTING';
                     this.target = nearestEnemy;
+                    this.targetGenId = nearestEnemy._aiStaggerId;
                     nearestEnemy.lastMiniDroneTargetTime = game.gameTime;
                     this.owner.lastMiniDroneBreakoffTime = game.gameTime;
                     this.initAudio();
@@ -12180,7 +12232,16 @@ class MiniDrone extends Entity {
         }
         
         if (this.state === 'HUNTING') {
-            if (!this.target || this.target.dead) {
+            // Enemy is pooled/recycled (see game.spawnEnemy/inactiveEnemies):
+            // a dead enemy's object can be handed back out as a brand-new
+            // enemy elsewhere on the map. `.dead` alone can't detect that --
+            // the recycled object is freshly alive again -- so also check
+            // that its per-spawn _aiStaggerId still matches the one we
+            // captured when we acquired this target. A mismatch means "this
+            // is a different enemy now wearing the same object," not "still
+            // my original target."
+            let targetIsStaleRecycle = this.target && this.target._aiStaggerId !== undefined && this.target._aiStaggerId !== this.targetGenId;
+            if (!this.target || this.target.dead || targetIsStaleRecycle) {
                 let nearestEnemy = null;
                 let nearestDist = 600;
                 let walls = game.map.walls;
@@ -12198,6 +12259,7 @@ class MiniDrone extends Entity {
                 }
                 if (nearestEnemy) {
                     this.target = nearestEnemy;
+                    this.targetGenId = nearestEnemy._aiStaggerId;
                 } else {
                     this.detonate();
                     return;
@@ -13635,6 +13697,13 @@ class Game {
         this.inactiveBullets = [];
         this.inactiveEnemies = [];
         this.inactiveFloatingTexts = [];
+        // Ever-incrementing id source for the AI update stagger (see
+        // spawnEnemy/RobotDog and the shouldUpdateAI checks in
+        // Enemy.update/RobotDog.update). Deliberately never reset/reused --
+        // a stable id per spawn is the whole point (see comment at the
+        // shouldUpdateAI site for why deriving it from array position was
+        // buggy).
+        this.nextAiStaggerId = 0;
         
         this.shopItemIDs = [
             'hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost', 
@@ -13729,6 +13798,11 @@ class Game {
         } else {
             e = new Enemy(x, y, config);
         }
+        // Stable AI stagger id -- see Enemy.update's shouldUpdateAI check.
+        // Assigned fresh on every spawn (including pooled/recycled
+        // instances), which is correct: each spawn is a "new" enemy for
+        // staggering purposes regardless of object reuse.
+        e._aiStaggerId = this.nextAiStaggerId++;
 
         // FPV OPERATOR MODE: attach a fresh AI-overlay component on every
         // spawn. Must happen HERE rather than in Enemy.init()/constructor --
@@ -14184,14 +14258,13 @@ class Game {
                 r: radius * (0.45 + Math.random() * 0.55)
             });
         }
-        this.permanentMarks.push({
+        this._pushPermanentMark({
             type: 'scorch',
             x, y,
             blotches,
             r: radius,
             a: 0.55 + Math.random() * 0.15
         });
-        if (this.permanentMarks.length > 3000) this.permanentMarks.shift();
     }
     
     initDOM() {
@@ -14394,6 +14467,54 @@ class Game {
         }
     }
 
+    // --- Consolidated, zero-allocation-after-warmup gamepad polling --------
+    // navigator.getGamepads() was previously being read and mapped into
+    // brand-new arrays/objects independently in THREE places every single
+    // frame: pollGamepad() (which also normalizes 18 button objects PER
+    // connected pad), the raw gp1/gp2 lookup at the top of update() that
+    // feeds Player.update(), and FPVDrone.update() while piloting a drone.
+    // That's up to ~4 redundant Gamepad API reads and resolveGamepadAssignments()
+    // calls per rendered frame (each slicing/filtering arrays and allocating
+    // closures), even though the Gamepad API itself only actually refreshes
+    // once per animation frame -- all of that duplicate work produced
+    // identical results and was pure GC churn. refreshGamepadFrame() now
+    // computes gpList + the resolved {gp1, gp2} assignment exactly once,
+    // into pooled/reused backing objects, at the very top of update(); every
+    // other call site below just reads game._gpFrame for the rest of the
+    // frame instead of re-polling.
+    refreshGamepadFrame() {
+        if (!navigator.getGamepads) {
+            this._gpFrame = { list: this._gpEmptyList || (this._gpEmptyList = []), resolved: { gp1: null, gp2: null } };
+            return this._gpFrame;
+        }
+        const gamepads = navigator.getGamepads();
+        if (!this._gpPool) { this._gpPool = []; this._gpList = []; }
+        while (this._gpPool.length < gamepads.length) {
+            let buttons = [];
+            for (let b = 0; b < 18; b++) buttons.push({ pressed: false, value: 0 });
+            this._gpPool.push({ buttons, axes: [0, 0, 0, 0], id: '', index: -1 });
+        }
+        this._gpList.length = 0;
+        for (let i = 0; i < gamepads.length; i++) {
+            let gp = gamepads[i];
+            if (!gp) continue;
+            let slot = this._gpPool[i];
+            for (let b = 0; b < 18; b++) {
+                let src = gp.buttons && gp.buttons[b];
+                slot.buttons[b].pressed = src ? src.pressed : false;
+                slot.buttons[b].value = src ? src.value : 0;
+            }
+            for (let a = 0; a < 4; a++) {
+                slot.axes[a] = (gp.axes && gp.axes[a] !== undefined) ? gp.axes[a] : 0;
+            }
+            slot.id = gp.id || "Gamepad";
+            slot.index = i;
+            this._gpList.push(slot);
+        }
+        this._gpFrame = { list: this._gpList, resolved: this.resolveGamepadAssignments(this._gpList) };
+        return this._gpFrame;
+    }
+
     // --- Manual Gamepad-to-Player Assignment ---
     // Lets the player pin a specific detected controller (by its live browser slot
     // index) to Player 1 or Player 2, instead of relying purely on auto-detection.
@@ -14403,15 +14524,27 @@ class Game {
     resolveGamepadAssignments(gpList) {
         let p1Choice = (this.saveData && this.saveData.p1GamepadChoice) || 'auto';
         let p2Choice = (this.saveData && this.saveData.p2GamepadChoice) || 'auto';
-        let pool = gpList.slice();
+        // Reused scratch array instead of gpList.slice() every call -- this
+        // runs once per frame now (see refreshGamepadFrame), but there's no
+        // reason to allocate a fresh array/closure-heavy .filter() chain
+        // when an index-based splice does the identical, order-preserving
+        // job in place.
+        let pool = this._gpAssignPool || (this._gpAssignPool = []);
+        pool.length = 0;
+        for (let i = 0; i < gpList.length; i++) pool.push(gpList[i]);
         let gp1 = null, gp2 = null;
 
         const claim = (choice) => {
             if (choice === 'none' || choice === 'auto') return null;
             let idx = parseInt(choice);
-            let found = pool.find(gp => gp.index === idx) || null;
-            if (found) pool = pool.filter(gp => gp !== found);
-            return found;
+            for (let i = 0; i < pool.length; i++) {
+                if (pool[i].index === idx) {
+                    let found = pool[i];
+                    pool.splice(i, 1);
+                    return found;
+                }
+            }
+            return null;
         };
 
         gp1 = claim(p1Choice);
@@ -14421,7 +14554,7 @@ class Game {
         // (both-auto) case: one gamepad in a 2-player game goes to Player 2.
         if (p1Choice === 'auto' && p2Choice === 'auto' && pool.length === 1 && this.isTwoPlayer) {
             gp2 = pool[0];
-            pool = [];
+            pool.length = 0;
         }
         if (p1Choice === 'auto' && gp1 === null && pool.length > 0) {
             gp1 = pool.shift();
@@ -14459,8 +14592,8 @@ class Game {
         }
     }
 
-    refreshGamepadAssignmentStatus(gpList) {
-        let { gp1, gp2 } = this.resolveGamepadAssignments(gpList);
+    refreshGamepadAssignmentStatus(gpList, precomputedResolved) {
+        let { gp1, gp2 } = precomputedResolved || this.resolveGamepadAssignments(gpList);
         const fmt = (gp) => gp ? ('Gamepad ' + (gp.index + 1) + ((gp.id) ? ' — ' + gp.id.substring(0, 24) : '')) : 'No gamepad (keyboard/mouse or touch)';
         let s1 = 'Currently: ' + fmt(gp1);
         let s2 = 'Currently: ' + fmt(gp2);
@@ -14566,11 +14699,12 @@ class Game {
         if (!player) return { x: 0, y: 0 };
         let cam = player.isPlayer2 ? this.camera2 : this.camera;
         let input = player.isPlayer2 ? this.input2 : this.input;
-        let viewportW = this.isTwoPlayer ? this.width / 2 : this.width;
-        let cx = viewportW / 2;
-        let cy = this.height / 2;
-        let wx = cam.x + cx + (input.mx - cx) / cam.zoom;
-        let wy = cam.y + cy + (input.my - cy) / cam.zoom;
+        // Screen-pixel -> world-space, matching the single ctx.scale(zoom)
+        // transform applied in draw() (see camera zoom fix). No center-pivot
+        // term here: cam.x/cam.y already denote the world point that maps to
+        // screen pixel 0, so world = cam + screenPixels / zoom.
+        let wx = cam.x + input.mx / cam.zoom;
+        let wy = cam.y + input.my / cam.zoom;
         return { x: wx, y: wy };
     }
 
@@ -14619,36 +14753,15 @@ class Game {
 
     pollGamepad(dt) {
         if (!navigator.getGamepads) return false;
-        const gamepads = navigator.getGamepads();
-        let gpList = [];
-        for (let i = 0; i < gamepads.length; i++) {
-            let gp = gamepads[i];
-            if (gp) {
-                let normalizedButtons = [];
-                for (let b = 0; b < 18; b++) {
-                    if (gp.buttons && gp.buttons[b]) {
-                        normalizedButtons.push({
-                            pressed: gp.buttons[b].pressed,
-                            value: gp.buttons[b].value
-                        });
-                    } else {
-                        normalizedButtons.push({ pressed: false, value: 0 });
-                    }
-                }
-                let normalizedAxes = [];
-                for (let a = 0; a < 4; a++) {
-                    normalizedAxes.push((gp.axes && gp.axes[a] !== undefined) ? gp.axes[a] : 0);
-                }
-                gpList.push({
-                    buttons: normalizedButtons,
-                    axes: normalizedAxes,
-                    id: gp.id || "Gamepad",
-                    index: i
-                });
-            }
-        }
+        // gpList + the resolved gp1/gp2 assignment are computed once per
+        // frame by refreshGamepadFrame() (called at the top of update(),
+        // just before this) and reused here instead of polling and
+        // normalizing the Gamepad API a second time -- see that method's
+        // comment for why.
+        let frame = this._gpFrame || this.refreshGamepadFrame();
+        let gpList = frame.list;
 
-        this.refreshGamepadAssignmentStatus(gpList);
+        this.refreshGamepadAssignmentStatus(gpList, frame.resolved);
 
         if (gpList.length === 0) return false;
 
@@ -14672,7 +14785,7 @@ class Game {
         if (this.dpadCooldown > 0) this.dpadCooldown -= dt;
         if (this.gpadPauseCooldown > 0) this.gpadPauseCooldown -= dt;
 
-        let { gp1, gp2 } = this.resolveGamepadAssignments(gpList);
+        let { gp1, gp2 } = frame.resolved;
 
         // --- Sub-Modal Overlay Interception (must be checked before all other states) ---
         if (this.perkSelectingPlayer) {
@@ -14681,6 +14794,18 @@ class Game {
         }
         if (this.extMagsSelectingPlayer) {
             this.handleExtMagsMenuNavigation(gpList);
+            return true;
+        }
+
+        // Dev Dashboard Controller Navigation -- must be checked before the
+        // isPaused branch below, since opening the dev dashboard also sets
+        // isPaused = true (see toggleDevDashboard). Without this check first,
+        // the pause-menu handler was intercepting all gamepad input while the
+        // dev dashboard was open, and it has no idea the dev dashboard's
+        // buttons exist.
+        const devDashboardEl = document.getElementById('dev-dashboard');
+        if (devDashboardEl && !devDashboardEl.classList.contains('hidden')) {
+            this.handleDevMenuNavigation(gpList);
             return true;
         }
 
@@ -15085,6 +15210,147 @@ class Game {
         this.refreshPauseMenuHighlight();
     }
 
+    // ==== DEV DASHBOARD: generic gamepad navigation ====
+    // Unlike the main/pause menus (hand-maintained row/column arrays of
+    // button ids), this dashboard's content is denser, has a dynamically
+    // populated boss grid, and is likely to keep growing -- a hand-maintained
+    // array here would drift out of sync the same way the main menu's
+    // game-mode/friendly-fire rows already did (see the tabRows fix nearby).
+    // Instead this collects whatever buttons/inputs are actually visible
+    // right now and navigates between them spatially by on-screen position,
+    // so it can't go stale as the dashboard's contents change.
+    handleDevMenuNavigation(gpList) {
+        if (document.activeElement && document.activeElement.tagName === 'BUTTON') {
+            document.activeElement.blur();
+        }
+
+        const overlay = document.getElementById('dev-dashboard');
+        if (!overlay) return;
+
+        const devTabs = ['dev-resources', 'dev-spawners', 'dev-mutators', 'dev-perks'];
+        let activeTabContent = overlay.querySelector('.tab-content.active');
+        let activeTabName = activeTabContent ? activeTabContent.id.replace('tab-', '') : 'dev-resources';
+        let currentTabIdx = devTabs.indexOf(activeTabName);
+        if (currentTabIdx === -1) currentTabIdx = 0;
+
+        // Focusable = the tab bar buttons, everything inside the active tab
+        // panel, and the close button at the bottom of the dashboard.
+        let focusable = Array.from(overlay.querySelectorAll(
+            '.tabs-container .tab-button, .tab-content.active button, .tab-content.active input, .menu-box > button.neon-btn'
+        )).filter(el => el.offsetParent !== null);
+
+        if (focusable.length === 0) return;
+        if (!this.devMenuFocusEl || !focusable.includes(this.devMenuFocusEl)) {
+            this.devMenuFocusEl = focusable[0];
+        }
+
+        for (let gp of gpList) {
+            let dUp = gp.buttons[12].pressed || (gp.axes[1] && gp.axes[1] < -0.5);
+            let dDown = gp.buttons[13].pressed || (gp.axes[1] && gp.axes[1] > 0.5);
+            let dLeft = gp.buttons[14].pressed || (gp.axes[0] && gp.axes[0] < -0.5);
+            let dRight = gp.buttons[15].pressed || (gp.axes[0] && gp.axes[0] > 0.5);
+            let btnLB = gp.buttons[4].pressed;
+            let btnRB = gp.buttons[5].pressed;
+            let btnA = gp.buttons[0].pressed;
+            let btnB = gp.buttons[1].pressed;
+
+            if (this.dpadCooldown <= 0) {
+                if (btnLB) {
+                    let nextTabIdx = (currentTabIdx - 1 + devTabs.length) % devTabs.length;
+                    this.switchDevTab(devTabs[nextTabIdx]);
+                    this.devMenuFocusEl = null;
+                    this.dpadCooldown = 0.25;
+                    this.refreshDevMenuHighlight();
+                    return;
+                } else if (btnRB) {
+                    let nextTabIdx = (currentTabIdx + 1) % devTabs.length;
+                    this.switchDevTab(devTabs[nextTabIdx]);
+                    this.devMenuFocusEl = null;
+                    this.dpadCooldown = 0.25;
+                    this.refreshDevMenuHighlight();
+                    return;
+                }
+            }
+
+            if (btnB && this.gpadButtonCooldown <= 0) {
+                this.toggleDevDashboard();
+                this.gpadButtonCooldown = 0.3;
+                return;
+            }
+
+            if (this.dpadCooldown <= 0 && (dUp || dDown || dLeft || dRight)) {
+                let dir = dUp ? 'up' : dDown ? 'down' : dLeft ? 'left' : 'right';
+                let next = this._spatialNavigate(focusable, this.devMenuFocusEl, dir);
+                if (next) {
+                    this.devMenuFocusEl = next;
+                    this.dpadCooldown = 0.18;
+                    this.refreshDevMenuHighlight();
+                    return;
+                }
+            }
+
+            if (btnA && this.gpadButtonCooldown <= 0) {
+                if (this.devMenuFocusEl) {
+                    this.devMenuFocusEl.click();
+                    this.gpadButtonCooldown = 0.25;
+                    this.refreshDevMenuHighlight();
+                }
+                return;
+            }
+        }
+
+        this.refreshDevMenuHighlight();
+    }
+
+    refreshDevMenuHighlight() {
+        const overlay = document.getElementById('dev-dashboard');
+        if (!overlay) return;
+        overlay.querySelectorAll('.focused-btn').forEach(el => el.classList.remove('focused-btn'));
+        if (this.devMenuFocusEl) {
+            this.devMenuFocusEl.classList.add('focused-btn');
+            this.devMenuFocusEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+    }
+
+    // Generic nearest-neighbor-in-a-direction navigation, used by the dev
+    // dashboard above. Among all candidate elements whose center lies
+    // (roughly) in `direction` from fromEl's center, picks the one that's
+    // closest -- weighting the perpendicular offset more heavily than the
+    // travel-axis distance so it reads as "move to the next row/column"
+    // rather than "jump to whatever's technically nearest on screen."
+    _spatialNavigate(elements, fromEl, direction) {
+        if (!fromEl) return elements[0];
+        let fromRect = fromEl.getBoundingClientRect();
+        let fx = fromRect.left + fromRect.width / 2;
+        let fy = fromRect.top + fromRect.height / 2;
+
+        let best = null;
+        let bestScore = Infinity;
+        for (let el of elements) {
+            if (el === fromEl) continue;
+            let r = el.getBoundingClientRect();
+            let ex = r.left + r.width / 2;
+            let ey = r.top + r.height / 2;
+            let dx = ex - fx;
+            let dy = ey - fy;
+
+            let inDirection = false;
+            let primary = 0, secondary = 0;
+            if (direction === 'up' && dy < -1) { inDirection = true; primary = -dy; secondary = Math.abs(dx); }
+            else if (direction === 'down' && dy > 1) { inDirection = true; primary = dy; secondary = Math.abs(dx); }
+            else if (direction === 'left' && dx < -1) { inDirection = true; primary = -dx; secondary = Math.abs(dy); }
+            else if (direction === 'right' && dx > 1) { inDirection = true; primary = dx; secondary = Math.abs(dy); }
+            if (!inDirection) continue;
+
+            let score = primary + secondary * 3;
+            if (score < bestScore) {
+                bestScore = score;
+                best = el;
+            }
+        }
+        return best;
+    }
+
     refreshPauseMenuHighlight() {
         let allBtns = document.querySelectorAll('#pause-screen button, #pause-screen input');
         allBtns.forEach(btn => btn.classList.remove('focused-btn'));
@@ -15125,6 +15391,7 @@ class Game {
         let targetElement = document.getElementById(targetId);
         if (targetElement) {
             targetElement.classList.add('focused-btn');
+            targetElement.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         }
     }
 
@@ -15149,9 +15416,9 @@ class Game {
                 ['btn-mode-1p', 'btn-mode-2p'],
                 ['btn-env-day', 'btn-env-night'],
                 ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
-                ['btn-sandbox-no', 'btn-sandbox-yes'],
+                ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator'],
                 ['btn-cash-down', 'btn-cash-up'],
-                ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore'],
+                ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore', 'btn-ff-pvp'],
                 ['sld-time-scale'],
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
                 ['btn-start'],
@@ -15342,9 +15609,9 @@ class Game {
                 ['btn-mode-1p', 'btn-mode-2p'],
                 ['btn-env-day', 'btn-env-night'],
                 ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
-                ['btn-sandbox-no', 'btn-sandbox-yes'],
+                ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator'],
                 ['btn-cash-down', 'btn-cash-up'],
-                ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore'],
+                ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore', 'btn-ff-pvp'],
                 ['sld-time-scale'],
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
                 ['btn-start'],
@@ -15395,6 +15662,11 @@ class Game {
         let targetElement = document.getElementById(targetId);
         if (targetElement) {
             targetElement.classList.add('focused-btn');
+            // Bring the focused control into view within whatever scrollable
+            // container it lives in (e.g. the maps tab's list) -- the
+            // selector index was already advancing correctly, but nothing
+            // was moving the scroll position to follow it.
+            targetElement.scrollIntoView({ block: 'nearest', inline: 'nearest' });
             if (activeTab === 'maps' && targetElement.id.startsWith('btn-map-')) {
                 let mId = targetElement.id.replace('btn-map-', '');
                 if (mId === 'random') mId = '-1';
@@ -15581,6 +15853,7 @@ class Game {
         if (!overlap) {
             let dogData = player.dogsInventory.pop();
             let dog = new RobotDog(cx, cy, player);
+            dog._aiStaggerId = this.nextAiStaggerId++;
             if (typeof dogData === 'object' && dogData !== null) {
                 dog.hp = dogData.hp;
                 dog.upgraded = dogData.upgraded || false;
@@ -16258,7 +16531,17 @@ class Game {
             // matching guard in the death-cleanup loop below), but this
             // reset path guards it too since it's cheap insurance.
             for (let e of this.enemies) {
-                if (!(e instanceof Boss)) this.inactiveEnemies.push(e);
+                if (!(e instanceof Boss)) {
+                    // Sterilize cached references before parking this object
+                    // in the pool -- see the per-death cleanup loop below for
+                    // the full rationale (same fix, applied to the bulk
+                    // reset path).
+                    e.target = null;
+                    e.waypoint = null;
+                    e.cachedTarget = null;
+                    e.opAI = null;
+                    this.inactiveEnemies.push(e);
+                }
             }
         }
         if (this.floatingTexts) {
@@ -16660,12 +16943,12 @@ class Game {
 
             if (p.color === '#800a0a' || p.color === '#e60000') {
                 if (p.stopped || p.life <= 0) {
-                    this.permanentMarks.push({ type: 'blood', x: p.x, y: p.y, r: p.size/1.8, c: p.color });
+                    this._pushPermanentMark({ type: 'blood', x: p.x, y: p.y, r: p.size/1.8, c: p.color });
                     shouldDeactivate = true;
                 }
             } else if (p.isCasing) {
                 if (p.stopped || p.life <= 0) {
-                    this.permanentMarks.push({ type: 'casing', x: p.x, y: p.y, a: p.angle || 0, c: p.color });
+                    this._pushPermanentMark({ type: 'casing', x: p.x, y: p.y, a: p.angle || 0, c: p.color });
                     shouldDeactivate = true;
                 }
             } else if (p.isCorpseDebris) {
@@ -16673,7 +16956,7 @@ class Game {
                     let speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
                     if (speed > 20) {
                         let trailAlpha = Math.min(0.25, speed / 600) * (p.life / p.maxLife);
-                        this.permanentMarks.push({ type: 'trail', x: p.x, y: p.y, r: p.size * 0.5, c: p.debrisColor, a: trailAlpha });
+                        this._pushPermanentMark({ type: 'trail', x: p.x, y: p.y, r: p.size * 0.5, c: p.debrisColor, a: trailAlpha });
                     }
                 }
                 if (p.stopped || p.life <= 0) {
@@ -16686,7 +16969,7 @@ class Game {
                             r: p.size * (0.4 + Math.random() * 0.6)
                         });
                     }
-                    this.permanentMarks.push({ type: 'debris', x: p.x, y: p.y, c: p.debrisColor, a: p.finalOpacity, circs: circles });
+                    this._pushPermanentMark({ type: 'debris', x: p.x, y: p.y, c: p.debrisColor, a: p.finalOpacity, circs: circles });
                     shouldDeactivate = true;
                 }
             } else if (p.life <= 0 || p.stopped) {
@@ -16694,7 +16977,6 @@ class Game {
             }
 
             if (shouldDeactivate) {
-                if (this.permanentMarks.length > 3000) this.permanentMarks.shift();
                 p.active = false;
                 this.inactiveParticles.push(p);
                 this.particles[i] = this.particles[this.particles.length - 1];
@@ -17460,6 +17742,7 @@ class Game {
     }
 
     update(dt) {
+        this.refreshGamepadFrame();
         this.pollGamepad(dt);
 
         if (this.isTestingMode) {
@@ -17664,14 +17947,7 @@ class Game {
             }
         }
 
-        let gpListRaw = [];
-        if (navigator.getGamepads) {
-            const gamepads = navigator.getGamepads();
-            for (let i = 0; i < gamepads.length; i++) {
-                if (gamepads[i]) gpListRaw.push(gamepads[i]);
-            }
-        }
-        let { gp1, gp2 } = this.resolveGamepadAssignments(gpListRaw);
+        let { gp1, gp2 } = this._gpFrame.resolved;
 
         let p1Walls = this.map.getWallsNear(this.player.x, this.player.y);
         this.player.update(dt, this.input, p1Walls, this.gameTime, gp1);
@@ -17941,6 +18217,19 @@ class Game {
                     this.items.push(new Item(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'redbull'));
                 }
                 
+                // Sterilize pooled references immediately on death rather
+                // than waiting for the next spawnEnemy()/init() call (which
+                // already resets these -- see Enemy.init()) -- lets whatever
+                // this enemy was pointing at (AI target, waypoint, the
+                // per-mode AI overlay object) be garbage collected right
+                // away instead of being kept alive by an idle pooled object
+                // that might not get reused for a while. Also closes the
+                // window where another system could read a stale reference
+                // off a not-yet-reinitialized pooled object.
+                e.target = null;
+                e.waypoint = null;
+                e.cachedTarget = null;
+                e.opAI = null;
                 this.inactiveEnemies.push(e);
                 this.enemies[i] = this.enemies[this.enemies.length - 1];
                 this.enemies.pop();
@@ -19431,6 +19720,30 @@ class Game {
         return { x: startX + dx * nearestT, y: startY + dy * nearestT };
     }
 
+    // Shared entry point for adding a blood/casing/trail/debris/scorch mark.
+    // Two things this fixes vs. the old per-call-site "push then maybe
+    // shift()" pattern:
+    //  1. shift() removes exactly one element and is O(n) (it re-indexes the
+    //     entire remaining array) -- doing that on every single overflow,
+    //     potentially many times per frame during a big firefight, is a real
+    //     per-frame cost that grows with how much blood/debris is on the
+    //     ground. Trimming a whole chunk at once amortizes that cost to
+    //     effectively free.
+    //  2. The old cap check only ran on SOME of the push sites -- corpse
+    //     "trail" marks (spawned every frame while a debris chunk is still
+    //     flying) never checked the cap at all, so a big explosion with lots
+    //     of airborne debris could grow this array unbounded until some
+    //     unrelated blood/casing mark happened to trigger a trim. Routing
+    //     every mark through here means the cap always applies.
+    _pushPermanentMark(mark) {
+        this.permanentMarks.push(mark);
+        const CAP = 3000;
+        const TRIM_CHUNK = 500;
+        if (this.permanentMarks.length > CAP + TRIM_CHUNK) {
+            this.permanentMarks.splice(0, this.permanentMarks.length - CAP);
+        }
+    }
+
     drawPermanentMarks(ctx, cam, viewW, viewH) {
         for (let m of this.permanentMarks) {
             let margin = 30 + (m.r || 0);
@@ -19476,16 +19789,33 @@ class Game {
                 ctx.fill();
 
                 ctx.globalAlpha = m.a * 0.35;
-                let grad = ctx.createRadialGradient(
-                    m.x - cam.x, m.y - cam.y, 0,
-                    m.x - cam.x, m.y - cam.y, m.r * 1.4
-                );
-                grad.addColorStop(0, 'rgba(20, 14, 8, 0.8)');
-                grad.addColorStop(1, 'rgba(20, 14, 8, 0)');
-                ctx.fillStyle = grad;
+                // PERF: this gradient's colors/falloff never change once a
+                // scorch mark exists -- only its camera-relative screen
+                // position does, and the fade-over-time is already handled
+                // by the globalAlpha multiplier above. Recreating it from
+                // scratch every frame for every on-screen scorch mark (and
+                // there can easily be dozens after a long fight, since
+                // these are permanent) was one of the single biggest
+                // sources of per-frame canvas churn found while profiling
+                // (over 1000 gradient allocations/frame in one stress
+                // test). Cache it once in mark-local coordinates and just
+                // translate into place each frame instead -- canvas
+                // gradients are painted using whatever transform is active
+                // at fill() time, so re-centering the SAME cached gradient
+                // via translate() tracks the camera correctly with zero
+                // visual difference from recreating it fresh.
+                if (!m._glowGradient) {
+                    m._glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, m.r * 1.4);
+                    m._glowGradient.addColorStop(0, 'rgba(20, 14, 8, 0.8)');
+                    m._glowGradient.addColorStop(1, 'rgba(20, 14, 8, 0)');
+                }
+                ctx.save();
+                ctx.translate(m.x - cam.x, m.y - cam.y);
+                ctx.fillStyle = m._glowGradient;
                 ctx.beginPath();
-                ctx.arc(m.x - cam.x, m.y - cam.y, m.r * 1.4, 0, Math.PI * 2);
+                ctx.arc(0, 0, m.r * 1.4, 0, Math.PI * 2);
                 ctx.fill();
+                ctx.restore();
             }
         }
         ctx.globalAlpha = 1.0;
@@ -20246,10 +20576,8 @@ class Game {
             this.ctx.rect(0, 0, viewportW, viewportH);
             this.ctx.clip();
             
-            this.ctx.translate(viewportW / 2, viewportH / 2);
             let effectiveZoom1 = this.camera.zoom + (this.camera.zoomPunch || 0);
             this.ctx.scale(effectiveZoom1, effectiveZoom1);
-            this.ctx.translate(-viewportW / 2, -viewportH / 2);
             
             this.drawViewportWithAberration(this.camera, this.player, false);
             this.ctx.restore();
@@ -20264,11 +20592,8 @@ class Game {
             this.ctx.clip();
             
             this.ctx.translate(viewportW, 0);
-            
-            this.ctx.translate(viewportW / 2, viewportH / 2);
             let effectiveZoom2 = this.camera2.zoom + (this.camera2.zoomPunch || 0);
             this.ctx.scale(effectiveZoom2, effectiveZoom2);
-            this.ctx.translate(-viewportW / 2, -viewportH / 2);
             
             this.drawViewportWithAberration(this.camera2, this.player2, true);
             this.ctx.restore();
@@ -20289,10 +20614,8 @@ class Game {
         } else {
             // Single Player Viewport
             this.ctx.save();
-            this.ctx.translate(this.width / 2, this.height / 2);
             let effectiveZoom = this.camera.zoom + (this.camera.zoomPunch || 0);
             this.ctx.scale(effectiveZoom, effectiveZoom);
-            this.ctx.translate(-this.width / 2, -this.height / 2);
             
             this.drawViewportWithAberration(this.camera, this.player, false);
             this.ctx.restore();
@@ -20519,14 +20842,38 @@ class Game {
         if (this.hitPauseTimer > 0) {
             this.hitPauseTimer -= dt;
             if (this.hitPauseTimer < 0) this.hitPauseTimer = 0;
-            this.draw();
+            try {
+                this.draw();
+            } catch (err) {
+                if (!this._lastLoopErrorTime || (performance.now() - this._lastLoopErrorTime) > 2000) {
+                    this._lastLoopErrorTime = performance.now();
+                    console.error('Game loop error (frame skipped, loop continues):', err);
+                }
+            }
             requestAnimationFrame((t) => this.loop(t));
             return;
         }
         
         let scaledDt = dt * this.timeScale;
-        this.update(scaledDt);
-        this.draw();
+        // Guard against an uncaught exception inside update()/draw() silently
+        // killing the requestAnimationFrame chain forever. Without this,
+        // a single bad frame (e.g. a null enemy reference, a malformed
+        // particle) throws, the .then((t)=>this.loop(t)) callback below never
+        // gets scheduled, and the game view freezes solid -- while the DOM
+        // menus (pause/dev dashboard/etc.) keep working fine since they're
+        // driven by independent event listeners, not this loop. That
+        // "frozen game, working menus" split is exactly this failure mode.
+        // We log the error once (throttled) for diagnosis and keep the loop
+        // alive rather than silently swallowing it forever.
+        try {
+            this.update(scaledDt);
+            this.draw();
+        } catch (err) {
+            if (!this._lastLoopErrorTime || (performance.now() - this._lastLoopErrorTime) > 2000) {
+                this._lastLoopErrorTime = performance.now();
+                console.error('Game loop error (frame skipped, loop continues):', err);
+            }
+        }
         
         requestAnimationFrame((t) => this.loop(t));
     }
@@ -21071,13 +21418,11 @@ class TouchController {
         if (!game || !game.player || game.player.dead) return;
         
         let cam = game.player.isPlayer2 ? game.camera2 : game.camera;
-        let viewportW = game.isTwoPlayer ? game.width / 2 : game.width;
-        let cx = viewportW / 2;
-        let cy = game.height / 2;
         
-        // Translate screen touch coords to game world coordinates
-        let wx = cam.x + cx + (clientX - cx) / cam.zoom;
-        let wy = cam.y + cy + (clientY - cy) / cam.zoom;
+        // Translate screen touch coords to game world coordinates (matches
+        // the corrected camera transform -- see camera zoom fix).
+        let wx = cam.x + clientX / cam.zoom;
+        let wy = cam.y + clientY / cam.zoom;
         
         // Command 1: Spot Robot Waypoint Command (if active & Spot is selected in Right HUD)
         let activeDog = game.dogs ? game.dogs.find(d => d.owner === game.player && !d.dead) : null;
@@ -21308,22 +21653,19 @@ class TouchController {
             const player = game.player;
             const cam = player.isPlayer2 ? game.camera2 : game.camera;
             
-            const viewportW = game.isTwoPlayer ? game.width / 2 : game.width;
-            const cx = viewportW / 2;
-            const cy = game.height / 2;
-            
             const zoomMult = (player.gamepadZoomIndex === 1) ? 2.0 : (player.gamepadZoomIndex === 2) ? 3.0 : 1.0;
             const aimRange = (player.weapon.gamepadAimDist || 180) * zoomMult;
             
             const cos = Math.cos(this.rightStick.angle);
             const sin = Math.sin(this.rightStick.angle);
             
-            // Map world aim coords to screen coords (centered perfectly on player with camera shift and zoom!)
+            // Map world aim coords to screen coords (matches the corrected
+            // camera transform -- see camera zoom fix).
             const targetCrosshairX = player.x + cos * aimRange;
             const targetCrosshairY = player.y + sin * aimRange;
             
-            game.input.tax = cx + (targetCrosshairX - cam.x - cx) * cam.zoom;
-            game.input.tay = cy + (targetCrosshairY - cam.y - cy) * cam.zoom;
+            game.input.tax = (targetCrosshairX - cam.x) * cam.zoom;
+            game.input.tay = (targetCrosshairY - cam.y) * cam.zoom;
             
             // Sync mx/my to tax/tay to keep properties matching
             game.input.mx = game.input.tax;
@@ -21350,15 +21692,12 @@ class TouchController {
         if (game && game.crosshair && game.player && !game.player.dead) {
             const player = game.player;
             const cam = player.isPlayer2 ? game.camera2 : game.camera;
-            const viewportW = game.isTwoPlayer ? game.width / 2 : game.width;
-            const cx = viewportW / 2;
-            const cy = game.height / 2;
             const zoomMult = (player.gamepadZoomIndex === 1) ? 2.0 : (player.gamepadZoomIndex === 2) ? 3.0 : 1.0;
             const aimRange = (player.weapon.gamepadAimDist || 180) * zoomMult;
             const px = player.x + Math.cos(player.angle) * aimRange;
             const py = player.y + Math.sin(player.angle) * aimRange;
-            const screenX = cx + (px - cam.x - cx) * cam.zoom;
-            const screenY = cy + (py - cam.y - cy) * cam.zoom;
+            const screenX = (px - cam.x) * cam.zoom;
+            const screenY = (py - cam.y) * cam.zoom;
             game.crosshair.style.left = screenX + 'px';
             game.crosshair.style.top = screenY + 'px';
         }
@@ -21465,17 +21804,15 @@ const originalGetWorldAimCoords = Game.prototype.getWorldAimCoords;
 Game.prototype.getWorldAimCoords = function(player) {
     if (window.touchController && window.touchController.enabled && player && !player.isPlayer2) {
         let cam = this.camera;
-        let viewportW = this.width;
-        let cx = viewportW / 2;
-        let cy = this.height / 2;
         
         if (this.input.tax === undefined || this.input.tay === undefined) {
-            this.input.tax = cx + 180;
-            this.input.tay = cy;
+            this.input.tax = this.width / 2 + 180;
+            this.input.tay = this.height / 2;
         }
         
-        let wx = cam.x + cx + (this.input.tax - cx) / cam.zoom;
-        let wy = cam.y + cy + (this.input.tay - cy) / cam.zoom;
+        // Matches the corrected camera transform -- see camera zoom fix.
+        let wx = cam.x + this.input.tax / cam.zoom;
+        let wy = cam.y + this.input.tay / cam.zoom;
         return { x: wx, y: wy };
     }
     return originalGetWorldAimCoords.call(this, player);
