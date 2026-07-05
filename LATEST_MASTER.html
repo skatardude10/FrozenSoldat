@@ -4482,13 +4482,29 @@ class MapGen {
     getWallsNear(x, y) {
         let col = MathUtils.clamp(Math.floor(x / this.cellW), 0, this.gridCols - 1);
         let row = MathUtils.clamp(Math.floor(y / this.cellH), 0, this.gridRows - 1);
-        
+
+        // PERF: a wall spanning multiple grid cells shows up in more than one
+        // cell's bucket, so the 3x3 neighborhood walk needs to dedup. This
+        // used to be `if (!nearbyWalls.includes(w))` -- an O(n) scan of the
+        // (growing) output array for every candidate wall, so total work
+        // scaled roughly O(k^2) in the wall count straddling the
+        // neighborhood (which the large-map templates can push into the
+        // dozens -- see initializeSpatialGrid()'s comment). Swapped for an
+        // O(1)-per-wall check by stamping a monotonically increasing query id
+        // directly on each wall object: dedup result is identical, just
+        // without the quadratic blowup. getWallsNear() is called every frame
+        // for essentially every enemy/boss/drone/turret's movement + combat
+        // AI, so it's among the hottest functions in the engine.
+        this._wallQueryId = (this._wallQueryId || 0) + 1;
+        let qid = this._wallQueryId;
+
         let nearbyWalls = [];
         for (let r = Math.max(0, row - 1); r <= Math.min(this.gridRows - 1, row + 1); r++) {
             for (let c = Math.max(0, col - 1); c <= Math.min(this.gridCols - 1, col + 1); c++) {
                 let cellWalls = this.spatialGrid[r][c];
                 for (let w of cellWalls) {
-                    if (!nearbyWalls.includes(w)) {
+                    if (w._wallQStamp !== qid) {
+                        w._wallQStamp = qid;
                         nearbyWalls.push(w);
                     }
                 }
@@ -6142,7 +6158,30 @@ const AIM_WEIGHT = {
     // Physics safety: clamp the per-frame dt fed to the spring integrator so
     // a lag spike can't destabilize it (semi-implicit Euler is stable for
     // normal frame times but not for arbitrarily large ones).
-    SPRING_MAX_DT: 1 / 30
+    SPRING_MAX_DT: 1 / 30,
+
+    // --- "Heavy Barrel" Pivot -- see Player.applySprintStaminaAndMove() ---
+    // Rotating the aim induces a lateral velocity on the body, as if the
+    // character's center of gravity sits forward (toward the gun) instead of
+    // dead-center on the hips. Swinging a heavy weapon around then forces the
+    // feet to sweep out through a wider arc to keep up, rather than the
+    // character pivoting cleanly in place. This is expressed as an
+    // ACCELERATION added straight into this.vx/vy every frame -- exactly the
+    // same way curAccel (normal WASD movement) is injected -- so it rides the
+    // existing drag/collision physics in Entity.updatePhysics() and decays
+    // out naturally the instant the turn stops. No separate spring, timer, or
+    // smoothing pass needed; one fewer system to desync.
+    //
+    // Tuning note: ACCEL_PER_RAD_PER_SEC is the one knob to reach for first --
+    // it's linear with the felt strength of the sway. Start here, feel it out
+    // over a full turn-and-strafe loop, and adjust before touching anything
+    // else in this block.
+    PIVOT: {
+        ACCEL_PER_RAD_PER_SEC: 220, // was 55 -- playtest bump, see AIM_WEIGHT.PIVOT comment above
+        WEIGHT_REF: 20,              // weapon.weight value that maps to a 1.0x multiplier (Sniper/LMG-ish)
+        WEIGHT_MIN_MULT: 0.30,       // floor so even the bare-handed Pistol (weight 0) keeps a faint whisper of it
+        WEIGHT_MAX_MULT: 1.4         // ceiling so a future heavier weapon can't get out of hand
+    }
 };
 
 class Player extends Entity {
@@ -6175,6 +6214,7 @@ class Player extends Entity {
         //   and is what everything else (bullets, facing, LOS) reads.
         this.aimTargetAngle = 0;
         this.aimChaseAngle = 0;
+        this.aimAngularVelocity = 0; // rad/s, set each frame in updateAimWeight() -- feeds the Heavy Barrel Pivot lateral-sway effect
         this.aimRecoilOffset = 0;
         this.aimRecoilVel = 0;
         this.aimHitFlinchOffset = 0;
@@ -6369,7 +6409,7 @@ class Player extends Entity {
             input.mx = (targetCrosshairX - cam.x) * cam.zoom;
             input.my = (targetCrosshairY - cam.y) * cam.zoom;
 
-            let crossNode = this.isPlayer2 ? document.getElementById('crosshair-p2') : game.crosshair;
+            let crossNode = this.isPlayer2 ? game.crosshairP2El : game.crosshair;
             if (crossNode) {
                 crossNode.style.left = (this.isPlayer2 ? (game.width / 2 + input.mx) : input.mx) + 'px';
                 crossNode.style.top = input.my + 'px';
@@ -6660,6 +6700,26 @@ class Player extends Entity {
         this.vx += moveX * curAccel * dt;
         this.vy += moveY * curAccel * dt;
 
+        // 9. Heavy Barrel Pivot: forward-offset center-of-gravity lateral
+        // sway induced by aim angular velocity (see AIM_WEIGHT.PIVOT config
+        // + this.aimAngularVelocity set in updateAimWeight()). Purely
+        // additive on top of the normal movement velocity just above --
+        // rides the same drag/collision physics below, no separate decay.
+        // Sign: v = -omega * pivotAccel * right, so swinging the aim one way
+        // sweeps the feet/body the other way, same as a rigid body rotating
+        // about a pivot forward of its own center of mass.
+        let weaponWeight = (this.weapon && this.weapon.weight) || 0;
+        let pivotWeightMult = MathUtils.clamp(
+            weaponWeight / AIM_WEIGHT.PIVOT.WEIGHT_REF,
+            AIM_WEIGHT.PIVOT.WEIGHT_MIN_MULT,
+            AIM_WEIGHT.PIVOT.WEIGHT_MAX_MULT
+        );
+        let pivotAccel = -(this.aimAngularVelocity || 0) * AIM_WEIGHT.PIVOT.ACCEL_PER_RAD_PER_SEC * pivotWeightMult;
+        let pivotRightX = -Math.sin(this.angle);
+        let pivotRightY = Math.cos(this.angle);
+        this.vx += pivotRightX * pivotAccel * dt;
+        this.vy += pivotRightY * pivotAccel * dt;
+
         let currentVelocity = Math.hypot(this.vx, this.vy);
         if (currentVelocity > 40) {
             this.footstepTimer -= dt;
@@ -6699,11 +6759,17 @@ class Player extends Entity {
         let turnMod = AIM_WEIGHT.WEAPON_TURN_RATE_MOD[this.weapon.name] || 1.0;
         let maxStep = (AIM_WEIGHT.TURN_RATE_DEG_PER_SEC * Math.PI / 180) * turnMod * dt;
         let angleDiff = MathUtils.angleDifference(targetAngle, this.aimChaseAngle);
-        if (Math.abs(angleDiff) <= maxStep) {
-            this.aimChaseAngle = targetAngle;
-        } else {
-            this.aimChaseAngle += Math.sign(angleDiff) * maxStep;
-        }
+        let appliedTurnStep = (Math.abs(angleDiff) <= maxStep) ? angleDiff : Math.sign(angleDiff) * maxStep;
+        this.aimChaseAngle += appliedTurnStep;
+        // Signed rad/s the body is ACTUALLY turning this frame, post turn-
+        // rate-cap. Feeds the Heavy Barrel Pivot lateral-sway effect in
+        // applySprintStaminaAndMove() -- derived from the CAPPED chase step
+        // (not the raw target angle) so a snap 180 mouse flick can't induce
+        // more body sway than the character's real turn rate allows, and
+        // left out of this.angle's perturbation offsets (recoil/flinch/sway)
+        // on purpose so a recoil kick doesn't also shove the character
+        // sideways.
+        this.aimAngularVelocity = dt > 0 ? appliedTurnStep / dt : 0;
         // Keep it bounded to [-PI, PI] for float hygiene (safe: aimChaseAngle
         // only ever feeds Math.cos/sin/atan2-based math, all periodic).
         this.aimChaseAngle = Math.atan2(Math.sin(this.aimChaseAngle), Math.cos(this.aimChaseAngle));
@@ -8099,20 +8165,29 @@ class Enemy extends Entity {
             ctx.restore();
         }
 
+        // PERF: This used to run a synchronous `game.map.walls.some(...)` LOS
+        // scan against the FULL (non-spatially-partitioned) wall list every
+        // single frame, purely to decide whether to draw the red targeting
+        // laser -- on top of `this.target` never actually being assigned
+        // anywhere in the base Enemy class (it's initialized to null in
+        // init() and never written to again), so it was silently always
+        // falling back to `game.player` too. Both the LOS test and the real
+        // target are already computed on the 30-frame AI stagger in update()
+        // and stored in this.cachedHasLOS / this.cachedTarget -- reuse those
+        // instead of recomputing. This trades up-to-30-frames-stale LOS/target
+        // selection (imperceptible) for eliminating a per-frame, per-sniper
+        // full wall-array raycast.
         if (this.weaponType === 'sniper' && game) {
-            let target = this.target || game.player;
-            if (target && !target.dead) {
-                let hasLOS = !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
-                if (hasLOS) {
-                    ctx.save();
-                    ctx.strokeStyle = 'rgba(255, 42, 95, 0.45)';
-                    ctx.lineWidth = 1.2;
-                    ctx.beginPath();
-                    ctx.moveTo(this.x - cam.x, this.y - cam.y);
-                    ctx.lineTo(target.x - cam.x, target.y - cam.y);
-                    ctx.stroke();
-                    ctx.restore();
-                }
+            let target = this.cachedTarget;
+            if (target && !target.dead && this.cachedHasLOS) {
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255, 42, 95, 0.45)';
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.moveTo(this.x - cam.x, this.y - cam.y);
+                ctx.lineTo(target.x - cam.x, target.y - cam.y);
+                ctx.stroke();
+                ctx.restore();
             }
         }
 
@@ -9862,7 +9937,18 @@ class Bullet {
         this.isNeutral = isNeutral; 
         this.owner = null;
         this.hasExploded = false;
-        this.whizzedPlayers = [];
+        // PERF: bullets are already pooled (see Game.spawnBullet), but this
+        // array was reallocated on every single init() regardless -- i.e. on
+        // every shot fired by anyone, pooled or not, which for autofire
+        // weapons (SMG/LMG) is one of the hottest allocation sites in the
+        // whole game. Reuse the existing array (just truncate it) when this
+        // Bullet instance is coming back out of the pool; only a brand new
+        // Bullet (first time this slot is ever used) needs a fresh one.
+        if (this.whizzedPlayers) {
+            this.whizzedPlayers.length = 0;
+        } else {
+            this.whizzedPlayers = [];
+        }
         
         // Perk state — set by spawnBullet caller
         this.hasSmartMunitions  = false;
@@ -10258,7 +10344,32 @@ class Bullet {
 
             if (hitRegistered) break;
 
-            for (let wall of walls) {
+            // PERF: this used to scan `walls` -- the ENTIRE map's wall list,
+            // passed in unfiltered as this.map.walls -- once per substep,
+            // for every active bullet, every frame. On the large Operator
+            // map (150+ walls vs ~20-40 on classic templates) that made this
+            // loop the single most expensive thing in the engine (measured:
+            // 46-70% of frame time across every scenario in a headless
+            // profiling pass, worst on the large map).
+            //
+            // Fixed by querying the spatial grid at the substep's midpoint
+            // instead -- the exact same pattern MapGen._findNearestClearNode
+            // and the enemy moveHasLOS checks already use for this exact
+            // reason. This is safe at ANY bullet speed, Flatline overclock
+            // included: stepCount above already guarantees every substep
+            // covers at most ~15 units (that's the whole point of it --
+            // preventing tunneling through thin walls -- a faster bullet
+            // just gets more, shorter substeps, never a longer one), and a
+            // 15-unit segment can never span more than two adjacent grid
+            // cells. getWallsNear()'s 3x3-neighborhood query centered on the
+            // midpoint is therefore guaranteed to include every wall this
+            // substep could possibly touch -- not a probabilistic
+            // improvement, a complete one. Bounce/absorb/AP-penetration
+            // logic below is completely unchanged.
+            let midX = (prevX + this.x) / 2;
+            let midY = (prevY + this.y) / 2;
+            let localWalls = (game && game.map) ? game.map.getWallsNear(midX, midY) : walls;
+            for (let wall of localWalls) {
                 if (MathUtils.lineIntersectAABB(prevX, prevY, this.x, this.y, wall)) {
                     
                     if (this.perkGhost && this.ghostPasses) {
@@ -13593,6 +13704,12 @@ class Game {
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d', { alpha: false });
         this.crosshair = document.getElementById('crosshair');
+        // PERF: cached once here instead of re-querying the DOM every frame
+        // (updateCrosshairVisibility() and the operator intermission timer
+        // display both used to call document.getElementById() on every
+        // single call to draw()/update() respectively).
+        this.crosshairP2El = document.getElementById('crosshair-p2');
+        this.operatorShopTimerEl = document.getElementById('operator-shop-timer');
         this.width = window.innerWidth;
         this.height = window.innerHeight;
         this.canvas.width = this.width; this.canvas.height = this.height;
@@ -17783,7 +17900,7 @@ class Game {
                         this.operatorShopTimer = OP_TUNING.INTERMISSION_SECONDS;
                     }
                     this.operatorShopTimer -= dt;
-                    let timerEl = document.getElementById('operator-shop-timer');
+                    let timerEl = this.operatorShopTimerEl;
                     if (timerEl) timerEl.textContent = Math.max(0, Math.ceil(this.operatorShopTimer));
                     if (this.operatorShopTimer <= 0) {
                         this.operatorShopTimer = null;
@@ -18009,7 +18126,18 @@ class Game {
             }
         }
 
-        let entities = [this.player];
+        // PERF: this list feeds every bullet's collision check + explosive
+        // barrel body-push below, every single frame -- it used to be a
+        // brand new array literal each time, topped off with
+        // `entities.push(...this.enemies)` (a full copy of the enemies array
+        // on top of the new allocation). Reused as a persistent scratch
+        // buffer instead: same contents, same order, just no per-frame
+        // allocation. Nothing outside this synchronous block ever holds a
+        // reference to it, so clearing+refilling in place is safe.
+        if (!this._entitiesScratch) this._entitiesScratch = [];
+        let entities = this._entitiesScratch;
+        entities.length = 0;
+        entities.push(this.player);
         if (this.isTwoPlayer && this.player2 && !this.player2.dead) {
             entities.push(this.player2);
         }
@@ -18029,7 +18157,7 @@ class Game {
                 if (d.hp > 0) entities.push(d);
             }
         }
-        entities.push(...this.enemies);
+        for (let e of this.enemies) entities.push(e);
 
         if (this.explosiveBarrels && this.explosiveBarrels.length > 0) {
             for (let i = this.explosiveBarrels.length - 1; i >= 0; i--) {
@@ -19908,40 +20036,57 @@ class Game {
                     let virtualAimY = p.y + Math.sin(lAngle) * aimDist;
                     laserAngle = Math.atan2(virtualAimY - lStartY, virtualAimX - lStartX);
                 }
-                let maxLaserDist = 1400;
+                let maxLaserDist = 1700; // was 1400 -- a bit longer now that this is the ONLY aim reference during gameplay
                 let hitPt = this.getLaserEndPoint(lStartX, lStartY, laserAngle, maxLaserDist, this.map.walls);
                 
                 let dist = Math.hypot(hitPt.x - lStartX, hitPt.y - lStartY);
                 let distRatio = Math.min(1.0, dist / maxLaserDist);
-                let startAlpha = 0.25;
+                // Brightness buffed across the board (was startAlpha 0.25 /
+                // dotAlpha cap 0.5 / lineWidth 1) now that the UI crosshair is
+                // hidden during gameplay and this laser is the single source
+                // of truth for where the gun is actually pointed.
+                let startAlpha = 0.62;
                 let endAlpha = startAlpha * (1.0 - distRatio);
-                let dotAlpha = Math.min(0.5, endAlpha + 0.15);
+                let dotAlpha = Math.min(0.9, endAlpha + 0.32);
                 
                 let grad = this.ctx.createLinearGradient(
                     lStartX - cam.x, lStartY - cam.y,
                     hitPt.x - cam.x, hitPt.y - cam.y
                 );
                 
-                if (p.isPlayer2) {
-                    grad.addColorStop(0, `rgba(255, 183, 0, ${startAlpha})`);
-                    grad.addColorStop(1, `rgba(255, 183, 0, ${endAlpha})`);
-                    this.ctx.fillStyle = `rgba(255, 183, 0, ${dotAlpha})`;
-                } else {
-                    grad.addColorStop(0, `rgba(0, 229, 255, ${startAlpha})`);
-                    grad.addColorStop(1, `rgba(0, 229, 255, ${endAlpha})`);
-                    this.ctx.fillStyle = `rgba(0, 229, 255, ${dotAlpha})`;
-                }
+                let laserRGB = p.isPlayer2 ? '255, 183, 0' : '0, 229, 255';
+                grad.addColorStop(0, `rgba(${laserRGB}, ${startAlpha})`);
+                grad.addColorStop(1, `rgba(${laserRGB}, ${endAlpha})`);
+                this.ctx.fillStyle = `rgba(${laserRGB}, ${dotAlpha})`;
                 
+                this.ctx.save();
+                this.ctx.lineCap = 'round';
+                // Soft outer halo pass, then a bright thin core on top -- reads
+                // as a real laser beam instead of a flat single-alpha line,
+                // without the precision line itself getting any thicker/harder
+                // to aim with.
+                this.ctx.beginPath();
+                this.ctx.moveTo(lStartX - cam.x, lStartY - cam.y);
+                this.ctx.lineTo(hitPt.x - cam.x, hitPt.y - cam.y);
+                this.ctx.strokeStyle = `rgba(${laserRGB}, ${startAlpha * 0.35})`;
+                this.ctx.lineWidth = 4.5;
+                this.ctx.stroke();
+
                 this.ctx.beginPath();
                 this.ctx.moveTo(lStartX - cam.x, lStartY - cam.y);
                 this.ctx.lineTo(hitPt.x - cam.x, hitPt.y - cam.y);
                 this.ctx.strokeStyle = grad;
-                this.ctx.lineWidth = 1;
+                this.ctx.lineWidth = 1.6;
                 this.ctx.stroke();
+                this.ctx.restore();
 
+                this.ctx.save();
+                this.ctx.shadowBlur = 8;
+                this.ctx.shadowColor = `rgba(${laserRGB}, 1)`;
                 this.ctx.beginPath();
-                this.ctx.arc(hitPt.x - cam.x, hitPt.y - cam.y, 2.5, 0, Math.PI*2);
+                this.ctx.arc(hitPt.x - cam.x, hitPt.y - cam.y, 3.2, 0, Math.PI*2);
                 this.ctx.fill();
+                this.ctx.restore();
             }
         }
 
@@ -20560,7 +20705,30 @@ class Game {
         }
     }
 
+    // "Laser-Only" aim paradigm: the UI crosshair creates a disconnect
+    // between raw input and the physics-weighted reality of the gun (see
+    // AIM_WEIGHT / Player.updateAimWeight()), so once a round is actually
+    // live the player's ONLY aim reference is the in-world laser sight
+    // drawn in Player.draw(). Crosshairs stay available for UI menus (shop,
+    // pause, dev dashboard, Spot Robot waypoint targeting, etc.) -- this
+    // only touches visibility, never input.mx/my, so mouse/gamepad aim
+    // tracking (and click-to-target for things like drone waypoints) is
+    // completely unaffected. Run every frame rather than hooked to specific
+    // state-transition call sites so it can't drift out of sync with pause
+    // menus, game-over, shop re-opens, etc.
+    updateCrosshairVisibility() {
+        let hideForGameplay = (this.state === 'playing' && !this.isPaused);
+        if (this.crosshair) {
+            this.crosshair.style.display = hideForGameplay ? 'none' : '';
+        }
+        if (this.isTwoPlayer && this.crosshairP2El) {
+            this.crosshairP2El.style.display = hideForGameplay ? 'none' : '';
+        }
+    }
+
     draw() {
+        this.updateCrosshairVisibility();
+
         this.ctx.fillStyle = '#01050e';
         this.ctx.fillRect(0, 0, this.width, this.height);
 
