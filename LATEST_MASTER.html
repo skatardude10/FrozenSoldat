@@ -733,6 +733,7 @@
                         <button id="btn-gm-normal" class="active-mode" onclick="game.setGameMode('normal')" style="font-size: 11px; padding: 5px 10px; margin: 0;">NORMAL WAVE OPS</button>
                         <button id="btn-gm-sandbox" onclick="game.setGameMode('sandbox')" style="font-size: 11px; padding: 5px 10px; margin: 0;">TESTING SANDBOX</button>
                         <button id="btn-gm-operator" onclick="game.setGameMode('operator')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff7a00; color: #ff7a00;">FPV OPERATOR</button>
+                        <button id="btn-gm-now" onclick="game.setGameMode('now')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff2a5f; color: #ff2a5f; box-shadow: 0 0 8px rgba(255, 42, 95, 0.4);">ACTION NOW</button>
                     </div>
                 </div>
 
@@ -1494,6 +1495,10 @@
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-size: 10px;">Explosive Rounds</span>
                     <button class="neon-btn" id="btn-dev-perk-perkExplosiveRounds" onclick="game.devTogglePerk('perkExplosiveRounds')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Shrapnel Rounds</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkShrapnelRounds" onclick="game.devTogglePerk('perkShrapnelRounds')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
                 </div>
             </div>
         </div>
@@ -4013,6 +4018,24 @@ function isOp() {
     return typeof game !== 'undefined' && game && game.operatorMode === true;
 }
 
+// ==== ACTION NOW MODE: config ====
+// The deliberate opposite number to FPV Operator's slow, paranoid burn --
+// skip the wave grind entirely, hand the player a fixed arsenal budget and
+// the shop immediately, then throw a wave-5-sized swarm at them the moment
+// they hit READY. Unlike Operator mode this does NOT force map/friendly-
+// fire/1P -- it's meant to slot in as a drop-in ruleset for any existing
+// 1P/2P/map/FF combination the player already had selected, not a fully
+// separate curated mode. See Game.setGameMode()/startNewGame()/
+// startNextWave() and the spawn-tick branch in update().
+const NOW_MODE = {
+    START_WAVE: 5,        // stock enemiesToSpawn formula (5 + wave*4) already yields 25 at wave 5 -- no separate spawn-count curve needed
+    STARTING_CASH: 10000, // fixed budget, replaces (not added to) the normal startingCash slider
+    PREP_TIME: 1.5,       // seconds between clicking READY and the first enemy spawning, vs. the stock 15.0
+    SPAWN_INTERVAL: 0.05, // ~20 enemies/sec, vs. the stock Math.max(0.2, 1.6 - wave*0.12) trickle
+    LOADOUT_WEAPONS: ['shotgun', 'lmg', 'm1a'], // granted directly to inventory, full reserve ammo, on top of the default pistol -- see Player.addWeapon()
+    FREE_PERK_COUNT: 2    // random perk choice screens queued per player at start (see Game._advanceNowModePerkQueue())
+};
+
 // ==== FPV OPERATOR MODE: biome bands ====
 // The operator map is a long north-south corridor (base always south,
 // enemies always approach from the north/far end -- see MapGen case 11).
@@ -4474,8 +4497,53 @@ class MapGen {
                     if (wall.x < cellX2 && (wall.x + wall.w) > cellX1 &&
                         wall.y < cellY2 && (wall.y + wall.h) > cellY1) {
                         this.spatialGrid[r][c].push(wall);
+                        // DESTRUCTIBLE WALLS: remember every bucket a wall is
+                        // filed under so a later carve (see _carveWall) can
+                        // pull it back out in O(cells-it-touches) instead of
+                        // re-scanning/rebuilding the whole grid. Inert for
+                        // every wall that never gets shot -- just one small
+                        // array per wall, built once, here, at the same time
+                        // the grid itself is built.
+                        if (!wall._gridCells) wall._gridCells = [];
+                        wall._gridCells.push(r, c);
                     }
                 }
+            }
+        }
+    }
+    // --- Destructible walls: scoped grid maintenance --------------------
+    // Only ever called from a carve event -- a handful of times per
+    // destructible wall, total, across an entire run (see
+    // DESTRUCTIBLE_WALLS_HANDOFF.md section 3.4). Never called per-frame, so
+    // these intentionally trade a little precision (the cell-range test
+    // below is a conservative superset near exact cell boundaries, same as
+    // any other AABB-vs-grid overlap test) for staying O(cells the wall
+    // touches) instead of O(total walls).
+    _wallCellRange(wall) {
+        let c1 = MathUtils.clamp(Math.floor(wall.x / this.cellW), 0, this.gridCols - 1);
+        let c2 = MathUtils.clamp(Math.floor((wall.x + wall.w - 0.01) / this.cellW), 0, this.gridCols - 1);
+        let r1 = MathUtils.clamp(Math.floor(wall.y / this.cellH), 0, this.gridRows - 1);
+        let r2 = MathUtils.clamp(Math.floor((wall.y + wall.h - 0.01) / this.cellH), 0, this.gridRows - 1);
+        return { r1, r2, c1, c2 };
+    }
+    _removeWallFromGrid(wall) {
+        let cells = wall._gridCells;
+        if (!cells) return;
+        for (let i = 0; i < cells.length; i += 2) {
+            let bucket = this.spatialGrid[cells[i]] && this.spatialGrid[cells[i]][cells[i + 1]];
+            if (!bucket) continue;
+            let idx = bucket.indexOf(wall);
+            if (idx !== -1) bucket.splice(idx, 1);
+        }
+        wall._gridCells = null;
+    }
+    _insertWallIntoGrid(wall) {
+        let { r1, r2, c1, c2 } = this._wallCellRange(wall);
+        wall._gridCells = [];
+        for (let r = r1; r <= r2; r++) {
+            for (let c = c1; c <= c2; c++) {
+                this.spatialGrid[r][c].push(wall);
+                wall._gridCells.push(r, c);
             }
         }
     }
@@ -4514,10 +4582,15 @@ class MapGen {
     }
     generate() {
         const thick = 60;
-        this.walls.push({ x: -thick, y: -thick, w: this.width + thick*2, h: thick });
-        this.walls.push({ x: -thick, y: this.height, w: this.width + thick*2, h: thick });
-        this.walls.push({ x: -thick, y: 0, w: thick, h: this.height });
-        this.walls.push({ x: this.width, y: 0, w: thick, h: this.height });
+        // isBoundary: true is the authoritative "never destructible" marker
+        // for these 4 map-edge walls -- tagDestructibleWalls() below skips
+        // anything carrying it. Flagged on the object itself (not inferred
+        // from array position) so this stays correct even if a future edit
+        // reorders what generate() pushes first.
+        this.walls.push({ x: -thick, y: -thick, w: this.width + thick*2, h: thick, isBoundary: true });
+        this.walls.push({ x: -thick, y: this.height, w: this.width + thick*2, h: thick, isBoundary: true });
+        this.walls.push({ x: -thick, y: 0, w: thick, h: this.height, isBoundary: true });
+        this.walls.push({ x: this.width, y: 0, w: thick, h: this.height, isBoundary: true });
 
         let cx = this.width / 2;
         let cy = this.height / 2;
@@ -5219,7 +5292,427 @@ class MapGen {
                 break;
             }
         }
+        this.tagDestructibleWalls();
     }
+
+    // =====================================================================
+    // DESTRUCTIBLE WALLS
+    // See DESTRUCTIBLE_WALLS_HANDOFF.md for the full design writeup. Short
+    // version: two decoupled layers.
+    //   Layer A (structural) -- this.walls / spatialGrid / hasLineOfSight /
+    //   buildNavGrid / getWallsNear all keep working on exactly the same
+    //   coarse AABB rects they always have. Nothing about their algorithms
+    //   changes, so there is zero regression for every wall that never gets
+    //   shot, and zero regression in any hot path even for ones that do.
+    //   Layer B (cosmetic bookkeeping) -- a small per-wall hp + damage-cell
+    //   grid, created lazily (only once a destructible wall is actually
+    //   damaged), consulted ONLY by damageWallsNear()/_drawWallDamage() --
+    //   never by movement, LOS, or nav. The only bridge between the two
+    //   layers is _carveWall(), a rare (a handful of times per wall, ever)
+    //   one-time mutation that splices the coarse rect out of this.walls
+    //   and replaces it with 0-2 smaller coarse rects representing the
+    //   surviving stub(s) -- an actual hole in the collision geometry, not
+    //   a fake cosmetic one.
+    // =====================================================================
+
+    // Tags a FORMULAIC subset of the walls generate() just built as
+    // destructible, purely by geometry -- never touching where/how each
+    // template's own placement logic put them. Everything defaults to
+    // non-destructible (no extra fields at all), so a wall that's never
+    // near an explosion costs nothing extra, ever.
+    //
+    // Exclusions, in priority order:
+    //   1. isBoundary walls (map edges) -- never destructible.
+    //   2. Walls carrying `buildingId` (template 11's building prefabs) --
+    //      those are load-bearing for the roof-fade/door/interior systems
+    //      built around them, which is a separate mechanic this pass
+    //      deliberately does not touch.
+    //   3. Large-area walls -- the "anchor" bunkers/reactor blocks/
+    //      chokepoint walls various templates use to define the map's core
+    //      structure end up excluded purely by crossing an area threshold,
+    //      not by hand-tagging specific templates (e.g. template 6's
+    //      450x200 hourglass chokepoint walls land above
+    //      INDESTRUCTIBLE_MIN_AREA and stay solid). This is a game-design
+    //      DEFAULT, not a hard rule -- worth revisiting per-template later
+    //      if some of those anchor walls would be more fun as very-high-hp
+    //      Reinforced walls instead of flatly indestructible.
+    tagDestructibleWalls() {
+        const REINFORCED_MIN_AREA = 15000;   // above this: Reinforced tier
+        const INDESTRUCTIBLE_MIN_AREA = 70000; // above this: not destructible at all
+        for (let wall of this.walls) {
+            if (wall.isBoundary || wall.buildingId) continue;
+            let area = wall.w * wall.h;
+            if (area >= INDESTRUCTIBLE_MIN_AREA) continue;
+            wall.tier = (area >= REINFORCED_MIN_AREA) ? 'reinforced' : 'light';
+            wall.destructible = true;
+            wall.maxHp = this._destructibleHpFor(wall.w, wall.h, wall.tier);
+            wall.hp = wall.maxHp;
+        }
+    }
+
+    // Shared sizing/toughness formula for a destructible wall's damage-cell
+    // grid -- the SINGLE source of truth for cell counts/toughness, used at
+    // tag time (so wall.hp/maxHp are correct from the moment a wall is
+    // created) AND when the actual cell array gets built lazily on first
+    // damage (_ensureDamageCells).
+    //
+    // This is a real 2D grid now: BOTH w and h get their own cell count,
+    // not just whichever is longer. A thin strip wall (the vast majority --
+    // most walls are 25-60px thick) still degenerates to a 1-cell-thick
+    // row/column automatically, so nothing changes for them. A genuinely
+    // chunky wall (a clutter block, a maze pillar -- anywhere both
+    // dimensions are comfortably bigger than one cell) gets a real rows x
+    // cols grid, so it can lose a corner or a bite out of its face from any
+    // direction instead of only ever splitting end-to-end along one axis.
+    //
+    // The two axes are capped differently on purpose: MAX_LONG_CELLS (18)
+    // bounds how finely a wall's LENGTH gets diced (pure visual/damage
+    // granularity, cheap). MAX_THIN_CELLS (4) bounds the OTHER axis much
+    // more tightly, because that's the axis _splitIntoStrips actually
+    // fragments a wall along when it goes 2D -- capping it low keeps a
+    // hard ceiling on how many independent pieces one original wall can
+    // ever produce (see _splitIntoStrips), regardless of how big the wall
+    // is. Whichever physical dimension is bigger gets the long-axis cap;
+    // the smaller one gets the thin-axis cap -- so this naturally applies
+    // per-wall rather than assuming a fixed orientation.
+    _wallCellPlan(w, h, tier) {
+        const CELL_LEN = 24;
+        const MAX_LONG_CELLS = 18;
+        const MAX_THIN_CELLS = 4;
+        let cols = MathUtils.clamp(Math.round(w / CELL_LEN), 1, w >= h ? MAX_LONG_CELLS : MAX_THIN_CELLS);
+        let rows = MathUtils.clamp(Math.round(h / CELL_LEN), 1, h >= w ? MAX_LONG_CELLS : MAX_THIN_CELLS);
+        // Tuned against the player's own frag grenade (peak 140 dmg @ 180
+        // blast radius, the primary repeated-use demolition tool): 115
+        // means only cells within ~30-40px of a direct grenade hit die
+        // outright (about 1 cell, sometimes 2) -- a couple of grenades
+        // walking down a wall reads as separate distinct bites, not one
+        // wipeout. Reinforced at 220 means even a grenade can't one-shot a
+        // cell outright (needs 2 solid hits on the same spot), and only
+        // the biggest ordnance (barrels, the FPV drone bomb) reliably pops
+        // a cell in one go. Bullets chip the exact same cells through
+        // damageWallPoint() at a small fraction of this per hit -- see the
+        // wiring in Bullet.update -- so sustained gunfire "slowly punches
+        // through" on the same scale rather than needing separate tuning.
+        let cellMax = (tier === 'reinforced') ? 220 : 115;
+        return { cols, rows, cellMax, maxHp: cols * rows * cellMax };
+    }
+
+    _destructibleHpFor(w, h, tier) {
+        return this._wallCellPlan(w, h, tier).maxHp;
+    }
+
+    // Event-driven entry point for AOE damage (grenades, HE shells, mines,
+    // drone detonations, barrels, explosive-rounds bullet impacts) --
+    // NEVER from a per-frame loop. Cost is bounded by however many
+    // destructible walls the spatial grid returns near (x,y), the exact
+    // same guarantee every other getWallsNear() caller already gets.
+    damageWallsNear(x, y, blastRadius, damageAmount) {
+        let candidates = this.getWallsNear(x, y);
+        for (let wall of candidates) {
+            if (!wall.destructible || wall.hp <= 0) continue;
+            let col = MathUtils.circleIntersectAABB(x, y, blastRadius, wall);
+            if (!col.hit) continue;
+            this._damageWallAOE(wall, x, y, blastRadius, damageAmount);
+        }
+    }
+
+    // Cheaper sibling of damageWallsNear for direct bullet impacts: the
+    // caller (Bullet.update) already has the exact wall it hit in hand
+    // from its own per-substep collision loop, so this skips the
+    // getWallsNear() query entirely and applies a small flat point-hit to
+    // whichever single cell the bullet actually struck -- no radius,
+    // falloff, or candidate scan. This only ever runs on an actual
+    // bullet-wall collision event, never per-frame per bullet, so the
+    // added cost is bounded by how many bullets hit a destructible wall
+    // this frame, not by how many bullets are in flight.
+    damageWallPoint(wall, x, y, damage) {
+        if (!wall.destructible || wall.hp <= 0) return;
+        let dmg = this._ensureDamageCells(wall);
+        let c = MathUtils.clamp(Math.floor((x - wall.x) / dmg.cellW), 0, dmg.cols - 1);
+        let r = MathUtils.clamp(Math.floor((y - wall.y) / dmg.cellH), 0, dmg.rows - 1);
+        let i = r * dmg.cols + c;
+        if (dmg.cells[i] <= 0) return;
+        let before = dmg.cells[i];
+        dmg.cells[i] = Math.max(0, before - damage);
+        wall.hp = Math.max(0, wall.hp - (before - dmg.cells[i]));
+        if (dmg.cells[i] <= 0) this._openHole(wall, dmg, [i]);
+    }
+
+    // Lazily builds a destructible wall's 2D damage-cell grid (see
+    // _wallCellPlan) -- never at generation time (handoff section 3.2). A
+    // wall that never takes damage never allocates this.
+    _ensureDamageCells(wall) {
+        if (wall._dmg) return wall._dmg;
+        let plan = this._wallCellPlan(wall.w, wall.h, wall.tier);
+        let cells = new Float32Array(plan.cols * plan.rows).fill(plan.cellMax);
+        wall._dmg = { cols: plan.cols, rows: plan.rows, cellW: wall.w / plan.cols, cellH: wall.h / plan.rows, cellMax: plan.cellMax, cells };
+        return wall._dmg;
+    }
+
+    // Applies distance-falloff damage (same style as the splash-damage loops
+    // right next to every damageWallsNear() call site) to every cell of one
+    // wall's grid, then -- if that finished off one or more cells -- opens
+    // the resulting hole(s) in a single pass (see _openHole). Splitting
+    // "apply damage to every affected cell" from "carve" into two phases
+    // like this means a single big blast that zeroes several cells at once
+    // (a barrel, an HE shell) resolves as one correctly-sized event instead
+    // of carving-then-re-carving the same wall multiple times.
+    _damageWallAOE(wall, x, y, blastRadius, damageAmount) {
+        let dmg = this._ensureDamageCells(wall);
+        let applied = 0;
+        let newlyDestroyed = null;
+        for (let r = 0; r < dmg.rows; r++) {
+            for (let c = 0; c < dmg.cols; c++) {
+                let i = r * dmg.cols + c;
+                if (dmg.cells[i] <= 0) continue;
+                let px = wall.x + (c + 0.5) * dmg.cellW;
+                let py = wall.y + (r + 0.5) * dmg.cellH;
+                let dist = Math.hypot(px - x, py - y);
+                if (dist >= blastRadius) continue;
+                let cellDmg = damageAmount * (1 - dist / blastRadius);
+                let before = dmg.cells[i];
+                dmg.cells[i] = Math.max(0, before - cellDmg);
+                applied += before - dmg.cells[i];
+                if (dmg.cells[i] <= 0) {
+                    if (!newlyDestroyed) newlyDestroyed = [];
+                    newlyDestroyed.push(i);
+                }
+            }
+        }
+        if (applied <= 0) return;
+        wall.hp = Math.max(0, wall.hp - applied);
+
+        // Small immediate "chunks flying off" feedback even on hits that
+        // don't finish a cell -- cheap (fixed count), reuses addParticle.
+        for (let c = 0; c < 5; c++) {
+            game.addParticle(x, y, MathUtils.rand(-120, 120), MathUtils.rand(-120, 120), wall.colorMain || '#808f9c', 0.3, 2);
+        }
+
+        if (newlyDestroyed) {
+            this._openHole(wall, dmg, newlyDestroyed);
+        }
+    }
+
+    // Dispatches a set of newly-destroyed 2D grid cells to the right carve
+    // path. Walls that are only 1 cell across one axis (the vast majority,
+    // since most walls are 25-60px thick and CELL_LEN is 24) are already
+    // effectively 1D, so this carves them directly (_carve1D). Genuinely
+    // chunky walls (more than 1 cell across BOTH axes -- corner blocks,
+    // maze pillars, clutter chunks) get peeled into independent row/column
+    // STRIPS first (see _splitIntoStrips), each of which becomes a normal
+    // 1-cell-thick wall from that point forward -- reusing the exact same
+    // 1D carve machinery per strip rather than attempting general 2D
+    // polygon carving, which would be a lot more code for a shape of
+    // destruction players are very unlikely to visually distinguish from
+    // "diced into a few chunks" anyway.
+    _openHole(wall, dmg, newlyDestroyedFlatIdx) {
+        if (dmg.rows === 1 || dmg.cols === 1) {
+            this._carve1D(wall, dmg, newlyDestroyedFlatIdx);
+        } else {
+            this._splitIntoStrips(wall, dmg, newlyDestroyedFlatIdx);
+        }
+    }
+
+    // The only bridge between the cosmetic damage-cell layer and the real
+    // collision geometry, for a wall (or strip -- see _splitIntoStrips)
+    // that's already only 1 cell across one axis. Splices `wall` out of
+    // this.walls (+ its grid buckets, if it was ever in them -- see below)
+    // and, unless it was destroyed completely, replaces it with 0-2
+    // smaller stub walls representing what survived on either side of the
+    // newly-blown-open hole. Each stub inherits its ACTUAL surviving
+    // cells' remaining hp (sliced straight out of the parent's cell array)
+    // rather than resetting to full, so a heavily-chipped-but-not-quite-
+    // dead cell next to a new hole stays chipped instead of "healing" the
+    // instant its neighbor gets carved out.
+    //
+    // Note this is safe to call on a wall that was never actually inserted
+    // into this.walls/the spatial grid (indexOf returns -1, and
+    // _removeWallFromGrid no-ops with no _gridCells) -- _splitIntoStrips
+    // relies on exactly that to hand a freshly-built strip straight in here
+    // without a throwaway insert-then-immediately-remove step.
+    //
+    // Fragmentation cap (handoff section 3.3, revised): every piece
+    // descended from one original wall (or, after a 2D split, one strip of
+    // it) shares a `_lineage` counter object, and that lineage may not
+    // exceed MAX_LINEAGE_PIECES pieces EVER. This still bounds worst-case
+    // total wall-count growth to a small constant per original destructible
+    // wall (protecting the O(total walls) linear scans in
+    // Boss.hasLineOfSight and sniper-enemy LOS, which have no spatial
+    // filtering at all) while allowing a wall to genuinely break into
+    // several distinct small chunks over the course of being shot up.
+    // Once a lineage hits the cap, any further hit just clears whatever
+    // piece it hit outright instead of splitting it again.
+    _carve1D(wall, dmg, newlyDestroyedFlatIdx) {
+        let alongCols = dmg.rows === 1; // true: this is a horizontal 1D wall/strip (cells vary by column); false: vertical (cells vary by row)
+        let segCount = alongCols ? dmg.cols : dmg.rows;
+        let cells = dmg.cells; // already a flat 1D array in this shape, since the other axis is exactly 1
+
+        let minI = newlyDestroyedFlatIdx[0], maxI = newlyDestroyedFlatIdx[0];
+        for (let i of newlyDestroyedFlatIdx) {
+            if (i < minI) minI = i;
+            if (i > maxI) maxI = i;
+        }
+        // Merge in any already-zeroed neighbors (e.g. a sliver left over
+        // from a much earlier hit that never crossed its own carve on its
+        // own) so the hole this carve cuts always matches the FULL
+        // contiguous dead span, never leaves a zero-hp cell still solid.
+        while (minI > 0 && cells[minI - 1] <= 0) minI--;
+        while (maxI < segCount - 1 && cells[maxI + 1] <= 0) maxI++;
+
+        let segLen = alongCols ? dmg.cellW : dmg.cellH;
+        let allDestroyed = (minI === 0 && maxI === segCount - 1);
+
+        let idx = this.walls.indexOf(wall);
+        if (idx !== -1) this.walls.splice(idx, 1);
+        this._removeWallFromGrid(wall);
+
+        const MIN_STUB = 18; // below this, a surviving sliver isn't worth keeping as its own collidable rect
+        let stubs = []; // { rect, cellStart, cellEnd }
+        let holeCx, holeCy, holeR;
+
+        if (alongCols) {
+            let holeStart = wall.x + minI * segLen;
+            let holeEnd = wall.x + (maxI + 1) * segLen;
+            if (!allDestroyed) {
+                let leftLen = holeStart - wall.x;
+                let rightLen = (wall.x + wall.w) - holeEnd;
+                if (leftLen >= MIN_STUB) stubs.push({ rect: { x: wall.x, y: wall.y, w: leftLen, h: wall.h }, cellStart: 0, cellEnd: minI });
+                if (rightLen >= MIN_STUB) stubs.push({ rect: { x: holeEnd, y: wall.y, w: rightLen, h: wall.h }, cellStart: maxI + 1, cellEnd: segCount });
+            }
+            holeCx = (holeStart + holeEnd) / 2;
+            holeCy = wall.y + wall.h / 2;
+            holeR = Math.max(20, (holeEnd - holeStart) / 2);
+        } else {
+            let holeStart = wall.y + minI * segLen;
+            let holeEnd = wall.y + (maxI + 1) * segLen;
+            if (!allDestroyed) {
+                let topLen = holeStart - wall.y;
+                let botLen = (wall.y + wall.h) - holeEnd;
+                if (topLen >= MIN_STUB) stubs.push({ rect: { x: wall.x, y: wall.y, w: wall.w, h: topLen }, cellStart: 0, cellEnd: minI });
+                if (botLen >= MIN_STUB) stubs.push({ rect: { x: wall.x, y: holeEnd, w: wall.w, h: botLen }, cellStart: maxI + 1, cellEnd: segCount });
+            }
+            holeCx = wall.x + wall.w / 2;
+            holeCy = (holeStart + holeEnd) / 2;
+            holeR = Math.max(20, (holeEnd - holeStart) / 2);
+        }
+
+        const MAX_LINEAGE_PIECES = 5;
+        let lineage = wall._lineage || (wall._lineage = { n: 1 });
+        let allowed = Math.max(0, MAX_LINEAGE_PIECES - lineage.n);
+        if (stubs.length > allowed) {
+            // Prefer keeping the larger remaining piece(s) if the cap
+            // forces us to drop one -- a bigger leftover slab reads better
+            // than an oddly-preserved sliver.
+            stubs.sort((a, b) => (b.rect.w * b.rect.h) - (a.rect.w * a.rect.h));
+            stubs.length = allowed;
+        }
+
+        for (let s of stubs) {
+            let stub = { ...s.rect, destructible: true, tier: wall.tier };
+            if (wall.colorMain) stub.colorMain = wall.colorMain;
+            if (wall.colorRgb) stub.colorRgb = wall.colorRgb;
+            let stubCells = cells.slice(s.cellStart, s.cellEnd);
+            stub._dmg = alongCols
+                ? { cols: stubCells.length, rows: 1, cellW: segLen, cellH: dmg.cellH, cellMax: dmg.cellMax, cells: stubCells }
+                : { cols: 1, rows: stubCells.length, cellW: dmg.cellW, cellH: segLen, cellMax: dmg.cellMax, cells: stubCells };
+            stub.maxHp = stubCells.length * dmg.cellMax;
+            let hp = 0;
+            for (let v of stubCells) hp += v;
+            stub.hp = hp;
+            stub._lineage = lineage;
+            lineage.n++;
+            this.walls.push(stub);
+            this._insertWallIntoGrid(stub);
+        }
+
+        this._spawnCarveDebris(holeCx, holeCy, holeR, wall.colorMain);
+    }
+
+    // Peels a genuinely 2D wall (more than 1 cell across BOTH axes) into
+    // independent row or column strips, along whichever axis has FEWER
+    // cells (bounded at MAX_THIN_CELLS -- see _wallCellPlan), then hands
+    // whichever strip(s) actually took a killing blow this event straight
+    // to _carve1D. A wall only ever goes through this path ONCE: every
+    // resulting strip is a normal 1-cell-thick wall that future hits
+    // resolve through _openHole's 1D branch directly. This is also the
+    // step that makes a "thick square" wall able to lose a chunk off its
+    // face or a corner instead of only ever splitting end-to-end.
+    _splitIntoStrips(wall, dmg, newlyDestroyedFlatIdx) {
+        let byRow = dmg.rows <= dmg.cols;
+        let stripCount = byRow ? dmg.rows : dmg.cols;
+        let segCount = byRow ? dmg.cols : dmg.rows;
+
+        let idx = this.walls.indexOf(wall);
+        if (idx !== -1) this.walls.splice(idx, 1);
+        this._removeWallFromGrid(wall);
+
+        let affected = new Set();
+        for (let flat of newlyDestroyedFlatIdx) {
+            let r = Math.floor(flat / dmg.cols), c = flat % dmg.cols;
+            affected.add(byRow ? r : c);
+        }
+
+        let stripW = byRow ? wall.w : wall.w / stripCount;
+        let stripH = byRow ? wall.h / stripCount : wall.h;
+
+        for (let s = 0; s < stripCount; s++) {
+            let rect = byRow
+                ? { x: wall.x, y: wall.y + s * stripH, w: stripW, h: stripH }
+                : { x: wall.x + s * stripW, y: wall.y, w: stripW, h: stripH };
+
+            let cells = new Float32Array(segCount);
+            let localNewlyDestroyed = [];
+            for (let i = 0; i < segCount; i++) {
+                let flat = byRow ? (s * dmg.cols + i) : (i * dmg.cols + s);
+                cells[i] = dmg.cells[flat];
+                if (cells[i] <= 0) localNewlyDestroyed.push(i);
+            }
+
+            let stripWall = { ...rect, destructible: true, tier: wall.tier };
+            if (wall.colorMain) stripWall.colorMain = wall.colorMain;
+            if (wall.colorRgb) stripWall.colorRgb = wall.colorRgb;
+            stripWall._dmg = byRow
+                ? { cols: segCount, rows: 1, cellW: dmg.cellW, cellH: stripH, cellMax: dmg.cellMax, cells }
+                : { cols: 1, rows: segCount, cellW: stripW, cellH: dmg.cellH, cellMax: dmg.cellMax, cells };
+            stripWall.maxHp = segCount * dmg.cellMax;
+            let hp = 0;
+            for (let v of cells) hp += v;
+            stripWall.hp = hp;
+
+            if (affected.has(s)) {
+                this._carve1D(stripWall, stripWall._dmg, localNewlyDestroyed);
+            } else {
+                this.walls.push(stripWall);
+                this._insertWallIntoGrid(stripWall);
+            }
+        }
+
+        this._spawnCarveDebris(wall.x + wall.w / 2, wall.y + wall.h / 2, Math.max(wall.w, wall.h) * 0.3, wall.colorMain);
+    }
+
+    // Persistent "blown open" feedback at the moment a hole actually
+    // appears in the collision geometry -- reuses the existing
+    // particle/permanentMark/scorch-mark vocabulary (handoff section 2.6)
+    // rather than building a second decal system. Runs once per carve, so
+    // cost here never scales with frame rate or how many destructible
+    // walls exist -- only with how many times a hole gets blown open.
+    _spawnCarveDebris(x, y, r, colorMain) {
+        if (!game) return;
+        audio.playExplosion(0.45, x, y);
+        for (let i = 0; i < 12; i++) {
+            let a = Math.random() * Math.PI * 2;
+            let spd = MathUtils.rand(80, 260);
+            game.addParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, colorMain || '#808f9c', 0.5, MathUtils.rand(2, 4));
+        }
+        let circs = [];
+        let chunkCount = 4 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < chunkCount; i++) {
+            circs.push({ ox: (Math.random() - 0.5) * r * 1.6, oy: (Math.random() - 0.5) * r * 1.1, r: MathUtils.rand(3, 7) });
+        }
+        game._pushPermanentMark({ type: 'debris', x, y, c: colorMain || '#4a5560', a: 0.9, circs });
+        game.spawnScorchMark(x, y, Math.min(46, r * 0.9));
+    }
+
     draw(ctx, cam, viewportW, viewportH, skipHaze) {
         // Draw Atmospheric Haze for standard maps (0-9, 11)
         if (this.templateId !== 10 && this.hazeAnchors.length > 0 && !skipHaze) {
@@ -5325,6 +5818,15 @@ class MapGen {
             ctx.fillRect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
             ctx.strokeRect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
 
+            // DESTRUCTIBLE WALLS: purely cosmetic -- only runs for walls
+            // that have actually taken damage (wall._dmg is only created by
+            // damageWallsNear() the first time a destructible wall is hit),
+            // and only for on-screen walls since it's inside the same
+            // camera-culled loop as everything else here.
+            if (wall.destructible && wall._dmg) {
+                this._drawWallDamage(ctx, cam, wall);
+            }
+
             ctx.beginPath();
             ctx.moveTo(wall.x - cam.x, wall.y - cam.y);
             ctx.lineTo(wall.x + wall.w - cam.x, wall.y + wall.h - cam.y);
@@ -5334,6 +5836,37 @@ class MapGen {
             ctx.stroke();
         }
         ctx.shadowBlur = 0;
+    }
+
+    // Reads the per-wall 2D damage-cell grid (built lazily by
+    // damageWallsNear/damageWallPoint) and draws each damaged cell eroding
+    // inward toward its own center, proportional to how much hp it has
+    // left -- a wall reads as progressively chunked-up cell-by-cell (in
+    // both directions for a genuinely chunky wall, not just along its
+    // length) as it takes damage, then an actual hole opens where a cell
+    // finishes off and _openHole removes it from the geometry entirely.
+    // This is read-only against wall._dmg: it never writes to it and is
+    // never consulted by collision/LOS/nav (see the DESTRUCTIBLE WALLS
+    // block above generate()). One fillRect per damaged cell (not 4) to
+    // keep this cheap even when several chunky walls are damaged and
+    // visible at once.
+    _drawWallDamage(ctx, cam, wall) {
+        let dmg = wall._dmg;
+        ctx.fillStyle = '#05070a';
+        for (let r = 0; r < dmg.rows; r++) {
+            for (let c = 0; c < dmg.cols; c++) {
+                let i = r * dmg.cols + c;
+                let frac = dmg.cells[i] / dmg.cellMax;
+                if (frac >= 0.999) continue;
+                let bite = 1 - frac; // 0..1: how much of this cell has been eaten away
+                let cw = dmg.cellW * bite, ch = dmg.cellH * bite;
+                let cx0 = wall.x + c * dmg.cellW + (dmg.cellW - cw) / 2;
+                let cy0 = wall.y + r * dmg.cellH + (dmg.cellH - ch) / 2;
+                ctx.globalAlpha = 0.6 + bite * 0.35;
+                ctx.fillRect(cx0 - cam.x, cy0 - cam.y, cw, ch);
+            }
+        }
+        ctx.globalAlpha = 1.0;
     }
     
     buildNavGrid() {
@@ -6039,6 +6572,11 @@ class Entity {
         }
         
         if (this.hp <= 0 && !this.dead) {
+            // Overkill physics: this.hp is already negative by exactly the
+            // excess damage past zero, post-armor -- no extra bookkeeping
+            // needed. Consumed by Enemy.onDeath()/spawnCorpseDebris() to
+            // scale corpse debris speed/spread on a wildly overkilled hit.
+            this.lastOverkill = Math.max(0, -this.hp);
             this.dead = true;
             this.onDeath();
         }
@@ -6149,6 +6687,15 @@ const AIM_WEIGHT = {
     IDLE_SWAY_FADE_TIME: 1.0,       // seconds to fade the sway envelope in
     IDLE_SWAY_STILL_THRESHOLD_DEG: 0.6, // target-angle delta below which we count as "still" this frame
 
+    // --- Focus: reuses the exact same aimIdleStillTimer/swayEnvelope above
+    // (a locked-in, un-sprinting aim held still past IDLE_SWAY_ENGAGE_DELAY)
+    // as a "holding an angle" signal, per Player.updateAimWeight()'s tail.
+    // Zero extra per-frame cost -- swayEnvelope is already computed every
+    // frame for the sway effect; Focus just reads it and Bullet.init()
+    // applies it once at bullet-spawn time. See PLAN comments there.
+    FOCUS_VELOCITY_BONUS: 0.10,   // +10% bullet speed at full focus (envelope == 1)
+    FOCUS_DAMAGE_BONUS: 0.15,     // +15% bullet damage at full focus
+
     // Below this many radians of residual offset (and this angular velocity,
     // rad/s), a spring channel is snapped to fully at rest rather than
     // ringing forever on an invisible tail.
@@ -6182,6 +6729,25 @@ const AIM_WEIGHT = {
         WEIGHT_MIN_MULT: 0.30,       // floor so even the bare-handed Pistol (weight 0) keeps a faint whisper of it
         WEIGHT_MAX_MULT: 1.4         // ceiling so a future heavier weapon can't get out of hand
     }
+};
+
+// --- Combat Dive ("dive"/dodge roll) config ---
+// See Player.checkDiveTrigger()/startDive()/updateDivePhysics() and the
+// z/vz dodge check in Bullet.update()'s entity-hit loop. Reuses the exact
+// z/vz/gravity pattern ShrapnelGrenade/HeCannonShell/Flashbang already use
+// for lobbed arcs -- this is just that same arc applied horizontally to
+// the player's existing vx/vy instead of a thrown projectile.
+const DIVE_CONFIG = {
+    DOUBLE_TAP_WINDOW: 0.28,   // seconds between two W/A/S/D presses to count as a double-tap
+    STICK_FLICK_LOW: 0.35,     // analog stick/touch magnitude that counts as "near center" (arms the flick)
+    STICK_FLICK_HIGH: 0.85,    // magnitude that completes a flick once armed
+    STICK_FLICK_WINDOW: 0.15,  // seconds allowed between being near-center and hitting full deflection
+    DIVE_SPEED: 620,           // horizontal burst speed imparted on trigger (existing Entity drag bleeds this off naturally)
+    DIVE_VZ: 280,              // initial upward velocity of the "hop" (matches ShrapnelGrenade's toss vz)
+    DIVE_GRAVITY: 900,         // snappier fall than lobbed grenades (680) -- a dive should feel quick, not floaty
+    DIVE_DODGE_Z: 18,          // z-height above which ground-level bullets (the only kind that exist today) pass underneath
+    DIVE_COOLDOWN: 0.6,        // seconds before another dive can be triggered
+    STAMINA_COST: 12           // flat stamina cost per dive
 };
 
 class Player extends Entity {
@@ -6289,6 +6855,20 @@ class Player extends Entity {
         this.perks = [];               // Array of strings: 'smart_munitions', 'explosive_rounds', 'nanite_siphon'
         this.damageMultiplier = 1.0;   // Accumulates from Hollow-Point+ overclock purchases
         this.intelEarnedThisRun = 0;   // Tracks per-run Intel earnings for HUD display
+
+        // --- Combat Dive state (see DIVE_CONFIG + checkDiveTrigger/startDive/
+        // updateDivePhysics below). z/vz mirror the exact fields
+        // ShrapnelGrenade/HeCannonShell already use for their toss arcs.
+        this.z = 0;
+        this.vz = 0;
+        this.isDiving = false;
+        this.diveCooldownTimer = 0;
+        this._diveKeyPrev = { w: false, a: false, s: false, d: false };
+        this._diveKeyTapTime = { w: -999, a: -999, s: -999, d: -999 };
+        this._diveStickArmTime = -999;
+
+        // --- Focus state (see AIM_WEIGHT.FOCUS_* + updateAimWeight() tail) ---
+        this.focusLevel = 0;
     }
     
     get camera() {
@@ -6447,11 +7027,13 @@ class Player extends Entity {
         }
 
         // Gamepad mapping
+        let gpRawMag = 0;
         if (gp) {
             let ax_move_x = gp.axes[0];
             let ax_move_y = gp.axes[1];
             if (Math.abs(ax_move_x) < 0.18) ax_move_x = 0;
             if (Math.abs(ax_move_y) < 0.18) ax_move_y = 0;
+            gpRawMag = Math.hypot(ax_move_x, ax_move_y); // pre-normalization magnitude, used only by the dive-flick check below
 
             if (ax_move_x !== 0 || ax_move_y !== 0) {
                 let gpMoveX = 0, gpMoveY = 0;
@@ -6479,6 +7061,16 @@ class Player extends Entity {
         if (this.activeDrone && this.activeDrone.isPiloted && !this.activeDrone.dead) {
             moveX = 0;
             moveY = 0;
+        }
+
+        // --- Combat Dive Trigger (double-tap WASD / analog stick flick) ---
+        // Cheap: a handful of comparisons against values already computed
+        // above (moveX/moveY, gpRawMag) plus trivial per-frame bookkeeping
+        // (previous key states, a couple of timestamps) -- no new per-frame
+        // loops or allocations. Skipped entirely while piloting an FPV
+        // drone, same as normal movement above.
+        if (!(this.activeDrone && this.activeDrone.isPiloted && !this.activeDrone.dead)) {
+            this.checkDiveTrigger(dt, input, gpRawMag, moveX, moveY, gameTime);
         }
 
         // --- Sprint Verification ---
@@ -6601,6 +7193,104 @@ class Player extends Entity {
         }
 
         this.updatePhysics(dt, walls);
+        this.updateDivePhysics(dt);
+    }
+
+    // Cooldown bookkeeping always runs (cheap, one subtraction), but the
+    // z/vz arc integration below only runs while actually airborne -- on
+    // the overwhelming majority of frames (nobody mid-dive) this is a
+    // single false `if` check and an immediate return, i.e. effectively free.
+    updateDivePhysics(dt) {
+        if (this.diveCooldownTimer > 0) this.diveCooldownTimer -= dt;
+        if (!this.isDiving && this.z <= 0) return;
+        this.vz -= DIVE_CONFIG.DIVE_GRAVITY * dt;
+        this.z += this.vz * dt;
+        if (this.z <= 0) {
+            this.z = 0;
+            this.vz = 0;
+            this.isDiving = false;
+        }
+    }
+
+    // Detects a dive trigger from whichever input method is active this
+    // frame and, if one fires, hands off to startDive(). See DIVE_CONFIG
+    // for all tunable thresholds.
+    checkDiveTrigger(dt, input, gpRawMag, moveX, moveY, gameTime) {
+        if (this.diveCooldownTimer > 0 || this.isDiving || this.stamina < DIVE_CONFIG.STAMINA_COST) return;
+
+        let triggered = false;
+
+        // Keyboard: discrete double-tap via rising-edge detection on
+        // input.keys. Touch movement is written into these exact same
+        // input.keys booleans by TouchController's leftStick handling, so
+        // a quick touch-stick wiggle across the WASD deadzone is covered by
+        // this same path for free -- no touch-specific code needed here.
+        const k = this._diveKeyPrev;
+        const t = this._diveKeyTapTime;
+        const keys = ['w', 'a', 's', 'd'];
+        for (let i = 0; i < keys.length; i++) {
+            let key = keys[i];
+            let down = !!input.keys[key];
+            if (down && !k[key]) {
+                if (gameTime - t[key] < DIVE_CONFIG.DOUBLE_TAP_WINDOW) {
+                    triggered = true;
+                    t[key] = -999; // consume so a lingering 3rd tap doesn't immediately re-trigger
+                } else {
+                    t[key] = gameTime;
+                }
+            }
+            k[key] = down;
+        }
+
+        // Gamepad / raw touch-stick analog: a fast flick from near-center to
+        // near-full deflection. _diveStickArmTime doubles as "last time we
+        // were near center" -- while under STICK_FLICK_LOW it keeps
+        // refreshing to now, so hitting STICK_FLICK_HIGH only counts if that
+        // refresh happened within STICK_FLICK_WINDOW. A slow, deliberate
+        // push to max speed takes longer than that window and never fires.
+        if (!triggered) {
+            let mag = gpRawMag || 0;
+            if (mag === 0 && window.touchController && window.touchController.enabled && window.touchController.leftStick.active) {
+                mag = window.touchController.leftStick.dist;
+            }
+            if (mag < DIVE_CONFIG.STICK_FLICK_LOW) {
+                this._diveStickArmTime = gameTime;
+            } else if (mag > DIVE_CONFIG.STICK_FLICK_HIGH && (gameTime - this._diveStickArmTime) < DIVE_CONFIG.STICK_FLICK_WINDOW) {
+                triggered = true;
+                this._diveStickArmTime = -999; // consume so holding at max doesn't keep re-triggering every frame
+            }
+        }
+
+        if (triggered) {
+            let dirX = moveX, dirY = moveY;
+            if (dirX === 0 && dirY === 0) {
+                dirX = Math.cos(this.angle);
+                dirY = Math.sin(this.angle);
+            }
+            this.startDive(dirX, dirY);
+        }
+    }
+
+    startDive(dirX, dirY) {
+        let len = Math.hypot(dirX, dirY) || 1;
+        this.vx = (dirX / len) * DIVE_CONFIG.DIVE_SPEED;
+        this.vy = (dirY / len) * DIVE_CONFIG.DIVE_SPEED;
+        this.vz = DIVE_CONFIG.DIVE_VZ;
+        this.isDiving = true;
+        this.diveCooldownTimer = DIVE_CONFIG.DIVE_COOLDOWN;
+        this.stamina = Math.max(0, this.stamina - DIVE_CONFIG.STAMINA_COST);
+
+        let cam = this.camera;
+        if (cam && cam.punchZoom) cam.punchZoom(0.04);
+        if (audio && audio.playFootstep) audio.playFootstep(0.7);
+        if (game) {
+            let kickAngle = Math.atan2(this.vy, this.vx) + Math.PI;
+            for (let i = 0; i < 5; i++) {
+                let a = kickAngle + (Math.random() - 0.5) * 0.8;
+                let spd = MathUtils.rand(40, 120);
+                game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#888888', 0.3, 2.5);
+            }
+        }
     }
 
     applySprintStaminaAndMove(dt, moveX, moveY, isSprinting) {
@@ -6697,8 +7387,15 @@ class Player extends Entity {
         const exoServosAccelMulti = 1.0 + exoServosLvl * 0.05;
         let curAccel = this.accel * (1.0 + this.speedUpgrades * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff * exoServosAccelMulti;
         
-        this.vx += moveX * curAccel * dt;
-        this.vy += moveY * curAccel * dt;
+        // Combat Dive: "cannot change your movement direction" mid-dive --
+        // skip the normal steering accel entirely so held WASD can't redirect
+        // the burst. The existing Entity.updatePhysics() drag (line ~5952)
+        // still bleeds the dive velocity off naturally over about half a
+        // second either way, so no separate deceleration logic is needed.
+        if (!this.isDiving) {
+            this.vx += moveX * curAccel * dt;
+            this.vy += moveY * curAccel * dt;
+        }
 
         // 9. Heavy Barrel Pivot: forward-offset center-of-gravity lateral
         // sway induced by aim angular velocity (see AIM_WEIGHT.PIVOT config
@@ -6801,7 +7498,12 @@ class Player extends Entity {
         let stillThreshold = AIM_WEIGHT.IDLE_SWAY_STILL_THRESHOLD_DEG * Math.PI / 180;
         let targetDelta = Math.abs(MathUtils.angleDifference(targetAngle, this._aimLastTargetAngle ?? targetAngle));
         this._aimLastTargetAngle = targetAngle;
-        if (targetDelta < stillThreshold) {
+        // Focus (see AIM_WEIGHT.FOCUS_*) rides this same still-aim signal, so
+        // sprinting has to break it here too -- this.isSprinting is one
+        // frame stale (applySprintStaminaAndMove sets it later this same
+        // frame), which is imperceptible at any real frame rate and not
+        // worth reordering the update() call sequence over.
+        if (targetDelta < stillThreshold && !this.isSprinting) {
             this.aimIdleStillTimer += dt;
         } else {
             this.aimIdleStillTimer = 0;
@@ -6810,6 +7512,9 @@ class Player extends Entity {
             (this.aimIdleStillTimer - AIM_WEIGHT.IDLE_SWAY_ENGAGE_DELAY) / AIM_WEIGHT.IDLE_SWAY_FADE_TIME,
             0, 1
         );
+        // Focus: reuse the envelope directly -- zero extra per-frame cost.
+        // Consumed once at bullet-spawn time in Bullet.init().
+        this.focusLevel = swayEnvelope;
         let swayAmp = (AIM_WEIGHT.IDLE_SWAY_MAX_DEG * Math.PI / 180) * swayEnvelope;
         let t = (game ? game.gameTime : 0);
         let swayOffset = swayAmp * (Math.sin(t * 1.3) * 0.7 + Math.sin(t * 2.9 + 1.3) * 0.3);
@@ -7043,10 +7748,15 @@ class Player extends Entity {
     }
 
     draw(ctx, cam) {
-        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.1);
+        // Combat Dive: cosmetic-only vertical lift + a tighter shadow while
+        // airborne, same shadowScale pattern ShrapnelGrenade/HeCannonShell
+        // already use. this.z never feeds collision (Entity.updatePhysics
+        // never reads it), so this can't desync from gameplay.
+        let diveShadowScale = this.z > 0 ? Math.max(0.4, 1.0 - this.z / 140) : 1.0;
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.1 * diveShadowScale);
 
         let scx = this.x - cam.x;
-        let scy = this.y - cam.y;
+        let scy = this.y - cam.y - this.z;
 
         ctx.save();
         ctx.translate(scx, scy);
@@ -8405,9 +9115,11 @@ class Enemy extends Entity {
         let angle = this.lastHitAngle || 0;
         game.spawnBlood(this.x, this.y, Math.cos(angle) * 300, Math.sin(angle) * 300);
 
-        // Corpse debris in enemy's color
+        // Corpse debris in enemy's color -- overkill (see Entity.takeDamage)
+        // tightens the spread and boosts speed along the impact angle for a
+        // "blown backwards" look on a wildly overkilled grunt.
         let debrisColor = this.isElite ? '#ffcc00' : this.color;
-        game.spawnCorpseDebris(this.x, this.y, angle, debrisColor, this.r);
+        game.spawnCorpseDebris(this.x, this.y, angle, debrisColor, this.r, this.lastOverkill || 0, this.maxHp || 100);
 
         // Elite guaranteed drops & text
         if (this.isElite && game) {
@@ -9903,6 +10615,12 @@ class Bullet {
         if (this.shooter && this.shooter.perkFlatline) {
             speed *= 1.25;
         }
+        // Focus (see AIM_WEIGHT.FOCUS_* + Player.updateAimWeight()): applied
+        // once here at bullet-spawn time, same as every other perk below --
+        // no per-frame cost of its own.
+        if (this.shooter && this.shooter.focusLevel > 0) {
+            speed *= 1 + AIM_WEIGHT.FOCUS_VELOCITY_BONUS * this.shooter.focusLevel;
+        }
         
         this.vx = Math.cos(angle) * speed;
         this.vy = Math.sin(angle) * speed;
@@ -9918,6 +10636,9 @@ class Bullet {
         }
         if (this.shooter && this.shooter.perkPointBlank && this.shooter.isSprinting) {
             this.dmg *= 1.20;
+        }
+        if (this.shooter && this.shooter.focusLevel > 0) {
+            this.dmg *= 1 + AIM_WEIGHT.FOCUS_DAMAGE_BONUS * this.shooter.focusLevel;
         }
         
         this.perkGhost = this.shooter ? !!this.shooter.perkGhost : false;
@@ -9954,6 +10675,14 @@ class Bullet {
         this.hasSmartMunitions  = false;
         this.hasExplosiveRounds = false;
         this.firingPlayer       = null;   // Explicit Player reference for perk effects
+
+        // Shrapnel Rounds perk fragments (see Bullet.explode()) are flagged
+        // so a fragment's own explosion can't spawn further fragments --
+        // without this a shooter with both Explosive Rounds and Shrapnel
+        // Rounds could chain-spawn bullets exponentially. Reset here since
+        // bullets are pooled; set true explicitly right after a fragment is
+        // created.
+        this.isFragment = false;
     }
 
     update(dt, walls, entities, game) {
@@ -10128,6 +10857,14 @@ class Bullet {
                 }
                 
                 if (!canHit) continue;
+
+                // Combat Dive dodge: an airborne diving player (see
+                // Player.startDive/updateDivePhysics) is above ground-level
+                // bullets -- the only kind that exist today -- so they pass
+                // underneath. Explosion splash damage is a separate radius
+                // check in explode() and is deliberately NOT gated by this,
+                // matching the "explosions still get you" design call.
+                if (ent instanceof Player && ent.z > DIVE_CONFIG.DIVE_DODGE_Z) continue;
                 
                 let dx = this.x - ent.x; 
                 let dy = this.y - ent.y;
@@ -10393,6 +11130,20 @@ class Bullet {
                         }
                     }
 
+                    // Guns can chip destructible walls too, just much more
+                    // slowly than an explosive -- a flat fraction of the
+                    // bullet's own damage per hit (AP rounds double it, on
+                    // top of already piercing thin walls outright below),
+                    // so a sustained burst gradually punches through rather
+                    // than a couple of shots doing it. This is a single
+                    // cheap point-hit on the ONE wall already in hand from
+                    // this loop -- no extra spatial query -- and only ever
+                    // runs on an actual bullet-wall contact event, not
+                    // per-frame per bullet (see damageWallPoint).
+                    if (wall.destructible && game && game.map) {
+                        game.map.damageWallPoint(wall, this.x, this.y, this.dmg * (this.isAP ? 0.6 : 0.3));
+                    }
+
                     if (this.isAP) {
                         let thickness = nx !== 0 ? wall.w : wall.h;
                         if (thickness <= 45) { 
@@ -10416,10 +11167,21 @@ class Bullet {
                         break;
                     }
 
+                    // Explosive Rounds + Rubber Bullets synergy: with both
+                    // perks active, a hit that would normally be absorbed
+                    // (steep angle, dotProduct >= 0.45) bounces instead --
+                    // detonating a mini-explosion at the bounce point first.
+                    // Bounded by maxBounces (6 with Rubber Bullets), so at
+                    // most 6 explosions total over one bullet's life -- no
+                    // meaningful cost beyond what Explosive Rounds already
+                    // pays per shot.
+                    let comboExplosiveRubber = this.isPlayerBullet && this.shooter &&
+                        this.shooter.perkExplosiveRounds && this.shooter.perkRubberBullets;
+
                     let speed = Math.sqrt(curSpeedSq);
                     let dotProduct = (this.vx / speed) * nx + (this.vy / speed) * ny;
                     
-                    if (Math.abs(dotProduct) < 0.45) { 
+                    if (Math.abs(dotProduct) < 0.45 || comboExplosiveRubber) { 
                         if (nx !== 0) this.vx *= -0.7;
                         if (ny !== 0) this.vy *= -0.7;
                         this.x = prevX; this.y = prevY; 
@@ -10428,6 +11190,10 @@ class Bullet {
                         this.bounces++;
                         audio.playRicochet(this.x, this.y);
                         game.addParticle(this.x, this.y, nx*120, ny*120, '#00e5ff', 0.12, 2.5);
+                        if (comboExplosiveRubber) {
+                            this.explode(game);
+                            this.hasExploded = false; // allow the next bounce to detonate again (see explode()'s one-shot guard)
+                        }
                     } else {
                         if (this.isPlayerBullet && this.shooter && this.shooter.perkExplosiveRounds) {
                             this.explode(game);
@@ -10524,7 +11290,30 @@ class Bullet {
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
             }
         }
+        game.map.damageWallsNear(this.x, this.y, blastRadius, damage * 1.3);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
+
+        // Shrapnel Rounds perk: fling a few low-damage fragments outward,
+        // reusing the exact fragment-spawn pattern ShrapnelGrenade.explode()
+        // already uses (spawnBullet + push into game.bullets). Each fragment
+        // is a real player bullet attributed to this.shooter, so Vampiric
+        // Rounds and other on-hit perks apply to it with no extra plumbing.
+        // Gated on !this.isFragment so a fragment's own Explosive Rounds
+        // detonation can't spawn further fragments -- without that guard,
+        // stacking both perks together could chain-spawn bullets
+        // exponentially instead of a bounded handful per original shot.
+        if (this.isPlayerBullet && this.shooter && this.shooter.perkShrapnelRounds && !this.isFragment) {
+            let fragCount = 3 + Math.floor(Math.random() * 2); // 3-4
+            for (let i = 0; i < fragCount; i++) {
+                let a = Math.random() * Math.PI * 2;
+                let spd = MathUtils.rand(900, 1400);
+                let frag = game.spawnBullet(this.x, this.y, a,
+                    { name: 'Pistol', dmg: this.dmg * 0.25, speed: spd, drag: 0.15, color: '#ffb700' },
+                    this.shooter, false, false, false);
+                frag.isFragment = true;
+                game.bullets.push(frag);
+            }
+        }
     }
 }
 
@@ -11026,6 +11815,7 @@ class FPVDrone {
             this.pilot.activeDrone = null;
         }
         game.spawnScorchMark(this.x, this.y, 55);
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 320);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     
@@ -12613,6 +13403,7 @@ class MiniDrone extends Entity {
             let color = Math.random() > 0.5 ? '#ffea00' : '#ff3d00';
             game.addParticle(this.x, this.y, Math.cos(angle)*speed, Math.sin(angle)*speed, color, 0.3, 2);
         }
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 155);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     
@@ -12770,6 +13561,7 @@ class ShrapnelGrenade {
             game.addParticle(this.x, this.y, Math.cos(a)*spd*0.5, Math.sin(a)*spd*0.5, '#ffff00', 0.4, 4);
         }
         game.spawnScorchMark(this.x, this.y, 38);
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 180);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     draw(ctx, cam) {
@@ -12871,6 +13663,7 @@ class HeCannonShell {
             game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.6, Math.sin(a) * spd * 0.6, '#ffb700', 0.35, 3);
         }
         game.spawnScorchMark(this.x, this.y, 26);
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 70);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     draw(ctx, cam) {
@@ -12965,6 +13758,7 @@ class EnemyFragGrenade {
             game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.5, Math.sin(a) * spd * 0.5, '#39ff14', 0.35, 3);
         }
         game.spawnScorchMark(this.x, this.y, 30);
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 62);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     draw(ctx, cam) {
@@ -13251,6 +14045,7 @@ class TripMine {
             game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#d500f9', 0.5, 4);
         }
         game.spawnScorchMark(this.x, this.y, 32);
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 140);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     draw(ctx, cam) {
@@ -13534,6 +14329,7 @@ class ExplosiveBarrel {
             game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.7, Math.sin(a) * spd * 0.7, '#ff3d00', 0.7, 5);
         }
         game.spawnScorchMark(this.x, this.y, 55);
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 320);
 
         // Chain reaction: any other live barrel caught in this blast goes up
         // too, with a tiny stagger so clustered barrels read as a cascade
@@ -13744,6 +14540,8 @@ class Game {
         
         this.isTwoPlayer = false;
         this.isTestingMode = false;
+        this.nowMode = false;
+        this._nowModePerkQueue = [];
         this.difficultyMode = 'hard';
         this.cashMultiplier = 1.0;
         this.timeScale = 1.0;
@@ -14329,12 +15127,21 @@ class Game {
         }
     }
 
-    spawnCorpseDebris(x, y, impactAngle, enemyColor, enemyRadius) {
+    spawnCorpseDebris(x, y, impactAngle, enemyColor, enemyRadius, overkill = 0, hpReference = 100) {
         let debrisCount = 6 + Math.floor(Math.random() * 5); // 6–10 pieces
+        // Overkill physics: damage far beyond what was needed to kill scales
+        // 0..1 over a full hpReference's worth of excess, tightening the
+        // spread cone and boosting speed along the hit direction -- a
+        // shotgun/sniper blast on a low-hp grunt throws the corpse hard one
+        // way instead of the default even radial puff. Capped at 1.0 so an
+        // absurd one-shot can't fling debris at unbounded speed.
+        let overkillFactor = hpReference > 0 ? MathUtils.clamp(overkill / hpReference, 0, 1) : 0;
+        let spreadMult = 1.0 - overkillFactor * 0.7; // tightens toward a narrow cone
+        let speedBoost = 1.0 + overkillFactor * 1.2; // up to +120% speed
         for (let i = 0; i < debrisCount; i++) {
-            let spread = (Math.random() - 0.5) * 1.0;
+            let spread = (Math.random() - 0.5) * 1.0 * spreadMult;
             let debrisAngle = impactAngle + spread;
-            let speed = 120 + Math.random() * 250;
+            let speed = (120 + Math.random() * 250) * speedBoost;
             let vx = Math.cos(debrisAngle) * speed;
             let vy = Math.sin(debrisAngle) * speed;
             let size = 2 + Math.random() * (enemyRadius * 0.35);
@@ -15533,7 +16340,7 @@ class Game {
                 ['btn-mode-1p', 'btn-mode-2p'],
                 ['btn-env-day', 'btn-env-night'],
                 ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
-                ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator'],
+                ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator', 'btn-gm-now'],
                 ['btn-cash-down', 'btn-cash-up'],
                 ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore', 'btn-ff-pvp'],
                 ['sld-time-scale'],
@@ -15726,7 +16533,7 @@ class Game {
                 ['btn-mode-1p', 'btn-mode-2p'],
                 ['btn-env-day', 'btn-env-night'],
                 ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
-                ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator'],
+                ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator', 'btn-gm-now'],
                 ['btn-cash-down', 'btn-cash-up'],
                 ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore', 'btn-ff-pvp'],
                 ['sld-time-scale'],
@@ -16547,6 +17354,7 @@ class Game {
         p.perkRubberBullets = false;
         p.perkSmartMunitions = false;
         p.perkExplosiveRounds = false;
+        p.perkShrapnelRounds = false;
     }
 
     startNewGame() {
@@ -16768,18 +17576,56 @@ class Game {
                 it.isSandbox = true;
                 this.items.push(it);
             });
+        } else if (this.nowMode) {
+            // ACTION NOW: fixed arsenal budget, replacing (not stacking on)
+            // the normal startingCash slider -- no ground weapon pile like
+            // Sandbox, since the shop the player is about to land in already
+            // covers that.
+            this.player.cash = NOW_MODE.STARTING_CASH;
+            if (this.player2) this.player2.cash = NOW_MODE.STARTING_CASH;
+
+            // Hand over real weapons straight into inventory (not ground
+            // pickups -- no walking required, no risk of an item spawning
+            // inside a wall) with full reserve ammo. addWeapon() only tops
+            // up a partial starting mag on first pickup, so explicitly max
+            // the reserve out right after for each.
+            const grantNowModeLoadout = (p) => {
+                if (!p) return;
+                NOW_MODE.LOADOUT_WEAPONS.forEach(key => {
+                    p.addWeapon(key);
+                    if (p.ammo[key] !== undefined && p.maxAmmo[key] !== undefined) {
+                        p.ammo[key] = p.maxAmmo[key];
+                    }
+                });
+            };
+            grantNowModeLoadout(this.player);
+            if (this.player2) grantNowModeLoadout(this.player2);
         } else {
             this.player.cash = this.startingCash;
             if (this.player2) this.player2.cash = this.startingCash;
         }
         
-        this.wave = 1;
+        this.wave = this.nowMode ? NOW_MODE.START_WAVE : 1;
         this.waveStarted = false;
         this.isPaused = false;
         
-        if (this.isTestingMode) {
+        if (this.isTestingMode || this.nowMode) {
             this.state = 'shop';
             this.openShopInterface();
+            if (this.nowMode) {
+                // Queue free perk choice screens (see selectPerk()'s advance
+                // hook) -- P1's grants first, then P2's if 2P. Each grant
+                // opens its own choice screen only once the previous one has
+                // actually been resolved, so simultaneous/duplicate calls to
+                // grantRandomPerk() (which uses a single shared
+                // perkSelectingPlayer slot) can't stomp on each other.
+                this._nowModePerkQueue = this._nowModePerkQueue || [];
+                for (let i = 0; i < NOW_MODE.FREE_PERK_COUNT; i++) {
+                    this._nowModePerkQueue.push(this.player);
+                    if (this.player2) this._nowModePerkQueue.push(this.player2);
+                }
+                this._advanceNowModePerkQueue();
+            }
         } else {
             this.state = 'playing';
             this.startNextWave(true);
@@ -16794,6 +17640,17 @@ class Game {
         
         toggleClass('shop-screen', 'hidden', true);
         this.state = 'playing';
+        // Force-clear isPaused here: grantRandomPerk() sets it true and
+        // _safeUnpause() deliberately won't clear it while state === 'shop'
+        // (so closing a perk pop-up mid-shop doesn't resume live gameplay
+        // early). Action Now's free-perk queue is the first caller that
+        // ever triggers a perk grant while still in the shop, so without
+        // this, isPaused stayed stuck true forever once READY was clicked --
+        // the update() loop gates its entire gameplay tick on isPaused, so
+        // that silently froze the prep timer, spawning, and player movement
+        // all at once. startNextWave() is the sole entry point into actual
+        // gameplay, so unconditionally clearing it here is always correct.
+        this.isPaused = false;
         
         if (!isFirst) {
             if (this.player) {
@@ -16829,7 +17686,10 @@ class Game {
             }
         }
         
-        this.prepTimer = 15.0;
+        // ACTION NOW: near-instant incursion timer every wave (not just the
+        // first) -- the whole point of the mode is skipping the calm
+        // between fights, not just the initial grind up to a loadout.
+        this.prepTimer = this.nowMode ? NOW_MODE.PREP_TIME : 15.0;
         
         this.enemiesToSpawn = 5 + this.wave * 4;
         this.rollBossWave(); // may reduce enemiesToSpawn to an escort-sized fraction and set this.isBossWave/pendingBoss
@@ -17199,6 +18059,26 @@ class Game {
         return pickedUp;
     }
 
+    // ACTION NOW: grantRandomPerk()/selectPerk() only support one pending
+    // choice screen at a time (single shared perkSelectingPlayer slot) --
+    // calling grantRandomPerk() again while one is already up would just
+    // silently overwrite it before the player ever saw it. This queue lets
+    // Action Now hand out multiple free perks (possibly across two players)
+    // safely: each call only fires once the previous one has actually been
+    // resolved, from selectPerk()'s advance hook (or from
+    // grantRandomPerk()'s own already-maxed-out branch, which never opens a
+    // screen at all). No-op whenever the queue is empty, i.e. always, for
+    // every mode except Action Now.
+    _advanceNowModePerkQueue() {
+        if (!this._nowModePerkQueue || this._nowModePerkQueue.length === 0) return;
+        let nextPlayer = this._nowModePerkQueue.shift();
+        if (nextPlayer && !nextPlayer.dead) {
+            this.grantRandomPerk(nextPlayer);
+        } else {
+            this._advanceNowModePerkQueue();
+        }
+    }
+
     grantRandomPerk(p) {
         if (!p) return;
         const perks = [
@@ -17209,7 +18089,8 @@ class Game {
             { key: 'perkVolatileCorpses', name: 'VOLATILE CORPSES', desc: 'Killed enemies trigger a shockwave and mini-explosion.' },
             { key: 'perkRubberBullets', name: 'RUBBER BULLETS', desc: 'Modify maximum bounces from 2 to 6.' },
             { key: 'perkSmartMunitions', name: 'SMART MUNITIONS', desc: 'Bullets gently steer towards nearest forward enemy.' },
-            { key: 'perkExplosiveRounds', name: 'EXPLOSIVE ROUNDS', desc: 'Bullets explode on impact. Self-damage disabled.' }
+            { key: 'perkExplosiveRounds', name: 'EXPLOSIVE ROUNDS', desc: 'Bullets explode on impact. Self-damage disabled.' },
+            { key: 'perkShrapnelRounds', name: 'SHRAPNEL ROUNDS', desc: 'Explosions fling 3-4 low-damage fragments outward.' }
         ];
 
         const available = perks.filter(perk => !p[perk.key]);
@@ -17219,6 +18100,10 @@ class Game {
                 p.x, p.y - 25, 'MAX PERKS: +$250 BONUS!', '#00e5ff', 2.0
             ));
             if (audio) audio.playPickup('money');
+            // No choice screen opens in this branch, so nothing else will
+            // ever call _advanceNowModePerkQueue() for this grant -- advance
+            // it here directly so a queued grant can't silently stall.
+            this._advanceNowModePerkQueue();
             return;
         }
 
@@ -17250,7 +18135,8 @@ class Game {
             { key: 'perkVolatileCorpses', name: 'VOLATILE CORPSES', desc: 'Killed enemies trigger a shockwave and mini-explosion.' },
             { key: 'perkRubberBullets', name: 'RUBBER BULLETS', desc: 'Modify maximum bounces from 2 to 6.' },
             { key: 'perkSmartMunitions', name: 'SMART MUNITIONS', desc: 'Bullets gently steer towards nearest forward enemy.' },
-            { key: 'perkExplosiveRounds', name: 'EXPLOSIVE ROUNDS', desc: 'Bullets explode on impact. Self-damage disabled.' }
+            { key: 'perkExplosiveRounds', name: 'EXPLOSIVE ROUNDS', desc: 'Bullets explode on impact. Self-damage disabled.' },
+            { key: 'perkShrapnelRounds', name: 'SHRAPNEL ROUNDS', desc: 'Explosions fling 3-4 low-damage fragments outward.' }
         ];
         
         const available = perks.filter(perk => !p[perk.key]);
@@ -17343,6 +18229,7 @@ class Game {
         this.perkSelectionIndex = undefined;
         this._safeUnpause();
         if (document.activeElement) document.activeElement.blur();
+        this._advanceNowModePerkQueue();
     }
 
     handlePerkMenuNavigation(gpList) {
@@ -17659,7 +18546,7 @@ class Game {
         const perks = [
             'perkFlatline', 'perkPointBlank', 'perkGhost', 
             'perkVampiric', 'perkVolatileCorpses', 'perkRubberBullets', 
-            'perkSmartMunitions', 'perkExplosiveRounds'
+            'perkSmartMunitions', 'perkExplosiveRounds', 'perkShrapnelRounds'
         ];
         perks.forEach(key => {
             const btn = document.getElementById('btn-dev-perk-' + key);
@@ -18060,7 +18947,10 @@ class Game {
                 
                 this.enemies.push(enemy);
                 this.enemiesToSpawn--;
-                this.spawnTimer = Math.max(0.2, 1.6 - this.wave*0.12);
+                // ACTION NOW: ~20 enemies/sec instead of the stock trickle --
+                // this is the entire point of the mode, so it applies to
+                // every wave for the whole run, not just the kickoff wave.
+                this.spawnTimer = this.nowMode ? NOW_MODE.SPAWN_INTERVAL : Math.max(0.2, 1.6 - this.wave*0.12);
             }
         }
 
@@ -19658,12 +20548,13 @@ class Game {
     }
 
     setGameMode(mode) {
-        // mode: 'normal' | 'sandbox' | 'operator'
+        // mode: 'normal' | 'sandbox' | 'operator' | 'now'
         this.gameMode = mode;
         this.isTestingMode = (mode === 'sandbox');
         this.operatorMode = (mode === 'operator');
+        this.nowMode = (mode === 'now');
 
-        ['normal', 'sandbox', 'operator'].forEach(m => {
+        ['normal', 'sandbox', 'operator', 'now'].forEach(m => {
             const btn = document.getElementById('btn-gm-' + m);
             if (btn) btn.classList.toggle('active-mode', m === mode);
         });
@@ -19692,6 +20583,17 @@ class Game {
             // Only reset off the forced operator map if we were actually on it
             if (this.selectedMapId === 11) this.setMap(-1);
         }
+
+        // ACTION NOW replaces the Starting Funds slider outright with a
+        // fixed budget (see NOW_MODE.STARTING_CASH) -- map/friendly-fire/
+        // 1P-2P are all left exactly as the player already had them (this
+        // mode is meant to drop into whatever setup they were already
+        // using), so only that one now-inert control gets dimmed.
+        const fundsControls = ['btn-cash-down', 'btn-cash-up', 'lbl-starting-cash'].map(id => document.getElementById(id));
+        fundsControls.forEach(el => { if (el) el.style.opacity = (mode === 'now') ? '0.35' : '1'; });
+        const fundsButtons = ['btn-cash-down', 'btn-cash-up'].map(id => document.getElementById(id));
+        fundsButtons.forEach(b => { if (b) b.disabled = (mode === 'now'); });
+
         this.saveGameData();
     }
 
@@ -20039,6 +20941,20 @@ class Game {
                 let maxLaserDist = 1700; // was 1400 -- a bit longer now that this is the ONLY aim reference during gameplay
                 let hitPt = this.getLaserEndPoint(lStartX, lStartY, laserAngle, maxLaserDist, this.map.walls);
                 
+                // Combat Dive (see DIVE_CONFIG/updateDivePhysics): the laser is
+                // mounted to the gun, so while the player is airborne the
+                // beam needs to visually rise and fall with them exactly like
+                // their own sprite does (Player.draw uses `this.y - cam.y -
+                // this.z` for the same reason -- see also the ember/grenade
+                // draw calls elsewhere using the identical `- z` convention).
+                // Only the on-screen line moves; the underlying raycast above
+                // stays a normal ground-plane trace, since actual bullets are
+                // still ground-level regardless of this cosmetic hop (see
+                // Bullet.update's DIVE_DODGE_Z check) -- so where the shot
+                // will actually land is unaffected, only where the beam
+                // appears to be is.
+                let pz = p.z || 0;
+
                 let dist = Math.hypot(hitPt.x - lStartX, hitPt.y - lStartY);
                 let distRatio = Math.min(1.0, dist / maxLaserDist);
                 // Brightness buffed across the board (was startAlpha 0.25 /
@@ -20050,8 +20966,8 @@ class Game {
                 let dotAlpha = Math.min(0.9, endAlpha + 0.32);
                 
                 let grad = this.ctx.createLinearGradient(
-                    lStartX - cam.x, lStartY - cam.y,
-                    hitPt.x - cam.x, hitPt.y - cam.y
+                    lStartX - cam.x, lStartY - cam.y - pz,
+                    hitPt.x - cam.x, hitPt.y - cam.y - pz
                 );
                 
                 let laserRGB = p.isPlayer2 ? '255, 183, 0' : '0, 229, 255';
@@ -20066,15 +20982,15 @@ class Game {
                 // without the precision line itself getting any thicker/harder
                 // to aim with.
                 this.ctx.beginPath();
-                this.ctx.moveTo(lStartX - cam.x, lStartY - cam.y);
-                this.ctx.lineTo(hitPt.x - cam.x, hitPt.y - cam.y);
+                this.ctx.moveTo(lStartX - cam.x, lStartY - cam.y - pz);
+                this.ctx.lineTo(hitPt.x - cam.x, hitPt.y - cam.y - pz);
                 this.ctx.strokeStyle = `rgba(${laserRGB}, ${startAlpha * 0.35})`;
                 this.ctx.lineWidth = 4.5;
                 this.ctx.stroke();
 
                 this.ctx.beginPath();
-                this.ctx.moveTo(lStartX - cam.x, lStartY - cam.y);
-                this.ctx.lineTo(hitPt.x - cam.x, hitPt.y - cam.y);
+                this.ctx.moveTo(lStartX - cam.x, lStartY - cam.y - pz);
+                this.ctx.lineTo(hitPt.x - cam.x, hitPt.y - cam.y - pz);
                 this.ctx.strokeStyle = grad;
                 this.ctx.lineWidth = 1.6;
                 this.ctx.stroke();
@@ -20084,7 +21000,7 @@ class Game {
                 this.ctx.shadowBlur = 8;
                 this.ctx.shadowColor = `rgba(${laserRGB}, 1)`;
                 this.ctx.beginPath();
-                this.ctx.arc(hitPt.x - cam.x, hitPt.y - cam.y, 3.2, 0, Math.PI*2);
+                this.ctx.arc(hitPt.x - cam.x, hitPt.y - cam.y - pz, 3.2, 0, Math.PI*2);
                 this.ctx.fill();
                 this.ctx.restore();
             }
