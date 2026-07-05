@@ -6932,10 +6932,17 @@ const AIM_WEIGHT = {
 // for lobbed arcs -- this is just that same arc applied horizontally to
 // the player's existing vx/vy instead of a thrown projectile.
 const DIVE_CONFIG = {
-    DOUBLE_TAP_WINDOW: 0.28,   // seconds between two W/A/S/D presses to count as a double-tap
-    STICK_FLICK_LOW: 0.35,     // analog stick/touch magnitude that counts as "near center" (arms the flick)
-    STICK_FLICK_HIGH: 0.85,    // magnitude that completes a flick once armed
-    STICK_FLICK_WINDOW: 0.15,  // seconds allowed between being near-center and hitting full deflection
+    DOUBLE_TAP_WINDOW: 0.28,   // seconds between two W/A/S/D presses (or two stick flicks) to count as a double-tap
+    STICK_FLICK_LOW: 0.35,     // analog stick/touch magnitude the stick must return under to "re-arm" the next flick
+    STICK_FLICK_HIGH: 0.85,    // magnitude that counts as a completed flick once armed
+    // NOTE: there used to be a STICK_FLICK_WINDOW here (0.15s allowed between
+    // being near-center and hitting full deflection). That made a SINGLE hard
+    // push of the stick -- the normal way to start moving on a controller --
+    // register as the dive trigger, since going from rest to full deflection
+    // in one motion easily happens inside 0.15s. Fixed below: a flick is now
+    // just a rising edge into STICK_FLICK_HIGH (armed only after dropping
+    // below STICK_FLICK_LOW first), and it takes two such flicks within
+    // DOUBLE_TAP_WINDOW to trigger -- a real double-tap, same as keyboard.
     // DIVE_SPEED bumped 620 -> 780 alongside the new DIVE_DRAG_RATE below --
     // together these are what actually determine how far the dive travels
     // (see DIVE_DRAG_RATE comment for why DIVE_SPEED alone wasn't the real
@@ -7076,7 +7083,9 @@ class Player extends Entity {
         this.diveCooldownTimer = 0;
         this._diveKeyPrev = { w: false, a: false, s: false, d: false };
         this._diveKeyTapTime = { w: -999, a: -999, s: -999, d: -999 };
-        this._diveStickArmTime = -999;
+        this._diveStickPrevMag = 0;          // last frame's stick magnitude, used to detect the rising edge into a flick
+        this._diveStickReadyForFlick = true; // only true once the stick has returned near center since the last flick
+        this._diveStickLastFlickTime = -999; // timestamp of the last qualifying flick, compared against DOUBLE_TAP_WINDOW
 
         // --- Focus state (see AIM_WEIGHT.FOCUS_* + updateAimWeight() tail) ---
         this.focusLevel = 0;
@@ -7145,7 +7154,7 @@ class Player extends Entity {
     }
 
     get speedPenalty() {
-        return Math.max(0.5, 1.0 - this.weight * 0.005);
+        return Math.max(0.75, 1.0 - this.weight * 0.0025);
     }
 
     update(dt, input, walls, gameTime, gp = null) {
@@ -7456,23 +7465,31 @@ class Player extends Entity {
             k[key] = down;
         }
 
-        // Gamepad / raw touch-stick analog: a fast flick from near-center to
-        // near-full deflection. _diveStickArmTime doubles as "last time we
-        // were near center" -- while under STICK_FLICK_LOW it keeps
-        // refreshing to now, so hitting STICK_FLICK_HIGH only counts if that
-        // refresh happened within STICK_FLICK_WINDOW. A slow, deliberate
-        // push to max speed takes longer than that window and never fires.
+        // Gamepad / raw touch-stick analog: TWO fast flicks from near-center
+        // to near-full deflection, same double-tap semantics as WASD above.
+        // A "flick" is a rising edge into STICK_FLICK_HIGH -- it only arms
+        // again once the stick has dropped back under STICK_FLICK_LOW, so
+        // holding at max can't spam-trigger and a single push (however hard
+        // or fast) only ever counts as one flick. Two flicks within
+        // DOUBLE_TAP_WINDOW of each other trigger the dive, exactly like a
+        // rapid double-tap of a key.
         if (!triggered) {
             let mag = gpRawMag || 0;
             if (mag === 0 && window.touchController && window.touchController.enabled && window.touchController.leftStick.active) {
                 mag = window.touchController.leftStick.dist;
             }
             if (mag < DIVE_CONFIG.STICK_FLICK_LOW) {
-                this._diveStickArmTime = gameTime;
-            } else if (mag > DIVE_CONFIG.STICK_FLICK_HIGH && (gameTime - this._diveStickArmTime) < DIVE_CONFIG.STICK_FLICK_WINDOW) {
-                triggered = true;
-                this._diveStickArmTime = -999; // consume so holding at max doesn't keep re-triggering every frame
+                this._diveStickReadyForFlick = true;
+            } else if (mag >= DIVE_CONFIG.STICK_FLICK_HIGH && this._diveStickPrevMag < DIVE_CONFIG.STICK_FLICK_HIGH && this._diveStickReadyForFlick) {
+                this._diveStickReadyForFlick = false; // must return under STICK_FLICK_LOW before the next flick counts
+                if (gameTime - this._diveStickLastFlickTime < DIVE_CONFIG.DOUBLE_TAP_WINDOW) {
+                    triggered = true;
+                    this._diveStickLastFlickTime = -999; // consume so a lingering 3rd flick doesn't immediately re-trigger
+                } else {
+                    this._diveStickLastFlickTime = gameTime;
+                }
             }
+            this._diveStickPrevMag = mag;
         }
 
         if (triggered) {
