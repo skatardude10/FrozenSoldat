@@ -4327,6 +4327,37 @@ function drawDropShadow(ctx, cam, x, y, radiusX, radiusY = null) {
     ctx.restore();
 }
 
+// --- Camera follow lag ------------------------------------------------
+// The camera's tracked center used to be an INSTANT function of player
+// position every frame (see camCenterX/Y in Camera.update()) -- zero lag,
+// so the player sat at exactly the same screen point no matter how hard
+// they accelerated. Springing the tracked center toward that same target
+// instead of snapping straight to it gives the camera a touch of inertia:
+// a sudden burst of movement (starting a sprint, a knockback) makes the
+// player briefly lead ahead of the lagging camera, reading as a subtle
+// "weighty" kick instead of an instant teleport-to-center.
+//
+// Free side effect worth knowing about: Game.getWorldAimCoords() converts
+// screen-space mouse position to a world point using ONLY the camera's
+// position (cam.x/cam.y), while the aim angle itself is computed from the
+// PLAYER's actual (un-lagged) x/y -- see targetAngle in Player.update().
+// So whenever the camera lags behind the player, that same fixed
+// screen-space aim point subtly tilts relative to the player's true
+// position -- exactly like a laser sight reacting to the shooter's body
+// being thrown off-axis by a sudden move. No separate aim-tilt code
+// needed; it falls out of the existing math for free once the camera
+// itself has inertia.
+//
+// STIFFNESS/DAMPING derive OMEGA0/DAMPING_COEFF once here at load time
+// (not per-frame -- same reasoning as the AIM_WEIGHT spring cache above).
+const CAMERA_FOLLOW_SPRING = {
+    STIFFNESS: 90,   // higher = camera catches up to the player faster (shorter-lived lag/lean)
+    DAMPING: 0.9,    // damping ratio, kept close to critical -- a bouncy/oscillating camera reads as nauseating, not weighty
+    MAX_OFFSET: 70   // hard cap (px) on how far the camera can lag behind, so a big velocity spike (dash, knockback) can't fling it arbitrarily far off center
+};
+CAMERA_FOLLOW_SPRING.OMEGA0 = Math.sqrt(CAMERA_FOLLOW_SPRING.STIFFNESS);
+CAMERA_FOLLOW_SPRING.DAMPING_COEFF = 2 * CAMERA_FOLLOW_SPRING.DAMPING * CAMERA_FOLLOW_SPRING.OMEGA0;
+
 class Camera {
     constructor() { 
         this.x = 0; this.y = 0; 
@@ -4337,6 +4368,14 @@ class Camera {
         this.kickbackVX = 0;
         this.kickbackVY = 0;
         this.screenShake = 0;
+        // Follow-lag spring state (see CAMERA_FOLLOW_SPRING above).
+        // followX/Y null until the first update() call, which snaps
+        // directly to the initial target instead of springing in from
+        // (0,0) -- see the null check below.
+        this.followX = null;
+        this.followY = null;
+        this.followVX = 0;
+        this.followVY = 0;
     }
     update(player, mapW, mapH, canvasW, canvasH, dt, aimX, aimY, maxZoomOut) {
         let aimDist = Math.hypot(aimX - player.x, aimY - player.y);
@@ -4367,10 +4406,49 @@ class Camera {
         let camCenterX = player.x * 0.65 + aimX * 0.35;
         let camCenterY = player.y * 0.65 + aimY * 0.35;
 
+        // Camera follow lag (see CAMERA_FOLLOW_SPRING above): spring the
+        // actual tracked center toward the instant target above instead of
+        // snapping straight to it. Snap directly (no spring) on the very
+        // first frame, or after a big jump in the target (map transition,
+        // teleport) -- otherwise the camera would visibly slide in from
+        // wherever it last was, which reads as a bug, not as weight.
+        if (this.followX === null ||
+            Math.hypot(camCenterX - this.followX, camCenterY - this.followY) > 800) {
+            this.followX = camCenterX;
+            this.followY = camCenterY;
+            this.followVX = 0;
+            this.followVY = 0;
+        } else if (dt) {
+            let springDt = Math.min(dt, 1 / 30); // same lag-spike safety as the AIM_WEIGHT springs
+            let ax = -CAMERA_FOLLOW_SPRING.STIFFNESS * (this.followX - camCenterX)
+                - CAMERA_FOLLOW_SPRING.DAMPING_COEFF * this.followVX;
+            let ay = -CAMERA_FOLLOW_SPRING.STIFFNESS * (this.followY - camCenterY)
+                - CAMERA_FOLLOW_SPRING.DAMPING_COEFF * this.followVY;
+            this.followVX += ax * springDt;
+            this.followVY += ay * springDt;
+            this.followX += this.followVX * springDt;
+            this.followY += this.followVY * springDt;
+
+            // Hard clamp on lag distance so a sudden huge target jump
+            // (knockback, dash) can't fling the camera arbitrarily far off
+            // center -- keeps the effect a "subtle lean," never disorienting.
+            let offX = this.followX - camCenterX;
+            let offY = this.followY - camCenterY;
+            let offDist = Math.hypot(offX, offY);
+            if (offDist > CAMERA_FOLLOW_SPRING.MAX_OFFSET) {
+                let scale = CAMERA_FOLLOW_SPRING.MAX_OFFSET / offDist;
+                this.followX = camCenterX + offX * scale;
+                this.followY = camCenterY + offY * scale;
+            }
+        } else {
+            this.followX = camCenterX;
+            this.followY = camCenterY;
+        }
+
         // Glory kill: stay on player, just apply zoom pulse (no camera pan to avoid jerk)
 
-        this.x = camCenterX - visibleW / 2;
-        this.y = camCenterY - visibleH / 2;
+        this.x = this.followX - visibleW / 2;
+        this.y = this.followY - visibleH / 2;
 
         if (dt) {
             this.kickbackX += this.kickbackVX * dt;
@@ -4394,6 +4472,7 @@ class Camera {
         this.kickbackVY -= Math.sin(angle) * force;
     }
 }
+
 
 class MapGen {
     constructor() {
@@ -6482,8 +6561,19 @@ class Entity {
     }
     
     updatePhysics(dt, walls) {
-        this.vx *= Math.pow(0.0006, dt);
-        this.vy *= Math.pow(0.0006, dt);
+        // Drag rate is normally a fixed universal constant (snappy stops,
+        // quick recovery from knockback/collisions) -- but a couple of
+        // movement states need their OWN gentler decay instead (see
+        // Player.startDive()/DIVE_CONFIG.DIVE_DRAG_RATE: the standard rate
+        // eats ~99% of the dive's burst speed before the jump arc even
+        // finishes, which is why the dive used to barely cover any ground).
+        // `customDragRate`, when set, overrides the constant below for just
+        // that entity for just as long as it's set; everyone/everything
+        // else (enemies, physics props, the player the rest of the time)
+        // is completely unaffected.
+        let dragRate = (this.customDragRate !== undefined) ? this.customDragRate : 0.0006;
+        this.vx *= Math.pow(dragRate, dt);
+        this.vy *= Math.pow(dragRate, dt);
         
         let targetX = this.x + this.vx * dt;
         let targetY = this.y + this.vy * dt;
@@ -6636,18 +6726,39 @@ const AIM_WEIGHT = {
     // maxDeg: hard cap on the channel's accumulated offset.
     SPRINGS: {
         aimRecoilOffset:          { stiffness: 3600, damping: 0.20, maxDeg: 13 },
-        // Hit flinch: damping raised 0.18 -> 0.26 so it settles noticeably
-        // faster (shorter period of "can't aim") while keeping the same
-        // snap-then-rebound character -- higher damping ratio shortens the
-        // ringing tail without needing to touch the kick strength itself.
-        aimHitFlinchOffset:       { stiffness: 2600, damping: 0.26, maxDeg: 24 },
-        aimExplosionFlinchOffset: { stiffness: 1500, damping: 0.16, maxDeg: 28 }
+        // Hit flinch: stiffness dropped 2600 -> 1900 (was tuned in the
+        // opposite direction previously -- damping raised to settle
+        // *faster*). Now going for the opposite feel on purpose: lower
+        // stiffness = lower natural frequency (a heavier, slower "thud"
+        // wobble instead of a quick flick) AND a longer settle time for
+        // free, since both come from the same omega0 = sqrt(stiffness).
+        // This is what actually makes a hit read as distinct from -- and
+        // weightier than -- the much stiffer/quicker whiz flinch below,
+        // rather than just being a bigger version of the same shake.
+        aimHitFlinchOffset:       { stiffness: 1900, damping: 0.20, maxDeg: 26 },
+        // Explosion stays the heaviest/longest-settling of all three
+        // (lowest stiffness) -- see EXPLOSION_FLINCH_MAX_DEG below, bumped
+        // slightly so its kick magnitude also clearly tops hit flinch now
+        // that hit's cap moved up too.
+        aimExplosionFlinchOffset: { stiffness: 1500, damping: 0.16, maxDeg: 32 },
+        // Whiz flinch: a bullet cracking past close enough to trigger the
+        // flyby sound (see the near-miss check in Bullet.update()) also
+        // binks the aim a little -- startled by the near-miss, not actually
+        // hit. Stiffer/lower-maxDeg than hit flinch on purpose: this should
+        // read as a quick "whoa!" flick, not a loss of aim control.
+        aimWhizFlinchOffset:      { stiffness: 4200, damping: 0.22, maxDeg: 6 }
     },
 
-    // --- Hit flinch: getting shot knocks the aim off briefly. Should read as
-    // "ow, that startled me," not "I lost control."
-    HIT_FLINCH_DEG_PER_DAMAGE: 0.65,
-    HIT_FLINCH_MAX_DEG: 22,
+    // --- Hit flinch: getting shot knocks the aim off -- and should read as
+    // distinctly MORE intense than a mere near-miss whiz, every single
+    // time, not just on big hits. HIT_FLINCH_MIN_DEG is a floor comfortably
+    // above the strongest possible whiz kick (WHIZ_FLINCH_MAX_DEG=4.5 *
+    // WHIZ_FLINCH_SPEED_MAX_MULT=1.6 =~ 7.2deg at most), so even a chip-
+    // damage hit still clearly out-binks any near-miss. HIT_FLINCH_DEG_PER_DAMAGE
+    // scales the kick up from that floor by how hard the hit actually was.
+    HIT_FLINCH_MIN_DEG: 9,
+    HIT_FLINCH_DEG_PER_DAMAGE: 0.5,
+    HIT_FLINCH_MAX_DEG: 24,
 
     // --- Recoil kick: every shot nudges the aim via the spring above (snappy,
     // per-shot texture). Separately, RECOIL CLIMB is a simple monotonic drift
@@ -6676,25 +6787,74 @@ const AIM_WEIGHT = {
 
     // --- Explosion flinch: larger magnitude, slower-settling spring than a
     // bullet hit, scaled by the same proximity falloff already used for
-    // blast damage/shake.
-    EXPLOSION_FLINCH_MAX_DEG: 24,
+    // blast damage/shake. Bumped 24 -> 28 alongside the hit-flinch retune
+    // above so explosions clearly stay the most intense of the three
+    // (whiz < hit < explosion), in both feel (lowest stiffness of the
+    // three springs, see SPRINGS above) and raw magnitude.
+    EXPLOSION_FLINCH_MAX_DEG: 28,
 
-    // --- Idle sway: tiny continuous drift (a held rifle "breathing") when the
-    // target angle hasn't changed in a moment. Amplitude is deliberately small
-    // enough to never meaningfully change where a shot lands.
-    IDLE_SWAY_MAX_DEG: 0.10,
-    IDLE_SWAY_ENGAGE_DELAY: 0.7,   // seconds of stillness before sway starts
-    IDLE_SWAY_FADE_TIME: 1.0,       // seconds to fade the sway envelope in
+    // --- Idle sway: a continuous "held rifle breathing" wobble that is now
+    // ALWAYS present at IDLE_SWAY_BASE_DEG -- whether the target angle is
+    // actively being tracked or just sitting still -- rather than only ever
+    // ramping up from zero while idle. Baseline strengthened (was a flat
+    // 0.10 deg that only appeared once idle) specifically so Focus below has
+    // real amplitude to steady down FROM. Still deliberately small: even at
+    // the baseline this should read as "a little unsteady," never enough on
+    // its own to explain a miss.
+    IDLE_SWAY_BASE_DEG: 0.34,
+    // Health scaling: the baseline above is a floor, not a fixed value --
+    // it scales UP linearly as hp drops, reaching IDLE_SWAY_HEALTH_MAX_MULT
+    // at 0 hp (1.0x at full hp, unaffected). Deliberately only applied to
+    // the baseline, not IDLE_SWAY_FOCUSED_DEG below -- Focus should stay
+    // just as capable of steadying you out even while hurt, it just has
+    // more distance to close, which makes holding still matter MORE at low
+    // health rather than making aim hopeless regardless of what you do.
+    IDLE_SWAY_HEALTH_MAX_MULT: 2.2,
+    // --- Focus: hold the target angle still (no meaningful tracking motion,
+    // not sprinting) for IDLE_SWAY_ENGAGE_DELAY seconds and the same
+    // envelope that used to only feed the damage/speed bonus now ALSO
+    // steadies the weapon -- sway amplitude interpolates down from the
+    // baseline above toward this floor as focus ramps in. Never fully zero;
+    // a held rifle never goes perfectly rigid, and keeping a faint residual
+    // wobble even at full focus keeps the reticle feeling alive.
+    IDLE_SWAY_FOCUSED_DEG: 0.06,
+    IDLE_SWAY_ENGAGE_DELAY: 0.7,   // seconds of stillness before focus starts engaging
+    // Ramp duration lengthened 1.0 -> 2.2s so the (now-stronger) baseline
+    // sway actually has time to be felt before focus steadies it out --
+    // previously it settled almost as soon as it appeared.
+    IDLE_SWAY_FADE_TIME: 2.2,       // seconds for focus to ramp 0 -> 1 once engaged, at full health
+    // Health scaling: same idea as IDLE_SWAY_HEALTH_MAX_MULT above, but for
+    // TIME instead of amplitude -- steadying your aim takes longer the more
+    // hurt you are (shaky hands), up to this multiplier on the fade time at
+    // 0 hp. Recomputed every frame, so taking a hit mid-focus genuinely
+    // extends how much longer you need to hold still.
+    IDLE_SWAY_HEALTH_FADE_MAX_MULT: 1.6,
     IDLE_SWAY_STILL_THRESHOLD_DEG: 0.6, // target-angle delta below which we count as "still" this frame
 
-    // --- Focus: reuses the exact same aimIdleStillTimer/swayEnvelope above
-    // (a locked-in, un-sprinting aim held still past IDLE_SWAY_ENGAGE_DELAY)
-    // as a "holding an angle" signal, per Player.updateAimWeight()'s tail.
-    // Zero extra per-frame cost -- swayEnvelope is already computed every
-    // frame for the sway effect; Focus just reads it and Bullet.init()
-    // applies it once at bullet-spawn time. See PLAN comments there.
+    // --- Focus rewards: same envelope drives all three, so the payoff for
+    // holding an angle reads as one coherent "steadying down the sights"
+    // moment rather than a single stat pop. Reused directly (zero extra
+    // per-frame cost) at bullet-spawn time in Bullet.init() (speed/damage)
+    // and in Player.fire() (spread) -- see AIM_WEIGHT.FOCUS_SPREAD_MULT.
     FOCUS_VELOCITY_BONUS: 0.10,   // +10% bullet speed at full focus (envelope == 1)
     FOCUS_DAMAGE_BONUS: 0.15,     // +15% bullet damage at full focus
+    // Explicit "accuracy" half of the focus bonus: shrinks the weapon's
+    // fired spread cone by up to this fraction at full focus, on top of the
+    // idle-sway steadying above (which affects where this.angle itself
+    // sits, independent of the per-shot spread roll).
+    FOCUS_SPREAD_MULT: 0.5,
+
+    // --- Whiz flinch: how hard a close bullet pass binks the aim. Kept
+    // deliberately small/quick relative to HIT_FLINCH_* above -- being
+    // startled by a near-miss should never rival actually getting hit.
+    // Reuses the proximity `intensity` (0-1) and bullet `speed` already
+    // computed by the near-miss flyby check in Bullet.update(), so no new
+    // distance/side calculation is needed here.
+    WHIZ_FLINCH_MAX_DEG: 4.5,        // kick size at a point-blank (<=10px) near-miss, before speed scaling
+    WHIZ_FLINCH_MIN_INTENSITY: 0.25, // below this proximity intensity, skip the flinch (matches the existing screen-shake gate on close passes)
+    WHIZ_FLINCH_SPEED_REF: 3400,     // bullet speed (px/s) that maps to a 1.0x flinch-strength multiplier
+    WHIZ_FLINCH_SPEED_MIN_MULT: 0.7,
+    WHIZ_FLINCH_SPEED_MAX_MULT: 1.6,
 
     // Below this many radians of residual offset (and this angular velocity,
     // rad/s), a spring channel is snapped to fully at rest rather than
@@ -6719,12 +6879,46 @@ const AIM_WEIGHT = {
     // out naturally the instant the turn stops. No separate spring, timer, or
     // smoothing pass needed; one fewer system to desync.
     //
-    // Tuning note: ACCEL_PER_RAD_PER_SEC is the one knob to reach for first --
-    // it's linear with the felt strength of the sway. Start here, feel it out
-    // over a full turn-and-strafe loop, and adjust before touching anything
-    // else in this block.
+    // Sliding-scale lever arm: this WAS pivotAccel = -omega * ACCEL_PER_RAD *
+    // weightMult, i.e. linear in rotation speed (omega). That sounds like it
+    // should already give a "faster turn = bigger sweep" feel, but a linear
+    // relationship is actually the wrong shape for it: fed through the same
+    // constant drag every frame, a SUSTAINED rotation reaches a steady-state
+    // lateral speed proportional to omega, which means the IMPLIED lever-arm
+    // radius (lateral speed / omega) comes out roughly CONSTANT no matter how
+    // fast you're turning -- the pivot point's effective distance from the
+    // body doesn't actually change with speed, only the raw magnitude of the
+    // sway does. That's the "feels weird when that point is static" problem.
+    // Real weight doesn't work that way: a slow traverse pivots close to the
+    // body, but whipping a heavy weapon through a fast 180 forces you to
+    // swing out and step around it -- the lever arm itself gets longer as
+    // you turn faster, not just the speed of the sweep.
+    // SPEED_EXPONENT > 1 fixes this by making the accel grow FASTER than
+    // linearly with |omega| (accel ~ omega^1.6 instead of omega^1): gentle
+    // tracking (low omega) now barely sweeps the body at all, while a fast
+    // flick sweeps hard, on a genuine sliding scale rather than a fixed
+    // per-radian rate.
+    //
+    // Tuning note: PEAK_ACCEL is the one knob to reach for first now -- it
+    // directly sets how strong the sway is at a full-speed flick (omega ==
+    // OMEGA_REF). SPEED_EXPONENT is the shape of the curve below that peak;
+    // only touch it if the falloff itself feels wrong (too gentle/too harsh
+    // at in-between turn speeds), not to change overall strength.
     PIVOT: {
-        ACCEL_PER_RAD_PER_SEC: 220, // was 55 -- playtest bump, see AIM_WEIGHT.PIVOT comment above
+        // Peak accel (px/s^2, before weight scaling) at a full-speed flick.
+        // ~11% stronger than the old linear system's peak at max turn rate
+        // (220 * OMEGA_REF =~ 2380) per playtest feedback that the effect
+        // should read a bit stronger overall once slow tracking got quieter.
+        PEAK_ACCEL: 2650,
+        // Angular velocity (rad/s) that PEAK_ACCEL above is calibrated
+        // against -- the turn-rate cap (AIM_WEIGHT.TURN_RATE_DEG_PER_SEC ==
+        // 620deg/s) converted to radians. This is the fastest the character
+        // can actually turn, so it's the natural "100%" reference point.
+        // Keep in sync with TURN_RATE_DEG_PER_SEC if that ever changes.
+        OMEGA_REF: 620 * Math.PI / 180,
+        // >1 = superlinear falloff below OMEGA_REF (see comment above). 1.0
+        // would restore the old flat per-radian behavior.
+        SPEED_EXPONENT: 1.6,
         WEIGHT_REF: 20,              // weapon.weight value that maps to a 1.0x multiplier (Sniper/LMG-ish)
         WEIGHT_MIN_MULT: 0.30,       // floor so even the bare-handed Pistol (weight 0) keeps a faint whisper of it
         WEIGHT_MAX_MULT: 1.4         // ceiling so a future heavier weapon can't get out of hand
@@ -6742,7 +6936,22 @@ const DIVE_CONFIG = {
     STICK_FLICK_LOW: 0.35,     // analog stick/touch magnitude that counts as "near center" (arms the flick)
     STICK_FLICK_HIGH: 0.85,    // magnitude that completes a flick once armed
     STICK_FLICK_WINDOW: 0.15,  // seconds allowed between being near-center and hitting full deflection
-    DIVE_SPEED: 620,           // horizontal burst speed imparted on trigger (existing Entity drag bleeds this off naturally)
+    // DIVE_SPEED bumped 620 -> 780 alongside the new DIVE_DRAG_RATE below --
+    // together these are what actually determine how far the dive travels
+    // (see DIVE_DRAG_RATE comment for why DIVE_SPEED alone wasn't the real
+    // problem).
+    DIVE_SPEED: 780,           // horizontal burst speed imparted on trigger
+    // The universal Entity drag (Entity.updatePhysics, ~0.0006 per second)
+    // is tuned for snappy walking stops/knockback recovery, and it was
+    // ALSO eating the dive's horizontal burst -- at that rate ~99% of
+    // DIVE_SPEED was gone before the jump arc even finished, which is why
+    // the dive read as "hop straight up" instead of "dive sideways" no
+    // matter how big DIVE_SPEED was. This is a dedicated, much gentler
+    // decay used ONLY while this.isDiving (see startDive()/
+    // updateDivePhysics() -- Entity.updatePhysics() reads
+    // this.customDragRate when set), so the burst actually carries the
+    // player across real distance for the length of the dive's airtime.
+    DIVE_DRAG_RATE: 0.045,
     DIVE_VZ: 280,              // initial upward velocity of the "hop" (matches ShrapnelGrenade's toss vz)
     DIVE_GRAVITY: 900,         // snappier fall than lobbed grenades (680) -- a dive should feel quick, not floaty
     DIVE_DODGE_Z: 18,          // z-height above which ground-level bullets (the only kind that exist today) pass underneath
@@ -6787,6 +6996,8 @@ class Player extends Entity {
         this.aimHitFlinchVel = 0;
         this.aimExplosionFlinchOffset = 0;
         this.aimExplosionFlinchVel = 0;
+        this.aimWhizFlinchOffset = 0;
+        this.aimWhizFlinchVel = 0;
         this.aimIdleStillTimer = 0;
         // Recoil bias: which way this burst of fire is "climbing." Re-rolled
         // when there's been a gap since the last shot (see fire()).
@@ -7209,6 +7420,9 @@ class Player extends Entity {
             this.z = 0;
             this.vz = 0;
             this.isDiving = false;
+            // Hand horizontal drag back to the universal rate now that the
+            // dive is over -- see DIVE_CONFIG.DIVE_DRAG_RATE / startDive().
+            this.customDragRate = undefined;
         }
     }
 
@@ -7277,6 +7491,11 @@ class Player extends Entity {
         this.vy = (dirY / len) * DIVE_CONFIG.DIVE_SPEED;
         this.vz = DIVE_CONFIG.DIVE_VZ;
         this.isDiving = true;
+        // See DIVE_CONFIG.DIVE_DRAG_RATE / Entity.updatePhysics() --
+        // overrides the universal drag just for the duration of this dive
+        // so the burst speed above actually translates into travel
+        // distance instead of being eaten almost immediately.
+        this.customDragRate = DIVE_CONFIG.DIVE_DRAG_RATE;
         this.diveCooldownTimer = DIVE_CONFIG.DIVE_COOLDOWN;
         this.stamina = Math.max(0, this.stamina - DIVE_CONFIG.STAMINA_COST);
 
@@ -7411,7 +7630,16 @@ class Player extends Entity {
             AIM_WEIGHT.PIVOT.WEIGHT_MIN_MULT,
             AIM_WEIGHT.PIVOT.WEIGHT_MAX_MULT
         );
-        let pivotAccel = -(this.aimAngularVelocity || 0) * AIM_WEIGHT.PIVOT.ACCEL_PER_RAD_PER_SEC * pivotWeightMult;
+        // Sliding-scale lever arm (see AIM_WEIGHT.PIVOT comment): accel
+        // grows FASTER than linearly with rotation speed via SPEED_EXPONENT,
+        // so gentle tracking barely sweeps the body while a fast flick
+        // sweeps hard -- rather than the old flat per-radian rate, where the
+        // effective lever-arm length stayed roughly constant regardless of
+        // how fast you were actually turning.
+        let omega = this.aimAngularVelocity || 0;
+        let omegaRatio = Math.abs(omega) / AIM_WEIGHT.PIVOT.OMEGA_REF;
+        let pivotAccel = -Math.sign(omega) * AIM_WEIGHT.PIVOT.PEAK_ACCEL *
+            Math.pow(omegaRatio, AIM_WEIGHT.PIVOT.SPEED_EXPONENT) * pivotWeightMult;
         let pivotRightX = -Math.sin(this.angle);
         let pivotRightY = Math.cos(this.angle);
         this.vx += pivotRightX * pivotAccel * dt;
@@ -7485,6 +7713,7 @@ class Player extends Entity {
         this._stepSpring('aimRecoilOffset', 'aimRecoilVel', AIM_WEIGHT.SPRINGS.aimRecoilOffset, springDt);
         this._stepSpring('aimHitFlinchOffset', 'aimHitFlinchVel', AIM_WEIGHT.SPRINGS.aimHitFlinchOffset, springDt);
         this._stepSpring('aimExplosionFlinchOffset', 'aimExplosionFlinchVel', AIM_WEIGHT.SPRINGS.aimExplosionFlinchOffset, springDt);
+        this._stepSpring('aimWhizFlinchOffset', 'aimWhizFlinchVel', AIM_WEIGHT.SPRINGS.aimWhizFlinchOffset, springDt);
 
         // 2b) Recoil climb: a simple monotonic drift (not spring physics --
         // see the config comment for why) that relaxes back to zero once you
@@ -7492,9 +7721,25 @@ class Player extends Entity {
         this.aimRecoilClimb *= Math.exp(-AIM_WEIGHT.RECOIL_CLIMB_DECAY_RATE * dt);
         if (Math.abs(this.aimRecoilClimb) < AIM_WEIGHT.NEGLIGIBLE_OFFSET_RAD) this.aimRecoilClimb = 0;
 
-        // 3) Idle sway: only while the raw target angle itself has been
-        // essentially still for a moment (a locked-in aim breathing gently),
-        // never while actively tracking/adjusting onto something.
+        // 3) Idle sway: a continuous baseline "breathing" wobble that's
+        // always present, whether the raw target angle is actively being
+        // tracked or held still. Holding the target angle essentially
+        // motionless for a moment (Focus, see AIM_WEIGHT.FOCUS_*) steadies
+        // this DOWN toward a floor instead of leaving it fixed -- the
+        // longer you hold an angle, the steadier (and more rewarding) it
+        // gets, rather than sway only ever appearing once you stop.
+        //
+        // Both the baseline amplitude and how long focus takes to steady it
+        // scale with current health -- hurt worse, aim shakier AND slower
+        // to settle down. hpFrac==1 (full health) reproduces the plain
+        // baseline/fade-time values below with no penalty.
+        let hpFrac = this.maxHp > 0 ? MathUtils.clamp(this.hp / this.maxHp, 0, 1) : 1;
+        let healthPenalty = 1 - hpFrac; // 0 at full health, 1 at 0 hp
+        let swayBaseDeg = AIM_WEIGHT.IDLE_SWAY_BASE_DEG *
+            (1 + healthPenalty * (AIM_WEIGHT.IDLE_SWAY_HEALTH_MAX_MULT - 1));
+        let swayFadeTime = AIM_WEIGHT.IDLE_SWAY_FADE_TIME *
+            (1 + healthPenalty * (AIM_WEIGHT.IDLE_SWAY_HEALTH_FADE_MAX_MULT - 1));
+
         let stillThreshold = AIM_WEIGHT.IDLE_SWAY_STILL_THRESHOLD_DEG * Math.PI / 180;
         let targetDelta = Math.abs(MathUtils.angleDifference(targetAngle, this._aimLastTargetAngle ?? targetAngle));
         this._aimLastTargetAngle = targetAngle;
@@ -7509,13 +7754,22 @@ class Player extends Entity {
             this.aimIdleStillTimer = 0;
         }
         let swayEnvelope = MathUtils.clamp(
-            (this.aimIdleStillTimer - AIM_WEIGHT.IDLE_SWAY_ENGAGE_DELAY) / AIM_WEIGHT.IDLE_SWAY_FADE_TIME,
+            (this.aimIdleStillTimer - AIM_WEIGHT.IDLE_SWAY_ENGAGE_DELAY) / swayFadeTime,
             0, 1
         );
         // Focus: reuse the envelope directly -- zero extra per-frame cost.
-        // Consumed once at bullet-spawn time in Bullet.init().
+        // Consumed at bullet-spawn time in Bullet.init() (speed/damage) and
+        // in Player.fire() (spread tightening).
         this.focusLevel = swayEnvelope;
-        let swayAmp = (AIM_WEIGHT.IDLE_SWAY_MAX_DEG * Math.PI / 180) * swayEnvelope;
+        // Sway amplitude interpolates DOWN from the (health-scaled) baseline
+        // toward the fixed focused floor as swayEnvelope ramps 0 -> 1, so an
+        // un-focused aim (moving, tracking, or just briefly still) always
+        // carries the full baseline wobble for its current health, and
+        // Focus is what steadies it -- more dramatically so the worse hurt
+        // you are.
+        let swayAmpDeg = swayBaseDeg
+            - (swayBaseDeg - AIM_WEIGHT.IDLE_SWAY_FOCUSED_DEG) * swayEnvelope;
+        let swayAmp = swayAmpDeg * Math.PI / 180;
         let t = (game ? game.gameTime : 0);
         let swayOffset = swayAmp * (Math.sin(t * 1.3) * 0.7 + Math.sin(t * 2.9 + 1.3) * 0.3);
 
@@ -7525,6 +7779,7 @@ class Player extends Entity {
             + this.aimRecoilClimb
             + this.aimHitFlinchOffset
             + this.aimExplosionFlinchOffset
+            + this.aimWhizFlinchOffset
             + swayOffset;
     }
 
@@ -7541,22 +7796,66 @@ class Player extends Entity {
     // smaller physics steps keeps the integration accurate regardless of how
     // stiff/snappy a channel is configured to be, without slowing the spring
     // down to compensate (which would undo the point of tuning it snappy).
+    // One-time derivation of the constants that only depend on a spring
+    // channel's static tuning numbers (stiffness/damping/maxDeg), never on
+    // live per-frame state. These used to be recomputed (sqrt + exp + acos)
+    // every single frame for every channel for every player -- harmless at
+    // the time, but with 4 channels x 2 players that's 8 sqrt calls/frame
+    // minimum for numbers that never change once tuned. Cached directly on
+    // the shared AIM_WEIGHT.SPRINGS config object itself (both players
+    // reference the same config objects), so this now runs once total per
+    // channel for the entire session, not once per frame.
+    _getSpringConsts(cfg) {
+        if (cfg.__omega0 === undefined) {
+            cfg.__omega0 = Math.sqrt(cfg.stiffness);
+            cfg.__dampingCoeff = 2 * cfg.damping * cfg.__omega0;
+            cfg.__capRad = cfg.maxDeg * Math.PI / 180;
+            let zeta = cfg.damping;
+            cfg.__peakRatio = (zeta > 0 && zeta < 1)
+                ? Math.exp(-zeta * Math.acos(zeta) / Math.sqrt(1 - zeta * zeta))
+                : 1;
+        }
+        return cfg;
+    }
+
+    // One damped-spring step pulling `this[offsetKey]` back toward zero over
+    // the frame's dt. `cfg` is a { stiffness, damping, maxDeg } entry from
+    // AIM_WEIGHT.SPRINGS -- `damping` is a damping RATIO (see config
+    // comments), converted to an actual damping coefficient via
+    // 2*ratio*sqrt(stiffness) (see _getSpringConsts -- cached, not redone
+    // here every frame).
+    //
+    // Sub-steps internally: at the stiffness values needed for a snappy kick,
+    // a single ~16ms frame step is too coarse for semi-implicit Euler -- it
+    // artificially over-damps the spring, eating most of a kick's motion
+    // before it can even show up on screen. Breaking the frame into several
+    // smaller physics steps keeps the integration accurate regardless of how
+    // stiff/snappy a channel is configured to be, without slowing the spring
+    // down to compensate (which would undo the point of tuning it snappy).
     _stepSpring(offsetKey, velKey, cfg, dt) {
         let offset = this[offsetKey];
         let vel = this[velKey];
-        let omega0 = Math.sqrt(cfg.stiffness);
-        let dampingCoeff = 2 * cfg.damping * omega0;
+        // Fast path: a channel already at rest (both the offset AND its
+        // velocity snapped to exactly 0 by the negligible-offset check
+        // below) has nothing to integrate -- accel would compute to exactly
+        // 0 every substep anyway, so skip the loop rather than iterating
+        // trivial zero-math every frame. Most channels sit at rest most of
+        // the time (only recently kicked ones are actually moving), and
+        // this matters more now that 4 channels get stepped per player
+        // instead of 3.
+        if (offset === 0 && vel === 0) return;
 
+        this._getSpringConsts(cfg);
         const maxSubstepDt = 1 / 240;
         let steps = Math.max(1, Math.ceil(dt / maxSubstepDt));
         let subDt = dt / steps;
         for (let i = 0; i < steps; i++) {
-            let accel = -cfg.stiffness * offset - dampingCoeff * vel;
+            let accel = -cfg.stiffness * offset - cfg.__dampingCoeff * vel;
             vel += accel * subDt;
             offset += vel * subDt;
         }
 
-        let capRad = cfg.maxDeg * Math.PI / 180;
+        let capRad = cfg.__capRad;
         if (offset > capRad) { offset = capRad; if (vel > 0) vel = 0; }
         else if (offset < -capRad) { offset = -capRad; if (vel < 0) vel = 0; }
 
@@ -7576,19 +7875,25 @@ class Player extends Entity {
     // biasDir, if given, is a persistent ±1 direction (see fire()) so
     // repeated kicks mostly build in the same direction instead of a 50/50
     // coin-flip fighting itself into looking like nothing happened.
-    kickAim(channel, kickDeg, biasDir = null) {
+    kickAim(channel, kickDeg, biasDir = null, strictDir = false) {
         let cfg = AIM_WEIGHT.SPRINGS[channel];
         if (!cfg) return;
+        this._getSpringConsts(cfg);
         let dir;
-        if (biasDir !== null) {
+        if (strictDir && biasDir !== null) {
+            // Caller knows the exact side and means it -- used for the
+            // directional whiz-flinch below, where "which side" IS the
+            // information being conveyed. Blending in the recoil-style
+            // coin-flip here would make close calls on the left sometimes
+            // read as flinching right, which defeats the point.
+            dir = biasDir;
+        } else if (biasDir !== null) {
             let s = AIM_WEIGHT.RECOIL_BIAS_STRENGTH;
             dir = (Math.random() < s) ? biasDir : (Math.random() < 0.5 ? -1 : 1);
         } else {
             dir = (Math.random() < 0.5 ? -1 : 1);
         }
         let kickRad = kickDeg * Math.PI / 180;
-        let omega0 = Math.sqrt(cfg.stiffness);
-        let zeta = cfg.damping;
         // A velocity impulse doesn't translate 1:1 into peak displacement
         // once damping is involved -- an underdamped spring kicked from rest
         // peaks at (v0/omega0) * exp(-zeta*acos(zeta)/sqrt(1-zeta^2)), which
@@ -7596,15 +7901,12 @@ class Player extends Entity {
         // uses. Compensate so kickDeg reliably means "the spring will peak
         // at about this many degrees" regardless of the channel's tuned
         // damping ratio, instead of silently under-shooting it.
-        let peakRatio = (zeta > 0 && zeta < 1)
-            ? Math.exp(-zeta * Math.acos(zeta) / Math.sqrt(1 - zeta * zeta))
-            : 1;
         // Channel names end in "...Offset" (e.g. aimRecoilOffset) but their
         // paired velocity field drops that suffix (aimRecoilVel) -- replace
         // rather than concatenate, or this silently writes to a phantom
         // field the spring integrator never reads.
         let velKey = channel.replace('Offset', 'Vel');
-        this[velKey] = (this[velKey] || 0) + dir * kickRad * omega0 / peakRatio;
+        this[velKey] = (this[velKey] || 0) + dir * kickRad * cfg.__omega0 / cfg.__peakRatio;
     }
     
     fire(game) {
@@ -7680,8 +7982,14 @@ class Player extends Entity {
         let baseFireAngle = Math.atan2(virtualAimY - barrelY, virtualAimX - barrelX);
 
         let pellets = this.weapon.pellets || 1;
+        // Focus (see AIM_WEIGHT.FOCUS_*): tightens the fired spread cone by
+        // up to FOCUS_SPREAD_MULT at full focus -- the explicit "accuracy"
+        // half of the focus payoff, alongside the idle-sway steadying
+        // (which moves this.angle itself) and the damage/speed bumps in
+        // Bullet.init().
+        let focusSpread = this.weapon.spread * (1 - AIM_WEIGHT.FOCUS_SPREAD_MULT * this.focusLevel);
         for(let i=0; i<pellets; i++) {
-            let spreadAngle = baseFireAngle + (Math.random() - 0.5) * this.weapon.spread;
+            let spreadAngle = baseFireAngle + (Math.random() - 0.5) * focusSpread;
             
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, this.weapon, this, isAP, isHP, false));
             game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*600, Math.sin(spreadAngle)*600, '#fff', 0.04, 3);
@@ -7703,7 +8011,7 @@ class Player extends Entity {
         }
 
         if (['SMG', 'Shotgun', 'Sniper', 'M1A', 'LMG'].includes(this.weapon.name)) {
-            game.spawnBarrelFX(barrelX, barrelY, this.angle);
+            game.spawnBarrelFX(barrelX, barrelY, this.angle, this.z || 0);
         }
     }
 
@@ -7734,7 +8042,10 @@ class Player extends Entity {
             // Aim Weight: getting shot knocks the reticle off briefly, right
             // alongside the damage flash/screenshake the player already gets
             // — same trigger, same moment, so the cause always reads clearly.
-            let flinchDeg = Math.min(amt * AIM_WEIGHT.HIT_FLINCH_DEG_PER_DAMAGE, AIM_WEIGHT.HIT_FLINCH_MAX_DEG);
+            let flinchDeg = Math.min(
+                AIM_WEIGHT.HIT_FLINCH_MIN_DEG + amt * AIM_WEIGHT.HIT_FLINCH_DEG_PER_DAMAGE,
+                AIM_WEIGHT.HIT_FLINCH_MAX_DEG
+            );
             this.kickAim('aimHitFlinchOffset', flinchDeg);
         }
         if (amt >= 20 && game) {
@@ -10794,6 +11105,26 @@ class Bullet {
                             let pan = (cx - player.x) / maxRadius;
                             
                             audio.playFlyby(intensity, pan, currentSpeed);
+
+                            // Aim Weight: a close call binks the aim too --
+                            // see AIM_WEIGHT.WHIZ_FLINCH_*. Reuses the same
+                            // proximity `intensity` and directional `pan`
+                            // already computed above for the audio/screen
+                            // shake, so no extra distance/side math needed.
+                            // Direction flinches AWAY from the side the
+                            // bullet passed on (pan > 0 == passed on the
+                            // player's screen-right, same convention as the
+                            // stereo pan) -- same reflex as flinching away
+                            // from a loud crack at one ear.
+                            if (intensity > AIM_WEIGHT.WHIZ_FLINCH_MIN_INTENSITY && player.kickAim) {
+                                let whizSpeedMult = MathUtils.clamp(
+                                    currentSpeed / AIM_WEIGHT.WHIZ_FLINCH_SPEED_REF,
+                                    AIM_WEIGHT.WHIZ_FLINCH_SPEED_MIN_MULT, AIM_WEIGHT.WHIZ_FLINCH_SPEED_MAX_MULT
+                                );
+                                let whizKickDeg = AIM_WEIGHT.WHIZ_FLINCH_MAX_DEG * intensity * whizSpeedMult;
+                                let whizBiasDir = pan >= 0 ? -1 : 1;
+                                player.kickAim('aimWhizFlinchOffset', whizKickDeg, whizBiasDir, true);
+                            }
 
                             // Subtle screen shake for close passes (intensity > 0.25)
                             if (intensity > 0.25) {
@@ -15015,7 +15346,7 @@ class Game {
         this.triggerChromaticAberration(0.5);
     }
 
-    spawnBarrelFX(x, y, angle) {
+    spawnBarrelFX(x, y, angle, z = 0) {
         let smokeCount = 3 + Math.floor(Math.random() * 2);
         for (let i = 0; i < smokeCount; i++) {
             let spread = (Math.random() - 0.5) * 1.2;
@@ -15030,6 +15361,12 @@ class Game {
                 life: 0.8 + Math.random() * 0.6,
                 maxLife: 0,
                 opacity: 0.35 + Math.random() * 0.15,
+                // Combat Dive: height the shooter was at when this puff was
+                // fired (see Player.z / DIVE_CONFIG) -- smoke has no z
+                // physics of its own (it just drifts and fades), so this is
+                // a fixed offset applied at draw time, not something that
+                // changes over the particle's life.
+                baseZ: z,
             });
             this.smokeParticles[this.smokeParticles.length - 1].maxLife = this.smokeParticles[this.smokeParticles.length - 1].life;
         }
@@ -15046,6 +15383,11 @@ class Game {
                 vz: Math.random() * 180 + 100,
                 life: 1.0 + Math.random() * 0.5,
                 maxLife: 0,
+                // Same idea as smoke's baseZ above: `z`/`vz` still do the
+                // ember's own little pop-and-settle arc unmodified, this is
+                // just the height it popped out of the gun FROM, added on
+                // top at draw time.
+                baseZ: z,
             });
             this.embers[this.embers.length - 1].maxLife = this.embers[this.embers.length - 1].life;
         }
@@ -21018,7 +21360,7 @@ class Game {
             this.ctx.globalAlpha = Math.max(0, alpha);
             this.ctx.fillStyle = `rgb(30, 35, 40)`;
             this.ctx.beginPath();
-            this.ctx.arc(s.x - cam.x, s.y - cam.y, s.r, 0, Math.PI * 2);
+            this.ctx.arc(s.x - cam.x, s.y - cam.y - (s.baseZ || 0), s.r, 0, Math.PI * 2);
             this.ctx.fill();
         }
         this.ctx.globalAlpha = 1.0;
@@ -21033,7 +21375,7 @@ class Game {
             this.ctx.shadowBlur = 6;
             this.ctx.shadowColor = '#ff8800';
             this.ctx.beginPath();
-            this.ctx.arc(e.x - cam.x, e.y - cam.y - e.z, 2.5, 0, Math.PI * 2);
+            this.ctx.arc(e.x - cam.x, e.y - cam.y - e.z - (e.baseZ || 0), 2.5, 0, Math.PI * 2);
             this.ctx.fill();
         }
         this.ctx.globalAlpha = 1.0;
@@ -21151,8 +21493,12 @@ class Game {
                 let flashRadius = 18 + (1 - t) * 8;
                 let alpha = t * 0.9;
                 
+                // Combat Dive: follow the shooter's height, same `- z`
+                // convention as the player sprite/laser/embers elsewhere
+                // (entity.z is undefined for anything that can't dive, e.g.
+                // enemies -- `|| 0` keeps this a no-op for them).
                 let sx = entity.muzzleFlashX - cam.x;
-                let sy = entity.muzzleFlashY - cam.y;
+                let sy = entity.muzzleFlashY - cam.y - (entity.z || 0);
                 
                 this.ctx.save();
                 this.ctx.globalAlpha = Math.max(0, Math.min(1.0, alpha));
@@ -21385,7 +21731,9 @@ class Game {
             // 5. Player & Enemy Muzzle Flashes (brief, intense radial flashes)
             for (let p of activePlayersForLight) {
                 if (p.muzzleFlashTimer > 0) {
-                    let pos = worldToCanvas(p.muzzleFlashX, p.muzzleFlashY);
+                    // Combat Dive: same `- z` convention as the sprite draw
+                    // pass -- follow the shooter's height while airborne.
+                    let pos = worldToCanvas(p.muzzleFlashX, p.muzzleFlashY - (p.z || 0));
                     let flashRadius = 180 * cam.zoom;
                     let intensity = p.muzzleFlashTimer / 0.04;
 
@@ -21399,7 +21747,7 @@ class Game {
             if (this.enemies) {
                 for (let e of this.enemies) {
                     if (!e.dead && e.muzzleFlashTimer > 0) {
-                        let pos = worldToCanvas(e.muzzleFlashX, e.muzzleFlashY);
+                        let pos = worldToCanvas(e.muzzleFlashX, e.muzzleFlashY - (e.z || 0));
                         let flashRadius = 140 * cam.zoom;
                         let intensity = e.muzzleFlashTimer / 0.04;
 
