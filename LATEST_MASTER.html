@@ -6998,17 +6998,44 @@ const AIM_WEIGHT = {
     // distance -- so the beam and the dot always agree on how focused the
     // shot currently is; there's nothing to keep in sync by hand.
     COLLIMATION_TIGHT_HALF_ANGLE_DEG: 0.1,  // thinner than the first pass (0.2) -- that still read as "a little thick" at long range
-    COLLIMATION_WIDE_HALF_ANGLE_DEG: 1.7,   // cut to ~1/3 of the first pass (5) -- that read as a giant flashlight
-    COLLIMATION_MIN: 0.04,                  // value snapped to immediately on firing (not exactly 0 -- avoids a literal zero-width edge case)
-    COLLIMATION_RECOVER_TIME: 0.2,          // was 0.8 -- that read as a gentle camera-style focus pull; a laser should snap back to precise almost immediately
+    COLLIMATION_WIDE_HALF_ANGLE_DEG: 1.1,   // cut to ~1/3 of the first pass (5) -- that read as a giant flashlight
+    COLLIMATION_MIN: 0.18,                  // value snapped to immediately on firing (not exactly 0 -- avoids a literal zero-width edge case)
+    // COLLIMATION_HOLD_TIME was REFERENCED (AIM_WEIGHT.COLLIMATION_HOLD_TIME
+    // in fire()) before it was ever actually declared here -- a real bug,
+    // not a tuning issue: it evaluated to undefined, so
+    // `beamCollimationHoldTimer = undefined`, and `if (undefined > 0)` is
+    // false in JS, meaning the hold branch in update() silently never ran
+    // and recovery began immediately regardless. Combined with
+    // COLLIMATION_RECOVER_TIME being only 0.2s, the "just fired" wide/dim
+    // state was only ever on screen for a single rendered frame (~16ms) --
+    // not humanly perceivable during normal play/testing, which is why
+    // turning WIDE_EFFECTIVE_RANGE/WIDE_PEAK_ALPHA_MULT to increasingly
+    // extreme values kept appearing to do nothing: an imperceptible frame
+    // made more extreme is still imperceptible. Set to a duration that's
+    // actually visible without frame-stepping.
+    COLLIMATION_HOLD_TIME: 0.15,
+    COLLIMATION_RECOVER_TIME: 0.15,          // was 0.8 -- that read as a gentle camera-style focus pull; a laser should snap back to precise almost immediately
     // Energy dilution: a wider/unfocused beam is the SAME total light
     // spread over more area, not more total light -- so as collimation
     // drops, both the effective range AND the peak brightness drop with it.
     // Without this, a wide beam at the same brightness/range as the tight
     // one reads as suddenly emitting far more energy, which is exactly
     // what it looked like before this existed.
-    WIDE_EFFECTIVE_RANGE: 2,     // was 37 -- cut to ~1/4 per feedback
-    WIDE_PEAK_ALPHA_MULT: 0.0000175, // was 0.0175 -- cut to 10% per feedback that it was still too bright
+    // RESET to sane, moderate starting values here rather than continuing
+    // from the extreme near-zero numbers reached previously -- those were
+    // arrived at through a feedback loop that was fundamentally broken (see
+    // COLLIMATION_HOLD_TIME above), so they aren't a meaningful baseline to
+    // keep refining from. Tune these fresh now that the effect is actually
+    // visible for long enough to judge.
+    WIDE_EFFECTIVE_RANGE: 380,
+    WIDE_PEAK_ALPHA_MULT: 0.15,
+    // Brightness recovers on collim^EXPONENT, not linear collim -- keeps it
+    // noticeably dimmer than the shape's own recovery progress through most
+    // of the window, only catching up to full right as collim hits 1. See
+    // the peakAlphaMult calc in the draw block for the full rationale.
+    // Higher = brightness stays suppressed longer / catches up more sharply
+    // at the very end.
+    COLLIMATION_BRIGHTNESS_EXPONENT: 2,
     DOT_RADIUS_MULT: 1.25,       // aim dot rendered 1.25x its computed width -- at narrow (focused) angles the true width was so thin the dot barely registered as a dot
 
     // Below this many radians of residual offset (and this angular velocity,
@@ -7145,10 +7172,12 @@ class Player extends Entity {
         // Laser Beam collimation (see AIM_WEIGHT.COLLIMATION_* + the laser-
         // sight draw block in Game.draw()): 1 = fully focused/tight beam,
         // 0 = just fired/wide and unfocused. Snapped down on every shot
-        // (see fire()) and recovers linearly back to 1 in update(). Drives
-        // BOTH the beam's rendered half-angle and the aim dot's radius from
-        // the same single value, so they can never visually disagree.
+        // (see fire()), HELD there for a short beat (beamCollimationHoldTimer),
+        // then recovers linearly back to 1 in update(). Drives BOTH the
+        // beam's rendered half-angle and the aim dot's radius from the same
+        // single value, so they can never visually disagree.
         this.beamCollimation = 1;
+        this.beamCollimationHoldTimer = 0;
 
         // --- Aim Weight state (see AIM_WEIGHT config + updateAimWeight()) ---
         // aimTargetAngle: raw input intent (mouse/touch world point, or stick
@@ -7644,7 +7673,15 @@ class Player extends Entity {
             if (this.muzzleFlashTimer < 0) this.muzzleFlashTimer = 0;
         }
 
-        if (this.beamCollimation < 1) {
+        if (this.beamCollimationHoldTimer > 0) {
+            // Held at the minimum -- no recovery yet. Without this, recovery
+            // began on the very next frame after firing, so the "just
+            // fired" wide/dim state only ever existed for a single rendered
+            // frame before it started visibly narrowing again -- which is
+            // exactly why it read as one continuous smooth ease both ways
+            // instead of a hard snap, a held beat, then a release.
+            this.beamCollimationHoldTimer -= dt;
+        } else if (this.beamCollimation < 1) {
             // Linear recovery back to fully focused -- simple and
             // predictable on purpose; see AIM_WEIGHT.COLLIMATION_RECOVER_TIME.
             this.beamCollimation = Math.min(1, this.beamCollimation + dt / AIM_WEIGHT.COLLIMATION_RECOVER_TIME);
@@ -8367,11 +8404,13 @@ class Player extends Entity {
         this.muzzleFlashX = barrelX;
         this.muzzleFlashY = barrelY;
         // Laser Beam: every shot immediately knocks the beam out of focus
-        // (see AIM_WEIGHT.COLLIMATION_*) -- it recovers linearly back to 1
-        // in update(). Snapped down, not decayed toward, on purpose: the
-        // "just fired" unfocused look should be instant, the recovery
-        // should be the only gradual part.
+        // (see AIM_WEIGHT.COLLIMATION_*), HOLDS there for a short beat, then
+        // recovers linearly back to 1 in update(). Snapped down, not decayed
+        // toward, on purpose: the "just fired" unfocused look should be
+        // instant, and now actually visible as its own moment (the hold)
+        // rather than starting to recover the very next frame.
         this.beamCollimation = AIM_WEIGHT.COLLIMATION_MIN;
+        this.beamCollimationHoldTimer = AIM_WEIGHT.COLLIMATION_HOLD_TIME;
         // Aim Weight: bullets fire along the character's actual (weighted)
         // angle, not the raw input position — this.angle is what everything
         // downstream should key off, per the design brief. We still project
@@ -21761,9 +21800,21 @@ class Game {
                 let effectiveMaxRange = AIM_WEIGHT.WIDE_EFFECTIVE_RANGE +
                     (maxLaserDist - AIM_WEIGHT.WIDE_EFFECTIVE_RANGE) * collim;
                 // Peak brightness at the muzzle itself also drops -- same
-                // total energy, spread thinner.
+                // total energy, spread thinner. Uses a DELAYED curve
+                // (collim^EXPONENT), not the same linear collim the angle/
+                // range above use -- the angle's swing (1.7deg -> 0.1deg,
+                // ~17x) is proportionally much bigger than brightness's
+                // (WIDE_PEAK_ALPHA_MULT -> 1.0, under 3x), so at the same
+                // linear rate the beam LOOKS mostly narrowed while
+                // brightness has already mostly caught up -- reading as "a
+                // bright thin beam stretching outward" instead of "a dim
+                // effect gradually building to full brightness." Staying
+                // well below full through most of the recovery and only
+                // catching up right at the end (collim -> 1) is what
+                // actually makes it read as building progressively.
+                let brightnessT = Math.pow(collim, AIM_WEIGHT.COLLIMATION_BRIGHTNESS_EXPONENT);
                 let peakAlphaMult = AIM_WEIGHT.WIDE_PEAK_ALPHA_MULT +
-                    (1 - AIM_WEIGHT.WIDE_PEAK_ALPHA_MULT) * collim;
+                    (1 - AIM_WEIGHT.WIDE_PEAK_ALPHA_MULT) * brightnessT;
                 let peakAlpha = startAlpha * opacityMult * peakAlphaMult;
 
                 // Falloff is a fraction of effectiveMaxRange (NOT the map's
