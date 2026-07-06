@@ -2765,6 +2765,38 @@ class AudioEngine {
                 osc2.start(0);
             }));
 
+            // 14b. Open-bolt mechanical clack (SMG/LMG trigger pull -- sear
+            // release followed by the bolt carrier slamming forward a beat
+            // later, see Weapons.*.openBoltDelay + Player.update()).
+            // Heavier/lower than mine_place's click-clack -- this is meant
+            // to read as a large steel action, not a small arming switch.
+            promises.push(this.bakeSound('bolt_clack', 0.14, (offlineCtx) => {
+                const osc1 = offlineCtx.createOscillator();
+                const gain1 = offlineCtx.createGain();
+                osc1.type = 'square';
+                osc1.frequency.setValueAtTime(1500, 0);
+                osc1.frequency.exponentialRampToValueAtTime(300, 0.03);
+                gain1.gain.setValueAtTime(0.3, 0);
+                gain1.gain.exponentialRampToValueAtTime(0.001, 0.03);
+
+                const osc2 = offlineCtx.createOscillator();
+                const gain2 = offlineCtx.createGain();
+                osc2.type = 'square';
+                osc2.frequency.setValueAtTime(220, 0.045);
+                osc2.frequency.exponentialRampToValueAtTime(60, 0.11);
+                gain2.gain.setValueAtTime(0, 0);
+                gain2.gain.setValueAtTime(0.45, 0.045);
+                gain2.gain.exponentialRampToValueAtTime(0.001, 0.11);
+
+                osc1.connect(gain1);
+                gain1.connect(offlineCtx.destination);
+                osc2.connect(gain2);
+                gain2.connect(offlineCtx.destination);
+
+                osc1.start(0);
+                osc2.start(0);
+            }));
+
             // 15. Weapon switch foley (sliding mechanism and cocking sound)
             promises.push(this.bakeSound('weapon_switch', 0.35, (offlineCtx) => {
                 const osc1 = offlineCtx.createOscillator();
@@ -3902,13 +3934,23 @@ const MathUtils = {
 /**
  * WEAPONS CONFIGURATION
  */
+// openBoltDelay: seconds between trigger pull and the round actually
+// leaving the barrel, for weapons that fire from an open bolt (see
+// Player.update()'s fire-trigger block + Player.fire()). Named
+// "openBoltDelay" rather than "boltDelay" specifically to avoid confusion
+// with the unrelated `type: 'bolt'` above (bolt-ACTION, i.e. Sniper's
+// single-shot-per-click cycling) -- open-bolt is a different mechanism
+// (a heavy bolt carrier slams forward on trigger pull) that happens to
+// share the word "bolt". Only applies to the FIRST round of a fresh
+// trigger pull, never between shots of a held-down auto burst -- see the
+// boltCycled latch in update().
 const Weapons = {
-    pistol:  { name: 'Pistol', dmg: 25, fireRate: 0.22, speed: 2800, drag: 0.08, spread: 0.015, mag: Infinity, weight: 0, color: '#00e5ff', type: 'semi', maxZoom: 0.15, gamepadAimDist: 180 },
-    shotgun: { name: 'Shotgun', dmg: 14, fireRate: 0.75, speed: 2000, drag: 0.22, spread: 0.16, mag: 0, weight: 12, color: '#ff2a5f', type: 'pump', pellets: 8, maxZoom: 0.10, gamepadAimDist: 140 },
-    smg:     { name: 'SMG', dmg: 11, fireRate: 0.07, speed: 2400, drag: 0.12, spread: 0.08, mag: 0, weight: 8, color: '#39ff14', type: 'auto', maxZoom: 0.20, gamepadAimDist: 200 },
-    lmg:     { name: 'LMG', dmg: 22, fireRate: 0.11, speed: 3200, drag: 0.05, spread: 0.05, mag: 0, weight: 24, color: '#ffea00', type: 'auto', maxZoom: 0.25, gamepadAimDist: 240 },
-    sniper:  { name: 'Sniper', dmg: 120, fireRate: 1.8, speed: 5200, drag: 0.02, spread: 0.002, mag: 0, weight: 20, color: '#d500f9', type: 'bolt', maxZoom: 0.45, gamepadAimDist: 380 },
-    m1a:     { name: 'M1A', dmg: 48, fireRate: 0.15, speed: 4400, drag: 0.03, spread: 0.004, mag: 0, weight: 14, color: '#ffb700', type: 'semi', maxZoom: 0.35, gamepadAimDist: 300 }
+    pistol:  { name: 'Pistol', dmg: 25, fireRate: 0.22, speed: 2800, drag: 0.08, spread: 0.015, mag: Infinity, weight: 0, color: '#00e5ff', type: 'semi', maxZoom: 0.15, gamepadAimDist: 180, openBoltDelay: 0 },
+    shotgun: { name: 'Shotgun', dmg: 14, fireRate: 0.75, speed: 2000, drag: 0.22, spread: 0.16, mag: 0, weight: 12, color: '#ff2a5f', type: 'pump', pellets: 8, maxZoom: 0.10, gamepadAimDist: 140, openBoltDelay: 0 },
+    smg:     { name: 'SMG', dmg: 11, fireRate: 0.07, speed: 2400, drag: 0.12, spread: 0.08, mag: 0, weight: 8, color: '#39ff14', type: 'auto', maxZoom: 0.20, gamepadAimDist: 200, openBoltDelay: 0.05 },
+    lmg:     { name: 'LMG', dmg: 22, fireRate: 0.11, speed: 3200, drag: 0.05, spread: 0.05, mag: 0, weight: 24, color: '#ffea00', type: 'auto', maxZoom: 0.25, gamepadAimDist: 240, openBoltDelay: 0.14 },
+    sniper:  { name: 'Sniper', dmg: 120, fireRate: 1.8, speed: 5200, drag: 0.02, spread: 0.002, mag: 0, weight: 20, color: '#d500f9', type: 'bolt', maxZoom: 0.45, gamepadAimDist: 380, openBoltDelay: 0 },
+    m1a:     { name: 'M1A', dmg: 48, fireRate: 0.15, speed: 4400, drag: 0.03, spread: 0.004, mag: 0, weight: 14, color: '#ffb700', type: 'semi', maxZoom: 0.35, gamepadAimDist: 300, openBoltDelay: 0 }
 };
 
 /**
@@ -6686,11 +6728,24 @@ class Entity {
  *
  * How it fits together (see Player.updateAimWeight()):
  *   this.angle (the actual facing/reticle everything else keys off) =
- *       aimChaseAngle (target angle, rate-capped)
+ *       aimChaseAngle (target angle, rate-capped -- itself chases a
+ *                      sprint-overridden "low ready" target while sprinting,
+ *                      see the chaseTargetAngle override in update())
  *     + aimRecoilOffset      (decaying kick from firing)
  *     + aimHitFlinchOffset   (decaying kick from taking damage)
  *     + aimExplosionFlinchOffset (decaying kick from nearby explosions)
+ *     + aimWhizFlinchOffset  (decaying kick from a close bullet near-miss)
+ *     + aimWalkSwayOffset    (decaying kick from each footfall, see
+ *                            applySprintStaminaAndMove())
+ *     + aimHeartbeatOffset   (decaying kick from each heartbeat while badly
+ *                            hurt, see updateHeartbeatSway())
  *     + idle sway (continuous, only while target angle is holding still)
+ *
+ * this.angle is NOT what player-relative WASD movement reads, though --
+ * see this.moveFacingAngle (updateMoveFacing()), a second turn-rate-capped
+ * chase toward the same raw input that deliberately ignores every
+ * perturbation above (including Low Ready), so getting flinched or forced
+ * into Low Ready swings the gun without also steering your feet.
  */
 const AIM_WEIGHT = {
     // --- Turn-rate cap: how fast the character's actual facing can chase the
@@ -6746,7 +6801,19 @@ const AIM_WEIGHT = {
         // binks the aim a little -- startled by the near-miss, not actually
         // hit. Stiffer/lower-maxDeg than hit flinch on purpose: this should
         // read as a quick "whoa!" flick, not a loss of aim control.
-        aimWhizFlinchOffset:      { stiffness: 4200, damping: 0.22, maxDeg: 6 }
+        aimWhizFlinchOffset:      { stiffness: 4200, damping: 0.22, maxDeg: 6 },
+        // Locomotive sway: kicked once per real footfall (see the
+        // footstepTimer reset in applySprintStaminaAndMove()), not driven
+        // continuously -- stiff/quick enough to read as a crisp per-step
+        // "thud" rather than a mushy wobble, with just enough underdamping
+        // to give each step a tiny rebound.
+        aimWalkSwayOffset:        { stiffness: 2200, damping: 0.28, maxDeg: 10 },
+        // Heartbeat sync: kicked once per heartbeat while badly hurt (see
+        // Player.updateHeartbeatSway()). Lower stiffness than a footstep --
+        // a heartbeat is a slower, heavier thump than a boot hitting the
+        // ground -- and capped low since this stacks on top of the already-
+        // amplified low-health idle sway (IDLE_SWAY_HEALTH_MAX_MULT).
+        aimHeartbeatOffset:       { stiffness: 1700, damping: 0.24, maxDeg: 14 }
     },
 
     // --- Hit flinch: getting shot knocks the aim off -- and should read as
@@ -6855,6 +6922,94 @@ const AIM_WEIGHT = {
     WHIZ_FLINCH_SPEED_REF: 3400,     // bullet speed (px/s) that maps to a 1.0x flinch-strength multiplier
     WHIZ_FLINCH_SPEED_MIN_MULT: 0.7,
     WHIZ_FLINCH_SPEED_MAX_MULT: 1.6,
+
+    // --- Locomotive sway: base kick size per footfall (see the
+    // aimWalkSwayOffset spring above + the footstepTimer hook in
+    // applySprintStaminaAndMove()). Scaled per-shot by the same weapon-
+    // weight multiplier the Heavy Barrel Pivot already uses (AIM_WEIGHT.
+    // PIVOT.WEIGHT_*) so a pistol barely bounces on footfalls while an LMG
+    // bounces hard, with zero new tuning surface to maintain.
+    WALK_SWAY_KICK_DEG: 0.9,
+    // Sprinting doesn't just walk faster -- it should read as genuinely
+    // losing control of the sight picture, per the "makes Focus feel like
+    // a massive relief" goal.
+    WALK_SWAY_SPRINT_MULT: 3.2,
+
+    // --- Heartbeat sync: kick size per heartbeat at the low-health
+    // threshold (HEARTBEAT_HP_THRESHOLD), scaling up to HEARTBEAT_KICK_DEG
+    // itself as health approaches 0 -- see Player.updateHeartbeatSway().
+    HEARTBEAT_KICK_DEG: 7,
+    HEARTBEAT_HP_THRESHOLD: 0.20,
+    HEARTBEAT_BEAT_INTERVAL: 0.75, // matches the screen-pulse low-health cadence in Game.updateHeartbeat()
+
+    // --- Dynamic Low Ready: while sprinting, the gun is physically pulled
+    // off the real aim point rather than simply disabled -- see the
+    // chaseTargetAngle override in Player.update(). Offset is expressed
+    // relative to moveFacingAngle (the player's raw aim/facing input,
+    // tracked independently of the gun's own perturbed angle -- see
+    // updateMoveFacing()), NOT this.aimChaseAngle itself: anchoring to the
+    // very value being driven would redefine the target relative to its own
+    // last position every frame and spin the gun continuously instead of
+    // settling at a fixed offset. Using moveFacingAngle means it swings
+    // naturally with you if you turn mid-sprint, without ever chasing
+    // itself.
+    LOW_READY_OFFSET_DEG: 40,
+    // Was +1 (aimed out to the right). Flipped to -1: the rifle is carried
+    // on the right shoulder, so dropping it into Low Ready swings it down
+    // and across the body to the LEFT, not out and away to the right.
+    LOW_READY_SIDE_SIGN: -1,
+    // Laser cosmetic while sprinting (see the laser-sight draw block in
+    // Game.draw()): shortened + dimmed to "pointed at the dirt," on top of
+    // whatever the low-ready angle override above is already doing to
+    // where it's actually pointing.
+    LOW_READY_LASER_MAX_DIST: 220,
+    LOW_READY_LASER_ALPHA_MULT: 0.4,
+
+    // --- Laser Beam: falloff + focus recovery ---
+    // Replaces both the old "haze cone" system (scrapped -- every version
+    // tied width to something that changes on its own and read as random/
+    // robotic) AND the separate always-on divergence wedge from the
+    // version after that (which fixed the randomness but couldn't dim on
+    // firing or recover, and needed an awkward crossfade between two
+    // shapes). This is ONE shape whose width is driven by a single scalar,
+    // collimation -- see Player.beamCollimation, set in fire()/update().
+    //
+    // Falloff is a straightforward fraction of the beam's OWN max range
+    // (maxLaserDist -- 1700 normally, shorter during Low Ready), not an
+    // arbitrary reference distance: 0px = full brightness, half of max
+    // range = half brightness, max range = EXACTLY zero -- no light
+    // reaches that far, so there's no dot at the end. BEAM_FALLOFF_EXPONENT
+    // lets this bow a little steeper than a straight line while still
+    // guaranteeing it hits exactly 0 at max range -- 1.0 is pure linear
+    // (matches "half distance = half brightness" exactly).
+    BEAM_FALLOFF_EXPONENT: 1.0,
+    // The aim dot's brightness comes from this SAME falloff, with no
+    // separate floor -- an earlier version added a flat +0.32 baseline
+    // regardless of distance, which is exactly why the dot stayed bright
+    // even at max range. DOT_ALPHA_BOOST reads the dot a bit brighter than
+    // the line (it's a concentrated point, not a spread line) without ever
+    // giving it a floor that ignores distance.
+    DOT_ALPHA_BOOST: 1.35,
+
+    // Collimation: 1 = fully focused/tight, 0 = just fired/wide and
+    // unfocused. The beam's half-angle interpolates between
+    // COLLIMATION_TIGHT/WIDE based on this single value, and the aim dot's
+    // RADIUS is derived from that same interpolated half-angle at the hit
+    // distance -- so the beam and the dot always agree on how focused the
+    // shot currently is; there's nothing to keep in sync by hand.
+    COLLIMATION_TIGHT_HALF_ANGLE_DEG: 0.1,  // thinner than the first pass (0.2) -- that still read as "a little thick" at long range
+    COLLIMATION_WIDE_HALF_ANGLE_DEG: 1.7,   // cut to ~1/3 of the first pass (5) -- that read as a giant flashlight
+    COLLIMATION_MIN: 0.04,                  // value snapped to immediately on firing (not exactly 0 -- avoids a literal zero-width edge case)
+    COLLIMATION_RECOVER_TIME: 0.2,          // was 0.8 -- that read as a gentle camera-style focus pull; a laser should snap back to precise almost immediately
+    // Energy dilution: a wider/unfocused beam is the SAME total light
+    // spread over more area, not more total light -- so as collimation
+    // drops, both the effective range AND the peak brightness drop with it.
+    // Without this, a wide beam at the same brightness/range as the tight
+    // one reads as suddenly emitting far more energy, which is exactly
+    // what it looked like before this existed.
+    WIDE_EFFECTIVE_RANGE: 2,     // was 37 -- cut to ~1/4 per feedback
+    WIDE_PEAK_ALPHA_MULT: 0.0000175, // was 0.0175 -- cut to 10% per feedback that it was still too bright
+    DOT_RADIUS_MULT: 1.25,       // aim dot rendered 1.25x its computed width -- at narrow (focused) angles the true width was so thin the dot barely registered as a dot
 
     // Below this many radians of residual offset (and this angular velocity,
     // rad/s), a spring channel is snapped to fully at rest rather than
@@ -6987,6 +7142,13 @@ class Player extends Entity {
         this.muzzleFlashX = 0;
         this.muzzleFlashY = 0;
         this.emptyClickCooldown = 0;
+        // Laser Beam collimation (see AIM_WEIGHT.COLLIMATION_* + the laser-
+        // sight draw block in Game.draw()): 1 = fully focused/tight beam,
+        // 0 = just fired/wide and unfocused. Snapped down on every shot
+        // (see fire()) and recovers linearly back to 1 in update(). Drives
+        // BOTH the beam's rendered half-angle and the aim dot's radius from
+        // the same single value, so they can never visually disagree.
+        this.beamCollimation = 1;
 
         // --- Aim Weight state (see AIM_WEIGHT config + updateAimWeight()) ---
         // aimTargetAngle: raw input intent (mouse/touch world point, or stick
@@ -6996,6 +7158,14 @@ class Player extends Entity {
         //   and is what everything else (bullets, facing, LOS) reads.
         this.aimTargetAngle = 0;
         this.aimChaseAngle = 0;
+        // Movement-only facing (see updateMoveFacing()): tracks the RAW aim
+        // target at the same turn rate as aimChaseAngle, but is never
+        // substituted by Dynamic Low Ready's chaseTargetAngle override --
+        // player-relative WASD movement reads this instead of this.angle,
+        // so sprinting into Low Ready swings the GUN without also steering
+        // your actual run direction 40 degrees off course. Identical to
+        // aimChaseAngle at all times EXCEPT while sprinting.
+        this.moveFacingAngle = 0;
         this.aimAngularVelocity = 0; // rad/s, set each frame in updateAimWeight() -- feeds the Heavy Barrel Pivot lateral-sway effect
         this.aimRecoilOffset = 0;
         this.aimRecoilVel = 0;
@@ -7005,7 +7175,36 @@ class Player extends Entity {
         this.aimExplosionFlinchVel = 0;
         this.aimWhizFlinchOffset = 0;
         this.aimWhizFlinchVel = 0;
+        this.aimWalkSwayOffset = 0;
+        this.aimWalkSwayVel = 0;
+        this.aimHeartbeatOffset = 0;
+        this.aimHeartbeatVel = 0;
         this.aimIdleStillTimer = 0;
+        // Locomotive Sway: alternates true left/right per footfall (see
+        // applySprintStaminaAndMove()) rather than a random per-step
+        // direction, so consecutive steps read as a real alternating gait
+        // instead of a jittery coin-flip.
+        this._walkSwaySide = 1;
+        // Biological Sync: own timer/phase so this works correctly per-
+        // player in 2P mode -- deliberately NOT reusing Game.heartbeatPhase,
+        // which only ever tracks whichever single player is "activePlayer"
+        // this frame (see updateHeartbeatSway()).
+        this._gunHeartbeatTimer = 0;
+        this._gunHeartbeatPhase = 0;
+
+        // --- Open Bolt Delay (see Weapons.*.openBoltDelay + the fire-
+        // trigger block in update()) ---
+        // pendingFireTimer: seconds remaining until a scheduled shot
+        // actually leaves the barrel; 0 means no shot is pending.
+        // pendingFireWeaponKey: which weapon the pending shot belongs to,
+        // so switching weapons mid-delay can't fire the new gun using the
+        // old gun's already-scheduled round.
+        // boltCycled: latched true after the first shot of a held trigger
+        // pull has been scheduled, so a sustained auto-fire burst only eats
+        // the mechanical delay once (on the first round), not every round.
+        this.pendingFireTimer = 0;
+        this.pendingFireWeaponKey = null;
+        this.boltCycled = false;
         // Recoil bias: which way this burst of fire is "climbing." Re-rolled
         // when there's been a gap since the last shot (see fire()).
         this.aimRecoilBiasDir = 1;
@@ -7187,9 +7386,43 @@ class Player extends Entity {
         }
         this.aimTargetAngle = targetAngle;
 
+        // Dynamic Low Ready: while sprinting, the gun can't realistically
+        // track the real aim point, so substitute a "pointed at the dirt"
+        // target for the chase to pull toward -- same turn-rate-capped
+        // chase machinery as any other target, no separate state machine.
+        // This deliberately does NOT touch this.aimTargetAngle above (the
+        // raw player intent, still needed unmodified for isPlayer2's no-
+        // input fallback and the idle-still/Focus comparison further down)
+        // -- only the value actually fed to updateAimWeight() is swapped.
+        // this.isSprinting reflects LAST frame's sprint state (this frame's
+        // isn't computed until applySprintStaminaAndMove() below runs) --
+        // same one-frame staleness the idle-sway code further down already
+        // accepts as imperceptible.
+        // Movement-only facing tracks the RAW target and must be updated
+        // BEFORE the low-ready calc below, which anchors off it.
+        this.updateMoveFacing(dt, targetAngle);
+
+        let chaseTargetAngle = targetAngle;
+        if (this.isSprinting) {
+            // Anchored to moveFacingAngle, NOT this.aimChaseAngle. This
+            // matters more than it looks: aimChaseAngle is the value
+            // updateAimWeight() is about to move -- if the target were
+            // defined as "current aimChaseAngle + offset" it would be
+            // redefined relative to its own last position every single
+            // frame, and the gun would spin continuously instead of
+            // settling 40 degrees off and holding there. moveFacingAngle
+            // tracks raw aim input independently of all of this, so it's a
+            // stable anchor: the gun sits a fixed offset away from wherever
+            // the player is generally aiming/facing, and swings smoothly
+            // with them if they turn mid-sprint, without ever chasing
+            // itself.
+            chaseTargetAngle = this.moveFacingAngle +
+                AIM_WEIGHT.LOW_READY_SIDE_SIGN * AIM_WEIGHT.LOW_READY_OFFSET_DEG * Math.PI / 180;
+        }
+
         // Turn-rate-capped chase + recoil/flinch/sway perturbations.
         // Sets this.angle to the final "actual" aim angle for this frame.
-        this.updateAimWeight(dt, targetAngle);
+        this.updateAimWeight(dt, chaseTargetAngle);
 
         if (gpAimed) {
             // No real OS cursor for gamepad aim -- project a virtual crosshair
@@ -7223,10 +7456,14 @@ class Player extends Entity {
         let kbMoveX = 0, kbMoveY = 0;
         if (!this.isPlayer2) {
             if (game.movementScheme === 'player') { // Player-Relative WASD Scheme [1]
-                let forwardX = Math.cos(this.angle);
-                let forwardY = Math.sin(this.angle);
-                let rightX = -Math.sin(this.angle);
-                let rightY = Math.cos(this.angle);
+                // moveFacingAngle, not this.angle -- see updateMoveFacing()
+                // for why (Dynamic Low Ready yanks this.angle, the GUN's
+                // angle, off to the side while sprinting; movement direction
+                // shouldn't follow it).
+                let forwardX = Math.cos(this.moveFacingAngle);
+                let forwardY = Math.sin(this.moveFacingAngle);
+                let rightX = -Math.sin(this.moveFacingAngle);
+                let rightY = Math.cos(this.moveFacingAngle);
 
                 if (input.keys['w']) { kbMoveX += forwardX; kbMoveY += forwardY; }
                 if (input.keys['s']) { kbMoveX -= forwardX; kbMoveY -= forwardY; }
@@ -7258,10 +7495,12 @@ class Player extends Entity {
             if (ax_move_x !== 0 || ax_move_y !== 0) {
                 let gpMoveX = 0, gpMoveY = 0;
                 if (game.movementScheme === 'player') {
-                    let forwardX = Math.cos(this.angle);
-                    let forwardY = Math.sin(this.angle);
-                    let rightX = -Math.sin(this.angle);
-                    let rightY = Math.cos(this.angle);
+                    // Same reasoning as the keyboard block above -- movement
+                    // reads moveFacingAngle, not the gun's this.angle.
+                    let forwardX = Math.cos(this.moveFacingAngle);
+                    let forwardY = Math.sin(this.moveFacingAngle);
+                    let rightX = -Math.sin(this.moveFacingAngle);
+                    let rightY = Math.cos(this.moveFacingAngle);
 
                     gpMoveX = forwardX * -ax_move_y + rightX * ax_move_x;
                     gpMoveY = forwardY * -ax_move_y + rightY * ax_move_x;
@@ -7320,6 +7559,11 @@ class Player extends Entity {
         let isSemi = this.weapon.type === 'semi' || this.weapon.type === 'pump' || this.weapon.type === 'bolt';
         if (!isFiring) {
             this.semiAutoTriggerReleased = true;
+            // Open Bolt Delay: re-arm for the next trigger pull. Only
+            // matters for auto weapons with a nonzero openBoltDelay (SMG/
+            // LMG) -- semi/pump/bolt weapons already get a fresh "pull"
+            // every click via semiAutoTriggerReleased above regardless.
+            this.boltCycled = false;
         }
 
         if (this.emptyClickCooldown > 0) {
@@ -7343,7 +7587,26 @@ class Player extends Entity {
             const fireRateOCMult = Math.max(0.65, 1.0 - fireRateLvl * 0.05);
             let actualFireRate = baseFireRate * clutchFireRateBuff * fireRateOCMult;
             if (hasAmmo && canFireSemi && (gameTime - this.lastFireTime >= actualFireRate)) {
-                this.fire(game);
+                let openBoltDelay = this.weapon.openBoltDelay || 0;
+                if (openBoltDelay > 0 && !this.boltCycled) {
+                    // First round of a fresh trigger pull on an open-bolt
+                    // weapon: the bang is deferred, but the fire-rate clock
+                    // and semi-auto latch still stamp NOW (at the click),
+                    // not when the round actually leaves the barrel -- so
+                    // sustained auto-fire cadence is unaffected, only the
+                    // very first shot after a pause gets the extra lag.
+                    // Ammo/recoil/muzzle-flash/everything else in fire()
+                    // still happens at the deferred moment, reading
+                    // whatever this.angle/this.x/this.y are AT THAT TIME
+                    // (so a mouse flick during the delay is respected, not
+                    // frozen at click-time).
+                    this.pendingFireTimer = openBoltDelay;
+                    this.pendingFireWeaponKey = weaponKey;
+                    this.boltCycled = true;
+                    audio.playBakedSound('bolt_clack', audio.sfxGain, 0.55);
+                } else {
+                    this.fire(game);
+                }
                 this.lastFireTime = gameTime;
                 if (isSemi) {
                     this.semiAutoTriggerReleased = false;
@@ -7380,6 +7643,33 @@ class Player extends Entity {
             this.muzzleFlashTimer -= dt;
             if (this.muzzleFlashTimer < 0) this.muzzleFlashTimer = 0;
         }
+
+        if (this.beamCollimation < 1) {
+            // Linear recovery back to fully focused -- simple and
+            // predictable on purpose; see AIM_WEIGHT.COLLIMATION_RECOVER_TIME.
+            this.beamCollimation = Math.min(1, this.beamCollimation + dt / AIM_WEIGHT.COLLIMATION_RECOVER_TIME);
+        }
+
+        // Open Bolt Delay: countdown to a shot scheduled earlier this same
+        // held trigger pull (see the fire-trigger block below). Guarded by
+        // pendingFireWeaponKey in case the player switched weapons mid-
+        // delay -- the scheduled round belongs to whichever gun was in
+        // hand when the trigger broke, not whatever's equipped now.
+        if (this.pendingFireTimer > 0) {
+            this.pendingFireTimer -= dt;
+            if (this.pendingFireTimer <= 0) {
+                this.pendingFireTimer = 0;
+                if (!this.dead && game && this.weapon.name.toLowerCase() === this.pendingFireWeaponKey) {
+                    this.fire(game);
+                }
+                this.pendingFireWeaponKey = null;
+            }
+        }
+
+        // Biological Sync: per-heartbeat gun kick while badly hurt -- see
+        // updateHeartbeatSway() for why this is separate from Game's
+        // activePlayer-only heartbeatPhase/Intensity.
+        this.updateHeartbeatSway(dt);
 
         // PvP Barrier Blocking: a player is physically stopped by barriers owned
         // by the OTHER player. Their own barriers (and all barriers in every
@@ -7552,7 +7842,14 @@ class Player extends Entity {
         // the same rate as before (see takeDamage's shock penalty below) --
         // only movement drain/regen changed here.
         let regenRate = (26.4 / 3.0) * 1.6 * (1 + cardioLvl * 0.12); // ~60% faster base regen
-        let walkDrainRate = 2.4;    // was 3.2 (originally 4.5) -- walking drains even less now
+        // Walking/jogging is no longer a stamina drain -- a light,
+        // comfortable pace is genuinely refreshing rather than tiring, per
+        // feedback. Gains a small trickle instead, at a fraction of the
+        // full standing-still regen rate below (standing still fully still
+        // remains the fastest way to recover). Derived FROM regenRate
+        // rather than a separate constant so cardio/energy-drink bonuses
+        // that already scale regenRate carry over here automatically.
+        let walkRegenRate = regenRate * 0.2;
         let runDrainRate = 23.0 * (1 - cardioLvl * 0.08);    // was 27.0 (originally 38.0) -- running/sprinting drains quickly, just not THAT quickly
 
         // FPV OPERATOR MODE: running is a deliberate last resort (spec
@@ -7567,7 +7864,6 @@ class Player extends Entity {
         // Exo-Servos stamina efficiency: reduces drain by 6% per level (capped at 30% reduction / 0.70 multiplier)
         const exoStaminaEfficiency = Math.max(0.70, 1.0 - exoServosLvl * 0.06);
         runDrainRate *= exoStaminaEfficiency;
-        walkDrainRate *= exoStaminaEfficiency;
 
         let healthRegenFactor = 1.0;
         let healthLossFactor = 1.0;
@@ -7588,10 +7884,13 @@ class Player extends Entity {
             if (isSprinting && !this.isExhausted) {
                 this.stamina = Math.max(0, this.stamina - dt * runDrainRate * healthLossFactor);
             } else {
-                this.stamina = Math.max(0, this.stamina - dt * walkDrainRate * healthLossFactor);
+                // Walking/jogging: small regen trickle, not a drain -- see
+                // walkRegenRate above. Same health-based halt as standing
+                // still (healthRegenFactor), just a slower rate.
+                this.stamina = Math.min(this.maxStamina, this.stamina + dt * walkRegenRate * healthRegenFactor);
             }
         } else {
-            // Standing still is the ONLY way to recover stamina
+            // Standing fully still remains the fastest way to recover.
             this.stamina = Math.min(this.maxStamina, this.stamina + dt * regenRate * healthRegenFactor);
         }
 
@@ -7668,6 +7967,30 @@ class Player extends Entity {
             if (this.footstepTimer <= 0) {
                 audio.playFootstep(0.4);
                 this.footstepTimer = (isSprinting && !this.isExhausted) ? 0.22 : 0.35;
+
+                // Locomotive Sway: kick the gun at the exact moment a real
+                // footfall lands (same event that just triggered the
+                // footstep sound above), rather than a separate continuous
+                // sine wave -- guarantees the visual bounce and the audio
+                // step are frame-perfectly synced, and costs one function
+                // call instead of a per-frame trig evaluation. Alternates
+                // true left/right per step (via strictDir) instead of a
+                // random direction, so it reads as a real alternating gait.
+                // Weapon-weight scaling reuses the Heavy Barrel Pivot's
+                // existing weight curve (AIM_WEIGHT.PIVOT.WEIGHT_*) rather
+                // than introducing a second weight-to-multiplier mapping to
+                // keep in sync by hand.
+                let weaponWeightForSway = (this.weapon && this.weapon.weight) || 0;
+                let swayWeightMult = MathUtils.clamp(
+                    weaponWeightForSway / AIM_WEIGHT.PIVOT.WEIGHT_REF,
+                    AIM_WEIGHT.PIVOT.WEIGHT_MIN_MULT,
+                    AIM_WEIGHT.PIVOT.WEIGHT_MAX_MULT
+                );
+                let swaySprintMult = (isSprinting && !this.isExhausted) ? AIM_WEIGHT.WALK_SWAY_SPRINT_MULT : 1.0;
+                this._walkSwaySide = -this._walkSwaySide;
+                this.kickAim('aimWalkSwayOffset',
+                    AIM_WEIGHT.WALK_SWAY_KICK_DEG * swayWeightMult * swaySprintMult,
+                    this._walkSwaySide, true);
             }
         } else {
             this.footstepTimer = 0;
@@ -7689,6 +8012,26 @@ class Player extends Entity {
             this.energyDrinkTimer = 10.0; 
             audio.playPickup('money');
         }
+    }
+
+    // Movement-only facing -- mirrors aimChaseAngle's turn-rate-capped chase
+    // exactly, but always tracks the RAW aim target, never Dynamic Low
+    // Ready's substituted chaseTargetAngle (see the fire-trigger-adjacent
+    // override in update()). Player-relative WASD/gamepad movement reads
+    // this instead of this.angle for exactly that reason: this.angle is
+    // also the GUN's angle, and gets deliberately yanked off the real aim
+    // point during Low Ready (and, to a much smaller degree, by ordinary
+    // recoil/flinch/sway) -- none of which should also steer your feet.
+    // When not sprinting this tracks numerically identically to
+    // aimChaseAngle (same formula, same target, same dt), so normal
+    // movement feel is completely unchanged from before this existed.
+    updateMoveFacing(dt, targetAngle) {
+        let turnMod = AIM_WEIGHT.WEAPON_TURN_RATE_MOD[this.weapon.name] || 1.0;
+        let maxStep = (AIM_WEIGHT.TURN_RATE_DEG_PER_SEC * Math.PI / 180) * turnMod * dt;
+        let angleDiff = MathUtils.angleDifference(targetAngle, this.moveFacingAngle);
+        let appliedStep = (Math.abs(angleDiff) <= maxStep) ? angleDiff : Math.sign(angleDiff) * maxStep;
+        this.moveFacingAngle += appliedStep;
+        this.moveFacingAngle = Math.atan2(Math.sin(this.moveFacingAngle), Math.cos(this.moveFacingAngle));
     }
 
     // --- Aim Weight: turn-rate-capped chase + recoil/flinch/sway ---
@@ -7731,6 +8074,8 @@ class Player extends Entity {
         this._stepSpring('aimHitFlinchOffset', 'aimHitFlinchVel', AIM_WEIGHT.SPRINGS.aimHitFlinchOffset, springDt);
         this._stepSpring('aimExplosionFlinchOffset', 'aimExplosionFlinchVel', AIM_WEIGHT.SPRINGS.aimExplosionFlinchOffset, springDt);
         this._stepSpring('aimWhizFlinchOffset', 'aimWhizFlinchVel', AIM_WEIGHT.SPRINGS.aimWhizFlinchOffset, springDt);
+        this._stepSpring('aimWalkSwayOffset', 'aimWalkSwayVel', AIM_WEIGHT.SPRINGS.aimWalkSwayOffset, springDt);
+        this._stepSpring('aimHeartbeatOffset', 'aimHeartbeatVel', AIM_WEIGHT.SPRINGS.aimHeartbeatOffset, springDt);
 
         // 2b) Recoil climb: a simple monotonic drift (not spring physics --
         // see the config comment for why) that relaxes back to zero once you
@@ -7797,6 +8142,8 @@ class Player extends Entity {
             + this.aimHitFlinchOffset
             + this.aimExplosionFlinchOffset
             + this.aimWhizFlinchOffset
+            + this.aimWalkSwayOffset
+            + this.aimHeartbeatOffset
             + swayOffset;
     }
 
@@ -7925,6 +8272,38 @@ class Player extends Entity {
         let velKey = channel.replace('Offset', 'Vel');
         this[velKey] = (this[velKey] || 0) + dir * kickRad * cfg.__omega0 / cfg.__peakRatio;
     }
+
+    // Biological Sync: kicks the gun once per heartbeat while badly hurt,
+    // reusing the same kickAim()/spring machinery as recoil and flinch.
+    // Deliberately keyed only off this player's OWN health, not the
+    // operator-base-threat-level contribution Game.updateHeartbeat() also
+    // factors in for the screen-pulse effect -- that would need an enemy-
+    // distance scan per player per frame to duplicate here, which isn't
+    // worth it for what's meant to read as "my own heart pounding," not a
+    // general tension cue (the screen pulse already covers that). Runs on
+    // its own timer/phase (this._gunHeartbeatTimer/_gunHeartbeatPhase)
+    // rather than reading Game.heartbeatPhase, which only ever tracks
+    // whichever single player is "activePlayer" this frame -- reusing it
+    // here would mean only one of two players' guns react in 2P mode, and
+    // which one could flip frame-to-frame as relative HP changes.
+    updateHeartbeatSway(dt) {
+        let healthPct = this.maxHp > 0 ? this.hp / this.maxHp : 1;
+        let lowHealth = healthPct < AIM_WEIGHT.HEARTBEAT_HP_THRESHOLD && !this.dead;
+        if (!lowHealth) {
+            this._gunHeartbeatTimer = 0;
+            this._gunHeartbeatPhase = 0;
+            return;
+        }
+        this._gunHeartbeatTimer += dt;
+        let beatInterval = AIM_WEIGHT.HEARTBEAT_BEAT_INTERVAL;
+        let prevPhase = this._gunHeartbeatPhase;
+        this._gunHeartbeatPhase = (this._gunHeartbeatTimer % beatInterval) / beatInterval;
+        // New beat started this frame == phase wrapped back near 0.
+        if (this._gunHeartbeatPhase < prevPhase) {
+            let intensity = MathUtils.clamp(1 - healthPct / AIM_WEIGHT.HEARTBEAT_HP_THRESHOLD, 0, 1);
+            this.kickAim('aimHeartbeatOffset', AIM_WEIGHT.HEARTBEAT_KICK_DEG * (0.35 + 0.65 * intensity));
+        }
+    }
     
     fire(game) {
         let weaponKey = this.weapon.name.toLowerCase();
@@ -7987,6 +8366,12 @@ class Player extends Entity {
         this.muzzleFlashTimer = 0.04;
         this.muzzleFlashX = barrelX;
         this.muzzleFlashY = barrelY;
+        // Laser Beam: every shot immediately knocks the beam out of focus
+        // (see AIM_WEIGHT.COLLIMATION_*) -- it recovers linearly back to 1
+        // in update(). Snapped down, not decayed toward, on purpose: the
+        // "just fired" unfocused look should be instant, the recovery
+        // should be the only gradual part.
+        this.beamCollimation = AIM_WEIGHT.COLLIMATION_MIN;
         // Aim Weight: bullets fire along the character's actual (weighted)
         // angle, not the raw input position — this.angle is what everything
         // downstream should key off, per the design brief. We still project
@@ -8149,6 +8534,15 @@ class Player extends Entity {
         if (audio && audio.playWeaponSwitch) {
             audio.playWeaponSwitch(this.x, this.y);
         }
+        // Open Bolt Delay: a round scheduled by the PREVIOUS weapon has no
+        // business firing from whatever's now in hand -- the pendingFireTimer
+        // guard in update() already checks pendingFireWeaponKey against the
+        // currently equipped weapon, but clearing it here too means a
+        // quick switch-away-and-back within the same delay window can't
+        // accidentally resurrect it.
+        this.pendingFireTimer = 0;
+        this.pendingFireWeaponKey = null;
+        this.boltCycled = false;
     }
     
     addWeapon(typeKey) {
@@ -19236,6 +19630,13 @@ class Game {
                 let ex = 0, ey = 0;
                 let attempts = 0;
                 let validSpawn = false;
+                // Conservative radius covering every EnemyTypes.size value
+                // (9-15) plus a small buffer -- this runs before chosenType
+                // is rolled below, so it can't check the exact enemy's own
+                // radius yet, and doesn't need to: rejecting anything that
+                // would overlap a wall for the LARGEST enemy also clears it
+                // for every smaller one.
+                const SPAWN_WALL_CHECK_R = 18;
                 while (!validSpawn && attempts < 100) {
                     attempts++;
                     ex = Math.random() < 0.5 ? 60 : this.mapW - 60;
@@ -19254,6 +19655,25 @@ class Game {
                     if (this.isTwoPlayer && this.player2 && !this.player2.dead) {
                         if (Math.hypot(this.player2.x - ex, this.player2.y - ey) < 350) {
                             validSpawn = false;
+                        }
+                    }
+                    // Wall check: edge-biased spawn points (always within
+                    // 60px of a map border) never used to be tested against
+                    // this.map.walls at all -- harmless on maps with open
+                    // edges, but Four Corners deliberately stacks bunker
+                    // walls close to the corners/edges, so spawns kept
+                    // landing inside them and enemies got stuck wedged in
+                    // the resulting wall pockets. getWallsNear() is the same
+                    // spatially-filtered query Entity.updatePhysics() itself
+                    // uses for collision, so this is a cheap, already-proven
+                    // check, not a new system.
+                    if (validSpawn) {
+                        let nearbyWalls = this.map.getWallsNear(ex, ey);
+                        for (let wall of nearbyWalls) {
+                            if (MathUtils.circleIntersectAABB(ex, ey, SPAWN_WALL_CHECK_R, wall).hit) {
+                                validSpawn = false;
+                                break;
+                            }
                         }
                     }
                 }
@@ -21297,7 +21717,8 @@ class Game {
                     let virtualAimY = p.y + Math.sin(lAngle) * aimDist;
                     laserAngle = Math.atan2(virtualAimY - lStartY, virtualAimX - lStartX);
                 }
-                let maxLaserDist = 1700; // was 1400 -- a bit longer now that this is the ONLY aim reference during gameplay
+                let baseMaxLaserDist = p.isSprinting ? AIM_WEIGHT.LOW_READY_LASER_MAX_DIST : 1700; // was flat 1400 -- a bit longer now that this is the ONLY aim reference during gameplay
+                let maxLaserDist = baseMaxLaserDist;
                 let hitPt = this.getLaserEndPoint(lStartX, lStartY, laserAngle, maxLaserDist, this.map.walls);
                 
                 // Combat Dive (see DIVE_CONFIG/updateDivePhysics): the laser is
@@ -21315,53 +21736,115 @@ class Game {
                 let pz = p.z || 0;
 
                 let dist = Math.hypot(hitPt.x - lStartX, hitPt.y - lStartY);
-                let distRatio = Math.min(1.0, dist / maxLaserDist);
                 // Brightness buffed across the board (was startAlpha 0.25 /
                 // dotAlpha cap 0.5 / lineWidth 1) now that the UI crosshair is
                 // hidden during gameplay and this laser is the single source
                 // of truth for where the gun is actually pointed.
                 let startAlpha = 0.62;
-                let endAlpha = startAlpha * (1.0 - distRatio);
-                let dotAlpha = Math.min(0.9, endAlpha + 0.32);
-                
-                let grad = this.ctx.createLinearGradient(
-                    lStartX - cam.x, lStartY - cam.y - pz,
-                    hitPt.x - cam.x, hitPt.y - cam.y - pz
-                );
-                
+                let opacityMult = p.isSprinting ? AIM_WEIGHT.LOW_READY_LASER_ALPHA_MULT : 1.0;
                 let laserRGB = p.isPlayer2 ? '255, 183, 0' : '0, 229, 255';
-                grad.addColorStop(0, `rgba(${laserRGB}, ${startAlpha})`);
-                grad.addColorStop(1, `rgba(${laserRGB}, ${endAlpha})`);
-                this.ctx.fillStyle = `rgba(${laserRGB}, ${dotAlpha})`;
-                
-                this.ctx.save();
-                this.ctx.lineCap = 'round';
-                // Soft outer halo pass, then a bright thin core on top -- reads
-                // as a real laser beam instead of a flat single-alpha line,
-                // without the precision line itself getting any thicker/harder
-                // to aim with.
-                this.ctx.beginPath();
-                this.ctx.moveTo(lStartX - cam.x, lStartY - cam.y - pz);
-                this.ctx.lineTo(hitPt.x - cam.x, hitPt.y - cam.y - pz);
-                this.ctx.strokeStyle = `rgba(${laserRGB}, ${startAlpha * 0.35})`;
-                this.ctx.lineWidth = 4.5;
-                this.ctx.stroke();
 
-                this.ctx.beginPath();
-                this.ctx.moveTo(lStartX - cam.x, lStartY - cam.y - pz);
-                this.ctx.lineTo(hitPt.x - cam.x, hitPt.y - cam.y - pz);
-                this.ctx.strokeStyle = grad;
-                this.ctx.lineWidth = 1.6;
-                this.ctx.stroke();
-                this.ctx.restore();
+                // Collimation: 1 = focused/tight, 0 = just fired/wide. Drives
+                // THREE things together, not just angle -- a wider,
+                // unfocused beam is the same total light spread over more
+                // area, so it also has to be dimmer AND reach less far, or
+                // it reads as suddenly emitting more total energy (which is
+                // exactly what a same-brightness/same-range wide beam
+                // looked like). All three lerp together off one value.
+                let collim = MathUtils.clamp(p.beamCollimation ?? 1, 0, 1);
+                let halfAngleDeg = AIM_WEIGHT.COLLIMATION_WIDE_HALF_ANGLE_DEG +
+                    (AIM_WEIGHT.COLLIMATION_TIGHT_HALF_ANGLE_DEG - AIM_WEIGHT.COLLIMATION_WIDE_HALF_ANGLE_DEG) * collim;
+                let halfAngle = halfAngleDeg * Math.PI / 180;
+                // Effective range collapses toward WIDE_EFFECTIVE_RANGE as
+                // collimation drops -- a diverged beam physically can't
+                // carry as far, independent of the map's actual 1700px cap.
+                let effectiveMaxRange = AIM_WEIGHT.WIDE_EFFECTIVE_RANGE +
+                    (maxLaserDist - AIM_WEIGHT.WIDE_EFFECTIVE_RANGE) * collim;
+                // Peak brightness at the muzzle itself also drops -- same
+                // total energy, spread thinner.
+                let peakAlphaMult = AIM_WEIGHT.WIDE_PEAK_ALPHA_MULT +
+                    (1 - AIM_WEIGHT.WIDE_PEAK_ALPHA_MULT) * collim;
+                let peakAlpha = startAlpha * opacityMult * peakAlphaMult;
+
+                // Falloff is a fraction of effectiveMaxRange (NOT the map's
+                // flat 1700 cap) -- 0px = full brightness, half of the
+                // CURRENT effective range = half brightness, at/beyond the
+                // effective range = exactly zero. This is what actually
+                // makes the unfocused beam "go significantly less far"
+                // instead of just being the same length at a wider angle.
+                let falloffFrac = MathUtils.clamp(1 - dist / effectiveMaxRange, 0, 1);
+                let falloff = Math.pow(falloffFrac, AIM_WEIGHT.BEAM_FALLOFF_EXPONENT);
+
+                // The polygon is only ever drawn out to whichever is
+                // shorter: where it actually hit something, or its own
+                // effective range. No point rendering a shape that's
+                // already fully faded to invisible past effectiveMaxRange
+                // -- and critically, this means the polygon's OWN far edge
+                // always lands where the gradient has already reached (or
+                // is forced to, see the final stop below) zero, instead of
+                // ending mid-brightness with a visible hard edge.
+                let visibleRange = Math.min(dist, effectiveMaxRange);
+
+                let perpX = -Math.sin(laserAngle), perpY = Math.cos(laserAngle);
+                let apexX = lStartX - cam.x, apexY = lStartY - cam.y - pz;
+                let visX = lStartX + Math.cos(laserAngle) * visibleRange - cam.x;
+                let visY = lStartY + Math.sin(laserAngle) * visibleRange - cam.y - pz;
+                let visHalfWidth = Math.max(1.2, visibleRange * Math.tan(halfAngle));
+                let farAx = visX + perpX * visHalfWidth, farAy = visY + perpY * visHalfWidth;
+                let farBx = visX - perpX * visHalfWidth, farBy = visY - perpY * visHalfWidth;
+
+                // Several intermediate gradient stops sampling the SAME
+                // falloff curve, not just two endpoints -- lets the fade
+                // actually curve (per BEAM_FALLOFF_EXPONENT) rather than
+                // linearly interpolating between just a start and end alpha.
+                // The final stop is ALWAYS forced to exactly 0 regardless of
+                // where the natural curve lands, as a last-resort guarantee
+                // against a visible hard edge at the polygon's own boundary
+                // -- belt-and-suspenders on top of visibleRange already
+                // normally landing the curve at ~0 on its own.
+                let grad = this.ctx.createLinearGradient(apexX, apexY, visX, visY);
+                const GRAD_STOPS = [0, 0.15, 0.35, 0.6, 0.8, 0.96];
+                for (let st of GRAD_STOPS) {
+                    let stDist = st * visibleRange;
+                    let stFrac = MathUtils.clamp(1 - stDist / effectiveMaxRange, 0, 1);
+                    let stFalloff = Math.pow(stFrac, AIM_WEIGHT.BEAM_FALLOFF_EXPONENT);
+                    grad.addColorStop(st, `rgba(${laserRGB}, ${peakAlpha * stFalloff})`);
+                }
+                grad.addColorStop(1.0, `rgba(${laserRGB}, 0)`);
 
                 this.ctx.save();
-                this.ctx.shadowBlur = 8;
-                this.ctx.shadowColor = `rgba(${laserRGB}, 1)`;
                 this.ctx.beginPath();
-                this.ctx.arc(hitPt.x - cam.x, hitPt.y - cam.y - pz, 3.2, 0, Math.PI*2);
+                this.ctx.moveTo(apexX, apexY);
+                this.ctx.lineTo(farAx, farAy);
+                this.ctx.lineTo(farBx, farBy);
+                this.ctx.closePath();
+                this.ctx.fillStyle = grad;
                 this.ctx.fill();
                 this.ctx.restore();
+
+                // Aim dot: sits at the ACTUAL hit point (dist), not
+                // visibleRange -- if the beam fully faded out before
+                // reaching that far, falloff is already ~0 there and the
+                // dot correctly disappears too, rather than floating
+                // disconnected from a beam that stopped short of it.
+                // Radius is based on the SAME half-angle at the dot's own
+                // distance as the beam (so they never disagree about the
+                // current width), then bumped by DOT_RADIUS_MULT for
+                // visibility -- at tight/focused angles the true computed
+                // width was thin enough that the dot barely registered as
+                // a dot at all.
+                let dotHalfWidth = Math.max(1.2, dist * Math.tan(halfAngle)) * AIM_WEIGHT.DOT_RADIUS_MULT;
+                let dotAlpha = Math.min(0.95, peakAlpha * falloff * AIM_WEIGHT.DOT_ALPHA_BOOST);
+                if (dotAlpha > 0.01) {
+                    this.ctx.save();
+                    this.ctx.shadowBlur = 8;
+                    this.ctx.shadowColor = `rgba(${laserRGB}, 1)`;
+                    this.ctx.fillStyle = `rgba(${laserRGB}, ${dotAlpha})`;
+                    this.ctx.beginPath();
+                    this.ctx.arc(hitPt.x - cam.x, hitPt.y - cam.y - pz, dotHalfWidth, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.restore();
+                }
             }
         }
 
