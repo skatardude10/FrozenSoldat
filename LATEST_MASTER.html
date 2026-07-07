@@ -5717,8 +5717,23 @@ class MapGen {
             holeR = Math.max(20, (holeEnd - holeStart) / 2);
         }
 
+        // Lineage now tracks the EXACT set of currently-alive pieces
+        // descended from one original wall (`pieces`), not just a piece
+        // count -- this is what _recomputeLineageEdges() below checks
+        // against to decide which edges are real silhouette boundary vs.
+        // an internal seam against a still-alive sibling. Replaces an
+        // earlier per-frame spatial-neighborhood guess (getWallsNear
+        // around each wall's center) that could miss a genuine sibling
+        // sitting near a long/thin strip's far end, outside that query's
+        // 3x3-cell window -- checking the lineage's own exact piece list
+        // instead can't miss anything, and costs nothing at render time
+        // since it's precomputed here, not in the draw loop.
         const MAX_LINEAGE_PIECES = 5;
-        let lineage = wall._lineage || (wall._lineage = { n: 1 });
+        let lineage = wall._lineage || (wall._lineage = { n: 1, pieces: [] });
+        if (!lineage.pieces) lineage.pieces = [];
+        let selfIdx = lineage.pieces.indexOf(wall);
+        if (selfIdx !== -1) lineage.pieces.splice(selfIdx, 1);
+
         let allowed = Math.max(0, MAX_LINEAGE_PIECES - lineage.n);
         if (stubs.length > allowed) {
             // Prefer keeping the larger remaining piece(s) if the cap
@@ -5744,8 +5759,14 @@ class MapGen {
             lineage.n++;
             this.walls.push(stub);
             this._insertWallIntoGrid(stub);
+            lineage.pieces.push(stub);
         }
 
+        // Recompute the WHOLE lineage's visible edges now, not just the
+        // new stubs' -- a piece that survived earlier next to what's now
+        // a fresh hole needs its edge re-exposed too (it may have been
+        // hidden against the piece that just got removed above).
+        this._recomputeLineageEdges(lineage);
         this._spawnCarveDebris(holeCx, holeCy, holeR, wall.colorMain);
     }
 
@@ -5766,6 +5787,21 @@ class MapGen {
         let idx = this.walls.indexOf(wall);
         if (idx !== -1) this.walls.splice(idx, 1);
         this._removeWallFromGrid(wall);
+
+        // ONE shared lineage for every strip this split produces --
+        // previously each strip only got its own SEPARATE lineage object
+        // (created fresh inside _carve1D, only for whichever strip
+        // happened to be hit this event), so siblings from the same
+        // original wall had no shared bookkeeping and no way to know
+        // about each other. Assigning this to every strip BEFORE the loop
+        // below is what lets _recomputeLineageEdges() see the complete,
+        // exact sibling set -- necessary for correctly hiding internal
+        // seams from the very first split, before any individual strip
+        // has taken further damage.
+        let lineage = wall._lineage || (wall._lineage = { n: 1, pieces: [] });
+        if (!lineage.pieces) lineage.pieces = [];
+        let selfIdx = lineage.pieces.indexOf(wall);
+        if (selfIdx !== -1) lineage.pieces.splice(selfIdx, 1);
 
         let affected = new Set();
         for (let flat of newlyDestroyedFlatIdx) {
@@ -5799,15 +5835,25 @@ class MapGen {
             let hp = 0;
             for (let v of cells) hp += v;
             stripWall.hp = hp;
+            stripWall._lineage = lineage;
 
             if (affected.has(s)) {
+                // _carve1D sees stripWall._lineage already set (truthy),
+                // so it reuses THIS shared lineage instead of creating a
+                // new one -- its own internal _recomputeLineageEdges call
+                // still fires, just against a partially-built piece list
+                // this early in the loop; the final call below (after
+                // every strip exists) is the authoritative one.
                 this._carve1D(stripWall, stripWall._dmg, localNewlyDestroyed);
             } else {
                 this.walls.push(stripWall);
                 this._insertWallIntoGrid(stripWall);
+                lineage.pieces.push(stripWall);
+                lineage.n++;
             }
         }
 
+        this._recomputeLineageEdges(lineage);
         this._spawnCarveDebris(wall.x + wall.w / 2, wall.y + wall.h / 2, Math.max(wall.w, wall.h) * 0.3, wall.colorMain);
     }
 
@@ -5832,6 +5878,38 @@ class MapGen {
         }
         game._pushPermanentMark({ type: 'debris', x, y, c: colorMain || '#4a5560', a: 0.9, circs });
         game.spawnScorchMark(x, y, Math.min(46, r * 0.9));
+    }
+
+    // Recomputes EXACTLY which edges of every piece in a lineage are true
+    // silhouette boundary vs. an internal seam against a still-alive
+    // sibling -- called ONLY from the carve/split path (_carve1D /
+    // _splitIntoStrips), i.e. only on the rare event a piece is actually
+    // destroyed or a wall is first diced into strips, NEVER per frame.
+    // The draw loop just reads the cached result (wall._visibleEdges) --
+    // zero computation at render time. lineage.pieces is the COMPLETE,
+    // exact set of currently-alive descendants of one original wall, so
+    // checking each piece against only this small list (bounded by
+    // MAX_LINEAGE_PIECES) can't miss a genuine sibling the way the
+    // previous per-frame spatial-neighborhood approach could on a long,
+    // thin strip whose far end fell outside the query point's 3x3-cell
+    // window -- this replaces that approach entirely.
+    _recomputeLineageEdges(lineage) {
+        const EDGE_EPS = 0.75;
+        for (let piece of lineage.pieces) {
+            let v = { top: true, right: true, bottom: true, left: true };
+            for (let other of lineage.pieces) {
+                if (other === piece) continue;
+                if (Math.abs(other.x - (piece.x + piece.w)) < EDGE_EPS &&
+                    other.y < piece.y + piece.h - EDGE_EPS && other.y + other.h > piece.y + EDGE_EPS) v.right = false;
+                if (Math.abs((other.x + other.w) - piece.x) < EDGE_EPS &&
+                    other.y < piece.y + piece.h - EDGE_EPS && other.y + other.h > piece.y + EDGE_EPS) v.left = false;
+                if (Math.abs(other.y - (piece.y + piece.h)) < EDGE_EPS &&
+                    other.x < piece.x + piece.w - EDGE_EPS && other.x + other.w > piece.x + EDGE_EPS) v.bottom = false;
+                if (Math.abs((other.y + other.h) - piece.y) < EDGE_EPS &&
+                    other.x < piece.x + piece.w - EDGE_EPS && other.x + other.w > piece.x + EDGE_EPS) v.top = false;
+            }
+            piece._visibleEdges = v;
+        }
     }
 
     draw(ctx, cam, viewportW, viewportH, skipHaze) {
@@ -5937,7 +6015,29 @@ class MapGen {
             ctx.strokeStyle = wMain;
             ctx.lineWidth = 2;
             ctx.fillRect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
-            ctx.strokeRect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
+
+            // Outline: for the overwhelming majority of walls (never
+            // damaged, or not destructible at all) this is still one
+            // plain strokeRect, exactly as before -- zero added cost.
+            // Only a wall that's actually been diced by the damage system
+            // has wall._visibleEdges set at all -- precomputed ONCE by
+            // _recomputeLineageEdges(), called only from _carve1D /
+            // _splitIntoStrips (i.e. only when a piece is actually
+            // destroyed or a wall is first split), never from this draw
+            // loop. Rendering just reads those 4 cached booleans -- no
+            // neighbor query, no per-frame computation of any kind.
+            if (wall._visibleEdges) {
+                let v = wall._visibleEdges;
+                let sx = wall.x - cam.x, sy = wall.y - cam.y;
+                ctx.beginPath();
+                if (v.top)    { ctx.moveTo(sx, sy); ctx.lineTo(sx + wall.w, sy); }
+                if (v.right)  { ctx.moveTo(sx + wall.w, sy); ctx.lineTo(sx + wall.w, sy + wall.h); }
+                if (v.bottom) { ctx.moveTo(sx + wall.w, sy + wall.h); ctx.lineTo(sx, sy + wall.h); }
+                if (v.left)   { ctx.moveTo(sx, sy + wall.h); ctx.lineTo(sx, sy); }
+                ctx.stroke();
+            } else {
+                ctx.strokeRect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
+            }
 
             // DESTRUCTIBLE WALLS: purely cosmetic -- only runs for walls
             // that have actually taken damage (wall._dmg is only created by
@@ -6748,20 +6848,125 @@ class Entity {
  * into Low Ready swings the gun without also steering your feet.
  */
 const AIM_WEIGHT = {
-    // --- Turn-rate cap: how fast the character's actual facing can chase the
-    // target angle. ~800°/sec ≈ a full 180° flick lands in ~225ms. Small
-    // adjustments (<30°) should feel instant at this rate; if normal target
-    // tracking ever looks laggy, this number is too low.
-    TURN_RATE_DEG_PER_SEC: 620,
+    // ============================================================
+    // Free-Aim Cone System (v2) -- replaces the original Phase 6 handoff's
+    // design after playtesting showed a problem: with the gun always
+    // free and only the BODY gated by a cone, a full 180 flick felt
+    // basically identical across every weapon -- the gun's own weapon mod
+    // (a same-session patch on top of the handoff) was too subtle to read
+    // against a 2400deg/s base. This version makes ONE cone gate BOTH the
+    // gun and the body: inside it, point-shooting is snappy and weapon-
+    // agnostic; the instant the raw target drifts past it, you're in a
+    // genuine heavy swing and BOTH the reticle and the body slow down,
+    // hard, scaled by weapon. FLAGGED DEPARTURE: the original handoff's
+    // rule was "never throttle the gun by weapon, full stop" -- that rule
+    // was correct for a flat/uncapped design, where any weapon mod bites
+    // on small corrections too. It stops being necessary once a cone
+    // exists, because small corrections never reach the heavy-swing rate
+    // at all -- only a real reorientation does.
+    // ============================================================
 
-    // Stretch-goal per-weapon turn-rate feel (design brief calls this a
-    // stretch goal, not MVP) — heavier weapons turn a touch slower when
-    // raised, lighter ones a touch faster. Unlisted weapons default to 1.0.
-    WEAPON_TURN_RATE_MOD: {
-        'LMG': 0.82,
-        'Sniper': 0.75,
-        'Pistol': 1.18,
-        'SMG': 1.08
+    // Per-weapon cone half-width: the weapon's natural "point-shooting"
+    // handling arc, and the single reference both updateAimWeight() (gun)
+    // and updateMoveFacing() (body) test against every frame. Inside this
+    // cone: the gun snaps at GUN_FREE_TURN_RATE_DEG_PER_SEC below (flat,
+    // no weapon differentiation on purpose -- see that constant's
+    // comment) and the body doesn't move at all. The moment the raw
+    // target drifts outside this cone: both switch to
+    // WEAPON_SWING_RATE_DEG_PER_SEC below. Ordering matters here since
+    // it's the thing that actually separates the weapons now: wide/
+    // forgiving for Pistol, narrowing through SMG, Shotgun a shade
+    // narrower still, then M1A/LMG properly narrow, Sniper narrowest.
+    WEAPON_DEADZONE_CONE_DEG: {
+        'Pistol': 60,
+        'SMG': 35,
+        'Shotgun': 30,
+        'M1A': 25,
+        'LMG': 15,
+        'Sniper': 10
+    },
+
+    // In-cone gun rate: flat, uniform, deliberately NOT weapon-modded --
+    // differentiating weapons inside the cone would be exactly the wrong
+    // place to spend that complexity, since the cone's whole job is to
+    // make point-shooting feel the same regardless of what you're
+    // carrying. 2400deg/s means even a full-cone correction (Pistol's 60
+    // degrees, the widest any weapon will ever face while still "in
+    // cone") resolves in ~25ms.
+    GUN_FREE_TURN_RATE_DEG_PER_SEC: 2400,
+
+    // Outside-cone swing rate: THIS is where "guns are heavy" actually
+    // lives now, for both the gun and the body (see GUN_SWING_LEAD_MULT
+    // just below for how the two differ). Deliberately lower across the
+    // board than the original pre-Phase-6 numbers (620deg/s * a 0.75-1.18
+    // mod, ~465-731deg/s effective) -- that system had to cover small AND
+    // large corrections with the same number, so it couldn't afford to be
+    // this slow without also making ordinary point-shooting sluggish.
+    // This one only ever has to cover "you asked for a real
+    // reorientation," so it can be dramatically slower on the heavy end
+    // (Sniper here is well over 3x slower than Pistol) without that ever
+    // being felt during normal aiming. Unlisted weapons fall back to
+    // WEAPON_SWING_RATE_DEG_PER_SEC_DEFAULT.
+    WEAPON_SWING_RATE_DEG_PER_SEC: {
+        'Pistol': 640,
+        'SMG': 480,
+        'Shotgun': 360,
+        'M1A': 300,
+        'LMG': 220,
+        'Sniper': 170
+    },
+    WEAPON_SWING_RATE_DEG_PER_SEC_DEFAULT: 350,
+
+    // Outside the cone, the gun (arms) still leads the body (torso) --
+    // per the original design brief's "arms flick fast, torso catches up"
+    // -- it's just that now BOTH are slow relative to the in-cone case,
+    // not just the body. 1.15 keeps a visible gap between reticle and
+    // body during a big flick without making the gun feel disconnected
+    // from its own weight class -- a full LMG swing should still read as
+    // heavy on the reticle itself, not only on the body trailing it.
+    GUN_SWING_LEAD_MULT: 1.15,
+
+    // Cone edge transition buffer: without this, the exact moment |diff|
+    // crosses the cone boundary, BOTH the body's rate (0 -> swingRate) and
+    // the gun's rate (GUN_FREE_TURN_RATE_DEG_PER_SEC -> heavy swing rate)
+    // flip in a single frame -- the target angle itself is continuous
+    // across the boundary, but the RATE is not, and a fast flick can push
+    // |diff| from "just inside" to "well past" the cone in one frame,
+    // making the switch read as an instant, mechanical snap rather than a
+    // transition. This is a fraction of the cone's OWN width (not a fixed
+    // degree count) spent easing in/out on EACH side of the exact
+    // boundary, via _coneEngagement()'s smoothstep -- sizing it as a
+    // fraction rather than an absolute degree value is what keeps this
+    // sane on narrow cones: Sniper's 10-degree cone gets a proportionally
+    // scaled buffer, not the same fixed buffer a 60-degree Pistol cone
+    // would need.
+    // BUMPED TWICE (both flagged, both done on request): 0.125 -> 0.30 was
+    // still imperceptible, so now 0.30 -> 0.60. At 0.60 the buffer spans
+    // 40%-160% of the nominal cone value on every weapon (Sniper: 4-16
+    // degrees, LMG: 6-24, Pistol: 24-96) -- the "pure snappy core" is now
+    // only the inner 40% of each cone, with the outer 60% and beyond
+    // spent ramping. If this STILL doesn't read as a felt transition, the
+    // bottleneck is probably no longer the buffer's ANGULAR width but its
+    // TIME width: a fast mouse flick can cross even a wide angular buffer
+    // in one or two frames, so the ramp technically happens but is over
+    // before it's consciously noticed. The next lever in that case isn't
+    // a bigger fraction here -- it's widening the gap between
+    // GUN_FREE_TURN_RATE_DEG_PER_SEC and the heavy-swing rate so the
+    // SLOWEST part of the ramp is slow enough to linger, or adding a
+    // minimum ramp duration independent of mouse speed.
+    CONE_TRANSITION_FRAC: 0.60,
+
+    // Targeted movement-speed buff for the two weapons that felt
+    // disproportionately punishing to actually carry around despite
+    // otherwise-reasonable stats, per direct request -- NOT derived from
+    // weapon.weight or folded into the shop/HUD's speedPenalty (that
+    // still reflects total inventory load, unchanged); this only nudges
+    // curAccel while the weapon is the one actually EQUIPPED (see
+    // applySprintStaminaAndMove()). Unlisted weapons default to 1.0 (no
+    // change) -- Pistol/SMG/Shotgun/M1A were already "pretty solid."
+    WEAPON_MOVE_SPEED_MULT: {
+        'Sniper': 1.25,
+        'LMG': 1.12
     },
 
     // --- Perturbation channels (recoil / hit-flinch / explosion-flinch) now
@@ -7089,15 +7294,22 @@ const AIM_WEIGHT = {
     PIVOT: {
         // Peak accel (px/s^2, before weight scaling) at a full-speed flick.
         // ~11% stronger than the old linear system's peak at max turn rate
-        // (220 * OMEGA_REF =~ 2380) per playtest feedback that the effect
-        // should read a bit stronger overall once slow tracking got quieter.
+        // (220 * OMEGA_REF =~ 2460 at the current 640deg/s OMEGA_REF) per
+        // playtest feedback that the effect should read a bit stronger
+        // overall once slow tracking got quieter.
         PEAK_ACCEL: 2650,
         // Angular velocity (rad/s) that PEAK_ACCEL above is calibrated
-        // against -- the turn-rate cap (AIM_WEIGHT.TURN_RATE_DEG_PER_SEC ==
-        // 620deg/s) converted to radians. This is the fastest the character
-        // can actually turn, so it's the natural "100%" reference point.
-        // Keep in sync with TURN_RATE_DEG_PER_SEC if that ever changes.
-        OMEGA_REF: 620 * Math.PI / 180,
+        // against. Was the old flat TURN_RATE_DEG_PER_SEC (620deg/s,
+        // removed -- see the Free-Aim Cone System v2 comment above the
+        // class). The body's fastest possible turn is now per-weapon
+        // (AIM_WEIGHT.WEAPON_SWING_RATE_DEG_PER_SEC), so this uses the
+        // single fastest entry in that table (Pistol, 640deg/s) as the
+        // "100%" reference point -- every other weapon's omegaRatio below
+        // will therefore always land under 1.0, which is fine: Pivot's own
+        // WEIGHT_* scaling is what actually differentiates the weapons,
+        // this just needs to not clip the fastest case. Keep in sync with
+        // WEAPON_SWING_RATE_DEG_PER_SEC's Pistol entry if that ever changes.
+        OMEGA_REF: 640 * Math.PI / 180,
         // >1 = superlinear falloff below OMEGA_REF (see comment above). 1.0
         // would restore the old flat per-radian behavior.
         SPEED_EXPONENT: 1.6,
@@ -7195,7 +7407,27 @@ class Player extends Entity {
         // your actual run direction 40 degrees off course. Identical to
         // aimChaseAngle at all times EXCEPT while sprinting.
         this.moveFacingAngle = 0;
-        this.aimAngularVelocity = 0; // rad/s, set each frame in updateAimWeight() -- feeds the Heavy Barrel Pivot lateral-sway effect
+        // rad/s, set each frame in updateAimWeight() -- the GUN's own turn
+        // rate. Phase 6: no longer feeds Heavy Barrel Pivot (see the note
+        // in updateAimWeight()); kept as a general-purpose measurement of
+        // the gun's angular rate.
+        this.aimAngularVelocity = 0;
+        // rad/s, set each frame in updateMoveFacing() -- the BODY's actual
+        // turn rate, post dead-zone. Phase 6: THIS is what now feeds the
+        // Heavy Barrel Pivot lateral-sway effect (see
+        // applySprintStaminaAndMove()), specifically so Pivot only kicks in
+        // once the body has genuinely started catching up to the gun, not
+        // on every small in-cone correction.
+        this.moveFacingAngularVelocity = 0;
+        // Directional hysteresis for _coneEngagement()'s cone-edge buffer
+        // (see that method's comment): tracks last frame's |diff| per
+        // channel (body vs gun see slightly different values, since
+        // updateMoveFacing() runs before updateAimWeight() each frame and
+        // moveFacingAngle moves in between) so the smoothed transition can
+        // apply ONLY while the target is moving further from center, and
+        // snap immediately to the hard cone test while it's moving back
+        // toward center.
+        this._coneHysteresis = { body: 0, gun: 0 };
         this.aimRecoilOffset = 0;
         this.aimRecoilVel = 0;
         this.aimHitFlinchOffset = 0;
@@ -7957,7 +8189,13 @@ class Player extends Entity {
 
         // 8. Acceleration (exo acceleration bonus remains +5% per level)
         const exoServosAccelMulti = 1.0 + exoServosLvl * 0.05;
-        let curAccel = this.accel * (1.0 + this.speedUpgrades * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff * exoServosAccelMulti;
+        // Per-weapon movement feel buff (see AIM_WEIGHT.WEAPON_MOVE_SPEED_MULT)
+        // -- Sniper/LMG specifically, per direct request; everything else
+        // defaults to 1.0 and is untouched. Deliberately separate from
+        // this.speedPenalty (total inventory weight) -- this only applies
+        // while the weapon is actually equipped, not just carried.
+        let weaponMoveSpeedMult = AIM_WEIGHT.WEAPON_MOVE_SPEED_MULT[this.weapon.name] || 1.0;
+        let curAccel = this.accel * (1.0 + this.speedUpgrades * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff * exoServosAccelMulti * weaponMoveSpeedMult;
         
         // Combat Dive: "cannot change your movement direction" mid-dive --
         // skip the normal steering accel entirely so held WASD can't redirect
@@ -7970,10 +8208,21 @@ class Player extends Entity {
         }
 
         // 9. Heavy Barrel Pivot: forward-offset center-of-gravity lateral
-        // sway induced by aim angular velocity (see AIM_WEIGHT.PIVOT config
-        // + this.aimAngularVelocity set in updateAimWeight()). Purely
+        // sway induced by angular velocity (see AIM_WEIGHT.PIVOT config +
+        // this.moveFacingAngularVelocity set in updateMoveFacing()). Purely
         // additive on top of the normal movement velocity just above --
         // rides the same drag/collision physics below, no separate decay.
+        // Phase 6 (RO2 Free-Aim Deadzone): this used to read
+        // this.aimAngularVelocity (the GUN's step). Repointed at the BODY's
+        // step instead -- with the free-aim dead zone in place, the gun now
+        // snaps almost instantly on every correction, so its own angular
+        // velocity spikes even for tiny in-cone adjustments and would make
+        // Pivot fire constantly. moveFacingAngularVelocity is zero for any
+        // correction that stays inside the weapon's cone (see
+        // updateMoveFacing()), so this is the free synergy the design
+        // banked on: Pivot automatically stops firing on small corrections
+        // and only kicks in on real body-catch-up moments, with zero
+        // changes to Pivot's own math below -- just this one input swap.
         // Sign: v = -omega * pivotAccel * right, so swinging the aim one way
         // sweeps the feet/body the other way, same as a rigid body rotating
         // about a pivot forward of its own center of mass.
@@ -7989,7 +8238,7 @@ class Player extends Entity {
         // sweeps hard -- rather than the old flat per-radian rate, where the
         // effective lever-arm length stayed roughly constant regardless of
         // how fast you were actually turning.
-        let omega = this.aimAngularVelocity || 0;
+        let omega = this.moveFacingAngularVelocity || 0;
         let omegaRatio = Math.abs(omega) / AIM_WEIGHT.PIVOT.OMEGA_REF;
         let pivotAccel = -Math.sign(omega) * AIM_WEIGHT.PIVOT.PEAK_ACCEL *
             Math.pow(omegaRatio, AIM_WEIGHT.PIVOT.SPEED_EXPONENT) * pivotWeightMult;
@@ -8051,46 +8300,161 @@ class Player extends Entity {
         }
     }
 
-    // Movement-only facing -- mirrors aimChaseAngle's turn-rate-capped chase
-    // exactly, but always tracks the RAW aim target, never Dynamic Low
-    // Ready's substituted chaseTargetAngle (see the fire-trigger-adjacent
-    // override in update()). Player-relative WASD/gamepad movement reads
-    // this instead of this.angle for exactly that reason: this.angle is
-    // also the GUN's angle, and gets deliberately yanked off the real aim
-    // point during Low Ready (and, to a much smaller degree, by ordinary
-    // recoil/flinch/sway) -- none of which should also steer your feet.
-    // When not sprinting this tracks numerically identically to
-    // aimChaseAngle (same formula, same target, same dt), so normal
-    // movement feel is completely unchanged from before this existed.
-    updateMoveFacing(dt, targetAngle) {
-        let turnMod = AIM_WEIGHT.WEAPON_TURN_RATE_MOD[this.weapon.name] || 1.0;
-        let maxStep = (AIM_WEIGHT.TURN_RATE_DEG_PER_SEC * Math.PI / 180) * turnMod * dt;
-        let angleDiff = MathUtils.angleDifference(targetAngle, this.moveFacingAngle);
-        let appliedStep = (Math.abs(angleDiff) <= maxStep) ? angleDiff : Math.sign(angleDiff) * maxStep;
-        this.moveFacingAngle += appliedStep;
-        this.moveFacingAngle = Math.atan2(Math.sin(this.moveFacingAngle), Math.cos(this.moveFacingAngle));
+    // Shared cone/engagement calc for both updateMoveFacing() (body) and
+    // updateAimWeight() (gun) -- see AIM_WEIGHT.CONE_TRANSITION_FRAC for
+    // why this exists. Returns engagement as a smooth 0-1 ramp instead of
+    // a hard in-cone/out-of-cone boolean: 0 deep inside the cone (gun
+    // snappy, body frozen), 1 once clearly outside it (full heavy-swing
+    // rate on both), smoothstepped through a buffer straddling the exact
+    // cone edge -- BUT ONLY while the target is moving OUTWARD (expanding
+    // away from the body's current facing). Directional hysteresis
+    // (flagged, done on request): the smoothed buffer was originally
+    // symmetric (same ramp on the way out AND the way back in), which
+    // caused a visible glitch on a quick re-center -- the body would
+    // still be easing through the tail of the outbound ramp's target
+    // formula while the raw aim target was already snapping back toward
+    // center, letting the body's target briefly overshoot ahead of the
+    // gun's actual position. There's no "torso lagging" feel worth
+    // preserving on the way back in anyway -- once you're bringing the
+    // target back toward your own facing you're recentering, not asking
+    // your arms to out-pace your body -- so the CONTRACTING direction now
+    // uses the plain hard cone test (immediate 0 or 1, no ramp) instead.
+    // `channel` distinguishes the body's call (runs first each frame) from
+    // the gun's call (runs second, after moveFacingAngle has already
+    // moved) so each tracks its own previous-frame |diff| independently.
+    _coneEngagement(targetAngle, channel) {
+        let coneDeg = AIM_WEIGHT.WEAPON_DEADZONE_CONE_DEG[this.weapon.name] || 25;
+        let coneRad = coneDeg * Math.PI / 180;
+        let diff = MathUtils.angleDifference(targetAngle, this.moveFacingAngle);
+        let absDiff = Math.abs(diff);
+
+        let prevAbsDiff = this._coneHysteresis[channel];
+        let expanding = absDiff >= prevAbsDiff;
+        this._coneHysteresis[channel] = absDiff;
+
+        let engagement;
+        if (expanding) {
+            // Moving OUT: ease in through the buffer as before. Buffer
+            // sized as a FRACTION of this weapon's own cone width (see
+            // CONE_TRANSITION_FRAC's comment for why fraction, not a
+            // fixed degree count) -- straddles the exact cone edge
+            // symmetrically.
+            let bandRad = coneRad * AIM_WEIGHT.CONE_TRANSITION_FRAC;
+            let bandStart = coneRad - bandRad;
+            let bandEnd = coneRad + bandRad;
+            let t = MathUtils.clamp((absDiff - bandStart) / (bandEnd - bandStart), 0, 1);
+            // Smoothstep instead of linear: eases in/out at the band's own
+            // two edges too, rather than just moving the kink from the
+            // cone boundary to the band's boundaries instead of actually
+            // removing it.
+            engagement = t * t * (3 - 2 * t);
+        } else {
+            // Moving back IN: skip the ramp, snap straight to the hard
+            // cone test. This is what actually fixes the body-overshoots-
+            // ahead-of-the-gun glitch on a quick re-center.
+            engagement = (absDiff <= coneRad) ? 0 : 1;
+        }
+
+        return { coneRad, diff, engagement };
     }
 
-    // --- Aim Weight: turn-rate-capped chase + recoil/flinch/sway ---
+    // Movement-only facing -- always tracks the RAW aim target, never
+    // Dynamic Low Ready's substituted chaseTargetAngle (see the fire-
+    // trigger-adjacent override in update()). Player-relative WASD/gamepad
+    // movement reads this instead of this.angle for exactly that reason:
+    // this.angle is also the GUN's angle, and gets deliberately yanked off
+    // the real aim point during Low Ready (and, to a much smaller degree,
+    // by ordinary recoil/flinch/sway) -- none of which should also steer
+    // your feet.
+    // Free-Aim Cone System v2 (see the config comment block above the
+    // class): the body's target continuously blends from "hold position"
+    // (deep inside the cone) to "trail the cone edge" (clearly outside it)
+    // via _coneEngagement()'s smooth 0-1 ramp -- NOT a binary switch. Both
+    // the TARGET and the RATE blend with the same engagement value: target
+    // alone isn't enough, because trailing formula would otherwise pull
+    // the body backward relative to a target that hasn't actually cleared
+    // the cone yet, and rate alone isn't enough, because bodyDiff can jump
+    // from ~0 to a large value in a single frame during a fast flick,
+    // which the old hard-cone version capped at full swingRate
+    // immediately -- a real velocity discontinuity even though the target
+    // position was already continuous. Blending both is what actually
+    // removes the "mechanical" snap at the edge.
+    updateMoveFacing(dt, targetAngle) {
+        let { coneRad, diff, engagement } = this._coneEngagement(targetAngle, 'body');
+
+        // At engagement==0 this reduces exactly to the old "hold position"
+        // behavior (bodyTarget == moveFacingAngle). At engagement==1 it
+        // reduces exactly to the old trailing-edge formula
+        // (targetAngle - sign(diff)*coneRad). In between, it's a genuine
+        // blend of the two, not a snap from one to the other.
+        let trailTarget = targetAngle - Math.sign(diff) * coneRad;
+        let bodyTarget = this.moveFacingAngle +
+            engagement * MathUtils.angleDifference(trailTarget, this.moveFacingAngle);
+
+        // Outside-cone swing rate -- see AIM_WEIGHT.WEAPON_SWING_RATE_DEG_PER_SEC
+        // for why this is allowed to be this slow now. No lead multiplier
+        // here (that's the gun's job, see updateAimWeight()'s
+        // GUN_SWING_LEAD_MULT) -- the body is the base rate the gun leads
+        // ahead of. Scaled by engagement so the body's actual turn speed
+        // ramps up smoothly through the buffer instead of jumping straight
+        // to full swingRate the instant it's needed.
+        let swingRate = AIM_WEIGHT.WEAPON_SWING_RATE_DEG_PER_SEC[this.weapon.name] || AIM_WEIGHT.WEAPON_SWING_RATE_DEG_PER_SEC_DEFAULT;
+        let maxStep = (swingRate * engagement * Math.PI / 180) * dt;
+        let bodyDiff = MathUtils.angleDifference(bodyTarget, this.moveFacingAngle);
+        let appliedStep = (Math.abs(bodyDiff) <= maxStep) ? bodyDiff : Math.sign(bodyDiff) * maxStep;
+        this.moveFacingAngle += appliedStep;
+        this.moveFacingAngle = Math.atan2(Math.sin(this.moveFacingAngle), Math.cos(this.moveFacingAngle));
+        // Signed rad/s the BODY is actually turning this frame, post cone +
+        // swing-rate cap. Heavy Barrel Pivot reads THIS instead of
+        // aimAngularVelocity (see applySprintStaminaAndMove()) -- with the
+        // cone in place, this is zero for any correction that stays
+        // inside it, so Pivot automatically stops firing on small
+        // corrections and only kicks in once the body genuinely has to
+        // catch up, with no changes needed to Pivot's own math.
+        this.moveFacingAngularVelocity = dt > 0 ? appliedStep / dt : 0;
+    }
+
+    // --- Aim Weight: cone-gated chase + recoil/flinch/sway ---
     // Turns raw aim intent (targetAngle) into this.angle, the character's
     // actual facing that bullets/animations/LOS all key off. See
     // aim_weight_design.md and the AIM_WEIGHT config block above the class
     // for the full rationale and tuning notes.
     updateAimWeight(dt, targetAngle) {
-        // 1) Rate-capped chase toward the target angle.
-        let turnMod = AIM_WEIGHT.WEAPON_TURN_RATE_MOD[this.weapon.name] || 1.0;
-        let maxStep = (AIM_WEIGHT.TURN_RATE_DEG_PER_SEC * Math.PI / 180) * turnMod * dt;
+        // 1) Cone-gated chase toward the target angle.
+        // Free-Aim Cone System v2 (flagged departure from the original
+        // Phase 6 handoff, done on request after playtesting showed every
+        // weapon flicking a full 180 in basically the same time): the gun
+        // now tests the SAME cone updateMoveFacing() tests, against
+        // moveFacingAngle -- the body's current facing, already advanced
+        // for this frame since updateMoveFacing() runs first in update().
+        // Deep inside the cone: flat GUN_FREE_TURN_RATE_DEG_PER_SEC, no
+        // weapon differentiation -- point-shooting should feel equally
+        // snappy no matter what's in your hands. Clearly outside the
+        // cone: the weapon's WEAPON_SWING_RATE_DEG_PER_SEC, scaled up by
+        // GUN_SWING_LEAD_MULT so the gun still leads the body slightly
+        // even while both are in "heavy swing" mode. Through the buffer in
+        // between (_coneEngagement()'s smooth 0-1 ramp, same one
+        // updateMoveFacing() uses), the rate itself is linearly blended
+        // between the two -- without this, the gun's rate would fall off
+        // a literal cliff (2400deg/s to as low as ~195deg/s for Sniper) in
+        // a single frame right at the cone edge, which reads as exactly
+        // the kind of mechanical snap the buffer exists to remove.
+        let { engagement } = this._coneEngagement(targetAngle, 'gun');
+        let swingRate = AIM_WEIGHT.WEAPON_SWING_RATE_DEG_PER_SEC[this.weapon.name] || AIM_WEIGHT.WEAPON_SWING_RATE_DEG_PER_SEC_DEFAULT;
+        let heavyRate = swingRate * AIM_WEIGHT.GUN_SWING_LEAD_MULT;
+        let gunRateDegPerSec = AIM_WEIGHT.GUN_FREE_TURN_RATE_DEG_PER_SEC +
+            engagement * (heavyRate - AIM_WEIGHT.GUN_FREE_TURN_RATE_DEG_PER_SEC);
+        let maxStep = (gunRateDegPerSec * Math.PI / 180) * dt;
         let angleDiff = MathUtils.angleDifference(targetAngle, this.aimChaseAngle);
         let appliedTurnStep = (Math.abs(angleDiff) <= maxStep) ? angleDiff : Math.sign(angleDiff) * maxStep;
         this.aimChaseAngle += appliedTurnStep;
-        // Signed rad/s the body is ACTUALLY turning this frame, post turn-
-        // rate-cap. Feeds the Heavy Barrel Pivot lateral-sway effect in
-        // applySprintStaminaAndMove() -- derived from the CAPPED chase step
-        // (not the raw target angle) so a snap 180 mouse flick can't induce
-        // more body sway than the character's real turn rate allows, and
-        // left out of this.angle's perturbation offsets (recoil/flinch/sway)
-        // on purpose so a recoil kick doesn't also shove the character
-        // sideways.
+        // Signed rad/s the GUN is actually turning this frame, post the
+        // cone-gated rate cap above. Doesn't feed Heavy Barrel Pivot --
+        // Pivot reads this.moveFacingAngularVelocity (the BODY's own step,
+        // set in updateMoveFacing()) instead, so it only reacts once the
+        // body has genuinely started catching up rather than spiking on
+        // every in-cone correction. Kept here since it's still an
+        // accurate measurement of the gun's own angular rate.
         this.aimAngularVelocity = dt > 0 ? appliedTurnStep / dt : 0;
         // Keep it bounded to [-PI, PI] for float hygiene (safe: aimChaseAngle
         // only ever feeds Math.cos/sin/atan2-based math, all periodic).
@@ -8512,7 +8876,17 @@ class Player extends Entity {
 
         ctx.save();
         ctx.translate(scx, scy);
-        ctx.rotate(this.angle);
+        // Phase 6 (RO2 Free-Aim Deadzone): this used to be ONE
+        // ctx.rotate(this.angle) for the entire sprite (legs, torso, gun,
+        // all rigid together). Now the body silhouette (legs + torso
+        // circle) rotates at moveFacingAngle -- the body only turns once
+        // the dead zone has genuinely been exceeded (see
+        // updateMoveFacing()) -- while the gun below is nested inside its
+        // own relative rotate so it keeps landing at the fast, unthrottled
+        // this.angle in world space. This is the one real rendering change
+        // Phase 6 needed; every other consumer of this.angle (bullets,
+        // laser, muzzle flash, gamepad crosshair) reads it unchanged.
+        ctx.rotate(this.moveFacingAngle);
 
         // Stepping feet circles animation
         let speed = Math.hypot(this.vx, this.vy);
@@ -8539,6 +8913,15 @@ class Player extends Entity {
         ctx.fill();
         ctx.stroke();
 
+        // Gun group: nested relative rotate on top of the body's
+        // moveFacingAngle rotate already applied above, so
+        // moveFacingAngle + (this.angle - moveFacingAngle) == this.angle --
+        // the barrel/rail/mag below land at exactly the same world-space
+        // angle and exactly the same LOCAL coordinates they always have.
+        // Nothing in this block needed to be recalculated for Phase 6.
+        ctx.save();
+        ctx.rotate(this.angle - this.moveFacingAngle);
+
         ctx.strokeStyle = this.color;
         ctx.lineWidth = 3;
         
@@ -8552,11 +8935,37 @@ class Player extends Entity {
         ctx.lineTo(13, 2);
         ctx.stroke();
 
+        let barrelLen = this.weapon.name === 'Sniper' ? 28 : 18;
         ctx.fillStyle = '#fff';
-        ctx.fillRect(5, 4, this.weapon.name === 'Sniper' ? 28 : 18, 4);
+        ctx.fillRect(5, 4, barrelLen, 4);
         ctx.fillStyle = this.weapon.color;
         ctx.fillRect(9, 3, 7, 6);
 
+        // Hands: purple "C" brackets curled around the grip, drawn INSIDE
+        // the gun's own rotate group (not the body's) so they move WITH
+        // the gun exactly like the barrel does -- per request, these
+        // should track this.angle, not moveFacingAngle. Rear hand sits on
+        // the pistol grip near the receiver/shoulder end of the gun;
+        // front hand holds the forearm/foregrip further out along the
+        // barrel, its distance scaled off the same barrelLen the white
+        // barrel rect above already uses so it lands sensibly on both the
+        // short standard barrel and the Sniper's longer one.
+        ctx.strokeStyle = '#a855f7';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(3.5, 7, 3.1, -0.3, 2.6);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(5 + barrelLen * 0.55, 5, 2.7, -0.3, 2.6);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // Torso/head circle -- back in the body group's rotation (the
+        // inner gun restore() above only unwound the relative rotate, not
+        // the outer moveFacingAngle one). Drawn last so it still visually
+        // sits on top of the gun mount at the receiver, same layering as
+        // before Phase 6.
         ctx.beginPath();
         ctx.arc(0, 0, this.r, 0, Math.PI*2);
         ctx.fillStyle = '#010a15';
@@ -8564,6 +8973,109 @@ class Player extends Entity {
         ctx.lineWidth = 2.5;
         ctx.strokeStyle = '#fff';
         ctx.stroke();
+
+        // Tactical Backpack: outlined, not solid, to match the rest of the
+        // game's stroked-outline aesthetic (the player's own torso circle
+        // is a stroke around a dark fill, not a solid blob -- this now
+        // follows the same pattern). Interior is a dark OLIVE-black
+        // (not the same navy-black #010a15 the torso uses) so it still
+        // reads as "belongs to the drab-green gear" rather than just
+        // another void, without being see-through. Outline width matches
+        // the player's own torso stroke (2.5) so the pack reads as the
+        // same "weight class" of linework as the character itself, rather
+        // than a thinner/different accessory sketched on top of it.
+        // RESIZED (flagged, done on request): depth (bpW, how far it
+        // projects off the back) cut from 1.05r to 0.72r -- about 2/3 of
+        // the old protrusion beyond the body's own edge (was ~1.0r sticking
+        // out past the torso circle, now ~0.67r). Width (bpH, across the
+        // back) is UNCHANGED, so the pack is now visibly flatter/wider
+        // relative to its depth -- a slab worn against the back instead of
+        // a box hanging off it.
+        let bpW = this.r * 0.72, bpH = this.r * 1.3;
+        let bpX = -this.r * 1.67, bpY = -bpH / 2;
+        ctx.fillStyle = '#141a0e';
+        ctx.fillRect(bpX, bpY, bpW, bpH);
+        ctx.strokeStyle = '#5c6b45';
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(bpX, bpY, bpW, bpH);
+        // Top flap detail -- outlined too now, not filled, for the same
+        // reason; a thinner inner stroke so it still reads as a distinct
+        // sub-shape rather than a second identical rectangle.
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(bpX + bpW * 0.15, bpY + bpH * 0.08, bpW * 0.7, bpH * 0.28);
+        // Shoulder straps: from the pack's front edge back onto the body,
+        // crossing over the torso circle's rear quarter.
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(bpX + bpW, -this.r * 0.35);
+        ctx.lineTo(-this.r * 0.55, -this.r * 0.5);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(bpX + bpW, this.r * 0.35);
+        ctx.lineTo(-this.r * 0.55, this.r * 0.5);
+        ctx.stroke();
+
+        // --- Body-facing readability (post-Phase-6 addition) ---
+        // The torso circle above is perfectly round, so rotating it at
+        // moveFacingAngle instead of this.angle was, visually, a no-op --
+        // there was nothing asymmetric on the body for the dead zone to
+        // actually show. These two accessories exist ONLY to break that
+        // symmetry: both are front-loaded (drawn toward local +x, the
+        // facing direction) so the body's real orientation reads at a
+        // glance, independently of wherever the gun/laser happen to be
+        // pointing. Both live in the body group (moveFacingAngle), not
+        // the gun group -- they should NOT rotate with this.angle.
+
+        // Plate Carrier: coyote-brown curved chest/shoulder straps (two
+        // concentric arcs, not a solid block), front-loaded on the +x side
+        // same as before. Small end tabs at the outer arc's tips read as
+        // shoulder hardware and give the band a defined start/end instead
+        // of just fading into empty space. RECOLORED from indigo-blue to
+        // a darker coyote/khaki-tan, per request -- distinct from both the
+        // headset's lighter tan (#c9a876) and the backpack's olive-green
+        // (#5c6b45), so the three gear pieces read as a cohesive
+        // earth-tone/drab set instead of mixing in an unrelated blue.
+        ctx.strokeStyle = '#a68a5b';
+        ctx.lineWidth = 2.6;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r * 0.66, -1.05, 1.05);
+        ctx.stroke();
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r * 0.46, -0.95, 0.95);
+        ctx.stroke();
+        ctx.fillStyle = '#a68a5b';
+        let outerR = this.r * 0.66;
+        ctx.fillRect(Math.cos(1.05) * outerR - 1, Math.sin(1.05) * outerR - 1, 2.4, 2.4);
+        ctx.fillRect(Math.cos(-1.05) * outerR - 1, Math.sin(-1.05) * outerR - 1, 2.4, 2.4);
+
+        // Tactical Headphones: coyote-tan headband. FIXED (was an arc
+        // bulging toward +x, which reads as wrapping around the FRONT of
+        // the head -- doesn't make sense from directly above; a real
+        // headband goes over the CROWN, which in a top-down projection is
+        // just a straight line connecting the two ears, not a curve). Ear
+        // cups are ellipses (read as rounded cups rather than blocky
+        // rects) sitting at the sides of the head; the band is a plain
+        // straight stroke between them. Front/back facing is now carried
+        // entirely by the plate carrier (front) and backpack (back) below
+        // -- this piece no longer needs to also encode facing itself.
+        // Switched from bright red -> tan earlier: this game already uses
+        // red (--red, #ff2a5f) everywhere for health/danger state (low-
+        // health screen pulse, health bar, "OPERATOR ELIMINATED"), so
+        // gear-red risked reading as a damage cue instead of a headset.
+        ctx.strokeStyle = '#c9a876';
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(0, -this.r * 0.95);
+        ctx.lineTo(0, this.r * 0.95);
+        ctx.stroke();
+        ctx.fillStyle = '#c9a876';
+        ctx.beginPath();
+        ctx.ellipse(0, -this.r * 0.95, this.r * 0.27, this.r * 0.34, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(0, this.r * 0.95, this.r * 0.27, this.r * 0.34, 0, 0, Math.PI * 2);
+        ctx.fill();
 
         ctx.restore();
     }
