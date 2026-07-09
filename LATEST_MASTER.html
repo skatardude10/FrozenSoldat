@@ -384,6 +384,17 @@
     .tab-content.active {
         display: block;
     }
+    /* Nested sub-tab panels used inside the Settings tab (Controls/Audio/
+       Performance). Deliberately a different class from .tab-content so
+       switchTab()'s top-level "clear every .tab-content" sweep doesn't
+       also wipe out which Settings sub-tab was showing. */
+    .settings-subtab-content {
+        display: none;
+        animation: menuFadeIn 0.25s ease-out;
+    }
+    .settings-subtab-content.active {
+        display: block;
+    }
     @keyframes menuFadeIn {
         from { opacity: 0; transform: translateY(4px); }
         to { opacity: 1; transform: translateY(0); }
@@ -633,8 +644,8 @@
         <div class="tabs-container">
             <button class="tab-button active" onclick="game.switchTab('play')">Play</button>
             <button class="tab-button" onclick="game.switchTab('maps')">Maps</button>
-            <button class="tab-button" onclick="game.switchTab('controls')">Controls</button>
-            <button class="tab-button" onclick="game.switchTab('audio')">Audio</button>
+            <button class="tab-button" onclick="game.switchTab('gameoptions')">Game Options</button>
+            <button class="tab-button" onclick="game.switchTab('settings')">Settings</button>
             <button class="tab-button" onclick="game.switchTab('leaderboard')">Leaderboard</button>
             <button class="tab-button" onclick="game.switchTab('armory')">Armory</button>
             <button class="tab-button" onclick="game.switchTab('guide')">Guide</button>
@@ -657,6 +668,7 @@
                     <button id="btn-map-7" class="map-btn" style="--btn-color: #ffffff; --btn-color-glow: rgba(255,255,255,0.6); --btn-color-bg: rgba(255,255,255,0.12);" onclick="game.setMap(7)" onmouseenter="game.previewMap(7)">Quarantine Zone (Intersection)</button>
                     <button id="btn-map-8" class="map-btn" style="--btn-color: #ff2a5f; --btn-color-glow: rgba(255,42,95,0.6); --btn-color-bg: rgba(255,42,95,0.12);" onclick="game.setMap(8)" onmouseenter="game.previewMap(8)">2-Fort (Bridge Assault)</button>
                     <button id="btn-map-9" class="map-btn" style="--btn-color: #b388ff; --btn-color-glow: rgba(179,136,255,0.6); --btn-color-bg: rgba(179,136,255,0.12);" onclick="game.setMap(9)" onmouseenter="game.previewMap(9)">The Sieve (Pillar Forest)</button>
+                    <button id="btn-map-12" class="map-btn" style="--btn-color: #ff8c00; --btn-color-glow: rgba(255,140,0,0.6); --btn-color-bg: rgba(255,140,0,0.12);" onclick="game.setMap(12)" onmouseenter="game.previewMap(12)">The Dig Site (Excavation)</button>
                 </div>
 
                 <!-- Right: Intel Preview -->
@@ -720,14 +732,9 @@
                         <button id="btn-diff-legendary" onclick="game.setDifficulty('legendary')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Legendary (0.75x)</button>
                     </div>
                 </div>
-            </div>
-
-            <!-- ADVANCED MODIFIERS -->
-            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
-                <h3 style="color: #808f9c; font-size: 11px; text-align: left; letter-spacing: 2px; margin-top: 0; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; text-transform: uppercase;">ADVANCED MODIFIERS</h3>
 
                 <!-- Game Mode -->
-                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0;">
                     <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">GAME MODE:</label>
                     <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1; flex-wrap: wrap;">
                         <button id="btn-gm-normal" class="active-mode" onclick="game.setGameMode('normal')" style="font-size: 11px; padding: 5px 10px; margin: 0;">NORMAL WAVE OPS</button>
@@ -736,6 +743,21 @@
                         <button id="btn-gm-now" onclick="game.setGameMode('now')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff2a5f; color: #ff2a5f; box-shadow: 0 0 8px rgba(255, 42, 95, 0.4);">ACTION NOW</button>
                     </div>
                 </div>
+            </div>
+
+            <!-- HERO ACTIONS -->
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 10px;">
+                <!-- Start Button -->
+                <button id="btn-start" style="width: 100%;">INITIALIZE PERIMETER SYSTEM</button>
+                <!-- Exit Button -->
+                <button id="btn-exit" style="background: transparent; border-color: rgba(255,42,95,0.3); color: var(--red); font-size: 12px; width: 50%;">EXIT TO DESKTOP</button>
+            </div>
+        </div>
+        
+        <!-- Tab content: GAME OPTIONS -->
+        <div id="tab-gameoptions" class="tab-content" style="max-width: 700px; margin: 0 auto;">
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
+                <h3 style="color: #808f9c; font-size: 11px; text-align: left; letter-spacing: 2px; margin-top: 0; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; text-transform: uppercase;">RUN CONFIGURATION</h3>
 
                 <!-- Starting Funds -->
                 <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
@@ -768,7 +790,7 @@
                 </div>
 
                 <!-- Touch Interface -->
-                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0;">
                     <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">TOUCH INTERFACE:</label>
                     <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
                         <button id="btn-touch-auto" class="active-mode" onclick="game.setTouchMode('auto')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Auto-Detect</button>
@@ -777,124 +799,143 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- HERO ACTIONS -->
-            <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 10px;">
-                <!-- Start Button -->
-                <button id="btn-start" style="width: 100%;">INITIALIZE PERIMETER SYSTEM</button>
-                <!-- Exit Button -->
-                <button id="btn-exit" style="background: transparent; border-color: rgba(255,42,95,0.3); color: var(--red); font-size: 12px; width: 50%;">EXIT TO DESKTOP</button>
-            </div>
-        </div>
-        
-        <!-- Tab content: CONTROLS -->
-        <div id="tab-controls" class="tab-content">
-            <div style="margin-bottom: 15px;">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">WASD MOVEMENT MODE:</label><br>
-                <div style="display: flex; justify-content: center; gap: 15px; margin-top: 10px;">
-                    <button id="btn-scheme-screen" onclick="game.setScheme('screen')">Screen-Relative</button>
-                    <button id="btn-scheme-player" onclick="game.setScheme('player')">Player-Relative (Classic)</button>
-                </div>
-            </div>
-            
-            <div style="display: flex; gap: 15px; text-align: left; background: rgba(0, 10, 25, 0.6); padding: 12px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); max-height: 240px; overflow-y: auto;">
-                <div style="flex: 1;">
-                    <div style="color: var(--neon-blue); font-weight: bold; border-bottom: 1px solid rgba(0,229,255,0.2); padding-bottom: 3px; margin-bottom: 8px; font-size: 11px;">KEYBOARD & MOUSE CONTROLS (P1)</div>
-                    <div style="font-size: 10px; line-height: 1.6;">
-                        <b>W/A/S/D</b> - Movement / Strafe<br>
-                        <b>SHIFT</b> - Sprint (uses stamina)<br>
-                        <b>MOUSE AIM</b> - Point reticle to target<br>
-                        <b>LEFT CLICK</b> - Fire / Detonate Drone<br>
-                        <b>SCROLL WHEEL</b> - Cycle weapons<br>
-                        <b>Q / Z</b> - Cycle Left / Right HUD menus<br>
-                        <b>E / C</b> - Use Left / Right HUD item<br>
-                        <b>F</b> - Interact / Pick up / Land Drone<br>
-                        <b>P / ESC</b> - Pause operational area
-                    </div>
-                </div>
-                <div style="flex: 1; border-left: 1px solid rgba(0, 229, 255, 0.15); padding-left: 15px;">
-                    <div style="color: #ffb700; font-weight: bold; border-bottom: 1px solid rgba(255,183,0,0.2); padding-bottom: 3px; margin-bottom: 8px; font-size: 11px;">CONTROLLER MAPPING (P1 / P2)</div>
-                    <div style="font-size: 10px; line-height: 1.6;">
-                        <b>LEFT STICK</b> - Movement / Strafe<br>
-                        <b>RIGHT STICK</b> - Aim / Rotate Reticle<br>
-                        <b>RT (Trigger)</b> - Fire / Detonate Drone<br>
-                        <b>LT (Trigger)</b> - Sprint (uses stamina)<br>
-                        <b>LB / RB</b> - Cycle weapon selection (Left/Right)<br>
-                        <b>D-PAD UP / DOWN</b> - Scroll Consumables (Left HUD)<br>
-                        <b>D-PAD LEFT</b> - Cycle Cursor Zoom (1x/2x/3x)<br>
-                        <b>L3 (Stick Press)</b> - Use selected Consumable<br>
-                        <b>TRIANGLE / CROSS (Y/A)</b> - Scroll Placeables (Right HUD)<br>
-                        <b>R3 (Stick Press)</b> - Place selected Placeable<br>
-                        <b>SQUARE (X button)</b> - Pick up item / Land Drone<br>
-                        <b>START</b> - Pause operational area
-                    </div>
-                </div>
-            </div>
-
-            <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.15);">
-                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px;">GAMEPAD ASSIGNMENT:</label>
-                <div style="font-size: 9px; color: #b0bec5; margin: 4px 0 10px;">Pin a specific controller to a player instead of relying on auto-detect. "None" keeps that player off gamepad entirely (e.g. for touch/KB+M only).</div>
-
-                <div style="margin-bottom: 10px;">
-                    <div style="font-size: 10px; color: var(--neon-blue); margin-bottom: 3px; font-weight: bold;">PLAYER 1</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
-                        <button id="btn-p1-gp-auto" onclick="game.setGamepadChoice(1, 'auto')" style="font-size: 10px; padding: 4px 8px; margin: 0;">AUTO</button>
-                        <button id="btn-p1-gp-none" onclick="game.setGamepadChoice(1, 'none')" style="font-size: 10px; padding: 4px 8px; margin: 0;">NONE</button>
-                        <button id="btn-p1-gp-0" onclick="game.setGamepadChoice(1, '0')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 1</button>
-                        <button id="btn-p1-gp-1" onclick="game.setGamepadChoice(1, '1')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 2</button>
-                        <button id="btn-p1-gp-2" onclick="game.setGamepadChoice(1, '2')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 3</button>
-                        <button id="btn-p1-gp-3" onclick="game.setGamepadChoice(1, '3')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 4</button>
-                    </div>
-                    <div id="lbl-p1-gp-status" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
-                </div>
-
-                <div>
-                    <div style="font-size: 10px; color: #ffb700; margin-bottom: 3px; font-weight: bold;">PLAYER 2</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
-                        <button id="btn-p2-gp-auto" onclick="game.setGamepadChoice(2, 'auto')" style="font-size: 10px; padding: 4px 8px; margin: 0;">AUTO</button>
-                        <button id="btn-p2-gp-none" onclick="game.setGamepadChoice(2, 'none')" style="font-size: 10px; padding: 4px 8px; margin: 0;">NONE</button>
-                        <button id="btn-p2-gp-0" onclick="game.setGamepadChoice(2, '0')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 1</button>
-                        <button id="btn-p2-gp-1" onclick="game.setGamepadChoice(2, '1')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 2</button>
-                        <button id="btn-p2-gp-2" onclick="game.setGamepadChoice(2, '2')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 3</button>
-                        <button id="btn-p2-gp-3" onclick="game.setGamepadChoice(2, '3')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 4</button>
-                    </div>
-                    <div id="lbl-p2-gp-status" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
-                </div>
-            </div>
         </div>
 
-        <!-- Tab content: AUDIO -->
-        <div id="tab-audio" class="tab-content">
-            <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold;">AUDIO TRANSMISSION CONTROLS</p>
-            <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left; max-height: 240px; overflow-y: auto;">
-                
+        <!-- Tab content: SETTINGS (Controls / Audio / Performance sub-tabs, kept nested so the
+             top-level tab bar doesn't grow every time a new system-level option shows up) -->
+        <div id="tab-settings" class="tab-content">
+            <div class="tabs-container" style="margin-bottom: 15px;">
+                <button id="btn-settings-subtab-controls" class="tab-button active" onclick="game.switchSettingsTab('controls')">Controls</button>
+                <button id="btn-settings-subtab-audio" class="tab-button" onclick="game.switchSettingsTab('audio')">Audio</button>
+                <button id="btn-settings-subtab-performance" class="tab-button" onclick="game.switchSettingsTab('performance')">Performance</button>
+            </div>
+
+            <!-- Settings sub-tab: CONTROLS -->
+            <div id="tab-settings-controls" class="settings-subtab-content active">
                 <div style="margin-bottom: 15px;">
-                    <label style="font-weight: bold; color: var(--neon-blue); font-size: 11px; letter-spacing: 1px;">SYNTH BACKGROUND MUSIC (BGM):</label>
-                    <div style="display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
-                        <button id="btn-bgm-off" class="active-mode" onclick="game.setMusicTrack('off')">BGM Off</button>
-                        <button id="btn-bgm-action" onclick="game.setMusicTrack('action')">Action Ops</button>
-                        <button id="btn-bgm-agent" onclick="game.setMusicTrack('agent')">Secret Agent</button>
-                        <button id="btn-bgm-ambient" onclick="game.setMusicTrack('ambient')">Dystopian Ambient</button>
-                        <button id="btn-bgm-pvp" onclick="game.setMusicTrack('pvp')">Zero Sum</button>
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">WASD MOVEMENT MODE:</label><br>
+                    <div style="display: flex; justify-content: center; gap: 15px; margin-top: 10px;">
+                        <button id="btn-scheme-screen" onclick="game.setScheme('screen')">Screen-Relative</button>
+                        <button id="btn-scheme-player" onclick="game.setScheme('player')">Player-Relative (Classic)</button>
                     </div>
                 </div>
                 
-                <div style="margin-bottom: 12px;">
-                    <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
-                        <span>MUSIC VOLUME:</span>
-                        <span id="lbl-music-vol">50%</span>
+                <div style="display: flex; gap: 15px; text-align: left; background: rgba(0, 10, 25, 0.6); padding: 12px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); max-height: 240px; overflow-y: auto;">
+                    <div style="flex: 1;">
+                        <div style="color: var(--neon-blue); font-weight: bold; border-bottom: 1px solid rgba(0,229,255,0.2); padding-bottom: 3px; margin-bottom: 8px; font-size: 11px;">KEYBOARD & MOUSE CONTROLS (P1)</div>
+                        <div style="font-size: 10px; line-height: 1.6;">
+                            <b>W/A/S/D</b> - Movement / Strafe<br>
+                            <b>SHIFT</b> - Sprint (uses stamina)<br>
+                            <b>MOUSE AIM</b> - Point reticle to target<br>
+                            <b>LEFT CLICK</b> - Fire / Detonate Drone<br>
+                            <b>SCROLL WHEEL</b> - Cycle weapons<br>
+                            <b>Q / Z</b> - Cycle Left / Right HUD menus<br>
+                            <b>E / C</b> - Use Left / Right HUD item<br>
+                            <b>F</b> - Interact / Pick up / Land Drone<br>
+                            <b>F (Hold)</b> - Drill Breakable Walls<br>
+                            <b>P / ESC</b> - Pause operational area
+                        </div>
                     </div>
-                    <input type="range" id="sld-music-vol" min="0" max="100" value="50" style="width: 100%; cursor: pointer;" oninput="game.changeVolume('music', this.value)">
+                    <div style="flex: 1; border-left: 1px solid rgba(0, 229, 255, 0.15); padding-left: 15px;">
+                        <div style="color: #ffb700; font-weight: bold; border-bottom: 1px solid rgba(255,183,0,0.2); padding-bottom: 3px; margin-bottom: 8px; font-size: 11px;">CONTROLLER MAPPING (P1 / P2)</div>
+                        <div style="font-size: 10px; line-height: 1.6;">
+                            <b>LEFT STICK</b> - Movement / Strafe<br>
+                            <b>RIGHT STICK</b> - Aim / Rotate Reticle<br>
+                            <b>RT (Trigger)</b> - Fire / Detonate Drone<br>
+                            <b>LT (Trigger)</b> - Sprint (uses stamina)<br>
+                            <b>LB / RB</b> - Cycle weapon selection (Left/Right)<br>
+                            <b>D-PAD UP / DOWN</b> - Scroll Consumables (Left HUD)<br>
+                            <b>D-PAD LEFT</b> - Cycle Cursor Zoom (1x/2x/3x)<br>
+                            <b>L3 (Stick Press)</b> - Use selected Consumable<br>
+                            <b>TRIANGLE / CROSS (Y/A)</b> - Scroll Placeables (Right HUD)<br>
+                            <b>R3 (Stick Press)</b> - Place selected Placeable<br>
+                            <b>SQUARE (X button)</b> - Pick up item / Land Drone<br>
+                            <b>START</b> - Pause operational area
+                        </div>
+                    </div>
                 </div>
 
-                <div style="margin-bottom: 4px;">
-                    <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
-                        <span>SOUND EFFECTS (SFX) VOLUME:</span>
-                        <span id="lbl-sfx-vol">50%</span>
-                    </div>
-                    <input type="range" id="sld-sfx-vol" min="0" max="100" value="50" style="width: 100%; cursor: pointer;" oninput="game.changeVolume('sfx', this.value)">
-                </div>
+                <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.15);">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px;">GAMEPAD ASSIGNMENT:</label>
+                    <div style="font-size: 9px; color: #b0bec5; margin: 4px 0 10px;">Pin a specific controller to a player instead of relying on auto-detect. "None" keeps that player off gamepad entirely (e.g. for touch/KB+M only).</div>
 
+                    <div style="margin-bottom: 10px;">
+                        <div style="font-size: 10px; color: var(--neon-blue); margin-bottom: 3px; font-weight: bold;">PLAYER 1</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                            <button id="btn-p1-gp-auto" onclick="game.setGamepadChoice(1, 'auto')" style="font-size: 10px; padding: 4px 8px; margin: 0;">AUTO</button>
+                            <button id="btn-p1-gp-none" onclick="game.setGamepadChoice(1, 'none')" style="font-size: 10px; padding: 4px 8px; margin: 0;">NONE</button>
+                            <button id="btn-p1-gp-0" onclick="game.setGamepadChoice(1, '0')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 1</button>
+                            <button id="btn-p1-gp-1" onclick="game.setGamepadChoice(1, '1')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 2</button>
+                            <button id="btn-p1-gp-2" onclick="game.setGamepadChoice(1, '2')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 3</button>
+                            <button id="btn-p1-gp-3" onclick="game.setGamepadChoice(1, '3')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 4</button>
+                        </div>
+                        <div id="lbl-p1-gp-status" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
+                    </div>
+
+                    <div>
+                        <div style="font-size: 10px; color: #ffb700; margin-bottom: 3px; font-weight: bold;">PLAYER 2</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                            <button id="btn-p2-gp-auto" onclick="game.setGamepadChoice(2, 'auto')" style="font-size: 10px; padding: 4px 8px; margin: 0;">AUTO</button>
+                            <button id="btn-p2-gp-none" onclick="game.setGamepadChoice(2, 'none')" style="font-size: 10px; padding: 4px 8px; margin: 0;">NONE</button>
+                            <button id="btn-p2-gp-0" onclick="game.setGamepadChoice(2, '0')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 1</button>
+                            <button id="btn-p2-gp-1" onclick="game.setGamepadChoice(2, '1')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 2</button>
+                            <button id="btn-p2-gp-2" onclick="game.setGamepadChoice(2, '2')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 3</button>
+                            <button id="btn-p2-gp-3" onclick="game.setGamepadChoice(2, '3')" style="font-size: 10px; padding: 4px 8px; margin: 0;">GAMEPAD 4</button>
+                        </div>
+                        <div id="lbl-p2-gp-status" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings sub-tab: AUDIO -->
+            <div id="tab-settings-audio" class="settings-subtab-content">
+                <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold;">AUDIO TRANSMISSION CONTROLS</p>
+                <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left; max-height: 240px; overflow-y: auto;">
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight: bold; color: var(--neon-blue); font-size: 11px; letter-spacing: 1px;">SYNTH BACKGROUND MUSIC (BGM):</label>
+                        <div style="display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
+                            <button id="btn-bgm-off" class="active-mode" onclick="game.setMusicTrack('off')">BGM Off</button>
+                            <button id="btn-bgm-action" onclick="game.setMusicTrack('action')">Action Ops</button>
+                            <button id="btn-bgm-agent" onclick="game.setMusicTrack('agent')">Secret Agent</button>
+                            <button id="btn-bgm-ambient" onclick="game.setMusicTrack('ambient')">Dystopian Ambient</button>
+                            <button id="btn-bgm-pvp" onclick="game.setMusicTrack('pvp')">Zero Sum</button>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
+                            <span>MUSIC VOLUME:</span>
+                            <span id="lbl-music-vol">50%</span>
+                        </div>
+                        <input type="range" id="sld-music-vol" min="0" max="100" value="50" style="width: 100%; cursor: pointer;" oninput="game.changeVolume('music', this.value)">
+                    </div>
+
+                    <div style="margin-bottom: 4px;">
+                        <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
+                            <span>SOUND EFFECTS (SFX) VOLUME:</span>
+                            <span id="lbl-sfx-vol">50%</span>
+                        </div>
+                        <input type="range" id="sld-sfx-vol" min="0" max="100" value="50" style="width: 100%; cursor: pointer;" oninput="game.changeVolume('sfx', this.value)">
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Settings sub-tab: PERFORMANCE -->
+            <div id="tab-settings-performance" class="settings-subtab-content">
+                <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold;">GORE & DEBRIS DENSITY</p>
+                <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left;">
+                    <div style="font-size: 10px; color: #a9c2c7; margin-bottom: 14px; line-height: 1.5;">
+                        Maximum number of blood pools, shell casings, gore chunks and scorch marks kept on the ground at once. Raise it to let carnage pile up longer in extended runs; lower it if things start chugging on a weaker device.
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
+                        <span>MAX GROUND MARKS:</span>
+                        <span id="lbl-max-marks">30,000</span>
+                    </div>
+                    <input type="range" id="sld-max-marks" min="0" max="300000" step="1000" value="30000" style="width: 100%; cursor: pointer;" oninput="game.setMaxPermanentMarks(this.value)">
+                    <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 30,000 &nbsp;|&nbsp; Range: 0 – 300,000</div>
+                </div>
             </div>
         </div>
         
@@ -1180,6 +1221,7 @@
             <button class="tab-button active" onclick="game.switchPauseTab('system')">System</button>
             <button class="tab-button" onclick="game.switchPauseTab('audio')">Audio</button>
             <button class="tab-button" onclick="game.switchPauseTab('controls')">Controls</button>
+            <button class="tab-button" onclick="game.switchPauseTab('performance')">Performance</button>
         </div>
         
         <!-- Tab content: SYSTEM -->
@@ -1248,6 +1290,7 @@
                         <b>Q / Z</b> - Cycle Left / Right HUD menus<br>
                         <b>E / C</b> - Use Left / Right HUD item<br>
                         <b>F</b> - Interact / Pick up / Land Drone<br>
+                        <b>F (Hold)</b> - Drill Breakable Walls<br>
                         <b>P / ESC</b> - Pause operational area
                     </div>
                 </div>
@@ -1299,6 +1342,22 @@
                     </div>
                     <div id="lbl-p2-gp-status-pause" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
                 </div>
+            </div>
+        </div>
+        
+        <!-- Tab content: PERFORMANCE -->
+        <div id="tab-performance-pause" class="tab-content">
+            <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold;">GORE & DEBRIS DENSITY</p>
+            <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left;">
+                <div style="font-size: 10px; color: #a9c2c7; margin-bottom: 14px; line-height: 1.5;">
+                    Maximum number of blood pools, shell casings, gore chunks and scorch marks kept on the ground at once. Adjustable mid-mission -- lower it here if things start chugging deep into a long run.
+                </div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
+                    <span>MAX GROUND MARKS:</span>
+                    <span id="lbl-max-marks-pause">30,000</span>
+                </div>
+                <input type="range" id="sld-max-marks-pause" min="0" max="300000" step="1000" value="30000" style="width: 100%; cursor: pointer;" oninput="game.setMaxPermanentMarks(this.value)">
+                <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 30,000 &nbsp;|&nbsp; Range: 0 – 300,000</div>
             </div>
         </div>
         
@@ -1499,6 +1558,18 @@
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-size: 10px;">Shrapnel Rounds</span>
                     <button class="neon-btn" id="btn-dev-perk-perkShrapnelRounds" onclick="game.devTogglePerk('perkShrapnelRounds')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Combat Scanner</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkCombatScanner" onclick="game.devTogglePerk('perkCombatScanner')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Suppressing Fire</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkSuppression" onclick="game.devTogglePerk('perkSuppression')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px;">Ambusher</span>
+                    <button class="neon-btn" id="btn-dev-perk-perkAmbusher" onclick="game.devTogglePerk('perkAmbusher')" style="margin: 0; font-size: 8px; padding: 2px 6px;">OFF</button>
                 </div>
             </div>
         </div>
@@ -2225,6 +2296,45 @@ class AudioEngine {
                     osc2.connect(gain2);
                     gain2.connect(offlineCtx.destination);
                     osc2.start(0);
+                }));
+            }
+
+            // 2a. Drill tool grind variations (duration ~0.16s -- short
+            // metallic rasp + spark bite, played repeatedly on a timer
+            // while F is held against a destructible wall; see
+            // Player.update()'s drilling block / AudioEngine.playDrill()).
+            for (let i = 0; i < 4; i++) {
+                promises.push(this.bakeSound('drill_' + i, 0.18, (offlineCtx) => {
+                    const duration = 0.12 + Math.random() * 0.05;
+
+                    // Spark bite: a very short bright transient at the hit
+                    const oscClick = offlineCtx.createOscillator();
+                    const gainClick = offlineCtx.createGain();
+                    oscClick.type = 'square';
+                    oscClick.frequency.setValueAtTime(3200 + Math.random() * 1400, 0);
+                    gainClick.gain.setValueAtTime(0.10, 0);
+                    gainClick.gain.exponentialRampToValueAtTime(0.001, 0.03);
+                    oscClick.connect(gainClick);
+                    gainClick.connect(offlineCtx.destination);
+                    oscClick.start(0);
+
+                    // Grind rasp: bandpass-filtered noise, short decay
+                    const noise = offlineCtx.createBufferSource();
+                    noise.buffer = this.noiseBuffer;
+                    const noiseFilter = offlineCtx.createBiquadFilter();
+                    noiseFilter.type = 'bandpass';
+                    noiseFilter.frequency.setValueAtTime(1400 + Math.random() * 800, 0);
+                    noiseFilter.frequency.exponentialRampToValueAtTime(650 + Math.random() * 300, duration);
+                    noiseFilter.Q.value = 2.2;
+
+                    const noiseGain = offlineCtx.createGain();
+                    noiseGain.gain.setValueAtTime(0.5, 0);
+                    noiseGain.gain.exponentialRampToValueAtTime(0.001, duration);
+
+                    noise.connect(noiseFilter);
+                    noiseFilter.connect(noiseGain);
+                    noiseGain.connect(offlineCtx.destination);
+                    noise.start(0);
                 }));
             }
 
@@ -3073,6 +3183,17 @@ class AudioEngine {
     playFootstep(vol) {
         if (!this.ctx || vol <= 0.01) return;
         this.playBakedSound('footstep', this.sfxGain, vol);
+    }
+
+    // Drill tool tick -- called repeatedly on a countdown timer while F is
+    // held against a destructible wall (see Player.update()'s drilling
+    // block). One-shot baked buffer per call, same as playFootstep, so
+    // there's no persistent node to leak even if drilling is interrupted
+    // mid-sound (pause, death, wall breaking).
+    playDrill(vol = 0.5) {
+        if (!this.ctx || vol <= 0.01) return;
+        let idx = Math.floor(Math.random() * 4);
+        this.playBakedSound('drill_' + idx, this.sfxGain, vol);
     }
     
     playFlashbangRing() {
@@ -4078,6 +4199,64 @@ const NOW_MODE = {
     FREE_PERK_COUNT: 2    // random perk choice screens queued per player at start (see Game._advanceNowModePerkQueue())
 };
 
+// ==== TACTICAL WAVES: tuning ====
+// Rebalance pass 1: the stock wave mode's difficulty curve was pure
+// THROUGHPUT (5+wave*4 enemies at a spawn interval flooring at 0.2s ~= 5
+// enemies/sec by wave 12) -- lategame turned into an untactical horde
+// shooter. This config converts enemiesToSpawn into wave LENGTH instead of
+// wave DENSITY: a live-enemy cap bounds simultaneous pressure, and enemies
+// release in SQUADS from a shared spawn point with real gaps between squads.
+// The gap is the tactical game (reposition, deploy, pick an ambush angle);
+// the cap frees budget for tougher squad COMPOSITION at higher waves instead
+// of more bodies. Applies ONLY to the standard wave mode: ACTION NOW keeps
+// its 20/sec faucet (that mode IS the horde fantasy -- see NOW_MODE),
+// Operator mode has its own pack system (OP_TUNING), sandbox unaffected.
+const TACTICAL_TUNING = {
+    LIVE_CAP_BASE: 9,            // max simultaneous enemies at wave 1...
+    LIVE_CAP_PER_WAVE: 0.5,      // ...growing +1 every 2 waves...
+    LIVE_CAP_MAX: 16,            // ...to a hard ceiling (handoff spec: 12-16)
+    SWARM_CAP_MULT: 1.75,        // Swarm mutator keeps its flood identity (1-hp swarmers)
+    SQUAD_GAP_MIN: 4.0,          // seconds between squad releases
+    SQUAD_GAP_MAX: 8.0,
+    SQUAD_MEMBER_INTERVAL: 0.35, // spacing between members of one squad
+    SQUAD_JITTER: 110,           // px spread of members around the squad anchor
+    CONTACT_PING: true,          // announce each squad's approach bearing
+    // -- Phase 2: AI quality scales with wave (smarter, not faster) --
+    SPEED_SCALE_MAX: 1.105,      // per-wave +1.5% enemy speed now caps ~wave 8
+    FLANK_BASE: 0.05,            // chance a squad member spawns as a flanker at wave 1...
+    FLANK_PER_WAVE: 0.03,        // ...climbing with wave...
+    FLANK_MAX: 0.55,             // ...to just over half the squad late-game
+    FLANK_DIST: 380,             // flankers arc until within this range, then commit
+    FLANK_OFFSET: 260,           // px lateral offset of the flanking approach point
+    PUSH_MIN_WAVE: 4,            // waves before enemies punish stamina crashes
+    PUSH_SPEED_MULT: 1.25,       // speed surge while pushing an exhausted player
+    PUSH_RANGE: 600              // LOS range within which the push triggers
+};
+
+// ==== TACTICAL PERKS (Phase 3): single perk registry ====
+// grantRandomPerk() and generatePerkChoices() used to carry two hand-copied
+// arrays of the same 9 perks -- unified here so they can't drift. Additions:
+// a parallel TACTICAL family (Combat Scanner / Suppressing Fire / Ambusher)
+// of equal power to the chaos family, rewarding information, fire
+// discipline, and positioning instead of raw screen-clearing DPS. The chaos
+// perks keep their full power but explosions now carry an aggro cost in
+// standard wave mode (see Game.enrageEnemiesNear) -- crowd damage trades
+// away calm, readable squads. Descriptions state the trade honestly.
+const PERK_DEFS = [
+    { key: 'perkFlatline', name: 'FLATLINE', desc: 'Increases bullet velocity by 25%.' },
+    { key: 'perkPointBlank', name: 'POINT BLANK', desc: 'Sprinting increases bullet damage by 20%.' },
+    { key: 'perkGhost', name: 'GHOST BULLETS', desc: 'Bullets have a 30% chance to pass through solid walls.' },
+    { key: 'perkVampiric', name: 'VAMPIRIC ROUNDS', desc: 'On hitting an enemy, restore +1 HP.' },
+    { key: 'perkVolatileCorpses', name: 'VOLATILE CORPSES', desc: 'Killed enemies trigger a shockwave and mini-explosion. Blasts enrage nearby enemies.' },
+    { key: 'perkRubberBullets', name: 'RUBBER BULLETS', desc: 'Modify maximum bounces from 2 to 6.' },
+    { key: 'perkSmartMunitions', name: 'SMART MUNITIONS', desc: 'Bullets gently steer towards nearest forward enemy.' },
+    { key: 'perkExplosiveRounds', name: 'EXPLOSIVE ROUNDS', desc: 'Bullets explode on impact. Self-damage disabled. Blasts enrage nearby enemies.' },
+    { key: 'perkShrapnelRounds', name: 'SHRAPNEL ROUNDS', desc: 'Explosions fling 3-4 low-damage fragments outward.' },
+    { key: 'perkCombatScanner', name: 'COMBAT SCANNER', desc: 'Enemies you hit are marked and tracked through walls for 4s.' },
+    { key: 'perkSuppression', name: 'SUPPRESSING FIRE', desc: 'Enemies you hit are suppressed and cannot fire for 1.5s.' },
+    { key: 'perkAmbusher', name: 'AMBUSHER', desc: 'Hits on enemies with no line of sight to their target deal +35% damage.' }
+];
+
 // ==== FPV OPERATOR MODE: biome bands ====
 // The operator map is a long north-south corridor (base always south,
 // enemies always approach from the north/far end -- see MapGen case 11).
@@ -4134,7 +4313,8 @@ const MapIntel = {
     "8": { name: "2-Fort (Bridge Assault)", color: "#ff2a5f", size: "4200x900", desc: "Bridge assault. Two heavily fortified bases separated by a deadly no-mans-land." },
     "9": { name: "The Sieve (Pillar Forest)", color: "#b388ff", size: "2800x2800", desc: "Dense forest of small pillar covers. Sightlines are constantly broken." },
     "10": { name: "[7.5K] Massive Open World", color: "#00e5ff", size: "7500x7500", desc: "Colossal operational zone spanning 9 distinct biomes. Stamina management is critical." },
-    "11": { name: "[OPERATOR] The Perimeter", color: "#39ff14", size: "7500x7500", desc: "Hardened bunker on the map edge. Procedural buildings, treelines and dense foliage. FPV drones are your only offense -- survive." }
+    "11": { name: "[OPERATOR] The Perimeter", color: "#39ff14", size: "7500x7500", desc: "Hardened bunker on the map edge. Procedural buildings, treelines and dense foliage. FPV drones are your only offense -- survive." },
+    "12": { name: "The Dig Site (Excavation)", color: "#ff8c00", size: "4000x4000", desc: "Buried bunker under dense rubble. Grind through breakable walls with your drill (hold F) or push the one cleared approach lane. Hostiles ring the perimeter." }
 };
 
 const cachedAmbientLightCanvas = (() => {
@@ -4534,7 +4714,8 @@ class MapGen {
             { id: 8, w: 4200, h: 900,  biome: { main: '#ff2a5f', rgb: '255, 42, 95', splitTheme: true } },
             { id: 9, w: 2800, h: 2800, biome: { main: '#b388ff', rgb: '179, 136, 255' } },
             { id: 10, w: 7500, h: 7500, biome: { main: '#00e5ff', rgb: '0, 100, 255' } },
-            { id: 11, w: 5200, h: 14000, biome: { main: '#39ff14', rgb: '57, 255, 20' } }
+            { id: 11, w: 5200, h: 14000, biome: { main: '#39ff14', rgb: '57, 255, 20' } },
+            { id: 12, w: 4000, h: 4000, biome: { main: '#ff8c00', rgb: '255, 140, 0' } }
         ];
 
         let chosen;
@@ -4542,7 +4723,22 @@ class MapGen {
             chosen = blueprints.find(b => b.id === game.selectedMapId);
         }
         if (!chosen) {
-            chosen = blueprints[Math.floor(Math.random() * blueprints.length)];
+            // BUGFIX: "-1 Random Generation" used to draw from the FULL
+            // blueprints list, including id 11 -- the FPV Operator template.
+            // That layout (a 5200x14000 corridor of buildings/foliage with
+            // no normal wall placement at all) only makes sense alongside
+            // Operator mode's own dedicated ruleset (forced hardcore FF,
+            // drone-only offense, etc. -- see setGameMode()'s forced
+            // setMap(11) path, which reaches `chosen` via the id-match
+            // branch above and never falls through to here). A normal wave
+            // -mode run could previously roll it by pure chance (1-in-N)
+            // and land in a giant, untextured, un-balanced map never meant
+            // for that mode. Operator mode itself never reaches this random
+            // fallback (it always sets selectedMapId=11 directly), so
+            // excluding id 11 here only removes the broken, unintended
+            // path -- legitimate Operator entry is completely unaffected.
+            let pool = blueprints.filter(b => b.id !== 11);
+            chosen = pool[Math.floor(Math.random() * pool.length)];
         }
         this.width = chosen.w;
         this.height = chosen.h;
@@ -4588,7 +4784,13 @@ class MapGen {
         // the exact original fixed 5x5 so their spatial partitioning -- and
         // everything downstream of getWallsNear() for those templates -- is
         // untouched.
-        if (this.templateId === 10 || this.templateId === 11) {
+        if (this.templateId === 10 || this.templateId === 11 || this.templateId === 12) {
+            // Template 12 packs ~340 destructible blocks into a much
+            // smaller footprint than 10/11 -- proportionally even denser --
+            // so it needs this same fine-grid treatment or getWallsNear()
+            // (called every frame for essentially every enemy/boss/drone/
+            // turret) would return dozens of irrelevant walls per query,
+            // same failure mode described above for the original fixed 5x5.
             const targetCellSize = 450;
             this.gridCols = MathUtils.clamp(Math.round(this.width / targetCellSize), 5, 40);
             this.gridRows = MathUtils.clamp(Math.round(this.height / targetCellSize), 5, 40);
@@ -4700,6 +4902,62 @@ class MapGen {
             }
         }
         return nearbyWalls;
+    }
+
+    // PERF: spatially-filtered wall candidates for a LINE SEGMENT (long LOS
+    // rays: boss sight checks, sniper audio occlusion, turret/mini-drone
+    // target acquisition). getWallsNear() above only covers a 3x3 cell
+    // neighborhood around a POINT, which is wrong for rays longer than ~one
+    // cell, so those callers historically fell back to scanning the FULL
+    // wall array every frame (~350 walls on the densest templates).
+    //
+    // Approach: sample points along the segment at a step <= the smaller
+    // cell dimension, and take the 3x3 neighborhood around each sample.
+    // The 1-cell padding guarantees corner-clipped cells are still covered,
+    // so this returns a strict SUPERSET of every wall the segment can
+    // intersect (walls are registered in every cell they overlap --
+    // over-inclusion is only a minor perf cost, never a correctness issue;
+    // the caller still runs the exact lineIntersectAABB test per wall).
+    // Reuses the same monotonic query-stamp dedup as getWallsNear().
+    //
+    // CONTRACT: both endpoints must lie inside the map bounds (true for
+    // every entity-to-entity LOS check -- entities can't leave the map).
+    // Sample points are clamped into the grid exactly like getWallsNear(),
+    // so a segment extending OUTSIDE the bounds can miss the 4 outer
+    // boundary walls (verified via headless test: 0/16k mismatches vs a
+    // full scan for in-bounds segments; mismatches only ever appeared on
+    // out-of-bounds segments). Don't use this for rays that can exit the map.
+    getWallsAlongSegment(x1, y1, x2, y2) {
+        this._wallQueryId = (this._wallQueryId || 0) + 1;
+        let qid = this._wallQueryId;
+        let out = [];
+
+        let dx = x2 - x1, dy = y2 - y1;
+        let len = Math.hypot(dx, dy);
+        let step = Math.min(this.cellW, this.cellH);
+        let steps = Math.max(1, Math.ceil(len / step));
+
+        let prevCol = -2, prevRow = -2;
+        for (let i = 0; i <= steps; i++) {
+            let t = i / steps;
+            let px = x1 + dx * t, py = y1 + dy * t;
+            let col = MathUtils.clamp(Math.floor(px / this.cellW), 0, this.gridCols - 1);
+            let row = MathUtils.clamp(Math.floor(py / this.cellH), 0, this.gridRows - 1);
+            if (col === prevCol && row === prevRow) continue; // same cell as last sample -- 3x3 already collected
+            prevCol = col; prevRow = row;
+            for (let r = Math.max(0, row - 1); r <= Math.min(this.gridRows - 1, row + 1); r++) {
+                for (let c = Math.max(0, col - 1); c <= Math.min(this.gridCols - 1, col + 1); c++) {
+                    let cellWalls = this.spatialGrid[r][c];
+                    for (let w of cellWalls) {
+                        if (w._wallQStamp !== qid) {
+                            w._wallQStamp = qid;
+                            out.push(w);
+                        }
+                    }
+                }
+            }
+        }
+        return out;
     }
     generate() {
         const thick = 60;
@@ -5412,6 +5670,101 @@ class MapGen {
 
                 break;
             }
+            case 12: {
+                // ==== Template 12: "The Dig Site" (Breach & Excavate) ====
+                // Design brief: mostly-solid 4000x4000 dig map. A small
+                // clear pocket at dead center is the player spawn; enemies
+                // spawn/roam a clear ring around the OUTER edge (reusing the
+                // existing edge-biased wave-spawn logic unmodified -- see
+                // the wall-overlap rejection check in update()'s spawn-timer
+                // block); one pre-cleared lane connects ring to center so a
+                // run is never softlocked even if the player never drills a
+                // single block. Everything else in between is dense
+                // destructible rubble the player grinds through with the
+                // new drill tool (see Player.update()'s drilling block) to
+                // open shortcuts, flank routes, or a private bunker.
+                //
+                // Coverage note: literal 90% coverage of the FULL 4000x4000
+                // canvas is not compatible with also guaranteeing (a) a
+                // spawn-safe outer ring for the existing wave-spawn
+                // rejection sampling (see the ex/ey selection a few hundred
+                // lines up -- it always lands exactly 60px inset from an
+                // edge, so that band must stay clear or spawns can fail),
+                // (b) a walkable nav-grid connection at all (buildNavGrid's
+                // fixed 100px node spacing / 24px margin needs real
+                // clearance to place any unblocked nodes), and (c) a
+                // non-softlocked run. RING_DEPTH/CENTER_CLEAR_R/CORRIDOR_W
+                // below are each tuned down to roughly the minimum their
+                // respective system needs (see their comments) rather than
+                // padded for looks, and the single corridor (vs. an
+                // earlier-considered second lane) roughly doubles achievable
+                // density for one tactical option most runs won't miss --
+                // the drill tool already lets the player cut their own
+                // second route anywhere they want. Net measured result
+                // (headless simulation, see PITCH/gap below): ~90% block
+                // density within the buildable interior itself, ~79% across
+                // the full 4000x4000 canvas once the mandatory spawn ring,
+                // center pocket, and single corridor are subtracted out --
+                // still overwhelmingly "mostly solid" by feel and by far
+                // the densest template in the game, just not a literal,
+                // system-breaking 90% of the entire map.
+                const RING_DEPTH = 110;     // guaranteed wall-free outer band. Must clear the wave-spawn system's fixed 60px edge inset (+ its 18px spawn-radius check) with room to spare, AND leave at least one full row of buildNavGrid's 100px-pitch/24px-margin nodes unblocked (needs > 74px) -- 110 comfortably satisfies both with margin, no more.
+                const CENTER_CLEAR_R = 200; // player spawn pocket
+                const CORRIDOR_W = 180;     // one pre-cleared breach lane. Minimum for reliable 2-node-wide nav-grid connectivity is ~150px (100px pitch + 2x24px margin); 180 keeps a comfortable buffer.
+                const PITCH = 200;          // block-grid pitch; block size is PITCH minus a small random gap (see below)
+
+                const digCx = this.width / 2, digCy = this.height / 2;
+                // A single lane in from the north -- the one deliberate
+                // choke every wave funnels through, while everything else
+                // stays sealed rubble (see the coverage-note comment above
+                // for why this is one lane, not several).
+                const corridors = [
+                    { x1: digCx - CORRIDOR_W / 2, y1: 0, x2: digCx + CORRIDOR_W / 2, y2: digCy + 40 }
+                ];
+
+                const overlapsCenter = (bx, by, bw, bh) => {
+                    let ccx = MathUtils.clamp(digCx, bx, bx + bw);
+                    let ccy = MathUtils.clamp(digCy, by, by + bh);
+                    return Math.hypot(ccx - digCx, ccy - digCy) < CENTER_CLEAR_R;
+                };
+                const overlapsCorridor = (bx, by, bw, bh) => corridors.some(c =>
+                    bx < c.x2 && bx + bw > c.x1 && by < c.y2 && by + bh > c.y1
+                );
+
+                // Mostly easily-breakable rubble, with a meaningful minority
+                // of tougher chunks scattered in randomly -- independent of
+                // block size (see tagDestructibleWalls()'s pre-set-tier
+                // guard), so toughness can't be eyeballed purely from a
+                // block's footprint.
+                const rollTier = () => {
+                    let r = Math.random();
+                    if (r < 0.55) return 'crumbling';
+                    if (r < 0.85) return 'light';
+                    return 'reinforced';
+                };
+                const TIER_COLORS = {
+                    crumbling: { main: '#a68a64', rgb: '166, 138, 100' },
+                    light:     { main: '#7a7266', rgb: '122, 114, 102' },
+                    reinforced:{ main: '#4a4f57', rgb: '74, 79, 87' }
+                };
+
+                for (let gy = RING_DEPTH; gy < this.height - RING_DEPTH; gy += PITCH) {
+                    for (let gx = RING_DEPTH; gx < this.width - RING_DEPTH; gx += PITCH) {
+                        let bw = PITCH - MathUtils.rand(6, 10);
+                        let bh = PITCH - MathUtils.rand(6, 10);
+                        let bx = gx + MathUtils.rand(-3, 3);
+                        let by = gy + MathUtils.rand(-3, 3);
+                        if (bx + bw > this.width - RING_DEPTH + 24) continue;
+                        if (by + bh > this.height - RING_DEPTH + 24) continue;
+                        if (overlapsCenter(bx, by, bw, bh)) continue;
+                        if (overlapsCorridor(bx, by, bw, bh)) continue;
+                        let tier = rollTier();
+                        let tc = TIER_COLORS[tier];
+                        this.walls.push({ x: bx, y: by, w: bw, h: bh, tier, colorMain: tc.main, colorRgb: tc.rgb });
+                    }
+                }
+                break;
+            }
         }
         this.tagDestructibleWalls();
     }
@@ -5462,9 +5815,29 @@ class MapGen {
         const INDESTRUCTIBLE_MIN_AREA = 70000; // above this: not destructible at all
         for (let wall of this.walls) {
             if (wall.isBoundary || wall.buildingId) continue;
+            // A template can pre-assign its own tier at push-time (e.g.
+            // template 12's dig-site rubble, which wants randomized
+            // toughness INDEPENDENT of a block's footprint -- every block
+            // there is a similar size, so the area-threshold rule below
+            // would flatten them all into the same tier). When it has,
+            // respect it instead of recomputing from area; this is the only
+            // difference from the original area-only behavior, so every
+            // other template (which never sets wall.tier before this runs)
+            // is byte-for-byte unaffected.
+            if (wall.tier) {
+                wall.destructible = true;
+                wall.maxHp = this._destructibleHpFor(wall.w, wall.h, wall.tier);
+                wall.hp = wall.maxHp;
+                continue;
+            }
             let area = wall.w * wall.h;
-            if (area >= INDESTRUCTIBLE_MIN_AREA) continue;
-            wall.tier = (area >= REINFORCED_MIN_AREA) ? 'reinforced' : 'light';
+            // REBALANCE (line item): area >= INDESTRUCTIBLE_MIN_AREA walls
+            // used to be skipped entirely (flatly indestructible). They now
+            // join the system as the 'fortified' tier -- see _wallCellPlan.
+            // Map-boundary walls and building prefabs (excluded above)
+            // remain the only truly indestructible geometry.
+            wall.tier = (area >= INDESTRUCTIBLE_MIN_AREA) ? 'fortified'
+                      : (area >= REINFORCED_MIN_AREA) ? 'reinforced' : 'light';
             wall.destructible = true;
             wall.maxHp = this._destructibleHpFor(wall.w, wall.h, wall.tier);
             wall.hp = wall.maxHp;
@@ -5514,7 +5887,18 @@ class MapGen {
         // damageWallPoint() at a small fraction of this per hit -- see the
         // wiring in Bullet.update -- so sustained gunfire "slowly punches
         // through" on the same scale rather than needing separate tuning.
-        let cellMax = (tier === 'reinforced') ? 220 : 115;
+        // 'crumbling' (template 12's dig-site rubble majority) is
+        // deliberately softer than the original 'light' default -- a fast,
+        // satisfying breach with the drill tool or a couple of bullets,
+        // distinct from 'light' rather than a synonym for it.
+        // 'fortified' (rebalance line item): the former flatly-indestructible
+        // anchor walls (big + -map definers, the open-world orange blocks).
+        // 520/cell means even a frag grenade (peak 140) needs ~4 direct hits
+        // per cell -- breaching a person-sized hole is a deliberate ordnance
+        // investment (barrels / drone bombs / sustained demolition), not
+        // something that happens incidentally. They still read as the map's
+        // structural anchors; they're just no longer immune to the game.
+        let cellMax = (tier === 'fortified') ? 520 : (tier === 'reinforced') ? 220 : (tier === 'crumbling' ? 55 : 115);
         return { cols, rows, cellMax, maxHp: cols * rows * cellMax };
     }
 
@@ -5729,18 +6113,50 @@ class MapGen {
         // instead can't miss anything, and costs nothing at render time
         // since it's precomputed here, not in the draw loop.
         const MAX_LINEAGE_PIECES = 5;
-        let lineage = wall._lineage || (wall._lineage = { n: 1, pieces: [] });
+        // FIX 2 (playtest: huge blocks): a flat cap of 5 alive pieces is
+        // fine for a thin strip wall but a big block STARTS at 4+ pieces
+        // the moment it strip-splits, pinning the lineage at cap so every
+        // later carve was only allowed 1 stub -- half the subsection
+        // vanished per hit. Scale the cap with the ORIGINAL wall's area
+        // (set once at lineage creation, ~1 piece per 12000px^2, 5..28):
+        // small walls behave exactly as before; a reactor-block-sized wall
+        // can genuinely be drilled cell by cell. Total wall count stays
+        // bounded by the map's destructible area, well inside what the
+        // unfiltered LOS scans already handle.
+        let lineage = wall._lineage || (wall._lineage = {
+            n: 1, pieces: [],
+            cap: MathUtils.clamp(Math.round((wall.w * wall.h) / 12000), MAX_LINEAGE_PIECES, 28)
+        });
         if (!lineage.pieces) lineage.pieces = [];
+        if (!lineage.cap) lineage.cap = MAX_LINEAGE_PIECES;
         let selfIdx = lineage.pieces.indexOf(wall);
         if (selfIdx !== -1) lineage.pieces.splice(selfIdx, 1);
 
-        let allowed = Math.max(0, MAX_LINEAGE_PIECES - lineage.n);
+        // FIX (playtest report: destroying one segment deleted the whole
+        // remaining wall): the cap used `lineage.n`, a MONOTONIC creation
+        // counter that never decrements when a piece dies -- after ~2
+        // carves n hit the cap and every later carve got allowed=0,
+        // silently deleting the entire surviving stub instead of splitting
+        // it. The perf bound the cap exists for (O(total walls) LOS scans)
+        // is about CONCURRENTLY ALIVE pieces, and lineage.pieces already
+        // tracks exactly that (this wall was spliced out above, stubs are
+        // about to be added) -- so cap against it. Dead siblings now free
+        // capacity, and worst case when the cap binds is dropping the
+        // smallest sliver, never wholesale deletion.
+        let allowed = Math.max(0, (lineage.cap || MAX_LINEAGE_PIECES) - lineage.pieces.length);
         if (stubs.length > allowed) {
-            // Prefer keeping the larger remaining piece(s) if the cap
-            // forces us to drop one -- a bigger leftover slab reads better
-            // than an oddly-preserved sliver.
+            // FIX 3 (playtest: drilling a middle cell still wiped a span
+            // once the lineage filled up): the fragmentation budget must
+            // never DELETE substantial geometry -- that reads as the wall
+            // vanishing. Past the cap, keep every stub that still has real
+            // length anyway and only cull genuine slivers; the budget now
+            // bounds sliver-spam, not how many honest chunks a wall can
+            // break into. Worst-case piece counts stay a few hundred
+            // map-wide (72px minimum piece length), well inside what the
+            // unfiltered LOS scans have already been measured to handle.
+            const SUBSTANTIAL = 72;
             stubs.sort((a, b) => (b.rect.w * b.rect.h) - (a.rect.w * a.rect.h));
-            stubs.length = allowed;
+            stubs = stubs.filter((s, i) => i < allowed || Math.max(s.rect.w, s.rect.h) >= SUBSTANTIAL);
         }
 
         for (let s of stubs) {
@@ -5798,8 +6214,16 @@ class MapGen {
         // exact sibling set -- necessary for correctly hiding internal
         // seams from the very first split, before any individual strip
         // has taken further damage.
-        let lineage = wall._lineage || (wall._lineage = { n: 1, pieces: [] });
+        let lineage = wall._lineage || (wall._lineage = {
+            n: 1, pieces: [],
+            // Area-scaled fragmentation budget -- see the matching comment
+            // in _carve1D. Set from the ORIGINAL block's footprint here,
+            // since this split is the first thing that ever happens to a
+            // genuinely 2D wall.
+            cap: MathUtils.clamp(Math.round((wall.w * wall.h) / 12000), 5, 28)
+        });
         if (!lineage.pieces) lineage.pieces = [];
+        if (!lineage.cap) lineage.cap = 5;
         let selfIdx = lineage.pieces.indexOf(wall);
         if (selfIdx !== -1) lineage.pieces.splice(selfIdx, 1);
 
@@ -5880,36 +6304,94 @@ class MapGen {
         game.spawnScorchMark(x, y, Math.min(46, r * 0.9));
     }
 
-    // Recomputes EXACTLY which edges of every piece in a lineage are true
-    // silhouette boundary vs. an internal seam against a still-alive
-    // sibling -- called ONLY from the carve/split path (_carve1D /
-    // _splitIntoStrips), i.e. only on the rare event a piece is actually
-    // destroyed or a wall is first diced into strips, NEVER per frame.
-    // The draw loop just reads the cached result (wall._visibleEdges) --
-    // zero computation at render time. lineage.pieces is the COMPLETE,
-    // exact set of currently-alive descendants of one original wall, so
-    // checking each piece against only this small list (bounded by
-    // MAX_LINEAGE_PIECES) can't miss a genuine sibling the way the
-    // previous per-frame spatial-neighborhood approach could on a long,
-    // thin strip whose far end fell outside the query point's 3x3-cell
-    // window -- this replaces that approach entirely.
+    // Recomputes EXACTLY which portions of every piece's edges in a
+    // lineage are true silhouette boundary vs. an internal seam against a
+    // still-alive sibling -- called ONLY from the carve/split path
+    // (_carve1D / _splitIntoStrips), i.e. only on the rare event a piece
+    // is actually destroyed or a wall is first diced into strips, NEVER
+    // per frame. The draw loop just reads the cached result
+    // (wall._visibleEdges) -- zero computation at render time.
+    // lineage.pieces is the COMPLETE, exact set of currently-alive
+    // descendants of one original wall, so checking each piece against
+    // only this small list (bounded by MAX_LINEAGE_PIECES) can't miss a
+    // genuine sibling the way an earlier per-frame spatial-neighborhood
+    // approach could on a long, thin strip whose far end fell outside a
+    // query point's 3x3-cell window.
+    //
+    // SEGMENT-BASED, not boolean (fixed after reports of a wall showing a
+    // missing outer edge after a chunk was carved out of it): a long
+    // piece's edge can be flush against a neighbor for only PART of its
+    // length -- e.g. a full-width bottom strip sitting under a top strip
+    // that's since had a bite carved out of its left half. The bottom
+    // strip's top edge is genuinely internal (hidden) under the surviving
+    // RIGHT portion of the top strip, but genuinely exterior (visible,
+    // facing the new hole) under the destroyed LEFT portion. A single
+    // top/false-or-true boolean can only describe one of those, never
+    // both at once -- it necessarily gets the other portion wrong. Each
+    // edge is now an array of [start, end] visible sub-spans instead.
     _recomputeLineageEdges(lineage) {
-        const EDGE_EPS = 0.75;
         for (let piece of lineage.pieces) {
-            let v = { top: true, right: true, bottom: true, left: true };
-            for (let other of lineage.pieces) {
-                if (other === piece) continue;
-                if (Math.abs(other.x - (piece.x + piece.w)) < EDGE_EPS &&
-                    other.y < piece.y + piece.h - EDGE_EPS && other.y + other.h > piece.y + EDGE_EPS) v.right = false;
-                if (Math.abs((other.x + other.w) - piece.x) < EDGE_EPS &&
-                    other.y < piece.y + piece.h - EDGE_EPS && other.y + other.h > piece.y + EDGE_EPS) v.left = false;
-                if (Math.abs(other.y - (piece.y + piece.h)) < EDGE_EPS &&
-                    other.x < piece.x + piece.w - EDGE_EPS && other.x + other.w > piece.x + EDGE_EPS) v.bottom = false;
-                if (Math.abs((other.y + other.h) - piece.y) < EDGE_EPS &&
-                    other.x < piece.x + piece.w - EDGE_EPS && other.x + other.w > piece.x + EDGE_EPS) v.top = false;
-            }
-            piece._visibleEdges = v;
+            piece._visibleEdges = {
+                top: this._edgeVisibleSpans(piece, 'top', lineage.pieces),
+                right: this._edgeVisibleSpans(piece, 'right', lineage.pieces),
+                bottom: this._edgeVisibleSpans(piece, 'bottom', lineage.pieces),
+                left: this._edgeVisibleSpans(piece, 'left', lineage.pieces)
+            };
         }
+    }
+
+    // Returns the visible (non-internal-seam) sub-spans of one edge of
+    // `piece`, as an array of [start, end] pairs along that edge's own
+    // running axis (x for top/bottom, y for left/right; world-space
+    // coordinates, not screen-space -- the draw loop subtracts cam
+    // itself). An edge with no flush neighbor at all returns a single
+    // span covering its full length (the common case -- most walls, and
+    // most edges even on damaged ones). An edge fully covered by a flush,
+    // still-alive sibling returns an empty array (nothing drawn there). A
+    // PARTIALLY covered edge -- the actual bug this fixes -- returns
+    // whatever sub-range(s) remain outside the covering sibling(s)
+    // instead of collapsing to an all-or-nothing yes/no.
+    _edgeVisibleSpans(piece, side, pieces) {
+        const EPS = 0.75;
+        let isX = (side === 'top' || side === 'bottom');
+        let fullStart = isX ? piece.x : piece.y;
+        let fullEnd = isX ? (piece.x + piece.w) : (piece.y + piece.h);
+
+        let covered = [];
+        for (let other of pieces) {
+            if (other === piece) continue;
+            let flush =
+                side === 'top' ? Math.abs((other.y + other.h) - piece.y) < EPS :
+                side === 'bottom' ? Math.abs(other.y - (piece.y + piece.h)) < EPS :
+                side === 'left' ? Math.abs((other.x + other.w) - piece.x) < EPS :
+                    Math.abs(other.x - (piece.x + piece.w)) < EPS;
+            if (!flush) continue;
+            let oStart = isX ? other.x : other.y;
+            let oEnd = isX ? (other.x + other.w) : (other.y + other.h);
+            let cs = Math.max(fullStart, oStart), ce = Math.min(fullEnd, oEnd);
+            if (ce - cs > EPS) covered.push([cs, ce]);
+        }
+
+        if (covered.length === 0) return [[fullStart, fullEnd]];
+
+        // Merge overlapping/adjacent covered ranges, then take the
+        // complement against the full span to get what's left visible.
+        covered.sort((a, b) => a[0] - b[0]);
+        let merged = [covered[0].slice()];
+        for (let i = 1; i < covered.length; i++) {
+            let last = merged[merged.length - 1];
+            if (covered[i][0] <= last[1] + EPS) last[1] = Math.max(last[1], covered[i][1]);
+            else merged.push(covered[i].slice());
+        }
+
+        let visible = [];
+        let cursor = fullStart;
+        for (let [cs, ce] of merged) {
+            if (cs - cursor > EPS) visible.push([cursor, cs]);
+            cursor = Math.max(cursor, ce);
+        }
+        if (fullEnd - cursor > EPS) visible.push([cursor, fullEnd]);
+        return visible;
     }
 
     draw(ctx, cam, viewportW, viewportH, skipHaze) {
@@ -5995,7 +6477,7 @@ class MapGen {
         }
         ctx.stroke();
 
-        ctx.shadowBlur = (this.templateId === 11) ? 0 : 10; // PERF: operator map has 150+ walls vs ~20-40 on classic templates; per-shape blur at that count was a real, significant rendering cost invisible to headless testing. Templates 0-9 keep the original blur look unchanged.
+        ctx.shadowBlur = (this.templateId === 11 || this.templateId === 12) ? 0 : 10; // PERF: operator map has 150+ walls vs ~20-40 on classic templates; per-shape blur at that count was a real, significant rendering cost invisible to headless testing. Template 12 (~340 walls) is denser still, so it gets the same treatment. Templates 0-9 keep the original blur look unchanged.
         let bufferX = Math.max(150, visibleW * 0.18);
         let bufferY = Math.max(150, visibleH * 0.18);
         for (let wall of this.walls) {
@@ -6024,16 +6506,23 @@ class MapGen {
             // _recomputeLineageEdges(), called only from _carve1D /
             // _splitIntoStrips (i.e. only when a piece is actually
             // destroyed or a wall is first split), never from this draw
-            // loop. Rendering just reads those 4 cached booleans -- no
-            // neighbor query, no per-frame computation of any kind.
+            // loop. Rendering just reads those cached spans -- no
+            // neighbor query, no per-frame computation of any kind. Each
+            // edge can have multiple visible sub-spans now (not just
+            // fully-on/fully-off), so each is drawn as its own segment --
+            // see _edgeVisibleSpans() for why a single boolean per edge
+            // wasn't enough.
             if (wall._visibleEdges) {
                 let v = wall._visibleEdges;
-                let sx = wall.x - cam.x, sy = wall.y - cam.y;
                 ctx.beginPath();
-                if (v.top)    { ctx.moveTo(sx, sy); ctx.lineTo(sx + wall.w, sy); }
-                if (v.right)  { ctx.moveTo(sx + wall.w, sy); ctx.lineTo(sx + wall.w, sy + wall.h); }
-                if (v.bottom) { ctx.moveTo(sx + wall.w, sy + wall.h); ctx.lineTo(sx, sy + wall.h); }
-                if (v.left)   { ctx.moveTo(sx, sy + wall.h); ctx.lineTo(sx, sy); }
+                let topY = wall.y - cam.y;
+                for (let [x1, x2] of v.top) { ctx.moveTo(x1 - cam.x, topY); ctx.lineTo(x2 - cam.x, topY); }
+                let rightX = wall.x + wall.w - cam.x;
+                for (let [y1, y2] of v.right) { ctx.moveTo(rightX, y1 - cam.y); ctx.lineTo(rightX, y2 - cam.y); }
+                let bottomY = wall.y + wall.h - cam.y;
+                for (let [x1, x2] of v.bottom) { ctx.moveTo(x1 - cam.x, bottomY); ctx.lineTo(x2 - cam.x, bottomY); }
+                let leftX = wall.x - cam.x;
+                for (let [y1, y2] of v.left) { ctx.moveTo(leftX, y1 - cam.y); ctx.lineTo(leftX, y2 - cam.y); }
                 ctx.stroke();
             } else {
                 ctx.strokeRect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
@@ -6108,7 +6597,13 @@ class MapGen {
         // `margin` search radius is added on top of it -- an acceptable
         // trade at 7500px scale for a ~13x speedup, but not a change worth
         // making on the small, already-fast existing templates.
-        const useLargeMapPath = (this.templateId === 10 || this.templateId === 11);
+        // Template 12 is included here for the same reason as the
+        // initializeSpatialGrid() fine-grid branch above -- see that
+        // comment. Without this, generating map 12 would fall back to the
+        // O(nodes * allWalls) full scan against its ~340 walls, the
+        // exact slow path that comment already measured at multiple
+        // seconds on template 11's wall count.
+        const useLargeMapPath = (this.templateId === 10 || this.templateId === 11 || this.templateId === 12);
         
         for (let r = 0; r < this.navRows; r++) {
             for (let c = 0; c < this.navCols; c++) {
@@ -6215,8 +6710,21 @@ class MapGen {
     }
 
     findPath(startX, startY, endX, endY, walls) {
-        // 1. Check direct line of sight first
-        let hasDirectLOS = !walls.some(w => MathUtils.lineIntersectAABB(startX, startY, endX, endY, w));
+        // 1. Check direct line of sight first.
+        // PERF: when the caller passed the full map wall array AND both
+        // endpoints are inside the map, narrow the scan with
+        // getWallsAlongSegment (strict superset of hittable walls => the
+        // .some() result is identical). Callers sometimes pass a SUBSET
+        // (e.g. Enemy AI's nearbyWalls) or an out-of-bounds flee target
+        // (pos + 300px) -- both fall through to the original full scan of
+        // the provided list, byte-for-byte identical behavior.
+        let losWalls = walls;
+        if (walls === this.walls &&
+            startX >= 0 && startX <= this.width && startY >= 0 && startY <= this.height &&
+            endX >= 0 && endX <= this.width && endY >= 0 && endY <= this.height) {
+            losWalls = this.getWallsAlongSegment(startX, startY, endX, endY);
+        }
+        let hasDirectLOS = !losWalls.some(w => MathUtils.lineIntersectAABB(startX, startY, endX, endY, w));
         if (hasDirectLOS && typeof game !== 'undefined' && game.barriers) {
             for (let b of game.barriers) {
                 if (MathUtils.lineIntersectCapsule(startX, startY, endX, endY, b)) {
@@ -6956,6 +7464,37 @@ const AIM_WEIGHT = {
     // minimum ramp duration independent of mouse speed.
     CONE_TRANSITION_FRAC: 0.60,
 
+    // ==== Body-movement alignment (rebalance line item) ====
+    // Secondary, elastic re-centering of the BODY toward the direction of
+    // travel. The aim cone system only ever turned the body when aim left
+    // the cone, so after any big swing the body stayed at its residual
+    // angle forever -- running "forward" while permanently half-strafing.
+    // This adds a gentle spring toward the velocity direction that:
+    //   1) is weighted by (1 - engagement): the instant aim is driving the
+    //      body (outside cone), alignment fully yields -- aim has priority;
+    //   2) is CLAMPED so the body never rotates far enough to push the
+    //      current aim outside BODY_ALIGN_CONE_MARGIN of the weapon's own
+    //      cone -- so it can never steal a shot or fight a held aim. This
+    //      clamp is also what produces the natural "strafe rather than
+    //      backpedal" bias: aiming opposite to travel, the body turns only
+    //      as far toward movement as the cone allows and settles side-on;
+    //   3) uses a proportional step with a rate cap, so it reads as an
+    //      elastic settle over ~a third of a second, not a snap.
+    BODY_ALIGN_RATE_DEG_PER_SEC: 240,  // hard cap on alignment turn speed
+    BODY_ALIGN_SPRING: 6.0,           // proportional gain (1/s) -- elastic settle
+    BODY_ALIGN_MIN_SPEED: 60,         // px/s of actual travel before alignment engages
+    BODY_ALIGN_CONE_MARGIN: 0.85,     // fraction of the cone the aim may be pushed toward
+
+    // ==== Directional movement speed (rebalance line item) ====
+    // Humans don't backpedal at sprint speed. Movement accel is scaled by
+    // how aligned the intended move direction is with the BODY's facing
+    // (moveFacingAngle): full speed forward, MOVE_STRAFE_MULT at 90deg,
+    // MOVE_BACKPEDAL_MULT dead backwards, blended linearly in between.
+    // Pairs with the body-alignment spring above: recentering your body
+    // toward your travel direction is now also how you get your speed back.
+    MOVE_STRAFE_MULT: 0.85,
+    MOVE_BACKPEDAL_MULT: 0.60,
+
     // Targeted movement-speed buff for the two weapons that felt
     // disproportionately punishing to actually carry around despite
     // otherwise-reasonable stats, per direct request -- NOT derived from
@@ -7381,6 +7920,17 @@ class Player extends Entity {
         this.muzzleFlashX = 0;
         this.muzzleFlashY = 0;
         this.emptyClickCooldown = 0;
+
+        // --- Drill tool (hold F while facing a destructible wall) ---
+        // See the drilling block in update() for the full mechanic.
+        // drillSoundTimer mirrors footstepTimer's exact pattern (a simple
+        // count-down-then-replay gate) rather than a persistent oscillator
+        // node, so there's no audio-node lifecycle to leak if update() ever
+        // stops running mid-drill (pause, death, menu) -- see the code
+        // health notes on MiniDrone/FPVDrone's initAudio()/stopAudio() for
+        // why that pattern needs much more care.
+        this.drillSoundTimer = 0;
+        this.isDrilling = false; // true while the drill is actively contacting a wall this frame -- tracked for potential HUD/visual hooks; not currently read anywhere else
         // Laser Beam collimation (see AIM_WEIGHT.COLLIMATION_* + the laser-
         // sight draw block in Game.draw()): 1 = fully focused/tight beam,
         // 0 = just fired/wide and unfocused. Snapped down on every shot
@@ -7845,7 +8395,12 @@ class Player extends Entity {
                 const oc = game.runOverclocks[ocSuffix];
                 if (oc) fireRateLvl = oc.fireRate || 0;
             }
-            const fireRateOCMult = Math.max(0.65, 1.0 - fireRateLvl * 0.05);
+            // REBALANCE (Phase 4): ROF ranks capped at 2 (-10% total, floor
+            // 0.90); ranks 3-7 now grant weapon HANDLING instead (tighter
+            // spread + less kickback -- see Player.fire()). Total run power
+            // is comparable, but it rewards weapon discipline instead of
+            // raising bullets-per-second on screen (handoff lever #4).
+            const fireRateOCMult = Math.max(0.90, 1.0 - fireRateLvl * 0.05);
             let actualFireRate = baseFireRate * clutchFireRateBuff * fireRateOCMult;
             if (hasAmmo && canFireSemi && (gameTime - this.lastFireTime >= actualFireRate)) {
                 let openBoltDelay = this.weapon.openBoltDelay || 0;
@@ -7883,6 +8438,78 @@ class Player extends Entity {
                     input.mouseDown = false;
                 }
             }
+        }
+
+        // --- Drill Tool: hold F while facing a destructible wall to grind it down ---
+        // Continuous per-frame HOLD check (input.keys['f'], not the keydown
+        // event bindInput() uses for the discrete interactPickUpItem() call)
+        // -- exactly the same pattern the fire-trigger block above uses for
+        // input.mouseDown. Gated out while piloting an FPV drone since F is
+        // repurposed there (identical guard to the fire system a few lines
+        // up and the keydown handler's own drone branch in bindInput()).
+        // Reuses `walls` -- the SAME getWallsNear() result the caller
+        // already computed this frame for physics -- so this adds no new
+        // spatial query, and is cheap even on the densest maps (a handful
+        // of nearby walls, one circleIntersectAABB each).
+        let dronePiloting = this.activeDrone && this.activeDrone.isPiloted && !this.activeDrone.dead;
+        if (!dronePiloting && input.keys['f']) {
+            const DRILL_REACH = this.r + 46;    // ~58px -- just past melee range, reaches whatever the player is pressed up against
+            const DRILL_CONE = 0.9;             // must be within ~51 degrees of facing angle -- "looking at" the wall, not just near it
+            let bestWall = null, bestDist = Infinity, bestPx = 0, bestPy = 0;
+            for (let wall of walls) {
+                if (!wall.destructible || wall.hp <= 0) continue;
+                let col = MathUtils.circleIntersectAABB(this.x, this.y, DRILL_REACH, wall);
+                if (!col.hit) continue;
+                // MathUtils.circleIntersectAABB reuses a single pooled
+                // result object (see MathUtils._hitResult) -- col.px/py/dist
+                // are read out and used immediately below, before any next
+                // loop iteration could overwrite them, same as every other
+                // caller of this function elsewhere in the file.
+                let angToPoint = Math.atan2(col.py - this.y, col.px - this.x);
+                if (Math.abs(MathUtils.angleDifference(angToPoint, this.angle)) > DRILL_CONE) continue;
+                if (col.dist < bestDist) {
+                    bestDist = col.dist;
+                    bestWall = wall;
+                    bestPx = col.px;
+                    bestPy = col.py;
+                }
+            }
+
+            if (bestWall) {
+                this.isDrilling = true;
+                const DRILL_DPS = 140; // damage/sec -- see _wallCellPlan's cellMax comment for how this lines up against crumbling/light/reinforced cell toughness
+                game.map.damageWallPoint(bestWall, bestPx, bestPy, DRILL_DPS * dt);
+
+                // Sparks kicked back off the contact point, roughly away
+                // from the wall surface -- reuses the same addParticle/
+                // pooled-particle path bullet impacts already use, so this
+                // is bounded by the same particle cap as everything else.
+                if (Math.random() < 0.9) {
+                    let sparkAngle = this.angle + Math.PI + (Math.random() - 0.5) * 1.6;
+                    let spd = MathUtils.rand(60, 220);
+                    game.addParticle(bestPx, bestPy, Math.cos(sparkAngle) * spd, Math.sin(sparkAngle) * spd, '#ffe066', 0.22, MathUtils.rand(1.5, 3));
+                }
+                if (Math.random() < 0.35) {
+                    game.addParticle(bestPx, bestPy, (Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40, bestWall.colorMain || '#8a7a63', 0.3, MathUtils.rand(1.5, 2.5));
+                }
+
+                // Repeating one-shot grind sound on a countdown timer --
+                // deliberately NOT a persistent oscillator (see the
+                // drillSoundTimer field comment in the constructor for why):
+                // nothing to explicitly stop/leak if this stops running
+                // mid-drill for any reason.
+                this.drillSoundTimer -= dt;
+                if (this.drillSoundTimer <= 0) {
+                    audio.playDrill(0.5);
+                    this.drillSoundTimer = 0.11;
+                }
+            } else {
+                this.isDrilling = false;
+                this.drillSoundTimer = 0;
+            }
+        } else {
+            this.isDrilling = false;
+            this.drillSoundTimer = 0;
         }
 
         if (this.energyDrinkTimer > 0) {
@@ -8134,6 +8761,17 @@ class Player extends Entity {
         const exoStaminaEfficiency = Math.max(0.70, 1.0 - exoServosLvl * 0.06);
         runDrainRate *= exoStaminaEfficiency;
 
+        // REBALANCE (Phase 4): speed-upgrade ranks 3-4 are STAMINA ECONOMY
+        // ranks -- each gives +25% stamina regen and -15% sprint drain
+        // (sprint longer, recover faster). Ranks 1-2 keep their +12% accel
+        // (see curAccel below).
+        const staminaRanks = Math.max(0, (this.speedUpgrades || 0) - 2);
+        if (staminaRanks > 0) {
+            regenRate *= 1 + 0.25 * staminaRanks;
+            walkRegenRate *= 1 + 0.25 * staminaRanks;
+            runDrainRate *= 1 - 0.15 * staminaRanks;
+        }
+
         let healthRegenFactor = 1.0;
         let healthLossFactor = 1.0;
         
@@ -8195,7 +8833,23 @@ class Player extends Entity {
         // this.speedPenalty (total inventory weight) -- this only applies
         // while the weapon is actually equipped, not just carried.
         let weaponMoveSpeedMult = AIM_WEIGHT.WEAPON_MOVE_SPEED_MULT[this.weapon.name] || 1.0;
-        let curAccel = this.accel * (1.0 + this.speedUpgrades * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff * exoServosAccelMulti * weaponMoveSpeedMult;
+        // REBALANCE (Phase 4): only the first two speed ranks raise accel
+        // (+12% each); ranks 3-4 became stamina-economy ranks (see the
+        // regen/drain block above) -- mobility WINDOWS you manage instead of
+        // permanent twitch speed (handoff lever #4). Total run power stays
+        // comparable, and Phase 2's exhaustion-punish AI makes the stamina
+        // ranks genuinely valuable.
+        // Directional movement scaling (see AIM_WEIGHT.MOVE_*_MULT):
+        // 1.0 forward -> STRAFE at 90deg -> BACKPEDAL at 180deg, piecewise
+        // linear on the dot of move direction vs body facing.
+        let directionalMult = 1.0;
+        if (moveX !== 0 || moveY !== 0) {
+            let alignDot = moveX * Math.cos(this.moveFacingAngle) + moveY * Math.sin(this.moveFacingAngle);
+            directionalMult = alignDot >= 0
+                ? AIM_WEIGHT.MOVE_STRAFE_MULT + (1.0 - AIM_WEIGHT.MOVE_STRAFE_MULT) * alignDot
+                : AIM_WEIGHT.MOVE_STRAFE_MULT + (AIM_WEIGHT.MOVE_STRAFE_MULT - AIM_WEIGHT.MOVE_BACKPEDAL_MULT) * alignDot;
+        }
+        let curAccel = this.accel * directionalMult * (1.0 + Math.min(2, this.speedUpgrades) * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff * exoServosAccelMulti * weaponMoveSpeedMult;
         
         // Combat Dive: "cannot change your movement direction" mid-dive --
         // skip the normal steering accel entirely so held WASD can't redirect
@@ -8404,6 +9058,53 @@ class Player extends Entity {
         let appliedStep = (Math.abs(bodyDiff) <= maxStep) ? bodyDiff : Math.sign(bodyDiff) * maxStep;
         this.moveFacingAngle += appliedStep;
         this.moveFacingAngle = Math.atan2(Math.sin(this.moveFacingAngle), Math.cos(this.moveFacingAngle));
+
+        // ==== Body-movement alignment (see AIM_WEIGHT.BODY_ALIGN_*) ====
+        // Runs AFTER the aim-driven step and is weighted by (1-engagement),
+        // so the moment aim is genuinely dragging the body (outside cone)
+        // this contributes nothing. Uses actual velocity, not input intent,
+        // so it works identically for screen-relative and player-relative
+        // control schemes (in player-relative mode velocity is already
+        // aligned with facing, making this a natural no-op).
+        // Deliberately NOT folded into moveFacingAngularVelocity below:
+        // Heavy Barrel Pivot reads that field, and a straight-line run
+        // re-centering the torso should not add weapon sway -- the aim
+        // channel's feel stays byte-identical.
+        if (!this.isDiving) {
+            let travelSpeed = Math.hypot(this.vx, this.vy);
+            if (travelSpeed > AIM_WEIGHT.BODY_ALIGN_MIN_SPEED && engagement < 1) {
+                let moveAngle = Math.atan2(this.vy, this.vx);
+                let alignDiff = MathUtils.angleDifference(moveAngle, this.moveFacingAngle);
+                let alignCap = (AIM_WEIGHT.BODY_ALIGN_RATE_DEG_PER_SEC * Math.PI / 180) * dt;
+                let alignStep = MathUtils.clamp(alignDiff * AIM_WEIGHT.BODY_ALIGN_SPRING * dt, -alignCap, alignCap);
+                alignStep *= (1 - engagement);
+                let newBody = this.moveFacingAngle + alignStep;
+                // Aim-priority clamp: never rotate the body far enough to
+                // push the current aim outside its margin of the cone.
+                let aimOff = MathUtils.angleDifference(targetAngle, newBody);
+                let limit = coneRad * AIM_WEIGHT.BODY_ALIGN_CONE_MARGIN;
+                if (Math.abs(aimOff) > limit) {
+                    let aimOffBefore = MathUtils.angleDifference(targetAngle, this.moveFacingAngle);
+                    if (Math.abs(aimOff) < Math.abs(aimOffBefore)) {
+                        // The step REDUCES the aim offset (re-centering back
+                        // toward the aim) -- always allowed, even while the
+                        // offset is still past the margin. Freezing here was
+                        // the bug that stalled re-centering at the cone-edge
+                        // trail equilibrium.
+                    } else if (Math.abs(aimOffBefore) <= limit) {
+                        // The step is what pushed aim past the margin: stop
+                        // exactly at the boundary.
+                        newBody = targetAngle - Math.sign(aimOff) * limit;
+                    } else {
+                        // Aim already past the margin and the step would
+                        // push it further out: yield entirely to the aim
+                        // channel.
+                        newBody = this.moveFacingAngle;
+                    }
+                }
+                this.moveFacingAngle = Math.atan2(Math.sin(newBody), Math.cos(newBody));
+            }
+        }
         // Signed rad/s the BODY is actually turning this frame, post cone +
         // swing-rate cap. Heavy Barrel Pivot reads THIS instead of
         // aimAngularVelocity (see applySprintStaminaAndMove()) -- with the
@@ -8720,7 +9421,16 @@ class Player extends Entity {
         }
         
         audio.playShoot(this.weapon.name, this.x, this.y);
-        
+
+        // REBALANCE (Phase 4): Fire Rate OC ranks 3-7 are HANDLING ranks --
+        // each gives -7% fired spread and -6% physical kickback (up to
+        // -35%/-30% at rank 7). Consumed below at recoilForce/focusSpread.
+        let handlingLvl = 0;
+        if (game && game.runOverclocks) {
+            const hOc = game.runOverclocks[this.isPlayer2 ? 'p2' : 'p1'];
+            if (hOc) handlingLvl = Math.min(5, Math.max(0, (hOc.fireRate || 0) - 2));
+        }
+
         let ejectAngle = this.angle - Math.PI*0.6;
         let caseX = this.x + Math.cos(this.angle)*4 - Math.sin(this.angle)*6;
         let caseY = this.y + Math.sin(this.angle)*4 + Math.cos(this.angle)*6;
@@ -8736,6 +9446,7 @@ class Player extends Entity {
         // which felt backwards for a light, fast weapon. Halved from that
         // default.
         let recoilForce = this.weapon.name === 'Shotgun' ? 280 : this.weapon.name === 'LMG' ? 120 : this.weapon.name === 'Sniper' ? 800 : this.weapon.name === 'M1A' ? 200 : this.weapon.name === 'SMG' ? 40 : 80;
+        recoilForce *= (1 - 0.06 * handlingLvl); // Phase 4 handling ranks
         this.vx -= Math.cos(this.angle) * recoilForce;
         this.vy -= Math.sin(this.angle) * recoilForce;
         if (this.camera) {
@@ -8793,6 +9504,7 @@ class Player extends Entity {
         // (which moves this.angle itself) and the damage/speed bumps in
         // Bullet.init().
         let focusSpread = this.weapon.spread * (1 - AIM_WEIGHT.FOCUS_SPREAD_MULT * this.focusLevel);
+        focusSpread *= (1 - 0.07 * handlingLvl); // Phase 4 handling ranks
         for(let i=0; i<pellets; i++) {
             let spreadAngle = baseFireAngle + (Math.random() - 0.5) * focusSpread;
             
@@ -9165,6 +9877,15 @@ class Enemy extends Entity {
         this.cachedVisibleToPlayers = false;
         this.cachedReactingToDrone = false;
         this.reactingToDrone = false;
+        // TACTICAL WAVES (Phase 2): role + push state must not leak across
+        // pool reuse -- a pooled flanker from a standard run would otherwise
+        // keep flanking in NOW mode / sandbox spawns.
+        this.tactic = null;
+        this.cachedPushing = false;
+        // TACTICAL PERKS (Phase 3): per-enemy status timers
+        this.markedTimer = 0;      // Combat Scanner: tracked through walls
+        this.suppressedTimer = 0;  // Suppressing Fire: return fire blocked
+        this.enragedTimer = 0;     // chaos-perk aggro cost: brief speed surge
         
         // Game-feel variables
         this.muzzleFlashTimer = 0;
@@ -9221,6 +9942,11 @@ class Enemy extends Entity {
             this.slowTimer -= dt;
             if (this.slowTimer <= 0) this.slowTimer = 0;
         }
+
+        // TACTICAL PERKS (Phase 3): status timer decay
+        if (this.markedTimer > 0) { this.markedTimer -= dt; if (this.markedTimer < 0) this.markedTimer = 0; }
+        if (this.suppressedTimer > 0) { this.suppressedTimer -= dt; if (this.suppressedTimer < 0) this.suppressedTimer = 0; }
+        if (this.enragedTimer > 0) { this.enragedTimer -= dt; if (this.enragedTimer < 0) this.enragedTimer = 0; }
 
         // FPV OPERATOR MODE: exposed/marked timer decay -- see
         // FPVDrone.detonate() (sets it) and Entity.takeDamage (reads it for
@@ -9400,6 +10126,26 @@ class Enemy extends Entity {
                 }
             }
 
+            // TACTICAL WAVES (Phase 2): flanker approach. A squad member
+            // tagged 'flank_left'/'flank_right' (see _updateTacticalSpawning)
+            // arcs toward a point offset ~60deg around its target instead of
+            // beelining, committing to a direct approach once inside
+            // FLANK_DIST. Movement steering only -- combat ranging/firing
+            // (targetX/distToTarget below) stays on the real target, same
+            // separation the operator route override uses. Standard wave
+            // mode only; tactic is never assigned elsewhere and is cleared
+            // on pool reuse (see init()).
+            if (this.tactic && game && !game.operatorMode && !this.dead) {
+                let fdx = this.x - targetX, fdy = this.y - targetY;
+                let fd = Math.hypot(fdx, fdy);
+                if (fd > TACTICAL_TUNING.FLANK_DIST) {
+                    let side = this.tactic === 'flank_left' ? -1 : 1;
+                    let arcAng = Math.atan2(fdy, fdx) + side * 1.05;
+                    moveTargetX = Math.max(40, Math.min(game.mapW - 40, targetX + Math.cos(arcAng) * TACTICAL_TUNING.FLANK_OFFSET));
+                    moveTargetY = Math.max(40, Math.min(game.mapH - 40, targetY + Math.sin(arcAng) * TACTICAL_TUNING.FLANK_OFFSET));
+                }
+            }
+
             let dxToT = targetX - this.x;
             let dyToT = targetY - this.y;
             let distToTarget = Math.sqrt(dxToT*dxToT + dyToT*dyToT);
@@ -9567,6 +10313,19 @@ class Enemy extends Entity {
             this.cachedMoveAngle = moveAngle;
             this.cachedVisibleToPlayers = visibleToPlayers;
 
+            // TACTICAL WAVES (Phase 2): coordinated push. From PUSH_MIN_WAVE
+            // onward, an enemy with LOS to an EXHAUSTED player (stamina
+            // crash) inside PUSH_RANGE suspends its keep-distance behavior
+            // and surges in. Turns stamina management into a real tactical
+            // resource: sprint discipline matters because the AI punishes
+            // the crash. Standard wave mode only.
+            this.cachedPushing = false;
+            if (game && !game.operatorMode && !game.nowMode && game.wave >= TACTICAL_TUNING.PUSH_MIN_WAVE &&
+                target && target.isExhausted === true && hasLOS && !runFromDrone &&
+                distToTarget < TACTICAL_TUNING.PUSH_RANGE) {
+                this.cachedPushing = true;
+            }
+
             this.cachedReactingToDrone = false;
             if (target instanceof FPVDrone) {
                 this.cachedReactingToDrone = true;
@@ -9580,7 +10339,9 @@ class Enemy extends Entity {
         this.angle = this.cachedMoveAngle;
         this.reactingToDrone = this.cachedReactingToDrone || false;
 
-        if (this.cachedVisibleToPlayers) {
+        if (this.cachedVisibleToPlayers || this.markedTimer > 0) {
+            // Phase 3: Combat Scanner keeps marked enemies rendered even
+            // without player line of sight -- that IS the perk.
             this.opacity = Math.min(1.0, this.opacity + dt * 6);
         } else {
             this.opacity = Math.max(0.0, this.opacity - dt * 3);
@@ -9647,7 +10408,11 @@ class Enemy extends Entity {
         }
 
         let slowFactor = (this.slowTimer > 0) ? 0.5 : 1.0;
-        let speedScalar = (this.cachedRunFromDrone ? 1.5 : 1.0) * slowFactor;
+        // Phase 2: pushing enemies surge (see cachedPushing above).
+        // Phase 3: enraged enemies (chaos-perk aggro cost) also surge.
+        let pushMult = this.cachedPushing ? TACTICAL_TUNING.PUSH_SPEED_MULT : 1.0;
+        if (this.enragedTimer > 0) pushMult = Math.max(pushMult, 1.2);
+        let speedScalar = (this.cachedRunFromDrone ? 1.5 : pushMult) * slowFactor;
         let moveX = Math.cos(this.cachedMoveAngle) * (this.speed * speedScalar) + sepX;
         let moveY = Math.sin(this.cachedMoveAngle) * (this.speed * speedScalar) + sepY;
 
@@ -9720,7 +10485,7 @@ class Enemy extends Entity {
                 }
             }
         } else {
-            if (this.cachedHasLOS && this.cachedDistToTarget < 240 && !this.cachedRunFromDrone) {
+            if (this.cachedHasLOS && this.cachedDistToTarget < 240 && !this.cachedRunFromDrone && !this.cachedPushing) {
                 this.vx -= Math.cos(this.angle) * this.speed * dt * 1.5;
                 this.vy -= Math.sin(this.angle) * this.speed * dt * 1.5;
             } else {
@@ -9749,7 +10514,9 @@ class Enemy extends Entity {
                 inEngagementRange = this.cachedDistToTarget < engagementRange;
             }
 
-            if (this.cachedHasLOS && inEngagementRange && gameTime - this.lastFire > this.fireRate && !this.cachedRunFromDrone) {
+            if (this.cachedHasLOS && inEngagementRange && gameTime - this.lastFire > this.fireRate && !this.cachedRunFromDrone && !(this.suppressedTimer > 0)) {
+                // Phase 3: Suppressing Fire perk blocks return fire while
+                // suppressedTimer runs (set on player bullet hit).
                 this.fire(game);
                 this.lastFire = gameTime;
             }
@@ -10129,6 +10896,36 @@ class Enemy extends Entity {
             ctx.restore();
         }
 
+        // TACTICAL PERKS (Phase 3): Combat Scanner mark -- steady cyan ring
+        // so a marked enemy reads as "tracked" even through walls.
+        if (this.markedTimer > 0) {
+            let scx = this.x - cam.x, scy = this.y - cam.y;
+            let fade = Math.min(1, this.markedTimer / 1.0);
+            ctx.save();
+            ctx.globalAlpha = 0.5 * fade;
+            ctx.strokeStyle = '#00e5ff';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 8, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+        // TACTICAL PERKS (Phase 3): enraged pulse (chaos-perk aggro cost) --
+        // fast red flicker warns that this enemy is surging.
+        if (this.enragedTimer > 0) {
+            let scx = this.x - cam.x, scy = this.y - cam.y;
+            let glowAlpha = 0.25 + 0.2 * Math.sin((game ? game.gameTime : 0) * 14.0);
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, glowAlpha);
+            ctx.strokeStyle = '#ff2a5f';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 5, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
         // FPV OPERATOR MODE: "marked" indicator -- pulsing amber ring on
         // any enemy currently taking bonus damage (see FPVDrone.detonate's
         // operatorExposedTimer hook + Entity.takeDamage's multiplier).
@@ -10348,7 +11145,13 @@ class Enemy extends Entity {
                 ));
             }
         } else {
-            let amount = Math.round(this.scoreVal * game.cashMultiplier);
+            // `amount` is read again by the elite-drop text further below --
+            // it used to be `let`-scoped to this block, which made every
+            // elite kill in standard mode throw a ReferenceError and abort
+            // the rest of onDeath (drops/text/perk-case roll never ran; the
+            // rAF error-recovery masked the crash). Hoisted to this._deathCash.
+            this._deathCash = Math.round(this.scoreVal * game.cashMultiplier);
+            let amount = this._deathCash;
             game.player.cash += amount;
             if (game.isTwoPlayer && game.player2) {
                 game.player2.cash += amount;
@@ -10357,6 +11160,7 @@ class Enemy extends Entity {
         audio.playHit(this.x, this.y);
         
         if ((game.player && game.player.perkVolatileCorpses) || (game.isTwoPlayer && game.player2 && game.player2.perkVolatileCorpses)) {
+            game.enrageEnemiesNear(this.x, this.y, 220); // Phase 3 chaos aggro cost
             if (audio.playMiniExplosion) audio.playMiniExplosion(this.x, this.y);
             game.spawnShockwave(this.x, this.y, 90, 0.25);
             game.applyExplosionShake(this.x, this.y, 12, 100);
@@ -10415,7 +11219,7 @@ class Enemy extends Entity {
                 let eliteAmt_vx = (Math.random() - 0.5) * 60;
                 game.floatingTexts.push(game.spawnFloatingText(
                     this.x, this.y - 20,
-                    `ELITE +$${amount}!`,
+                    `ELITE +$${this._deathCash || 0}!`,
                     '#ffcc00', 2.0,
                     eliteAmt_vx, -90, 200, true
                 ));
@@ -10536,7 +11340,10 @@ class Boss extends Enemy {
 
     hasLineOfSight(target) {
         if (!target) return false;
-        return !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
+        // PERF: spatially-filtered candidate walls along the actual ray
+        // instead of the full map wall array (see getWallsAlongSegment).
+        let segWalls = game.map.getWallsAlongSegment(this.x, this.y, target.x, target.y);
+        return !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
     }
 
     // Shared cash/removal/banner sequence. Subclasses can override for extra
@@ -10615,10 +11422,12 @@ class InfiltratorBoss extends Boss {
     onDeath() {
         // Extra flavor beat before the shared payout logic: a brief cloak-
         // flicker "system failure" burst instead of just vanishing.
+        // STABILITY: game-time queue instead of setTimeout so the burst
+        // can't play over the pause/main menu (see queueGameTimeAction).
         for (let i = 0; i < 3; i++) {
-            setTimeout(() => {
-                if (game) game.addParticle(this.x, this.y, 0, 0, '#39ff14', 0.3, 10);
-            }, i * 90);
+            if (game) game.queueGameTimeAction(i * 0.09, () => {
+                game.addParticle(this.x, this.y, 0, 0, '#39ff14', 0.3, 10);
+            });
         }
         super.onDeath();
     }
@@ -10956,12 +11765,14 @@ class ApcBoss extends Boss {
     onDeath() {
         this.speed = 0;
         this.vx = 0; this.vy = 0;
+        // STABILITY: game-time queue instead of setTimeout so the delayed
+        // explosion audio can't play over the pause/main menu after an
+        // abandon (see queueGameTimeAction).
         for (let i = 0; i < 4; i++) {
-            setTimeout(() => {
-                if (!game) return;
+            if (game) game.queueGameTimeAction(i * 0.13, () => {
                 audio.playExplosion(0.85, this.x, this.y);
                 game.addParticle(this.x, this.y, 0, 0, '#ff5500', 0.3, 8);
-            }, i * 130);
+            });
         }
         super.onDeath();
     }
@@ -12172,6 +12983,16 @@ class Bullet {
                         }
                     }
                     
+                    // TACTICAL PERKS (Phase 3): Ambusher -- positioning
+                    // reward. Bonus applies when the struck enemy has no
+                    // line of sight to its own target (cachedHasLOS, from
+                    // the throttled AI tick) -- i.e. the player worked an
+                    // angle the enemy isn't covering. Enemies only.
+                    if (this.isPlayerBullet && this.shooter && this.shooter.perkAmbusher &&
+                        ent instanceof Enemy && ent.cachedHasLOS === false) {
+                        calculatedDmg *= 1.35;
+                    }
+
                     let wasDeadBefore = ent.dead;
                     if (ent instanceof ApcBoss) {
                         // Route damage to whichever seat the shot actually
@@ -12255,6 +13076,14 @@ class Bullet {
                         if (this.shooter.perkVampiric) {
                             this.shooter.hp = Math.min(this.shooter.maxHp, this.shooter.hp + 1);
                             game.updateHUD();
+                        }
+                        // TACTICAL PERKS (Phase 3): on-hit information/
+                        // control effects. Scanner marks the enemy through
+                        // walls; Suppression stops its return fire briefly
+                        // (bosses have their own fire logic and resist).
+                        if (ent instanceof Enemy && !ent.dead) {
+                            if (this.shooter.perkCombatScanner) ent.markedTimer = 4.0;
+                            if (this.shooter.perkSuppression && !(ent instanceof Boss)) ent.suppressedTimer = 1.5;
                         }
                         if (this.shooter.perkExplosiveRounds) {
                             this.explode(game);
@@ -12586,6 +13415,13 @@ class Bullet {
         game.map.damageWallsNear(this.x, this.y, blastRadius, damage * 1.3);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
 
+        // TACTICAL PERKS (Phase 3): chaos aggro cost. Perk-driven player
+        // explosions enrage nearby enemies (see Game.enrageEnemiesNear) --
+        // the crowd damage stays, but the crowd answers faster.
+        if (this.isPlayerBullet && this.shooter && (this.shooter.perkExplosiveRounds || this.isFragment)) {
+            game.enrageEnemiesNear(this.x, this.y, 220);
+        }
+
         // Shrapnel Rounds perk: fling a few low-damage fragments outward,
         // reusing the exact fragment-spawn pattern ShrapnelGrenade.explode()
         // already uses (spawnBullet + push into game.bullets). Each fragment
@@ -12742,7 +13578,7 @@ class FPVDrone {
                             let rawVol = 1.0 - dist / maxAudibleDist;
                             vol1 = 0.02 + 0.98 * rawVol;
                             
-                            let p1Blocked = walls.some(w => MathUtils.lineIntersectAABB(game.player.x, game.player.y, this.x, this.y, w));
+                            let p1Blocked = game.map.getWallsAlongSegment(game.player.x, game.player.y, this.x, this.y).some(w => MathUtils.lineIntersectAABB(game.player.x, game.player.y, this.x, this.y, w)); // PERF: segment-filtered
                             if (p1Blocked) {
                                 vol1 *= 0.4;
                                 filterFreq1 = 350;
@@ -12772,7 +13608,7 @@ class FPVDrone {
                             let rawVol = 1.0 - dist / maxAudibleDist;
                             vol2 = 0.02 + 0.98 * rawVol;
                             
-                            let p2Blocked = walls.some(w => MathUtils.lineIntersectAABB(game.player2.x, game.player2.y, this.x, this.y, w));
+                            let p2Blocked = game.map.getWallsAlongSegment(game.player2.x, game.player2.y, this.x, this.y).some(w => MathUtils.lineIntersectAABB(game.player2.x, game.player2.y, this.x, this.y, w)); // PERF: segment-filtered
                             if (p2Blocked) {
                                 vol2 *= 0.4;
                                 filterFreq2 = 350;
@@ -13261,7 +14097,11 @@ class AutoTurret extends Entity {
             if (h.dead) continue;
             let d = Math.hypot(h.x - this.x, h.y - this.y);
             if (d < nearestDist) {
-                let hasLOS = !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w));
+                // PERF: per-candidate segment-filtered walls (was: full wall
+                // array per hostile per frame -- the single hottest LOS scan
+                // in the game on dense maps).
+                let segWalls = game.map.getWallsAlongSegment(this.x, this.y, h.x, h.y);
+                let hasLOS = !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w));
                 if (hasLOS) {
                     nearestDist = d;
                     nearestHostile = h;
@@ -14295,7 +15135,7 @@ class MiniDrone extends Entity {
                     
                     let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                     if (d < nearestDist) {
-                        let hasLOS = !walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w));
+                        let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment)
                         if (hasLOS) {
                             nearestDist = d;
                             nearestEnemy = enemy;
@@ -14312,7 +15152,7 @@ class MiniDrone extends Entity {
                         
                         let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                         if (d < nearestDist) {
-                            let hasLOS = !walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w));
+                            let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment)
                             if (hasLOS) {
                                 nearestDist = d;
                                 nearestEnemy = enemy;
@@ -14444,7 +15284,7 @@ class MiniDrone extends Entity {
                     if (enemy.dead) continue;
                     let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                     if (d < nearestDist) {
-                        let hasLOS = !walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w));
+                        let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment)
                         if (hasLOS) {
                             nearestDist = d;
                             nearestEnemy = enemy;
@@ -14495,7 +15335,7 @@ class MiniDrone extends Entity {
                         let rawVol = 1.0 - pdist / maxAudibleDist;
                         vol1 = 0.02 + 0.98 * rawVol;
                         
-                        let p1Blocked = walls.some(w => MathUtils.lineIntersectAABB(game.player.x, game.player.y, this.x, this.y, w));
+                        let p1Blocked = game.map.getWallsAlongSegment(game.player.x, game.player.y, this.x, this.y).some(w => MathUtils.lineIntersectAABB(game.player.x, game.player.y, this.x, this.y, w)); // PERF: segment-filtered
                         if (p1Blocked) {
                             vol1 *= 0.4;
                             filterFreq1 = 450;
@@ -14525,7 +15365,7 @@ class MiniDrone extends Entity {
                         let rawVol = 1.0 - pdist / maxAudibleDist;
                         vol2 = 0.02 + 0.98 * rawVol;
                         
-                        let p2Blocked = walls.some(w => MathUtils.lineIntersectAABB(game.player2.x, game.player2.y, this.x, this.y, w));
+                        let p2Blocked = game.map.getWallsAlongSegment(game.player2.x, game.player2.y, this.x, this.y).some(w => MathUtils.lineIntersectAABB(game.player2.x, game.player2.y, this.x, this.y, w)); // PERF: segment-filtered
                         if (p2Blocked) {
                             vol2 *= 0.4;
                             filterFreq2 = 450;
@@ -15380,7 +16220,40 @@ class Item {
         this.t = 0;
         this.vx = 0;
         this.vy = 0;
+        // Wave this item dropped on. Drives the visibility fade and
+        // eventual despawn below -- by wave 25-30+ the ground was getting
+        // buried in accumulated loot (money, guns, perk cases) with no
+        // pressure to actually go collect any of it. Aging items out gives
+        // a reason to grab loot promptly instead of letting it pile up.
+        this.spawnWave = (typeof game !== 'undefined' && game) ? game.wave : 1;
     }
+
+    // Waves elapsed since this item dropped. 0 = dropped this wave.
+    waveAge() {
+        let curWave = (typeof game !== 'undefined' && game) ? game.wave : this.spawnWave;
+        return curWave - this.spawnWave;
+    }
+
+    // Fade schedule: full visibility the wave it drops, 2/3 the next wave,
+    // 1/3 the wave after that, then gone. Sandbox/testing-mode fixtures
+    // (see Game.init's isTestingMode weapon rack) are permanent test
+    // fixtures, not run loot, so they never fade.
+    fadeAlpha() {
+        if (this.isSandbox) return 1;
+        let age = this.waveAge();
+        if (age <= 0) return 1;
+        if (age === 1) return 2 / 3;
+        if (age === 2) return 1 / 3;
+        return 0;
+    }
+
+    // True once an item has aged past its 3-wave window and should be
+    // culled from the ground entirely.
+    isExpired() {
+        if (this.isSandbox) return false;
+        return this.waveAge() >= 3;
+    }
+
     update(dt, activePlayers) {
         this.t += dt;
         if (activePlayers) {
@@ -15428,6 +16301,12 @@ class Item {
         this.y += this.vy * dt;
     }
     draw(ctx, cam) {
+        let fadeAlpha = this.fadeAlpha();
+        if (fadeAlpha <= 0) return;
+
+        ctx.save();
+        ctx.globalAlpha = fadeAlpha;
+
         drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.3, this.r * 0.4);
 
         let scx = this.x - cam.x;
@@ -15480,6 +16359,9 @@ class Item {
         }
         ctx.restore();
         ctx.shadowBlur = 0;
+
+        ctx.restore();
+        ctx.globalAlpha = 1;
     }
 }
 
@@ -15635,10 +16517,18 @@ class ExplosiveBarrel {
                 if (dist < blastRadius * 0.85) {
                     other.dead = true; // claim immediately so nothing double-triggers it
                     let delay = 0.08 + (dist / blastRadius) * 0.12;
-                    setTimeout(() => {
-                        other.dead = false; // allow explode() to run its course once
-                        other.explode(game, chainDepth + 1);
-                    }, delay * 1000);
+                    // STABILITY: this used to be a wall-clock setTimeout,
+                    // which (a) fired DURING pause -- dealing damage and
+                    // playing explosion audio while the pause menu was up if
+                    // you paused inside the 80-200ms cascade window -- and
+                    // (b) fired AFTER abandoning a run, playing explosion
+                    // effects/sound over the main menu (same bug class as
+                    // the abandoned swarm-drone hum fixed previously).
+                    // Now queued as a game-time fuse ticked in Game.update's
+                    // barrel section, which only runs while unpaused and
+                    // 'playing', and is cleared on every run reset.
+                    if (!game.pendingBarrelChains) game.pendingBarrelChains = [];
+                    game.pendingBarrelChains.push({ barrel: other, fuse: delay, depth: chainDepth + 1 });
                 }
             }
         }
@@ -15805,6 +16695,13 @@ class Game {
         
         this.mapW = 2200; this.mapH = 2200;
         this.permanentMarks = [];
+        // Cap on blood/casing/debris/scorch marks kept on the ground at
+        // once (see _pushPermanentMark). Was a hardcoded 3000, which at
+        // higher wave counts was trimming visible gore before it should
+        // have aged out naturally. User-adjustable 0-300000 via the
+        // options menu (setMaxPermanentMarks); loadGameData() restores
+        // whatever the player last set.
+        this.maxPermanentMarks = 30000;
         
         this.input = { keys: {}, mx: 0, my: 0, mouseDown: false };
         this.state = 'start';
@@ -16055,6 +16952,228 @@ class Game {
     //    rather than a screen full of grunts at once.
     //  - Composition drifts toward grenadiers/stalkers at higher waves
     //    instead of just spawning more of the same grunt.
+    // ==== TACTICAL WAVES: squad-based spawning (standard wave mode only) ====
+    // Replaces the constant-drip spawn faucet with squad releases gated by a
+    // live-enemy cap. See TACTICAL_TUNING for the design rationale. State
+    // lives in this.squadState (reset each wave in startNextWave).
+
+    // TACTICAL PERKS (Phase 3): the aggro cost attached to the chaos perk
+    // family. Player-perk explosions briefly enrage nearby non-boss enemies
+    // (+20% speed for 2.5s, red pulse ring) in the standard wave mode --
+    // AOE spam keeps its damage but surrenders the calm between squads.
+    // NOW mode (horde fantasy) and Operator mode (own AI economy) exempt.
+    enrageEnemiesNear(x, y, r) {
+        if (this.nowMode || this.operatorMode) return;
+        for (let e of this.enemies) {
+            if (e.dead || e instanceof Boss) continue;
+            let dx = e.x - x, dy = e.y - y;
+            if (dx * dx + dy * dy < r * r) e.enragedTimer = 2.5;
+        }
+    }
+
+    // Wave-scaled live-enemy cap. Swarm-mutator waves get a higher cap so
+    // that mutator keeps its "flood of 1-hp swarmers" identity.
+    _tacticalLiveCap() {
+        let cap = Math.min(TACTICAL_TUNING.LIVE_CAP_MAX,
+            Math.floor(TACTICAL_TUNING.LIVE_CAP_BASE + this.wave * TACTICAL_TUNING.LIVE_CAP_PER_WAVE));
+        if (this.activeMutator === 'swarm') cap = Math.round(cap * TACTICAL_TUNING.SWARM_CAP_MULT);
+        return cap;
+    }
+
+    // Rolls the composition of one squad as an array of EnemyTypes keys.
+    // Respects the existing archetype unlock waves (swarmer w2, enforcer w3,
+    // sapper w4, shotgun w5, sniper w10) but shifts weight toward tougher
+    // templates as waves climb -- "harder decisions per enemy" replaces
+    // "more enemies per second" as the lategame difficulty currency.
+    _rollSquadPlan() {
+        const w = this.wave;
+        if (this.activeMutator === 'swarm') {
+            // Swarm mutator: everything is a swarmer regardless of template.
+            let n = 4 + Math.floor(Math.random() * 3);
+            return new Array(n).fill('swarmer');
+        }
+        // [minWave, weightFn, members] -- weights favor heavier squads later.
+        const templates = [
+            [1,  () => Math.max(0.5, 3.0 - w * 0.25), ['grunt', 'grunt', 'grunt']],
+            [2,  () => Math.max(0.5, 2.5 - w * 0.15), ['grunt', 'grunt', 'swarmer', 'swarmer']],
+            [2,  () => 1.0,                            ['swarmer', 'swarmer', 'swarmer', 'swarmer']],
+            [3,  () => 1.0 + w * 0.10,                 ['enforcer', 'grunt', 'grunt']],
+            [4,  () => 0.8,                            ['sapper', 'grunt', 'grunt']],
+            [5,  () => 0.8 + w * 0.12,                 ['shotgun_grunt', 'shotgun_grunt', 'grunt']],
+            [6,  () => 0.6 + w * 0.12,                 ['enforcer', 'shotgun_grunt', 'grunt', 'grunt']],
+            [8,  () => 0.4 + w * 0.10,                 ['enforcer', 'enforcer', 'shotgun_grunt']],
+            [10, () => 0.4 + w * 0.14,                 ['sniper_grunt', 'grunt', 'grunt']],
+            [12, () => 0.3 + w * 0.12,                 ['sniper_grunt', 'enforcer', 'shotgun_grunt', 'grunt']],
+            [14, () => 0.2 + w * 0.10,                 ['sniper_grunt', 'sniper_grunt', 'enforcer', 'shotgun_grunt', 'grunt']]
+        ];
+        let pool = templates.filter(t => w >= t[0]);
+        let total = 0;
+        for (let t of pool) total += t[1]();
+        let r = Math.random() * total;
+        for (let t of pool) {
+            r -= t[1]();
+            if (r <= 0) return t[2].slice();
+        }
+        return pool[pool.length - 1][2].slice();
+    }
+
+    // Picks a validated edge spawn anchor for a whole squad (same edge-bias,
+    // player-distance, and wall-overlap rules as the old faucet spawner) and
+    // computes its compass bearing for the contact ping.
+    _pickSquadAnchor() {
+        const SPAWN_WALL_CHECK_R = 18;
+        let ex = 60, ey = 60, valid = false, attempts = 0;
+        while (!valid && attempts < 100) {
+            attempts++;
+            ex = Math.random() < 0.5 ? 60 : this.mapW - 60;
+            ey = Math.random() * (this.mapH - 120) + 60;
+            if (Math.random() < 0.5) {
+                ey = Math.random() < 0.5 ? 60 : this.mapH - 60;
+                ex = Math.random() * (this.mapW - 120) + 60;
+            }
+            valid = true;
+            if (this.player && !this.player.dead && Math.hypot(this.player.x - ex, this.player.y - ey) < 350) valid = false;
+            if (valid && this.isTwoPlayer && this.player2 && !this.player2.dead && Math.hypot(this.player2.x - ex, this.player2.y - ey) < 350) valid = false;
+            if (valid) {
+                let nearbyWalls = this.map.getWallsNear(ex, ey);
+                for (let wall of nearbyWalls) {
+                    if (MathUtils.circleIntersectAABB(ex, ey, SPAWN_WALL_CHECK_R, wall).hit) { valid = false; break; }
+                }
+            }
+        }
+        // Compass bearing relative to map center, for the contact ping.
+        let dx = ex - this.mapW / 2, dy = ey - this.mapH / 2;
+        let ns = '', ew = '';
+        if (Math.abs(dy) > this.mapH * 0.18) ns = dy < 0 ? 'NORTH' : 'SOUTH';
+        if (Math.abs(dx) > this.mapW * 0.18) ew = dx < 0 ? 'WEST' : 'EAST';
+        let bearing = (ns && ew) ? ns + '-' + ew : (ns || ew || 'CENTER');
+        return { x: ex, y: ey, bearing };
+    }
+
+    // Spawns one squad member near the anchor with the exact same wave HP/
+    // speed scaling and elite roll the faucet used. Members jitter around
+    // the anchor; any jittered point that lands in a wall or too close to a
+    // player falls back to the anchor itself (already validated).
+    _spawnSquadMember(typeKey, anchor) {
+        const SPAWN_WALL_CHECK_R = 18;
+        let ex = anchor.x, ey = anchor.y;
+        for (let attempts = 0; attempts < 8; attempts++) {
+            let jx = anchor.x + (Math.random() - 0.5) * 2 * TACTICAL_TUNING.SQUAD_JITTER;
+            let jy = anchor.y + (Math.random() - 0.5) * 2 * TACTICAL_TUNING.SQUAD_JITTER;
+            jx = Math.max(40, Math.min(this.mapW - 40, jx));
+            jy = Math.max(40, Math.min(this.mapH - 40, jy));
+            let ok = true;
+            if (this.player && !this.player.dead && Math.hypot(this.player.x - jx, this.player.y - jy) < 350) ok = false;
+            if (ok && this.isTwoPlayer && this.player2 && !this.player2.dead && Math.hypot(this.player2.x - jx, this.player2.y - jy) < 350) ok = false;
+            if (ok) {
+                let nearbyWalls = this.map.getWallsNear(jx, jy);
+                for (let wall of nearbyWalls) {
+                    if (MathUtils.circleIntersectAABB(jx, jy, SPAWN_WALL_CHECK_R, wall).hit) { ok = false; break; }
+                }
+            }
+            if (ok) { ex = jx; ey = jy; break; }
+        }
+
+        let chosenType = EnemyTypes[typeKey] || EnemyTypes.grunt;
+        if (this.activeMutator === 'swarm') chosenType = EnemyTypes.swarmer;
+
+        let enemy = this.spawnEnemy(ex, ey, chosenType);
+        let scaleHP = 1.0 + (this.wave - 1) * 0.04;
+        // Phase 2: speed scaling capped early (~wave 8) -- lategame
+        // difficulty comes from smarter squads (flankers, pushes, tougher
+        // composition), not permanently faster bodies. HP scaling unchanged.
+        let scaleSpeed = Math.min(TACTICAL_TUNING.SPEED_SCALE_MAX, 1.0 + (this.wave - 1) * 0.015);
+        if (this.activeMutator === 'swarm') {
+            enemy.hp = 1; enemy.maxHp = 1;
+        } else {
+            enemy.hp = Math.round(enemy.hp * scaleHP);
+            enemy.maxHp = enemy.hp;
+        }
+        enemy.speed = enemy.speed * scaleSpeed;
+
+        let forceElite = (this.activeMutator === 'juggernaut');
+        let forceNoElite = (this.activeMutator === 'swarm');
+        if (!forceNoElite && (forceElite || Math.random() < 0.04)) {
+            enemy.isElite = true;
+            enemy.hp = Math.round(enemy.hp * 2.2);
+            enemy.maxHp = enemy.hp;
+            enemy.r *= 1.45;
+        }
+        this.enemies.push(enemy);
+        this.enemiesToSpawn--;
+        return enemy;
+    }
+
+    _updateTacticalSpawning(dt) {
+        let ss = this.squadState;
+        if (!ss) {
+            ss = this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: 0.5 };
+        }
+
+        // Mid-squad: keep releasing members on the short member interval.
+        // The live cap deliberately does NOT interrupt a squad mid-release --
+        // squads arrive as a unit; the cap gates the NEXT squad instead.
+        if (ss.plan.length > 0) {
+            ss.memberTimer -= dt;
+            if (ss.memberTimer <= 0 && this.enemiesToSpawn > 0) {
+                let e = this._spawnSquadMember(ss.plan.shift(), ss.anchor);
+                // Phase 2: role assignment. The squad's pointman always goes
+                // direct; the rest roll a wave-scaled chance to be flankers,
+                // alternating sides so a squad envelops instead of stacking
+                // on one shoulder. Swarmers/sappers keep their own behavior.
+                if (e && e.type !== 'swarmer' && e.type !== 'sapper') {
+                    let isPointman = (ss.rolesAssigned || 0) === 0;
+                    let flankChance = Math.min(TACTICAL_TUNING.FLANK_MAX,
+                        TACTICAL_TUNING.FLANK_BASE + this.wave * TACTICAL_TUNING.FLANK_PER_WAVE);
+                    if (!isPointman && Math.random() < flankChance) {
+                        ss.flankSide = -(ss.flankSide || 1);
+                        e.tactic = ss.flankSide > 0 ? 'flank_right' : 'flank_left';
+                    }
+                }
+                ss.rolesAssigned = (ss.rolesAssigned || 0) + 1;
+                ss.memberTimer = TACTICAL_TUNING.SQUAD_MEMBER_INTERVAL;
+            }
+            if (this.enemiesToSpawn <= 0) ss.plan.length = 0;
+            return;
+        }
+
+        // Between squads: wait out the gap, then release the next squad only
+        // once the WHOLE squad fits under the live-enemy cap -- the cap is a
+        // hard ceiling on simultaneous pressure, so a staged squad waits for
+        // the player to clear room rather than overshooting. The gap timer
+        // keeps counting while capped, so clearing the field is immediately
+        // rewarded. The staged plan is rolled once and held (not re-rolled
+        // every frame while waiting).
+        ss.gapTimer -= dt;
+        if (ss.gapTimer > 0) return;
+        if (!ss.staged) {
+            ss.staged = this._rollSquadPlan();
+            if (ss.staged.length > this.enemiesToSpawn) ss.staged.length = Math.max(1, this.enemiesToSpawn);
+        }
+        if (this.enemies.length + ss.staged.length > this._tacticalLiveCap()) return;
+
+        let plan = ss.staged;
+        ss.staged = null;
+        ss.plan = plan;
+        ss.rolesAssigned = 0;
+        ss.anchor = this._pickSquadAnchor();
+        ss.memberTimer = 0; // first member releases this frame
+        ss.gapTimer = MathUtils.rand(TACTICAL_TUNING.SQUAD_GAP_MIN, TACTICAL_TUNING.SQUAD_GAP_MAX);
+
+        // Contact ping: readable threat info is what makes the pressure
+        // tactical instead of chaotic (handoff lever #6). World-space text
+        // above each living player + a quiet radio-blip.
+        if (TACTICAL_TUNING.CONTACT_PING) {
+            let msg = 'CONTACT: ' + ss.anchor.bearing;
+            for (let p of [this.player, this.isTwoPlayer ? this.player2 : null]) {
+                if (p && !p.dead) {
+                    this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 42, msg, '#ffb700', 1.6, 0, -30, 200, true));
+                }
+            }
+            if (audio) audio.playBakedSound('bolt_clack', audio.sfxGain, 0.35);
+        }
+    }
+
     _updateOperatorSpawning(dt) {
         // Pick this wave's spawn lanes once. The map is a fixed north-south
         // corridor (base always south, mouth always north -- see MapGen
@@ -16537,7 +17656,7 @@ class Game {
     
     setMap(mapId) {
         this.selectedMapId = mapId;
-        const ids = ['random', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+        const ids = ['random', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '12'];
         ids.forEach(id => {
             const btn = document.getElementById('btn-map-' + id);
             if (btn) {
@@ -16652,6 +17771,20 @@ class Game {
                 ctx.stroke();
                 ctx.fillRect(cx-40, cy-40, 10, 10); ctx.fillRect(cx+30, cy+30, 10, 10);
                 break;
+            case 12: { // The Dig Site: dense block field, clear center, one breach lane
+                ctx.lineWidth = 1;
+                for (let bx = cx - 75; bx < cx + 75; bx += 18) {
+                    for (let by = cy - 75; by < cy + 75; by += 18) {
+                        let ccx = Math.max(bx, Math.min(cx, bx + 14));
+                        let ccy = Math.max(by, Math.min(cy, by + 14));
+                        if (Math.hypot(ccx - cx, ccy - cy) < 16) continue; // center clearing
+                        if (Math.abs(bx - cx) < 10 && by < cy) continue; // north breach lane
+                        ctx.strokeRect(bx, by, 14, 14);
+                    }
+                }
+                ctx.beginPath(); ctx.arc(cx, cy, 12, 0, Math.PI*2); ctx.stroke();
+                break;
+            }
             default: // Random (-1)
                 ctx.font = 'bold 80px "Courier New"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 ctx.fillText('?', cx, cy);
@@ -17289,7 +18422,7 @@ class Game {
             document.activeElement.blur();
         }
 
-        const tabs = ['system', 'audio', 'controls'];
+        const tabs = ['system', 'audio', 'controls', 'performance'];
         
         let activeTabElement = document.querySelector('#pause-screen .tab-content.active');
         let activeTab = activeTabElement ? activeTabElement.id.replace('tab-', '').replace('-pause', '') : 'system';
@@ -17299,22 +18432,7 @@ class Game {
         if (this.pauseMenuRowIndex === undefined) this.pauseMenuRowIndex = 0;
         if (this.pauseMenuOptionIndex === undefined) this.pauseMenuOptionIndex = 0;
 
-        let tabRows = {
-            system: [
-                ['btn-pause-resume'],
-                ['btn-pause-abandon']
-            ],
-            audio: [
-                ['btn-bgm-off-pause', 'btn-bgm-action-pause', 'btn-bgm-agent-pause', 'btn-bgm-ambient-pause', 'btn-bgm-pvp-pause'],
-                ['sld-music-vol-pause'],
-                ['sld-sfx-vol-pause']
-            ],
-            controls: [
-                ['btn-scheme-screen-pause', 'btn-scheme-player-pause'],
-                ['btn-p1-gp-auto-pause', 'btn-p1-gp-none-pause', 'btn-p1-gp-0-pause', 'btn-p1-gp-1-pause', 'btn-p1-gp-2-pause', 'btn-p1-gp-3-pause'],
-                ['btn-p2-gp-auto-pause', 'btn-p2-gp-none-pause', 'btn-p2-gp-0-pause', 'btn-p2-gp-1-pause', 'btn-p2-gp-2-pause', 'btn-p2-gp-3-pause']
-            ]
-        };
+        let tabRows = this.getPauseMenuTabRows();
 
         let rows = tabRows[activeTab] || [];
 
@@ -17402,6 +18520,22 @@ class Game {
                             let newVal = Math.min(100, curVal + 5);
                             slider.value = newVal;
                             this.changeVolume(channel, newVal);
+                            this.dpadCooldown = 0.08;
+                            return;
+                        }
+                    }
+                } else if (currentRow.length === 1 && currentRow[0] === 'sld-max-marks-pause') {
+                    let slider = document.getElementById(currentRow[0]);
+                    if (slider) {
+                        let curVal = parseInt(slider.value) || 30000;
+                        if (dLeft) {
+                            let newVal = Math.max(0, curVal - 5000);
+                            this.setMaxPermanentMarks(newVal);
+                            this.dpadCooldown = 0.08;
+                            return;
+                        } else if (dRight) {
+                            let newVal = Math.min(300000, curVal + 5000);
+                            this.setMaxPermanentMarks(newVal);
                             this.dpadCooldown = 0.08;
                             return;
                         }
@@ -17579,14 +18713,13 @@ class Game {
         return best;
     }
 
-    refreshPauseMenuHighlight() {
-        let allBtns = document.querySelectorAll('#pause-screen button, #pause-screen input');
-        allBtns.forEach(btn => btn.classList.remove('focused-btn'));
-
-        let activeTabElement = document.querySelector('#pause-screen .tab-content.active');
-        let activeTab = activeTabElement ? activeTabElement.id.replace('tab-', '').replace('-pause', '') : 'system';
-
-        let tabRows = {
+    // MENU NAV SOURCE OF TRUTH: these two getters are the ONLY place the
+    // gamepad-navigable menu row layouts are defined. Both the input handler
+    // and the highlight-refresh function for each menu consume them, so the
+    // two can never drift apart again (they used to be duplicated inline in
+    // all four functions). If you add a button to a menu, add it HERE once.
+    getPauseMenuTabRows() {
+        return {
             system: [
                 ['btn-pause-resume'],
                 ['btn-pause-abandon']
@@ -17600,8 +18733,77 @@ class Game {
                 ['btn-scheme-screen-pause', 'btn-scheme-player-pause'],
                 ['btn-p1-gp-auto-pause', 'btn-p1-gp-none-pause', 'btn-p1-gp-0-pause', 'btn-p1-gp-1-pause', 'btn-p1-gp-2-pause', 'btn-p1-gp-3-pause'],
                 ['btn-p2-gp-auto-pause', 'btn-p2-gp-none-pause', 'btn-p2-gp-0-pause', 'btn-p2-gp-1-pause', 'btn-p2-gp-2-pause', 'btn-p2-gp-3-pause']
+            ],
+            performance: [
+                ['sld-max-marks-pause']
             ]
         };
+    }
+
+    getMainMenuTabRows() {
+        let settingsSubtabRows = {
+            controls: [
+                ['btn-scheme-screen', 'btn-scheme-player'],
+                ['btn-p1-gp-auto', 'btn-p1-gp-none', 'btn-p1-gp-0', 'btn-p1-gp-1', 'btn-p1-gp-2', 'btn-p1-gp-3'],
+                ['btn-p2-gp-auto', 'btn-p2-gp-none', 'btn-p2-gp-0', 'btn-p2-gp-1', 'btn-p2-gp-2', 'btn-p2-gp-3']
+            ],
+            audio: [
+                ['btn-bgm-off', 'btn-bgm-action', 'btn-bgm-agent', 'btn-bgm-ambient', 'btn-bgm-pvp'],
+                ['sld-music-vol'],
+                ['sld-sfx-vol']
+            ],
+            performance: [
+                ['sld-max-marks']
+            ]
+        };
+        return {
+            play: [
+                ['btn-mode-1p', 'btn-mode-2p'],
+                ['btn-env-day', 'btn-env-night'],
+                ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
+                ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator', 'btn-gm-now'],
+                ['btn-start'],
+                ['btn-exit']
+            ],
+            maps: [
+                ['btn-map-random'],
+                ['btn-map-10'],
+                ['btn-map-0'],
+                ['btn-map-1'],
+                ['btn-map-2'],
+                ['btn-map-3'],
+                ['btn-map-4'],
+                ['btn-map-5'],
+                ['btn-map-6'],
+                ['btn-map-7'],
+                ['btn-map-8'],
+                ['btn-map-9'],
+                ['btn-map-12']
+            ],
+            gameoptions: [
+                ['btn-cash-down', 'btn-cash-up'],
+                ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore', 'btn-ff-pvp'],
+                ['sld-time-scale'],
+                ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off']
+            ],
+            settings: [
+                ['btn-settings-subtab-controls', 'btn-settings-subtab-audio', 'btn-settings-subtab-performance'],
+                ...(settingsSubtabRows[this.activeSettingsSubtab || 'controls'])
+            ],
+            leaderboard: [],
+            armory: [],
+            guide: []
+        };
+    }
+
+    refreshPauseMenuHighlight() {
+        let allBtns = document.querySelectorAll('#pause-screen button, #pause-screen input');
+        allBtns.forEach(btn => btn.classList.remove('focused-btn'));
+
+        let activeTabElement = document.querySelector('#pause-screen .tab-content.active');
+        let activeTab = activeTabElement ? activeTabElement.id.replace('tab-', '').replace('-pause', '') : 'system';
+
+        let tabRows = this.getPauseMenuTabRows();
 
         let rows = tabRows[activeTab] || [];
         if (rows.length === 0) return;
@@ -17629,7 +18831,7 @@ class Game {
             document.activeElement.blur();
         }
 
-        const tabs = ['play', 'maps', 'controls', 'audio', 'leaderboard', 'armory', 'guide'];
+        const tabs = ['play', 'maps', 'gameoptions', 'settings', 'leaderboard', 'armory', 'guide'];
         
         let activeTabElement = document.querySelector('.tab-content.active');
         let activeTab = activeTabElement ? activeTabElement.id.replace('tab-', '') : 'play';
@@ -17639,47 +18841,10 @@ class Game {
         if (this.mainMenuRowIndex === undefined) this.mainMenuRowIndex = 0;
         if (this.mainMenuOptionIndex === undefined) this.mainMenuOptionIndex = 0;
 
-        let tabRows = {
-            play: [
-                ['btn-mode-1p', 'btn-mode-2p'],
-                ['btn-env-day', 'btn-env-night'],
-                ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
-                ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator', 'btn-gm-now'],
-                ['btn-cash-down', 'btn-cash-up'],
-                ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore', 'btn-ff-pvp'],
-                ['sld-time-scale'],
-                ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
-                ['btn-start'],
-                ['btn-exit']
-            ],
-            maps: [
-                ['btn-map-random'],
-                ['btn-map-10'],
-                ['btn-map-0'],
-                ['btn-map-1'],
-                ['btn-map-2'],
-                ['btn-map-3'],
-                ['btn-map-4'],
-                ['btn-map-5'],
-                ['btn-map-6'],
-                ['btn-map-7'],
-                ['btn-map-8'],
-                ['btn-map-9']
-            ],
-            controls: [
-                ['btn-scheme-screen', 'btn-scheme-player'],
-                ['btn-p1-gp-auto', 'btn-p1-gp-none', 'btn-p1-gp-0', 'btn-p1-gp-1', 'btn-p1-gp-2', 'btn-p1-gp-3'],
-                ['btn-p2-gp-auto', 'btn-p2-gp-none', 'btn-p2-gp-0', 'btn-p2-gp-1', 'btn-p2-gp-2', 'btn-p2-gp-3']
-            ],
-            audio: [
-                ['btn-bgm-off', 'btn-bgm-action', 'btn-bgm-agent', 'btn-bgm-ambient', 'btn-bgm-pvp'],
-                ['sld-music-vol'],
-                ['sld-sfx-vol']
-            ],
-            leaderboard: [],
-            armory: [],
-            guide: []
-        };
+        // Settings is a nested tab-within-a-tab (Controls/Audio/Performance).
+        // Its entry in tabRows below always starts with the sub-tab switcher
+        // row, followed by whichever sub-tab's own rows are currently open.
+        let tabRows = this.getMainMenuTabRows();
 
         let rows = tabRows[activeTab] || [];
 
@@ -17687,7 +18852,7 @@ class Game {
             // Scroll active tab container with Right Stick Y
             if (Math.abs(gp.axes[3]) > 0.15) {
                 let activeTabEl = document.querySelector('.tab-content.active');
-                if (activeTabEl && (activeTabEl.id === 'tab-guide' || activeTabEl.id === 'tab-controls')) {
+                if (activeTabEl && (activeTabEl.id === 'tab-guide' || activeTabEl.id === 'tab-settings')) {
                     // Scroll speed multiplier
                     activeTabEl.scrollTop += gp.axes[3] * 15; 
                 }
@@ -17759,7 +18924,7 @@ class Game {
             }
 
             if (this.dpadCooldown <= 0) {
-                if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol' || currentRow[0] === 'sld-sfx-vol' || currentRow[0] === 'sld-time-scale')) {
+                if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol' || currentRow[0] === 'sld-sfx-vol' || currentRow[0] === 'sld-time-scale' || currentRow[0] === 'sld-max-marks')) {
                     let slider = document.getElementById(currentRow[0]);
                     if (slider) {
                         if (currentRow[0] === 'sld-time-scale') {
@@ -17773,6 +18938,19 @@ class Game {
                                 let newVal = Math.min(1.5, curVal + 0.1);
                                 this.setTimeScale(newVal);
                                 this.dpadCooldown = 0.18;
+                                return;
+                            }
+                        } else if (currentRow[0] === 'sld-max-marks') {
+                            let curVal = parseInt(slider.value) || 30000;
+                            if (dLeft) {
+                                let newVal = Math.max(0, curVal - 5000);
+                                this.setMaxPermanentMarks(newVal);
+                                this.dpadCooldown = 0.08;
+                                return;
+                            } else if (dRight) {
+                                let newVal = Math.min(300000, curVal + 5000);
+                                this.setMaxPermanentMarks(newVal);
+                                this.dpadCooldown = 0.08;
                                 return;
                             }
                         } else {
@@ -17832,47 +19010,7 @@ class Game {
         let activeTabElement = document.querySelector('.tab-content.active');
         let activeTab = activeTabElement ? activeTabElement.id.replace('tab-', '') : 'play';
         
-        let tabRows = {
-            play: [
-                ['btn-mode-1p', 'btn-mode-2p'],
-                ['btn-env-day', 'btn-env-night'],
-                ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
-                ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator', 'btn-gm-now'],
-                ['btn-cash-down', 'btn-cash-up'],
-                ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore', 'btn-ff-pvp'],
-                ['sld-time-scale'],
-                ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
-                ['btn-start'],
-                ['btn-exit']
-            ],
-            maps: [
-                ['btn-map-random'],
-                ['btn-map-10'],
-                ['btn-map-0'],
-                ['btn-map-1'],
-                ['btn-map-2'],
-                ['btn-map-3'],
-                ['btn-map-4'],
-                ['btn-map-5'],
-                ['btn-map-6'],
-                ['btn-map-7'],
-                ['btn-map-8'],
-                ['btn-map-9']
-            ],
-            controls: [
-                ['btn-scheme-screen', 'btn-scheme-player'],
-                ['btn-p1-gp-auto', 'btn-p1-gp-none', 'btn-p1-gp-0', 'btn-p1-gp-1', 'btn-p1-gp-2', 'btn-p1-gp-3'],
-                ['btn-p2-gp-auto', 'btn-p2-gp-none', 'btn-p2-gp-0', 'btn-p2-gp-1', 'btn-p2-gp-2', 'btn-p2-gp-3']
-            ],
-            audio: [
-                ['btn-bgm-off', 'btn-bgm-action', 'btn-bgm-agent', 'btn-bgm-ambient', 'btn-bgm-pvp'],
-                ['sld-music-vol'],
-                ['sld-sfx-vol']
-            ],
-            leaderboard: [],
-            armory: [],
-            guide: []
-        };
+        let tabRows = this.getMainMenuTabRows();
 
         let rows = tabRows[activeTab] || [];
         if (rows.length === 0) return;
@@ -18641,6 +19779,18 @@ class Game {
         return p;
     }
 
+    // STABILITY: schedule fn after delaySeconds of GAME time (not wall
+    // clock). Frozen while paused; discarded on run reset/abandon. Use this
+    // instead of setTimeout for anything gameplay-visible (particles,
+    // explosion audio, item respawns) -- wall-clock setTimeouts fire over
+    // the pause/main menu (same bug class as the barrel-chain fix).
+    // Ticked in update() next to pendingBarrelChains; cleared next to
+    // explosiveBarrels on reset.
+    queueGameTimeAction(delaySeconds, fn) {
+        if (!this.pendingActions) this.pendingActions = [];
+        this.pendingActions.push({ t: delaySeconds, fn });
+    }
+
     _applyMetaStatsToPlayer(p) {
         if (!p) return;
         const MA = this.saveData.metaUpgrades;
@@ -18659,6 +19809,10 @@ class Game {
         p.perkSmartMunitions = false;
         p.perkExplosiveRounds = false;
         p.perkShrapnelRounds = false;
+        // TACTICAL PERKS (Phase 3)
+        p.perkCombatScanner = false;
+        p.perkSuppression = false;
+        p.perkAmbusher = false;
     }
 
     startNewGame() {
@@ -18804,6 +19958,8 @@ class Game {
         this.barriers = [];
         this.permanentMarks = [];
         this.explosiveBarrels = [];
+        this.pendingBarrelChains = []; // queued chain-reaction fuses (see ExplosiveBarrel.explode)
+        this.pendingActions = []; // generalized game-time deferred actions (see queueGameTimeAction)
 
         // FPV OPERATOR MODE: pre-placed defensive barrier formations around
         // the bunker mouth, on top of the 3 barriers the player starts with
@@ -19028,6 +20184,9 @@ class Game {
             this.allEnemiesAreElite = false;
         }
         this.spawnTimer = 0;
+        // TACTICAL WAVES: fresh squad-release state each wave. Short initial
+        // gap so the first squad arrives right after the prep timer ends.
+        this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: 0.5 };
         this.updateHUD();
     }
 
@@ -19281,7 +20440,9 @@ class Game {
                     cash_vx, -110, 260, true
                 ));
                 audio.playPickup('money');
-                setTimeout(() => { audio.playPickup('money'); }, 80);
+                // STABILITY: game-time echo (see queueGameTimeAction) --
+                // was a wall-clock setTimeout (same bug class, tiny window).
+                this.queueGameTimeAction(0.08, () => { audio.playPickup('money'); });
             } else {
                 amount = Math.round(amount * this.cashMultiplier);
                 let cash_vx = (Math.random() - 0.5) * 90;
@@ -19351,13 +20512,17 @@ class Game {
             this.items.pop();
             
             if (isSandbox && this.isTestingMode) {
-                setTimeout(() => {
+                // STABILITY: game-time queue (see queueGameTimeAction). The
+                // old 3000ms setTimeout leaked across runs: abandon + start
+                // a new run within 3s and the OLD run's item respawned into
+                // the new one. Queue is cleared on reset, so that's gone.
+                this.queueGameTimeAction(3.0, () => {
                     if (this.state === 'playing' && this.items) {
                         let respawnedItem = new Item(x, y, type);
                         respawnedItem.isSandbox = true;
                         this.items.push(respawnedItem);
                     }
-                }, 3000);
+                });
             }
         }
         return pickedUp;
@@ -19385,17 +20550,7 @@ class Game {
 
     grantRandomPerk(p) {
         if (!p) return;
-        const perks = [
-            { key: 'perkFlatline', name: 'FLATLINE', desc: 'Increases bullet velocity by 25%.' },
-            { key: 'perkPointBlank', name: 'POINT BLANK', desc: 'Sprinting increases bullet damage by 20%.' },
-            { key: 'perkGhost', name: 'GHOST BULLETS', desc: 'Bullets have a 30% chance to pass through solid walls.' },
-            { key: 'perkVampiric', name: 'VAMPIRIC ROUNDS', desc: 'On hitting an enemy, restore +1 HP.' },
-            { key: 'perkVolatileCorpses', name: 'VOLATILE CORPSES', desc: 'Killed enemies trigger a shockwave and mini-explosion.' },
-            { key: 'perkRubberBullets', name: 'RUBBER BULLETS', desc: 'Modify maximum bounces from 2 to 6.' },
-            { key: 'perkSmartMunitions', name: 'SMART MUNITIONS', desc: 'Bullets gently steer towards nearest forward enemy.' },
-            { key: 'perkExplosiveRounds', name: 'EXPLOSIVE ROUNDS', desc: 'Bullets explode on impact. Self-damage disabled.' },
-            { key: 'perkShrapnelRounds', name: 'SHRAPNEL ROUNDS', desc: 'Explosions fling 3-4 low-damage fragments outward.' }
-        ];
+        const perks = PERK_DEFS; // single registry -- see PERK_DEFS (Phase 3)
 
         const available = perks.filter(perk => !p[perk.key]);
         if (available.length === 0) {
@@ -19431,17 +20586,7 @@ class Game {
     }
 
     generatePerkChoices(p) {
-        const perks = [
-            { key: 'perkFlatline', name: 'FLATLINE', desc: 'Increases bullet velocity by 25%.' },
-            { key: 'perkPointBlank', name: 'POINT BLANK', desc: 'Sprinting increases bullet damage by 20%.' },
-            { key: 'perkGhost', name: 'GHOST BULLETS', desc: 'Bullets have a 30% chance to pass through solid walls.' },
-            { key: 'perkVampiric', name: 'VAMPIRIC ROUNDS', desc: 'On hitting an enemy, restore +1 HP.' },
-            { key: 'perkVolatileCorpses', name: 'VOLATILE CORPSES', desc: 'Killed enemies trigger a shockwave and mini-explosion.' },
-            { key: 'perkRubberBullets', name: 'RUBBER BULLETS', desc: 'Modify maximum bounces from 2 to 6.' },
-            { key: 'perkSmartMunitions', name: 'SMART MUNITIONS', desc: 'Bullets gently steer towards nearest forward enemy.' },
-            { key: 'perkExplosiveRounds', name: 'EXPLOSIVE ROUNDS', desc: 'Bullets explode on impact. Self-damage disabled.' },
-            { key: 'perkShrapnelRounds', name: 'SHRAPNEL ROUNDS', desc: 'Explosions fling 3-4 low-damage fragments outward.' }
-        ];
+        const perks = PERK_DEFS; // single registry -- see PERK_DEFS (Phase 3)
         
         const available = perks.filter(perk => !p[perk.key]);
         
@@ -19614,9 +20759,12 @@ class Game {
                 player.cash -= cost;
                 oc.fireRate = (oc.fireRate || 0) + 1;
                 if (audio) audio.playPickup('weapon');
+                // Phase 4: ranks 1-2 buy ROF; ranks 3-7 buy handling.
+                let ocLabel = oc.fireRate <= 2
+                    ? `FIRE RATE Lvl.${oc.fireRate} (+5% ROF)`
+                    : `HANDLING Lvl.${oc.fireRate - 2} (-SPREAD/-KICK)`;
                 this.floatingTexts.push(this.spawnFloatingText(
-                    player.x, player.y - 20,
-                    `FIRE RATE Lvl.${oc.fireRate} (+5% ROF)`, '#ffd700', 1.8
+                    player.x, player.y - 20, ocLabel, '#ffd700', 1.8
                 ));
             }
         } else if (type === 'maxHpOC') {
@@ -19847,11 +20995,7 @@ class Game {
     
     devUpdatePerkHighlight() {
         if (!this.player) return;
-        const perks = [
-            'perkFlatline', 'perkPointBlank', 'perkGhost', 
-            'perkVampiric', 'perkVolatileCorpses', 'perkRubberBullets', 
-            'perkSmartMunitions', 'perkExplosiveRounds', 'perkShrapnelRounds'
-        ];
+        const perks = PERK_DEFS.map(p => p.key); // single registry -- see PERK_DEFS (Phase 3)
         perks.forEach(key => {
             const btn = document.getElementById('btn-dev-perk-' + key);
             if (btn) {
@@ -20175,6 +21319,11 @@ class Game {
         
         if (this.operatorMode && this.prepTimer <= 0 && this.enemiesToSpawn > 0) {
             this._updateOperatorSpawning(dt);
+        } else if (!this.nowMode && this.prepTimer <= 0 && this.enemiesToSpawn > 0) {
+            // TACTICAL WAVES: standard wave mode uses squad releases gated by
+            // a live-enemy cap (see TACTICAL_TUNING). ACTION NOW mode keeps
+            // the original faucet below -- the flood IS that mode's identity.
+            this._updateTacticalSpawning(dt);
         } else if (this.prepTimer <= 0 && this.enemiesToSpawn > 0) {
             this.spawnTimer -= dt;
             if (this.spawnTimer <= 0) {
@@ -20379,6 +21528,41 @@ class Game {
         }
         for (let e of this.enemies) entities.push(e);
 
+        // Chain-reaction fuses: game-time countdown (pause/abandon safe --
+        // see the queueing site in ExplosiveBarrel.explode). The claimed
+        // barrel was already swap-and-popped out of explosiveBarrels by the
+        // sweep below (it's dead=true), so the queue entry is what keeps it
+        // alive until its fuse pops, exactly like the old closure did.
+        if (this.pendingBarrelChains && this.pendingBarrelChains.length > 0) {
+            for (let i = this.pendingBarrelChains.length - 1; i >= 0; i--) {
+                let pc = this.pendingBarrelChains[i];
+                pc.fuse -= dt;
+                if (pc.fuse <= 0) {
+                    this.pendingBarrelChains[i] = this.pendingBarrelChains[this.pendingBarrelChains.length - 1];
+                    this.pendingBarrelChains.pop();
+                    pc.barrel.dead = false; // allow explode() to run its course once
+                    pc.barrel.explode(this, pc.depth);
+                }
+            }
+        }
+
+        // Generalized game-time deferred actions (death flavor bursts,
+        // sandbox respawns, audio echoes). Same pause/abandon-safe pattern
+        // as pendingBarrelChains above: only ticks while unpaused +
+        // 'playing', cleared on every run reset. Replaces the wall-clock
+        // setTimeouts that could fire over the pause/main menu.
+        if (this.pendingActions && this.pendingActions.length > 0) {
+            for (let i = this.pendingActions.length - 1; i >= 0; i--) {
+                let pa = this.pendingActions[i];
+                pa.t -= dt;
+                if (pa.t <= 0) {
+                    this.pendingActions[i] = this.pendingActions[this.pendingActions.length - 1];
+                    this.pendingActions.pop();
+                    pa.fn();
+                }
+            }
+        }
+
         if (this.explosiveBarrels && this.explosiveBarrels.length > 0) {
             for (let i = this.explosiveBarrels.length - 1; i >= 0; i--) {
                 let bar = this.explosiveBarrels[i];
@@ -20522,6 +21706,16 @@ class Game {
 
         for (let i = this.items.length - 1; i >= 0; i--) {
             let it = this.items[i];
+
+            // Ground loot fades over 3 waves (see Item.fadeAlpha) and is
+            // culled here once it's aged out -- keeps late-game maps from
+            // drowning in unclaimed money/weapons/perk cases.
+            if (it.isExpired()) {
+                this.items[i] = this.items[this.items.length - 1];
+                this.items.pop();
+                continue;
+            }
+
             it.update(dt, activePlayers);
             
             for (let p of activePlayers) {
@@ -20909,9 +22103,12 @@ class Game {
             let speedBtn = document.getElementById('btn-buy-speed-' + suffix);
             if (speedBtn) {
                 if (p.speedUpgrades >= 4) {
-                    speedBtn.classList.add('maxed'); speedBtn.innerText = "SPEED (MAX)"; speedBtn.disabled = true;
+                    speedBtn.classList.add('maxed'); speedBtn.innerText = "MOBILITY (MAX)"; speedBtn.disabled = true;
                 } else {
-                    speedBtn.classList.remove('maxed'); speedBtn.innerText = "Speed +12% ($60)"; speedBtn.disabled = false;
+                    // Phase 4: ranks 1-2 buy accel, ranks 3-4 buy stamina economy.
+                    speedBtn.classList.remove('maxed');
+                    speedBtn.innerText = p.speedUpgrades < 2 ? "Speed +12% ($60)" : "Stamina Econ +25% ($60)";
+                    speedBtn.disabled = false;
                 }
             }
 
@@ -21115,7 +22312,10 @@ class Game {
                 let btnFireRate = document.getElementById('btn-buy-oc-firerate-' + suffix);
                 if (btnFireRate) {
                     let lvl = oc.fireRate || 0;
-                    btnFireRate.innerText = `Fire Rate Lvl.${lvl + 1} ($${costFireRate})`;
+                    // Phase 4: next purchase is ROF for lvl<2, handling after.
+                    btnFireRate.innerText = lvl < 2
+                        ? `Fire Rate Lvl.${lvl + 1} ($${costFireRate})`
+                        : `Handling Lvl.${lvl - 1} ($${costFireRate})`;
                     btnFireRate.disabled = p.cash < costFireRate;
                     btnFireRate.classList.toggle('maxed', lvl >= 7);
                 }
@@ -21548,6 +22748,11 @@ class Game {
         } else {
             this.setTimeScale(1.0);
         }
+        if (this.saveData.maxPermanentMarks !== undefined) {
+            this.setMaxPermanentMarks(this.saveData.maxPermanentMarks);
+        } else {
+            this.setMaxPermanentMarks(30000);
+        }
         if (this.saveData.startingCash !== undefined) {
             this.startingCash = this.saveData.startingCash;
         } else {
@@ -21581,6 +22786,7 @@ class Game {
             this.saveData.startingCash = this.startingCash;
             this.saveData.friendlyFireMode = this.friendlyFireMode;
             this.saveData.nightMode = this.nightMode;
+            this.saveData.maxPermanentMarks = this.maxPermanentMarks;
             localStorage.setItem('frozensoldat_save', JSON.stringify(this.saveData));
         } catch(e) {
             console.error("Failed to save data:", e);
@@ -21640,10 +22846,10 @@ class Game {
     }
 
     switchTab(tabName) {
-        let buttons = document.querySelectorAll('#start-screen .tab-button');
+        let buttons = document.querySelectorAll('#start-screen > .menu-box > .tabs-container > .tab-button');
         buttons.forEach(btn => btn.classList.remove('active'));
         
-        let btn = Array.from(buttons).find(b => b.innerText.toLowerCase() === tabName.toLowerCase());
+        let btn = Array.from(buttons).find(b => b.innerText.toLowerCase().replace(/\s+/g, '') === tabName.toLowerCase());
         if (btn) btn.classList.add('active');
         
         let contents = document.querySelectorAll('#start-screen .tab-content');
@@ -21655,11 +22861,49 @@ class Game {
         if (tabName === 'leaderboard') {
             this.renderLeaderboard();
         }
-        if (tabName === 'audio') {
-            this.refreshAudioTabUI();
+        if (tabName === 'settings') {
+            // Restore whichever Controls/Audio/Performance sub-tab was
+            // last open -- the top-level tab-content sweep above only
+            // shows/hides tab-settings as a whole, it doesn't touch the
+            // nested .settings-subtab-content panels.
+            this.switchSettingsTab(this.activeSettingsSubtab || 'controls');
         }
         if (tabName === 'armory') {
             this.renderArmoryTab();
+        }
+    }
+
+    // Switches between the Controls / Audio / Performance panels nested
+    // inside the main-menu Settings tab. Kept separate from switchTab()
+    // (and from a .tab-content-based selector) so switching between
+    // top-level tabs -- Play, Maps, etc. -- doesn't clear which Settings
+    // sub-panel was showing.
+    switchSettingsTab(subtabName) {
+        let buttons = document.querySelectorAll('#tab-settings .tab-button');
+        buttons.forEach(btn => btn.classList.remove('active'));
+
+        let btn = Array.from(buttons).find(b => b.innerText.toLowerCase() === subtabName.toLowerCase());
+        if (btn) btn.classList.add('active');
+
+        let contents = document.querySelectorAll('#tab-settings .settings-subtab-content');
+        contents.forEach(c => c.classList.remove('active'));
+
+        let targetContent = document.getElementById('tab-settings-' + subtabName);
+        if (targetContent) targetContent.classList.add('active');
+
+        this.activeSettingsSubtab = subtabName;
+
+        if (subtabName === 'audio') {
+            this.refreshAudioTabUI();
+        }
+        if (subtabName === 'controls') {
+            this.refreshGamepadAssignmentUI();
+        }
+        if (subtabName === 'performance') {
+            // Re-assert the slider/label from live state in case this DOM
+            // node was hidden (display:none) the last time
+            // setMaxPermanentMarks() ran and didn't find it.
+            this.setMaxPermanentMarks(this.maxPermanentMarks);
         }
     }
 
@@ -21995,6 +23239,23 @@ class Game {
         this.saveGameData();
     }
 
+    // Ground-clutter cap for blood/casing/debris/scorch marks (see
+    // _pushPermanentMark). Default 30000, user-adjustable 0-300000. Mirrors
+    // the same '' / '-pause' suffix pattern refreshAudioTabUI() and
+    // refreshGamepadAssignmentUI() use so this stays in sync whether it's
+    // changed from the main menu or mid-run from the pause menu; guarded
+    // with null checks so it's safe to call before either control exists.
+    setMaxPermanentMarks(value) {
+        this.maxPermanentMarks = Math.max(0, Math.min(300000, parseInt(value, 10) || 0));
+        for (let suf of ['', '-pause']) {
+            const slider = document.getElementById('sld-max-marks' + suf);
+            const label = document.getElementById('lbl-max-marks' + suf);
+            if (slider) slider.value = this.maxPermanentMarks;
+            if (label) label.innerText = this.maxPermanentMarks.toLocaleString();
+        }
+        this.saveGameData();
+    }
+
     returnToMainMenu() {
         this.state = 'start';
         this.isPaused = false;
@@ -22006,6 +23267,22 @@ class Game {
         if (this.player2 && this.player2.activeDrone) {
             this.player2.activeDrone.stopAudio();
             this.player2.activeDrone = null;
+        }
+        // BUGFIX: MiniDrone ("Hunter Swarm") instances hold their own
+        // persistent engine-hum oscillator (see MiniDrone.initAudio()),
+        // stopped only when a drone naturally dies during the normal
+        // update() loop (this.miniDrones[i].stopAudio() in Game.update()).
+        // That loop stops running the moment the player leaves via "ABANDON
+        // MISSION" below, so any still-alive swarm drones' oscillators were
+        // previously left running indefinitely in the background -- audible
+        // on the main menu with nothing on-screen to explain it -- until
+        // (if ever) the player started a fresh run, since startNewGame()'s
+        // own reset loop is the only other place that calls stopAudio() on
+        // this array. Stopping them here closes that window.
+        if (this.miniDrones) {
+            for (let md of this.miniDrones) {
+                md.stopAudio();
+            }
         }
         
         toggleClass('pause-screen', 'hidden', true);
@@ -22021,6 +23298,14 @@ class Game {
     }
 
     getHostilesFor(entity) {
+        // PERF + CONTRACT: in non-PvP mode this returns this.enemies
+        // DIRECTLY (no copy). It used to spread-clone the full enemies
+        // array on every call, and it's called per frame by every turret,
+        // mini-drone, and dog -- pure allocation churn since every caller
+        // only iterates the result. Callers MUST treat the return value as
+        // read-only (all current callers do; verified). PvP mode still
+        // builds a fresh combined array because it has to merge lists.
+        if (this.friendlyFireMode !== 'pvp') return this.enemies;
         let hostiles = [...this.enemies];
         if (this.friendlyFireMode === 'pvp') {
             const owner = entity.owner || entity;
@@ -22097,7 +23382,7 @@ class Game {
     //     every mark through here means the cap always applies.
     _pushPermanentMark(mark) {
         this.permanentMarks.push(mark);
-        const CAP = 3000;
+        const CAP = this.maxPermanentMarks;
         const TRIM_CHUNK = 500;
         if (this.permanentMarks.length > CAP + TRIM_CHUNK) {
             this.permanentMarks.splice(0, this.permanentMarks.length - CAP);
@@ -22111,7 +23396,11 @@ class Game {
 
             ctx.fillStyle = m.c;
             if (m.type === 'blood') {
-                ctx.globalAlpha = 0.65;
+                // Was 0.65 -- with heavy splatter built up by wave 20-30+,
+                // that was washing out live players standing in it. 0.3
+                // keeps blood readable as ground texture without competing
+                // with player/enemy sprites for visual priority.
+                ctx.globalAlpha = 0.3;
                 ctx.beginPath();
                 ctx.arc(m.x - cam.x, m.y - cam.y, m.r, 0, Math.PI*2);
                 ctx.fill();
