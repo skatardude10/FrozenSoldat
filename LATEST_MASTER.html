@@ -497,6 +497,68 @@
     .map-list-scroll::-webkit-scrollbar-track { background: rgba(0, 229, 255, 0.05); border-radius: 3px; }
     .map-list-scroll::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, 0.3); border-radius: 3px; }
     .map-list-scroll::-webkit-scrollbar-thumb:hover { background: rgba(0, 229, 255, 0.6); }
+
+    /* ==================================================================
+       PHASE 0 -- THE FABRIC: unified debrief screen + intel juice
+       ================================================================== */
+    #debrief-screen .menu-box { max-width: 640px; }
+    .debrief-subtitle { color:#808f9c; font-size:11px; letter-spacing:2px; margin-bottom:22px; text-transform:uppercase; }
+    .debrief-rows { display:flex; flex-direction:column; gap:8px; margin:0 auto 18px auto; max-width:420px; }
+    .debrief-row {
+        display:flex; justify-content:space-between; align-items:baseline;
+        padding:7px 14px; border:1px solid rgba(0,229,255,0.15);
+        background:rgba(0,10,25,0.55); border-radius:3px;
+        opacity:0; transform:scale(1.6); pointer-events:none;
+    }
+    .debrief-row.boom { animation: debrief-boom 0.28s cubic-bezier(0.18, 1.4, 0.4, 1) forwards; }
+    @keyframes debrief-boom {
+        0%   { opacity:0; transform:scale(1.6); }
+        60%  { opacity:1; transform:scale(0.96); }
+        100% { opacity:1; transform:scale(1); }
+    }
+    .debrief-row .d-label { color:#808f9c; font-size:11px; letter-spacing:1.5px; }
+    .debrief-row .d-value { color:#e0f7fa; font-size:16px; font-weight:bold; text-shadow:0 0 8px rgba(0,229,255,0.5); }
+    .debrief-intel-stage { position:relative; height:86px; margin-bottom:14px; opacity:0; }
+    .debrief-intel-stage.boom { animation: debrief-boom 0.35s cubic-bezier(0.18,1.4,0.4,1) forwards; }
+    .debrief-intel-amount { font-size:34px; font-weight:bold; color:var(--neon-blue); text-shadow:0 0 18px var(--neon-blue); letter-spacing:2px; position:relative; z-index:2; line-height:86px; }
+    .debrief-intel-amount.denied { color:#808f9c; text-shadow:none; font-size:16px; }
+    #debrief-intel-burst { position:absolute; left:50%; top:50%; width:220px; height:220px; transform:translate(-50%,-50%); z-index:1; pointer-events:none; opacity:0; }
+    #debrief-intel-burst.fire { animation: intel-burst 0.9s ease-out forwards; }
+    @keyframes intel-burst {
+        0%   { opacity:0; transform:translate(-50%,-50%) scale(0.2) rotate(0deg); }
+        18%  { opacity:1; }
+        100% { opacity:0; transform:translate(-50%,-50%) scale(1.25) rotate(24deg); }
+    }
+    .debrief-unlocks { display:flex; gap:10px; justify-content:center; margin-bottom:20px; flex-wrap:wrap; }
+    .debrief-unlock-card {
+        border:1px solid var(--green); color:var(--green); border-radius:4px;
+        padding:10px 16px; font-size:11px; letter-spacing:1.5px; background:rgba(0,25,10,0.5);
+        box-shadow:0 0 14px rgba(57,255,20,0.25);
+        opacity:0; transform:rotateY(90deg);
+    }
+    .debrief-unlock-card.flip { animation: card-flip 0.45s ease-out forwards; }
+    @keyframes card-flip {
+        0%   { opacity:0; transform:rotateY(90deg) scale(0.9); }
+        100% { opacity:1; transform:rotateY(0deg) scale(1); }
+    }
+    .debrief-buttons { display:flex; gap:12px; justify-content:center; }
+    .debrief-tainted-note { color:var(--red); font-size:10px; letter-spacing:1px; margin-bottom:14px; }
+
+    /* In-run intel juice: HUD counter pop + starburst, no-intel banner */
+    #hud-intel-wrap { position:relative; }
+    #hud-intel-wrap.intel-pop #ui-intel { animation: intel-pop 0.35s ease-out; display:inline-block; }
+    @keyframes intel-pop {
+        0%   { transform:scale(1); }
+        35%  { transform:scale(1.6); text-shadow:0 0 14px var(--neon-blue); }
+        100% { transform:scale(1); }
+    }
+    .hud-intel-burst { position:absolute; left:50%; top:50%; width:64px; height:64px; transform:translate(-50%,-50%); pointer-events:none; animation:intel-burst 0.6s ease-out forwards; }
+    #no-intel-banner {
+        position:absolute; top:52px; left:50%; transform:translateX(-50%);
+        color:var(--red); border:1px solid var(--red); background:rgba(25,0,8,0.7);
+        font-size:10px; letter-spacing:2px; padding:4px 12px; border-radius:3px;
+        text-shadow:0 0 8px rgba(255,42,95,0.7); pointer-events:none; z-index:20;
+    }
 </style>
 </head>
 <body>
@@ -505,6 +567,8 @@
 <div id="crosshair"></div>
 
 <div id="ui-layer" class="hidden">
+    <!-- PHASE 0: intel-eligibility warning (driven by RunLedger via updateHUD) -->
+    <div id="no-intel-banner" class="hidden">&#9888; NO INTEL THIS RUN &mdash; DEV / SANDBOX FLAGGED</div>
     <!-- BOSS HUD (top-center, spans both viewports in 2P) -->
     <div id="boss-hud" class="boss-hud hidden">
         <div class="boss-hud-name" id="boss-hud-name">BOSS NAME</div>
@@ -548,6 +612,10 @@
             <div class="hud-top-section text-red">
                 <span class="hud-label">SPEED</span>
                 <span id="ui-weight-penalty" class="hud-value">100%</span>
+            </div>
+            <div class="hud-top-section" id="hud-intel-wrap" style="color: var(--neon-blue);">
+                <span class="hud-label">INTEL</span>
+                <span id="ui-intel" class="hud-value">0</span>
             </div>
             <div id="ui-boost-active" class="hud-boost-badge" style="visibility: hidden;">BOOST</div>
             <div id="ui-mutator-badge" class="hud-mutator-badge" style="visibility: hidden; margin-left: 5px;">MUTATOR</div>
@@ -1205,11 +1273,40 @@
     </div>
 </div>
 
-<div id="death-screen" class="menu-overlay hidden">
+<!-- PHASE 0: unified debrief screen. EVERY run (death, abandon, and the
+     Phase 1 extraction outcome) terminates here via Game.endRun(). -->
+<div id="debrief-screen" class="menu-overlay hidden">
     <div class="menu-box">
-        <h1 style="color:var(--red); text-shadow: 0 0 15px var(--red);">OPERATOR ELIMINATED</h1>
-        <p>You defended the zone for <span id="death-wave">0</span> waves.</p>
-        <button id="btn-death-redeploy" onclick="location.reload()">RE-DEPLOY TO PERIMETER</button>
+        <h1 id="debrief-title" style="color:var(--red); text-shadow: 0 0 15px var(--red);">OPERATOR ELIMINATED</h1>
+        <div id="debrief-subtitle" class="debrief-subtitle">AFTER-ACTION REPORT</div>
+        <div id="debrief-rows" class="debrief-rows"></div>
+        <div id="debrief-intel-stage" class="debrief-intel-stage">
+            <svg id="debrief-intel-burst" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                <g fill="none" stroke="#00e5ff" stroke-width="3" stroke-linecap="round">
+                    <line x1="138.0" y1="100.0" x2="192.0" y2="100.0"/>
+                    <line x1="132.9" y1="119.0" x2="179.7" y2="146.0"/>
+                    <line x1="119.0" y1="132.9" x2="146.0" y2="179.7"/>
+                    <line x1="100.0" y1="138.0" x2="100.0" y2="192.0"/>
+                    <line x1="81.0" y1="132.9" x2="54.0" y2="179.7"/>
+                    <line x1="67.1" y1="119.0" x2="20.3" y2="146.0"/>
+                    <line x1="62.0" y1="100.0" x2="8.0" y2="100.0"/>
+                    <line x1="67.1" y1="81.0" x2="20.3" y2="54.0"/>
+                    <line x1="81.0" y1="67.1" x2="54.0" y2="20.3"/>
+                    <line x1="100.0" y1="62.0" x2="100.0" y2="8.0"/>
+                    <line x1="119.0" y1="67.1" x2="146.0" y2="20.3"/>
+                    <line x1="132.9" y1="81.0" x2="179.7" y2="54.0"/>
+                </g>
+                <circle cx="100" cy="100" r="26" fill="none" stroke="#00e5ff" stroke-width="2" opacity="0.8"/>
+                <circle cx="100" cy="100" r="12" fill="#00e5ff" opacity="0.55"/>
+            </svg>
+            <div id="debrief-intel-amount" class="debrief-intel-amount">+0 INTEL</div>
+        </div>
+        <div id="debrief-tainted-note" class="debrief-tainted-note hidden">RUN FLAGGED &mdash; DEV TOOLS / SANDBOX: INTEL EARNING DISABLED</div>
+        <div id="debrief-unlocks" class="debrief-unlocks"></div>
+        <div class="debrief-buttons">
+            <button id="btn-debrief-redeploy" onclick="game.debriefRedeploy()">RE-DEPLOY</button>
+            <button id="btn-debrief-hq" onclick="game.returnToMainMenu()" style="border-color: var(--neon-blue);">RETURN TO HQ</button>
+        </div>
     </div>
 </div>
 
@@ -1229,7 +1326,7 @@
             <p style="color:#e0f7fa; font-size:11px; margin-bottom: 20px;">SYSTEMS CURRENTLY STANDBY</p>
             <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
                 <button id="btn-pause-resume" onclick="game.togglePause()" style="width: 100%; margin: 0; border-color: var(--green); color: var(--green);">RESUME OPERATIONS</button>
-                <button id="btn-pause-abandon" onclick="game.returnToMainMenu()" style="width: 100%; margin: 0; border-color: var(--red); color: var(--red);">ABANDON MISSION (EXIT TO HQ)</button>
+                <button id="btn-pause-abandon" onclick="game.abandonRun()" style="width: 100%; margin: 0; border-color: var(--red); color: var(--red);">ABANDON MISSION (EXIT TO HQ)</button>
             </div>
         </div>
         
@@ -7279,6 +7376,12 @@ class Entity {
             if (this.maxStamina !== undefined) {
                 return;
             }
+        }
+        // PHASE 0: damage-taken accounting. maxStamina is the established
+        // Player discriminator in this hierarchy (same check the god-mode
+        // gate above relies on), so this counts player chip damage only.
+        if (this.maxStamina !== undefined && typeof game !== 'undefined' && game && game.runLedger && amt > 0) {
+            game.runLedger.recordDamageTaken(amt);
         }
         // FPV OPERATOR MODE: "marked" bonus damage -- see FPVDrone.detonate's
         // operatorExposedTimer hook. Applies regardless of damage source
@@ -16678,6 +16781,99 @@ class FloatingText {
 /**
  * CORE GAME SYSTEM
  */
+// =========================================================================
+// PHASE 0 -- THE FABRIC (see ROADMAP_longterm.md / FINDINGS_PHASE_0.md)
+//
+// RunConfig: a plain-data snapshot of everything a run needs, built ONCE by
+// Game.buildRunConfig() at the top of startNewGame() and never mutated by
+// gameplay. Phase 1 objectives, Phase 2 mission entries, and Phase 3
+// protocols are all just richer RunConfigs -- missions are DATA, not code.
+//
+// RunLedger: the SINGLE write path for in-run stats and Intel. Nothing else
+// in the codebase may write saveData.intel during a run; if you're adding a
+// new reward, call ledger.addIntel(). Eligibility (sandbox / god mode / dev
+// spawns) is enforced here, in exactly one place, by construction.
+//
+// Every run terminates through Game.endRun(outcome) -> the debrief screen.
+// Never add a mode-specific end screen again.
+// =========================================================================
+const RUN_OUTCOMES = { DEATH: 'death', ABANDON: 'abandon', EXTRACTION: 'extraction' };
+
+class RunLedger {
+    constructor(runConfig, game) {
+        this.game = game;
+        this.config = runConfig;
+        this.eligible = !!(runConfig && runConfig.intelEligible);
+        this.tainted = false;          // flipped by dev tools mid-run; irreversible for the run
+        this.taintReasons = [];
+
+        // Accumulators -- one field per debrief row / future unlock predicate
+        this.kills = 0;
+        this.eliteKills = 0;
+        this.bossKills = 0;
+        this.gloryKills = 0;
+        this.wavesCleared = 0;
+        this.damageTaken = 0;
+        this.intelEarned = 0;          // actually committed to the bank
+        this.intelDenied = 0;          // would-have-earned on ineligible/tainted runs
+        this.shotsFired = 0;           // PHASE 1 hook (accuracy) -- not yet wired
+        this.shotsHit = 0;             // PHASE 1 hook
+        this.unlocks = [];             // PHASE 2 hook: [{label}] cards flipped on the debrief
+
+        this.startWave = 1;
+        this.endWave = 1;
+        this.startedAtGameTime = game ? game.gameTime : 0;
+        this.durationSec = 0;
+        this.outcome = null;
+        this.finalized = false;
+    }
+
+    recordKill(enemy) {
+        this.kills++;
+        if (enemy) {
+            if (enemy.isElite) this.eliteKills++;
+            if (typeof Boss !== 'undefined' && enemy instanceof Boss) this.bossKills++;
+        }
+    }
+    recordGloryKill()        { this.gloryKills++; }
+    recordDamageTaken(amt)   { if (amt > 0) this.damageTaken += amt; }
+    recordWaveCleared()      { this.wavesCleared++; }
+
+    // SINGLE WRITE PATH for in-run Intel. Commits to saveData immediately
+    // (crash-safe: closing the tab mid-run never loses banked Intel), but
+    // the DECISION to award lives only here. Returns the amount actually
+    // awarded (0 on ineligible/tainted runs) so callers can render honestly.
+    addIntel(amount, source) {
+        amount = Math.max(0, Math.round(amount || 0));
+        if (amount === 0) return 0;
+        if (!this.eligible || this.tainted) {
+            this.intelDenied += amount;
+            return 0;
+        }
+        this.intelEarned += amount;
+        if (this.game && this.game.saveData) {
+            this.game.saveData.intel = (this.game.saveData.intel || 0) + amount;
+            this.game.saveGameData();
+        }
+        return amount;
+    }
+
+    taint(reason) {
+        this.tainted = true;
+        if (reason && this.taintReasons.indexOf(reason) === -1) this.taintReasons.push(reason);
+    }
+
+    finalize(outcome, game) {
+        if (this.finalized) return;
+        this.finalized = true;
+        this.outcome = outcome;
+        if (game) {
+            this.endWave = game.wave;
+            this.durationSec = Math.max(0, game.gameTime - this.startedAtGameTime);
+        }
+    }
+}
+
 class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
@@ -16791,7 +16987,15 @@ class Game {
         this.runOverclocks       = {};     // { p1: { hollowPoint: 0, exoServos: 0, extMags: {} }, p2: {...} }
 
         // Intel tracking
-        this.intelEarnedThisRun  = 0;      // Used to award intel at run end
+        this.intelEarnedThisRun  = 0;      // LEGACY MIRROR of runLedger.intelEarned (kept for back-compat)
+
+        // PHASE 0: run pipeline objects. Null until startNewGame() builds
+        // them. Every in-run economy/stat write goes through this.runLedger;
+        // every run terminates through endRun() -> the debrief screen.
+        this.runConfig = null;
+        this.runLedger = null;
+        this._debriefTimers = [];
+        this._debriefFocusIdx = 0;
         
         this.heartbeatTimer = 0;
         this.heartbeatPhase = 0;
@@ -17418,6 +17622,7 @@ class Game {
         this.baseTimeScale = this.timeScale;
         this.timeScale = 0.08;
         this.gloryKillTimer = 1.2;
+        if (this.runLedger) this.runLedger.recordGloryKill(); // PHASE 0
         // Store target position for UI/effects but do NOT pan camera to it
         this.gloryKillTarget = { x: enemy.x, y: enemy.y };
         // Strong zoom punch to signal the kill, stays player-centered
@@ -18182,8 +18387,10 @@ class Game {
             return true;
         }
 
-        // 3. Death Screen Controller Navigation
-        if (this.state === 'over') {
+        // 3. Debrief Screen Controller Navigation (PHASE 0: 'over' is the
+        // legacy state name, kept in the check as cheap insurance -- nothing
+        // sets it anymore; endRun() sets 'debrief').
+        if (this.state === 'over' || this.state === 'debrief') {
             this.handleDeathMenuNavigation(gpList);
             return true;
         }
@@ -19042,12 +19249,23 @@ class Game {
     }
 
     handleDeathMenuNavigation(gpList) {
+        // PHASE 0: drives the unified debrief screen. Two focus targets
+        // (RE-DEPLOY / RETURN TO HQ), dpad or stick to move, A/Start to
+        // confirm -- same focused-btn convention as the rest of the menus.
+        if (this._debriefFocusIdx === undefined) this._debriefFocusIdx = 0;
+        const ids = ['btn-debrief-redeploy', 'btn-debrief-hq'];
         for (let gp of gpList) {
             let btnA = gp.buttons[0].pressed;
             let btnStart = gp.buttons[9].pressed;
+            let dLeft  = gp.buttons[14].pressed || (gp.axes[0] && gp.axes[0] < -0.5);
+            let dRight = gp.buttons[15].pressed || (gp.axes[0] && gp.axes[0] > 0.5);
+            if ((dLeft || dRight) && this.gpadButtonCooldown <= 0) {
+                this.gpadButtonCooldown = 0.25;
+                this._debriefFocusIdx = (this._debriefFocusIdx + 1) % ids.length;
+            }
             if ((btnA || btnStart) && this.gpadButtonCooldown <= 0) {
                 this.gpadButtonCooldown = 0.3;
-                let btn = document.getElementById('btn-death-redeploy');
+                let btn = document.getElementById(ids[this._debriefFocusIdx]);
                 if (btn) {
                     btn.click();
                     btn.blur();
@@ -19056,10 +19274,10 @@ class Game {
                 return;
             }
         }
-        let redeployBtn = document.getElementById('btn-death-redeploy');
-        if (redeployBtn && !redeployBtn.classList.contains('focused-btn')) {
-            redeployBtn.classList.add('focused-btn');
-        }
+        ids.forEach((id, idx) => {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('focused-btn', idx === this._debriefFocusIdx);
+        });
     }
 
     placeBarrier(player) {
@@ -19815,7 +20033,47 @@ class Game {
         p.perkAmbusher = false;
     }
 
+    // ---- PHASE 0: RunConfig factory --------------------------------------
+    // Snapshots the menu-configured mode flags into one plain-data object.
+    // startNewGame() consumes THIS (plus the legacy flags it mirrors, until
+    // Phase 1/2 migrate mode setup fully onto the config). The economy and
+    // end-of-run pipeline read ONLY the config + ledger.
+    buildRunConfig() {
+        return {
+            id: 'run_' + Date.now(),
+            modeId: this.gameMode || (this.isTestingMode ? 'sandbox'
+                     : this.operatorMode ? 'operator'
+                     : this.nowMode ? 'now' : 'normal'),
+            mapId: this.selectedMapId,
+            isTwoPlayer: !!this.isTwoPlayer,
+            difficulty: this.difficultyMode,
+            friendlyFireMode: this.friendlyFireMode,
+            startingCash: this.nowMode ? NOW_MODE.STARTING_CASH : this.startingCash,
+            startWave: this.nowMode ? NOW_MODE.START_WAVE : 1,
+            modifiers: {
+                nightMode: !!this.nightMode,
+                forcedMutator: this.forcedMutator || null
+            },
+            objectives: [],                  // PHASE 1: objective component list
+            rewardRules: { intelPerWave: 2, intelPerElite: 3, intelPerChip: 5 },
+            entryCost: 0,                    // PHASE 2: mission entry fees
+            unlockRequirements: null,        // PHASE 2: read by the mission registry
+            // The ONE flag that drives the "no Intel this run" banner and
+            // every earning gate. Sandbox is ineligible by construction;
+            // god mode / dev spawns taint an eligible run mid-flight.
+            intelEligible: !this.isTestingMode
+        };
+    }
+
     startNewGame() {
+        // PHASE 0: snapshot the rules of this run + open a fresh ledger
+        // BEFORE any other reset -- everything below may consult them.
+        this.runConfig = this.buildRunConfig();
+        this.runLedger = new RunLedger(this.runConfig, this);
+        this.runLedger.startWave = this.runConfig.startWave;
+        this._clearDebriefTimers();
+        toggleClass('debrief-screen', 'hidden', true);
+
         this.runOverclocks = {
             p1: { hollowPoint: 0, exoServos: 0, extMags: {}, fireRate: 0, maxHpOC: 0 },
             p2: { hollowPoint: 0, exoServos: 0, extMags: {}, fireRate: 0, maxHpOC: 0 }
@@ -20478,13 +20736,14 @@ class Game {
             this.grantRandomPerk(p);
         } else if (it.type === 'intel') {
             pickedUp = true;
-            this.saveData.intel = (this.saveData.intel || 0) + 5;
-            this.saveGameData();
-            this.floatingTexts.push(this.spawnFloatingText(
-                it.x, it.y - 12, "+5 INTEL",
-                '#00e5ff', 1.5,
-                (Math.random() - 0.5) * 80, -90, 260, true
-            ));
+            // PHASE 0: chip value comes from RunConfig.rewardRules; award
+            // goes through the ledger (dev-spawned chips on a tainted run
+            // yield 0 -- the juice renders that honestly as INTEL LOCKED).
+            const chipVal = (this.runConfig && this.runConfig.rewardRules)
+                ? this.runConfig.rewardRules.intelPerChip : 5;
+            const awarded = this.runLedger ? this.runLedger.addIntel(chipVal, 'chip') : 0;
+            if (this.runLedger) this.intelEarnedThisRun = this.runLedger.intelEarned;
+            this.intelPickupJuice(it.x, it.y, awarded);
             audio.playPickup('money');
         } else {
             let wKey = it.type;
@@ -21008,6 +21267,9 @@ class Game {
     }
     
     devToggleGodMode() {
+        // PHASE 0: enabling god mode mid-run flags the run ineligible for
+        // Intel. One-way for this run: toggling back off doesn't untaint.
+        if (!this.devGodMode) this.taintRunEligibility('god_mode');
         this.devGodMode = !this.devGodMode;
         const godBtn = document.getElementById('btn-dev-godmode');
         if (godBtn) {
@@ -21019,6 +21281,7 @@ class Game {
     }
     
     devAddCash(amount) {
+        this.taintRunEligibility('dev_cash'); // PHASE 0: run-currency cheat
         if (this.player) this.player.cash += amount;
         if (this.player2) this.player2.cash += amount;
         if (audio) audio.playPickup('money');
@@ -21044,6 +21307,7 @@ class Game {
     }
     
     devSpawnWeapon(weaponKey) {
+        this.taintRunEligibility('dev_spawn'); // PHASE 0
         if (this.player) {
             this.player.addWeapon(weaponKey);
             this.player.weapon = this.player.inventory[this.player.inventory.length - 1];
@@ -21063,6 +21327,7 @@ class Game {
     }
     
     devSpawnEnemy(typeKey, isElite) {
+        this.taintRunEligibility('dev_spawn'); // PHASE 0
         if (this.player) {
             let spawnX = this.player.x + Math.cos(this.player.angle) * 150;
             let spawnY = this.player.y + Math.sin(this.player.angle) * 150;
@@ -21095,6 +21360,7 @@ class Game {
     // picks up any new boss added to that registry -- no per-boss wiring
     // needed here beyond the one registry entry.
     devSpawnBoss(bossKey) {
+        this.taintRunEligibility('dev_spawn'); // PHASE 0
         if (!this.player) { this.toggleDevDashboard(); return; }
 
         let meta = BossTypes[bossKey];
@@ -21161,6 +21427,7 @@ class Game {
     }
     
     devSpawnItem(itemType) {
+        this.taintRunEligibility('dev_spawn'); // PHASE 0
         if (this.player) {
             let spawnX = this.player.x + Math.cos(this.player.angle) * 80;
             let spawnY = this.player.y + Math.sin(this.player.angle) * 80;
@@ -21733,6 +22000,12 @@ class Game {
             if (this.enemies[i].dead) {
                 let e = this.enemies[i];
 
+                // PHASE 0: single kill-accounting point -- every enemy
+                // (grunt, elite, boss) exits the sim through this loop, so
+                // the ledger counts here rather than in the N onDeath()
+                // overrides scattered across the class hierarchy.
+                if (this.runLedger) this.runLedger.recordKill(e);
+
                 if (e instanceof Boss) {
                     // Boss.onDeath() already paid out its own loot/cash/banner.
                     // Just drop it from the active list -- no generic money
@@ -21780,11 +22053,9 @@ class Game {
 
         let bothDead = this.player.dead && (!this.isTwoPlayer || !this.player2 || this.player2.dead);
         if (bothDead) {
-            this.state = 'over';
-            setHtml('death-wave', this.wave);
-            toggleClass('death-screen', 'hidden', false);
-            toggleClass('ui-layer', 'hidden', true);
-            this.saveHighScore(this.wave);
+            // PHASE 0: all run-ending states funnel through endRun() -> the
+            // unified debrief. The bespoke death-screen is gone.
+            this.endRun(RUN_OUTCOMES.DEATH);
         } else if (this.enemies.length === 0 && this.enemiesToSpawn === 0 && this.roundWinDelay === 0) {
             this.roundWinDelay = 1.5;
             this.triggerRoundWinEffects();
@@ -22014,12 +22285,20 @@ class Game {
     }
 
     openShopInterface() {
-        // Award Intel: 2 per completed wave, +3 per Elite killed this wave
-        let intelGained = 2 + (this._elitesKilledThisWave || 0) * 3;
-        this.saveData.intel = (this.saveData.intel || 0) + intelGained;
-        this.intelEarnedThisRun = (this.intelEarnedThisRun || 0) + intelGained;
+        // PHASE 0: wave-clear Intel routes through the RunLedger (the single
+        // write path). Rates live on RunConfig.rewardRules, not inline here.
+        // Sandbox/god/dev-tainted runs earn 0 by construction (ledger gate).
+        // waveStarted guard: openShopInterface() also runs on the INITIAL
+        // shop of Sandbox/ACTION NOW (before any wave) -- the old inline code
+        // leaked +2 Intel for that no-op "wave". Fixed here.
+        if (this.runLedger && this.waveStarted) {
+            this.runLedger.recordWaveCleared();
+            const rr = (this.runConfig && this.runConfig.rewardRules) || { intelPerWave: 2, intelPerElite: 3 };
+            const intelGained = rr.intelPerWave + (this._elitesKilledThisWave || 0) * rr.intelPerElite;
+            this.runLedger.addIntel(intelGained, 'wave_clear');
+            this.intelEarnedThisRun = this.runLedger.intelEarned; // legacy mirror
+        }
         this._elitesKilledThisWave = 0;
-        this.saveGameData();
 
         if (this.player && this.player.activeDrone) {
             this.player.activeDrone.stopAudio();
@@ -22592,6 +22871,13 @@ class Game {
         setHtmlCached('ui-wave', this.wave);
         setHtmlCached('ui-enemies', this.enemies.length + this.enemiesToSpawn);
         setHtmlCached('ui-cash', this.player.cash);
+        // PHASE 0: per-run intel readout + eligibility banner (dirty-cached)
+        setHtmlCached('ui-intel', this.runLedger ? this.runLedger.intelEarned : (this.intelEarnedThisRun || 0));
+        const bannerOn = !!(this.runLedger && (!this.runLedger.eligible || this.runLedger.tainted));
+        if (this.hudState['no-intel-banner_on'] !== bannerOn) {
+            toggleClass('no-intel-banner', 'hidden', !bannerOn);
+            this.hudState['no-intel-banner_on'] = bannerOn;
+        }
         setHtmlCached('ui-hp-val', Math.ceil(this.player.hp));
         setHtmlCached('ui-armor-val', Math.ceil(this.player.armor));
         
@@ -22725,6 +23011,18 @@ class Game {
         } catch(e) {
             console.error("Failed to load save data:", e);
         }
+        // PHASE 0: save schema versioning. v1 = implicit legacy save (no
+        // version field). v2 adds the version stamp + careerStats (lifetime
+        // Dossier accumulator, fed by endRun). Migrations are additive-only:
+        // legacy/unknown fields always survive the JSON round-trip untouched.
+        if (this.saveData.version === undefined) this.saveData.version = 1;
+        if (this.saveData.version < 2) {
+            if (!this.saveData.careerStats) {
+                this.saveData.careerStats = { runs: 0, kills: 0, eliteKills: 0, bossKills: 0, gloryKills: 0, wavesCleared: 0, intelEarned: 0, deaths: 0, extractions: 0 };
+            }
+            this.saveData.version = 2;
+        }
+
         if (this.saveData.musicTrack === undefined) this.saveData.musicTrack = 'off';
         if (this.saveData.musicVolume === undefined) this.saveData.musicVolume = 0.5;
         if (this.saveData.sfxVolume === undefined) this.saveData.sfxVolume = 0.5;
@@ -23256,10 +23554,13 @@ class Game {
         this.saveGameData();
     }
 
-    returnToMainMenu() {
-        this.state = 'start';
-        this.isPaused = false;
-        
+    // ================= PHASE 0: UNIFIED END-OF-RUN PIPELINE =================
+    // endRun(outcome) is the ONLY way a run terminates. It finalizes the
+    // ledger, accumulates lifetime career stats (Phase 2 Dossier feed),
+    // and lands on the debrief screen. Phase 1's extraction evac calls
+    // endRun(RUN_OUTCOMES.EXTRACTION) and gets all of this for free.
+
+    _stopRunAudio() {
         if (this.player && this.player.activeDrone) {
             this.player.activeDrone.stopAudio();
             this.player.activeDrone = null;
@@ -23268,26 +23569,279 @@ class Game {
             this.player2.activeDrone.stopAudio();
             this.player2.activeDrone = null;
         }
-        // BUGFIX: MiniDrone ("Hunter Swarm") instances hold their own
-        // persistent engine-hum oscillator (see MiniDrone.initAudio()),
-        // stopped only when a drone naturally dies during the normal
-        // update() loop (this.miniDrones[i].stopAudio() in Game.update()).
-        // That loop stops running the moment the player leaves via "ABANDON
-        // MISSION" below, so any still-alive swarm drones' oscillators were
-        // previously left running indefinitely in the background -- audible
-        // on the main menu with nothing on-screen to explain it -- until
-        // (if ever) the player started a fresh run, since startNewGame()'s
-        // own reset loop is the only other place that calls stopAudio() on
-        // this array. Stopping them here closes that window.
+        // MiniDrone ("Hunter Swarm") instances hold their own persistent
+        // engine-hum oscillator (see MiniDrone.initAudio()), stopped only
+        // when a drone naturally dies during the normal update() loop. That
+        // loop stops running the moment the run ends, so any still-alive
+        // swarm drones' oscillators would otherwise hum forever on the
+        // debrief/menu. (Moved here from returnToMainMenu() so BOTH exit
+        // paths -- debrief and straight-to-menu -- share the same cleanup.)
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
                 md.stopAudio();
             }
         }
+    }
+
+    _clearDebriefTimers() {
+        if (this._debriefTimers) {
+            for (let t of this._debriefTimers) clearTimeout(t);
+        }
+        this._debriefTimers = [];
+    }
+
+    // Pause-menu "ABANDON MISSION": if a run is live it still ends through
+    // the debrief (abandon-with-progress keeps its earned Intel visible);
+    // otherwise fall straight through to the menu.
+    abandonRun() {
+        if (this.runLedger && !this.runLedger.finalized && (this.state === 'playing' || this.state === 'shop')) {
+            this.isPaused = false;
+            toggleClass('pause-screen', 'hidden', true);
+            this.endRun(RUN_OUTCOMES.ABANDON);
+        } else {
+            this.returnToMainMenu();
+        }
+    }
+
+    endRun(outcome) {
+        if (this.state === 'debrief') return;                 // double-entry guard
+        if (!this.runLedger) { this.returnToMainMenu(); return; } // pathological (no run ever started)
+        this.runLedger.finalize(outcome, this);
+
+        // High score: deaths only (legacy behavior preserved). saveHighScore
+        // already guards sandbox; tainted runs are additionally excluded so
+        // god-mode marathons can't poison the board.
+        if (outcome === RUN_OUTCOMES.DEATH && !this.runLedger.tainted) {
+            this.saveHighScore(this.wave);
+        }
+
+        this._accumulateCareerStats(this.runLedger);          // PHASE 2 Dossier feed
+
+        this._stopRunAudio();
+        this.isPaused = false;
+        this.state = 'debrief';                               // inert for update()/input, like 'over' was
+        this._debriefFocusIdx = 0;
+        toggleClass('pause-screen', 'hidden', true);
+        toggleClass('shop-screen', 'hidden', true);
+        toggleClass('ui-layer', 'hidden', true);
+        toggleClass('debrief-screen', 'hidden', false);
+        this._renderDebrief(this.runLedger);
+    }
+
+    _accumulateCareerStats(L) {
+        if (!this.saveData) return;
+        if (!this.saveData.careerStats) {
+            this.saveData.careerStats = { runs: 0, kills: 0, eliteKills: 0, bossKills: 0, gloryKills: 0, wavesCleared: 0, intelEarned: 0, deaths: 0, extractions: 0 };
+        }
+        const c = this.saveData.careerStats;
+        c.runs++;
+        c.kills        += L.kills;
+        c.eliteKills   += L.eliteKills;
+        c.bossKills    += L.bossKills;
+        c.gloryKills   += L.gloryKills;
+        c.wavesCleared += L.wavesCleared;
+        c.intelEarned  += L.intelEarned;
+        if (L.outcome === RUN_OUTCOMES.DEATH)      c.deaths++;
+        if (L.outcome === RUN_OUTCOMES.EXTRACTION) c.extractions++;
+        this.saveGameData();
+    }
+
+    // The staged stat cascade: BOOM / BOOM / BOOM rows, then the SVG intel
+    // burst + count-up, then any unlock cards flipping in. All timers are
+    // tracked so redeploy/HQ can cancel a half-played cascade cleanly.
+    _renderDebrief(L) {
+        this._clearDebriefTimers();
+        const denied = (!L.eligible || L.tainted);
+
+        const titleEl = document.getElementById('debrief-title');
+        const subEl   = document.getElementById('debrief-subtitle');
+        const meta = ({
+            death:      { title: 'OPERATOR ELIMINATED', color: 'var(--red)' },
+            abandon:    { title: 'MISSION ABANDONED',   color: '#ffb700' },
+            extraction: { title: 'EXTRACTION COMPLETE', color: 'var(--green)' }
+        })[L.outcome] || { title: 'RUN COMPLETE', color: 'var(--neon-blue)' };
+        if (titleEl) {
+            titleEl.innerText = meta.title;
+            titleEl.style.color = meta.color;
+            titleEl.style.textShadow = '0 0 15px ' + meta.color;
+        }
+        if (subEl) {
+            const modeName = (L.config && L.config.modeId ? String(L.config.modeId) : 'run').toUpperCase();
+            subEl.innerText = 'AFTER-ACTION REPORT \u2014 ' + modeName + ' \u2014 WAVE ' + L.endWave;
+        }
+
+        const mins = Math.floor(L.durationSec / 60);
+        const secs = Math.floor(L.durationSec % 60);
+        const rows = [
+            ['WAVES CLEARED', L.wavesCleared],
+            ['KILLS',         L.kills],
+            ['ELITES',        L.eliteKills],
+            ['BOSSES',        L.bossKills],
+            ['GLORY KILLS',   L.gloryKills],
+            ['DAMAGE TAKEN',  Math.round(L.damageTaken)],
+            ['TIME IN FIELD', mins + ':' + String(secs).padStart(2, '0')]
+        ];
+        const rowsEl = document.getElementById('debrief-rows');
+        if (rowsEl) {
+            rowsEl.innerHTML = '';
+            for (const [label, value] of rows) {
+                const div = document.createElement('div');
+                div.className = 'debrief-row';
+                const l = document.createElement('span'); l.className = 'd-label'; l.innerText = label;
+                const v = document.createElement('span'); v.className = 'd-value'; v.innerText = String(value);
+                div.appendChild(l); div.appendChild(v);
+                rowsEl.appendChild(div);
+            }
+        }
+
+        toggleClass('debrief-tainted-note', 'hidden', !denied);
+        const stage    = document.getElementById('debrief-intel-stage');
+        const amountEl = document.getElementById('debrief-intel-amount');
+        const burstEl  = document.getElementById('debrief-intel-burst');
+        if (stage)    stage.classList.remove('boom');
+        if (burstEl)  burstEl.classList.remove('fire');
+        if (amountEl) {
+            amountEl.classList.toggle('denied', denied);
+            amountEl.innerText = denied ? 'NO INTEL \u2014 INELIGIBLE RUN' : '+0 INTEL';
+        }
+        const unlocksEl = document.getElementById('debrief-unlocks');
+        if (unlocksEl) unlocksEl.innerHTML = '';
+
+        // Stage 1: the stat cascade
+        let t = 250;
+        if (rowsEl) {
+            for (let i = 0; i < rowsEl.children.length; i++) {
+                const el = rowsEl.children[i];
+                this._debriefTimers.push(setTimeout(() => {
+                    el.classList.add('boom');
+                    if (typeof audio !== 'undefined' && audio && audio.playPickup) audio.playPickup('money');
+                }, t));
+                t += 240;
+            }
+        }
+
+        // Stage 2: intel burst + count-up
+        t += 220;
+        this._debriefTimers.push(setTimeout(() => {
+            if (stage) stage.classList.add('boom');
+            if (!denied && amountEl) {
+                if (burstEl) burstEl.classList.add('fire');
+                if (typeof audio !== 'undefined' && audio && audio.playTadah) audio.playTadah();
+                const target = L.intelEarned;
+                const dur = 800;
+                const t0 = performance.now();
+                const tick = () => {
+                    const p = Math.min(1, (performance.now() - t0) / dur);
+                    const eased = 1 - Math.pow(1 - p, 3);
+                    amountEl.innerText = '+' + Math.round(target * eased) + ' INTEL';
+                    if (p < 1 && this.state === 'debrief') requestAnimationFrame(tick);
+                };
+                requestAnimationFrame(tick);
+            }
+        }, t));
+
+        // Stage 3: unlock cards. PHASE 2 hook: anything that pushes
+        // {label} objects onto ledger.unlocks during the run gets a card
+        // flip here for free. Today the only producer is the top-of-board
+        // high-score check below.
+        const unlocks = [];
+        if (L.outcome === RUN_OUTCOMES.DEATH && !L.tainted && L.config && L.config.modeId !== 'sandbox') {
+            const hs = (this.saveData && this.saveData.highScores) || [];
+            if (hs.length && hs[0].wave === L.endWave) {
+                unlocks.push({ label: 'NEW RECORD \u2014 WAVE ' + L.endWave });
+            }
+        }
+        for (const u of (L.unlocks || [])) unlocks.push(u);
+        t += 450;
+        if (unlocksEl) {
+            for (const u of unlocks) {
+                const card = document.createElement('div');
+                card.className = 'debrief-unlock-card';
+                card.innerText = u.label;
+                unlocksEl.appendChild(card);
+                this._debriefTimers.push(setTimeout(() => {
+                    card.classList.add('flip');
+                    if (typeof audio !== 'undefined' && audio && audio.playPickup) audio.playPickup('weapon');
+                }, t));
+                t += 320;
+            }
+        }
+    }
+
+    debriefRedeploy() {
+        this._clearDebriefTimers();
+        toggleClass('debrief-screen', 'hidden', true);
+        // startNewGame() re-reads the still-configured menu state (mode, map,
+        // co-op, FF) and builds a fresh RunConfig/Ledger -- same-run-again.
+        this.startNewGame();
+    }
+
+    // Called by every dev tool that alters a live run (god mode, spawns,
+    // cash injections). One-way for the current run: toggling god mode back
+    // off doesn't untaint. The HUD banner picks this up via updateHUD.
+    taintRunEligibility(reason) {
+        if (!this.runLedger || this.runLedger.finalized) return;
+        const wasClean = this.runLedger.eligible && !this.runLedger.tainted;
+        this.runLedger.taint(reason);
+        if (wasClean && this.player && this.spawnFloatingText) {
+            this.floatingTexts.push(this.spawnFloatingText(
+                this.player.x, this.player.y - 40, "WARNING: NO INTEL THIS RUN",
+                '#ff2a5f', 2.2, 0, -60, 160, true
+            ));
+        }
+    }
+
+    // PHASE 0: in-run intel pickup juice -- world-space particle burst +
+    // floating text + a DOM/SVG starburst popped over the HUD intel counter.
+    intelPickupJuice(x, y, awardedAmount) {
+        const denied = awardedAmount <= 0;
+        for (let i = 0; i < 14; i++) {
+            let a = Math.random() * Math.PI * 2;
+            let spd = MathUtils.rand(120, 380);
+            this.addParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd,
+                denied ? '#5a6a75' : '#00e5ff', 0.7, MathUtils.rand(2, 4));
+        }
+        this.floatingTexts.push(this.spawnFloatingText(
+            x, y - 12,
+            denied ? "INTEL LOCKED" : ("+" + awardedAmount + " INTEL"),
+            denied ? '#808f9c' : '#00e5ff', 1.5,
+            (Math.random() - 0.5) * 80, -90, 260, true
+        ));
+        if (denied) return;
+        const wrap = document.getElementById('hud-intel-wrap');
+        if (!wrap) return;
+        wrap.classList.remove('intel-pop');
+        void wrap.offsetWidth; // restart the CSS animation
+        wrap.classList.add('intel-pop');
+        const SVGNS = 'http://www.w3.org/2000/svg';
+        const burst = document.createElementNS(SVGNS, 'svg');
+        burst.setAttribute('viewBox', '0 0 200 200');
+        burst.setAttribute('class', 'hud-intel-burst');
+        for (let k = 0; k < 8; k++) {
+            const ang = k * Math.PI / 4;
+            const line = document.createElementNS(SVGNS, 'line');
+            line.setAttribute('x1', (100 + Math.cos(ang) * 30).toFixed(1));
+            line.setAttribute('y1', (100 + Math.sin(ang) * 30).toFixed(1));
+            line.setAttribute('x2', (100 + Math.cos(ang) * 85).toFixed(1));
+            line.setAttribute('y2', (100 + Math.sin(ang) * 85).toFixed(1));
+            line.setAttribute('stroke', '#00e5ff');
+            line.setAttribute('stroke-width', '6');
+            line.setAttribute('stroke-linecap', 'round');
+            burst.appendChild(line);
+        }
+        wrap.appendChild(burst);
+        setTimeout(() => { if (burst.parentNode) burst.parentNode.removeChild(burst); }, 650);
+    }
+
+    returnToMainMenu() {
+        this.state = 'start';
+        this.isPaused = false;
+        this._clearDebriefTimers();
+        this._stopRunAudio();
         
         toggleClass('pause-screen', 'hidden', true);
         toggleClass('shop-screen', 'hidden', true);
-        toggleClass('death-screen', 'hidden', true);
+        toggleClass('debrief-screen', 'hidden', true);
         toggleClass('ui-layer', 'hidden', true);
         toggleClass('start-screen', 'hidden', false);
         this.switchTab('play');
