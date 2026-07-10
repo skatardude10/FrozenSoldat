@@ -458,6 +458,28 @@
     }
     .armory-pip.filled { background: var(--neon-blue); box-shadow: 0 0 6px var(--neon-blue); }
     .armory-pip.maxed  { background: var(--red);       box-shadow: 0 0 6px var(--red); }
+    /* PHASE 2: mission select cards */
+    #mission-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .mission-card {
+        border: 1px solid rgba(57, 255, 20, 0.25); border-radius: 3px;
+        padding: 8px 10px; text-align: left; cursor: pointer;
+        background: rgba(57, 255, 20, 0.03); transition: border-color 0.15s, background 0.15s;
+    }
+    .mission-card:hover { border-color: rgba(57, 255, 20, 0.6); }
+    .mission-card.selected {
+        border-color: #39ff14; background: rgba(57, 255, 20, 0.09);
+        box-shadow: 0 0 10px rgba(57, 255, 20, 0.25);
+    }
+    .mission-card.locked {
+        border-color: rgba(255,255,255,0.08); background: rgba(0,0,0,0.2);
+        cursor: default; opacity: 0.65;
+    }
+    .mission-card-name { font-size: 11px; font-weight: bold; letter-spacing: 1px; color: #39ff14; margin-bottom: 3px; }
+    .mission-card.locked .mission-card-name { color: #5a6a75; }
+    .mission-card-desc { font-size: 10px; color: #a9c2c7; line-height: 1.35; }
+    .mission-card.locked .mission-card-desc { color: #5a6a75; }
+    .mission-card-fee { font-size: 9px; color: #ffb700; letter-spacing: 1px; margin-top: 4px; }
+    .mission-completions { color: #ffb700; font-size: 10px; }
     button.armory-buy-btn { font-size: 10px; padding: 4px 10px; width: 100%; margin: 0; }
     button.armory-buy-btn.maxed-out {
         border-color: var(--red) !important; color: var(--red) !important;
@@ -553,6 +575,26 @@
         100% { transform:scale(1); }
     }
     .hud-intel-burst { position:absolute; left:50%; top:50%; width:64px; height:64px; transform:translate(-50%,-50%); pointer-events:none; animation:intel-burst 0.6s ease-out forwards; }
+
+    /* PHASE 1: objective list + heat meter (extraction). Positioned under
+       the P1 top bar, left-aligned; inert/hidden in every other mode. */
+    #hud-objectives {
+        position:absolute; top:58px; left:12px; text-align:left;
+        font-size:10px; letter-spacing:1px; pointer-events:none; z-index:18;
+        text-shadow:0 0 6px rgba(0,0,0,0.9);
+    }
+    #hud-objectives .obj-line { margin-bottom:3px; color:#a9c2c7; }
+    #hud-objectives .obj-line.obj-active { color:var(--neon-blue); text-shadow:0 0 8px rgba(0,229,255,0.6); }
+    #hud-objectives .obj-line.obj-done { color:var(--green); opacity:0.75; }
+    #hud-objectives .obj-line.obj-locked { color:#5a6a75; }
+    #hud-objectives .obj-carried { color:#ffb700; margin-top:5px; }
+    #hud-heat-wrap {
+        position:absolute; top:58px; right:12px; width:170px; text-align:right;
+        font-size:10px; letter-spacing:2px; pointer-events:none; z-index:18;
+    }
+    #hud-heat-label { font-weight:bold; text-shadow:0 0 8px currentColor; }
+    #hud-heat-track { width:100%; height:5px; margin-top:3px; border:1px solid rgba(255,255,255,0.25); background:rgba(0,4,12,0.6); }
+    #hud-heat-bar { height:100%; width:0%; background:var(--green); transition:width 0.2s linear, background-color 0.4s; }
     #no-intel-banner {
         position:absolute; top:52px; left:50%; transform:translateX(-50%);
         color:var(--red); border:1px solid var(--red); background:rgba(25,0,8,0.7);
@@ -620,6 +662,13 @@
             <div id="ui-boost-active" class="hud-boost-badge" style="visibility: hidden;">BOOST</div>
             <div id="ui-mutator-badge" class="hud-mutator-badge" style="visibility: hidden; margin-left: 5px;">MUTATOR</div>
         </div>
+    </div>
+
+    <!-- PHASE 1: objective list + heat meter (extraction mode) -->
+    <div id="hud-objectives" class="hidden"></div>
+    <div id="hud-heat-wrap" class="hidden">
+        <span id="hud-heat-label" style="color: var(--green);">HEAT: CALM</span>
+        <div id="hud-heat-track"><div id="hud-heat-bar"></div></div>
     </div>
 
     <!-- Consumables (Left HUD) -->
@@ -794,10 +843,10 @@
                 <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
                     <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">DIFFICULTY RATING:</label>
                     <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                        <button id="btn-diff-easy" onclick="game.setDifficulty('easy')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Easy (2.0x)</button>
-                        <button id="btn-diff-medium" onclick="game.setDifficulty('medium')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Medium (1.5x)</button>
-                        <button id="btn-diff-hard" class="active-mode" onclick="game.setDifficulty('hard')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Hard (1.0x)</button>
-                        <button id="btn-diff-legendary" onclick="game.setDifficulty('legendary')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Legendary (0.75x)</button>
+                        <button id="btn-diff-easy" onclick="game.setDifficulty('easy')" style="font-size: 11px; padding: 5px 10px; margin: 0;" title="-25% enemy damage, -10% enemy bullet speed, +50% cash">Easy</button>
+                        <button id="btn-diff-medium" onclick="game.setDifficulty('medium')" style="font-size: 11px; padding: 5px 10px; margin: 0;" title="-10% enemy damage, -5% enemy bullet speed, +20% cash">Medium</button>
+                        <button id="btn-diff-hard" class="active-mode" onclick="game.setDifficulty('hard')" style="font-size: 11px; padding: 5px 10px; margin: 0;" title="Baseline">Hard</button>
+                        <button id="btn-diff-legendary" onclick="game.setDifficulty('legendary')" style="font-size: 11px; padding: 5px 10px; margin: 0;" title="+30% enemy damage, +15% enemy bullet speed">Legendary</button>
                     </div>
                 </div>
 
@@ -809,7 +858,18 @@
                         <button id="btn-gm-sandbox" onclick="game.setGameMode('sandbox')" style="font-size: 11px; padding: 5px 10px; margin: 0;">TESTING SANDBOX</button>
                         <button id="btn-gm-operator" onclick="game.setGameMode('operator')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff7a00; color: #ff7a00;">FPV OPERATOR</button>
                         <button id="btn-gm-now" onclick="game.setGameMode('now')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff2a5f; color: #ff2a5f; box-shadow: 0 0 8px rgba(255, 42, 95, 0.4);">ACTION NOW</button>
+                        <button id="btn-gm-extraction" onclick="game.setGameMode('extraction')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #39ff14; color: #39ff14; box-shadow: 0 0 8px rgba(57, 255, 20, 0.35);">EXTRACTION</button>
                     </div>
+                </div>
+
+                <!-- PHASE 2: mission select (extraction ops only) -->
+                <div id="mission-select-wrap" class="hidden" style="margin: 8px 0 2px 0;">
+                    <label style="font-weight: bold; color: #39ff14; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin-bottom:6px;">SELECT OPERATION:</label>
+                    <div id="mission-list"></div>
+                    <!-- PHASE 3: opt-in risk/reward toggles -->
+                    <label style="font-weight: bold; color: #d500f9; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin: 8px 0 4px 0;">ESCALATION PROTOCOLS <span id="escalation-bonus-lbl" style="color:#a9c2c7; font-weight:normal;"></span></label>
+                    <div id="escalation-list" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+                    <div id="mission-fee-warning" class="hidden" style="color: var(--red); font-size: 11px; letter-spacing: 1px; margin-top: 6px; text-align:left;"></div>
                 </div>
             </div>
 
@@ -1063,6 +1123,9 @@
                 <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
                     <li><b>Perk Cases:</b> Elites have a 10% chance to drop a blue Perk Case. Pick it up to pause the game and select a game-changing run modifier (e.g., Smart Munitions, Vampiric Rounds, Explosive Rounds).</li>
                     <li><b>Overclocks:</b> Found at the bottom of the inter-wave Shop. Spend cash to permanently upgrade your weapons for the current run (Hollow Point rounds, Extended Mags, Fire Rate boosts).</li>
+                    <li><b>Corrupted Overclocks:</b> One-time purchases with real drawbacks — Overpressure (+damage / +spread &amp; kick), Glass Nerves (+fire rate / +damage taken), Cold Barrel (quiet shots / -damage).</li>
+                    <li><b>Shotgun Slugs:</b> Specialty ammo that swaps the pellet cone for one heavy accurate round. Mutually exclusive with buckshot.</li>
+                    <li><b>Escalation Protocols:</b> Opt-in extraction modifiers (menu) that raise danger for bonus Intel on everything you earn.</li>
                 </ul>
 
                 <h3 style="color: #ff2a5f; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 42, 95, 0.3); padding-bottom: 3px;">4. PERSISTENT UPGRADES (INTEL)</h3>
@@ -1147,7 +1210,7 @@
                     
                     <div class="shop-section-title">Standard Munitions</div>
                     <div class="shop-grid">
-                        <button id="btn-buy-ammo-shotgun-p1" onclick="game.buyItem('ammo_shotgun', game.player)">Shotgun x12 ($30)</button>
+                        <button id="btn-buy-ammo-shotgun-p1" onclick="game.buyItem('ammo_shotgun', game.player)">Shotgun Buckshot x12 ($30)</button>
                         <button id="btn-buy-ammo-smg-std-p1" onclick="game.buyItem('ammo_smg_std', game.player)">SMG Standard x60 ($30)</button>
                         <button id="btn-buy-ammo-lmg-std-p1" onclick="game.buyItem('ammo_lmg_std', game.player)">LMG Standard x100 ($40)</button>
                         <button id="btn-buy-ammo-sniper-std-p1" onclick="game.buyItem('ammo_sniper_std', game.player)">Sniper Standard x5 ($40)</button>
@@ -1161,6 +1224,7 @@
                         <button id="btn-buy-ammo-sniper-ap-p1" onclick="game.buyItem('ammo_sniper_ap', game.player)">Sniper Armor Piercing x5 ($100)</button>
                         <button id="btn-buy-ammo-pistol-hp-p1" onclick="game.buyItem('ammo_pistol_hp', game.player)">Pistol Hollow-Point ($80)</button>
                         <button id="btn-buy-ammo-m1a-ap-p1" onclick="game.buyItem('ammo_m1a_ap', game.player)">M1A AP x20 ($85)</button>
+                        <button id="btn-buy-ammo-shotgun-slug-p1" onclick="game.buyItem('ammo_shotgun_slug', game.player)">Shotgun Slugs x8 ($60)</button>
                     </div>
  
                     <div class="shop-section-title">Weapon Overclocks</div>
@@ -1170,6 +1234,13 @@
                         <button id="btn-buy-oc-mags-p1" onclick="game.buyOverclock('extMags', game.player)">Extended Mags ($200)</button>
                         <button id="btn-buy-oc-firerate-p1" onclick="game.buyOverclock('fireRate', game.player)">Fire Rate Lvl.1 ($200)</button>
                         <button id="btn-buy-oc-maxhp-p1" onclick="game.buyOverclock('maxHpOC', game.player)">Max HP Lvl.1 ($175)</button>
+                    </div>
+
+                    <div class="shop-section-title" style="color:#d500f9; border-color:rgba(213,0,249,0.4);">Corrupted Overclocks</div>
+                    <div class="shop-grid">
+                        <button id="btn-buy-oc-overpressure-p1" style="border-color:rgba(213,0,249,0.5); color:#d500f9;" onclick="game.buyOverclock('overpressure', game.player)">Overpressure ($250)</button>
+                        <button id="btn-buy-oc-glassnerves-p1" style="border-color:rgba(213,0,249,0.5); color:#d500f9;" onclick="game.buyOverclock('glassNerves', game.player)">Glass Nerves ($300)</button>
+                        <button id="btn-buy-oc-coldbarrel-p1" style="border-color:rgba(213,0,249,0.5); color:#d500f9;" onclick="game.buyOverclock('coldBarrel', game.player)">Cold Barrel ($200)</button>
                     </div>
                 </div>
             </div>
@@ -1241,7 +1312,7 @@
                     
                     <div class="shop-section-title">Standard Munitions</div>
                     <div class="shop-grid">
-                        <button id="btn-buy-ammo-shotgun-p2" onclick="game.buyItem('ammo_shotgun', game.player2)">Shotgun x12 ($30)</button>
+                        <button id="btn-buy-ammo-shotgun-p2" onclick="game.buyItem('ammo_shotgun', game.player2)">Shotgun Buckshot x12 ($30)</button>
                         <button id="btn-buy-ammo-smg-std-p2" onclick="game.buyItem('ammo_smg_std', game.player2)">SMG Standard x60 ($30)</button>
                         <button id="btn-buy-ammo-lmg-std-p2" onclick="game.buyItem('ammo_lmg_std', game.player2)">LMG Standard x100 ($40)</button>
                         <button id="btn-buy-ammo-sniper-std-p2" onclick="game.buyItem('ammo_sniper_std', game.player2)">Sniper Standard x5 ($40)</button>
@@ -1255,6 +1326,7 @@
                         <button id="btn-buy-ammo-sniper-ap-p2" onclick="game.buyItem('ammo_sniper_ap', game.player2)">Sniper Armor Piercing x5 ($100)</button>
                         <button id="btn-buy-ammo-pistol-hp-p2" onclick="game.buyItem('ammo_pistol_hp', game.player2)">Pistol Hollow-Point ($80)</button>
                         <button id="btn-buy-ammo-m1a-ap-p2" onclick="game.buyItem('ammo_m1a_ap', game.player2)">M1A AP x20 ($85)</button>
+                        <button id="btn-buy-ammo-shotgun-slug-p2" onclick="game.buyItem('ammo_shotgun_slug', game.player2)">Shotgun Slugs x8 ($60)</button>
                     </div>
  
                     <div class="shop-section-title">Weapon Overclocks</div>
@@ -1264,6 +1336,13 @@
                         <button id="btn-buy-oc-mags-p2" onclick="game.buyOverclock('extMags', game.player2)">Extended Mags ($200)</button>
                         <button id="btn-buy-oc-firerate-p2" onclick="game.buyOverclock('fireRate', game.player2)">Fire Rate Lvl.1 ($200)</button>
                         <button id="btn-buy-oc-maxhp-p2" onclick="game.buyOverclock('maxHpOC', game.player2)">Max HP Lvl.1 ($175)</button>
+                    </div>
+
+                    <div class="shop-section-title" style="color:#d500f9; border-color:rgba(213,0,249,0.4);">Corrupted Overclocks</div>
+                    <div class="shop-grid">
+                        <button id="btn-buy-oc-overpressure-p2" style="border-color:rgba(213,0,249,0.5); color:#d500f9;" onclick="game.buyOverclock('overpressure', game.player2)">Overpressure ($250)</button>
+                        <button id="btn-buy-oc-glassnerves-p2" style="border-color:rgba(213,0,249,0.5); color:#d500f9;" onclick="game.buyOverclock('glassNerves', game.player2)">Glass Nerves ($300)</button>
+                        <button id="btn-buy-oc-coldbarrel-p2" style="border-color:rgba(213,0,249,0.5); color:#d500f9;" onclick="game.buyOverclock('coldBarrel', game.player2)">Cold Barrel ($200)</button>
                     </div>
                 </div>
             </div>
@@ -1772,8 +1851,19 @@ function useLeftItem(player) {
     } else if (player.leftSelectIdx === 2) {
         if (player.grenades > 0) {
             player.grenades--;
-            let power = 1480;
-            game.grenades.push(new ShrapnelGrenade(player.x, player.y, Math.cos(player.angle)*power + player.vx, Math.sin(player.angle)*power + player.vy));
+            // PHASE 3 (UNDERBARREL LAUNCHER attachment): grenades fire from
+            // a tube -- much faster, nearly flat, short-fused so they
+            // detonate on/near arrival instead of cooking on the floor.
+            // Same ShrapnelGrenade, same blast; only the delivery changes.
+            const hasGL = game && game.saveData && game.saveData.metaUpgrades
+                && (game.saveData.metaUpgrades.underbarrelLauncher || 0) > 0;
+            let power = hasGL ? 2600 : 1480;
+            let opts  = hasGL ? { fuse: 0.75, vz: 60 } : undefined;
+            game.grenades.push(new ShrapnelGrenade(player.x, player.y, Math.cos(player.angle)*power + player.vx, Math.sin(player.angle)*power + player.vy, opts));
+            if (hasGL && game.registerNoise) {
+                // The tube's THOONK is loud -- launched ordnance heats the run.
+                game.registerNoise(player.x, player.y, 2.5);
+            }
             if (audio && audio.playGrenadeThrow) {
                 audio.playGrenadeThrow(player.x, player.y);
             }
@@ -4798,6 +4888,13 @@ class MapGen {
         this.walls = [];
         this.currentSearchId = 0;
         this.hazeAnchors = [];
+        // PHASE 1 (swarm perf): shared short-TTL path cache -- see getSharedPath().
+        this._pathCache = new Map();
+        // PHASE 1 (wall-break perf): lineages whose visible-edge spans (and
+        // cached shadow) need recomputing, flushed ONCE per frame instead of
+        // once per carve event -- see flushLineageEdges().
+        this._dirtyLineages = new Set();
+        this._wallDrawPass = 0;
         
         const blueprints = [
             { id: 0, w: 2200, h: 2200, biome: { main: '#00e5ff', rgb: '0, 229, 255' } },
@@ -6275,12 +6372,19 @@ class MapGen {
             lineage.pieces.push(stub);
         }
 
-        // Recompute the WHOLE lineage's visible edges now, not just the
-        // new stubs' -- a piece that survived earlier next to what's now
-        // a fresh hole needs its edge re-exposed too (it may have been
-        // hidden against the piece that just got removed above).
-        this._recomputeLineageEdges(lineage);
+        // Recompute the WHOLE lineage's visible edges -- but DEBOUNCED
+        // (PHASE 1 wall-break perf): _recomputeLineageEdges is O(pieces^2)
+        // per call, and a single big blast collapsing a contiguous block
+        // used to trigger it once per carved strip within one frame. The
+        // dirty set coalesces all of them into ONE recompute at the next
+        // flushLineageEdges() (start of the draw pass, same frame), so the
+        // rendered result is identical -- only the redundant intermediate
+        // recomputes are gone.
+        this._dirtyLineages.add(lineage);
         this._spawnCarveDebris(holeCx, holeCy, holeR, wall.colorMain);
+        // PHASE 1: a hole opening in the collision geometry is the loudest
+        // thing a breacher can do -- the flagship heat dial.
+        if (typeof game !== 'undefined' && game) game.registerNoise(holeCx, holeCy, EXTRACTION_TUNING.NOISE.breach);
     }
 
     // Peels a genuinely 2D wall (more than 1 cell across BOTH axes) into
@@ -6361,10 +6465,9 @@ class MapGen {
             if (affected.has(s)) {
                 // _carve1D sees stripWall._lineage already set (truthy),
                 // so it reuses THIS shared lineage instead of creating a
-                // new one -- its own internal _recomputeLineageEdges call
-                // still fires, just against a partially-built piece list
-                // this early in the loop; the final call below (after
-                // every strip exists) is the authoritative one.
+                // new one. (PHASE 1: it now only marks the lineage dirty;
+                // the single authoritative recompute happens at the next
+                // flushLineageEdges(), after every strip exists.)
                 this._carve1D(stripWall, stripWall._dmg, localNewlyDestroyed);
             } else {
                 this.walls.push(stripWall);
@@ -6374,7 +6477,7 @@ class MapGen {
             }
         }
 
-        this._recomputeLineageEdges(lineage);
+        this._dirtyLineages.add(lineage); // PHASE 1: debounced -- see _carve1D's matching comment
         this._spawnCarveDebris(wall.x + wall.w / 2, wall.y + wall.h / 2, Math.max(wall.w, wall.h) * 0.3, wall.colorMain);
     }
 
@@ -6426,6 +6529,62 @@ class MapGen {
     // top/false-or-true boolean can only describe one of those, never
     // both at once -- it necessarily gets the other portion wrong. Each
     // edge is now an array of [start, end] visible sub-spans instead.
+    // PHASE 1 (wall-break perf): once-per-frame flush of every lineage
+    // dirtied by this frame's carve events. Called at the start of the
+    // wall draw pass (so visuals are always current) and defensively from
+    // Game.update (headless harness has no draw loop). Also rebuilds the
+    // lineage's cached shadow sprite -- see _rebuildLineageShadow.
+    flushLineageEdges() {
+        if (this._dirtyLineages.size === 0) return;
+        for (const lineage of this._dirtyLineages) {
+            this._recomputeLineageEdges(lineage);
+            this._rebuildLineageShadow(lineage);
+        }
+        this._dirtyLineages.clear();
+    }
+
+    // PHASE 1 (wall-break perf): "cache static wall shadow generation."
+    // Canvas shadowBlur is paid per draw call; a big block drilled into 28
+    // fragments used to pay 28 blurred fills EVERY frame. Instead, render
+    // the whole lineage's blurred silhouette ONCE per carve event into an
+    // offscreen sprite, and blit that per frame (fragments then draw with
+    // shadowBlur = 0). Regenerated only from flushLineageEdges(), i.e.
+    // only when the geometry actually changes. Skipped entirely on
+    // templates that already draw walls without blur (11/12).
+    _rebuildLineageShadow(lineage) {
+        if (this.templateId === 11 || this.templateId === 12) { lineage._shadow = null; return; }
+        const pieces = lineage.pieces;
+        if (!pieces || pieces.length === 0) { lineage._shadow = null; return; }
+        const BLUR = 10, PAD = BLUR * 2;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of pieces) {
+            minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x + p.w); maxY = Math.max(maxY, p.y + p.h);
+        }
+        const w = Math.ceil(maxX - minX) + PAD * 2;
+        const h = Math.ceil(maxY - minY) + PAD * 2;
+        if (w <= 0 || h <= 0 || w > 4096 || h > 4096 || typeof document === 'undefined') { lineage._shadow = null; return; }
+        let cv = lineage._shadowCanvas;
+        if (!cv) cv = lineage._shadowCanvas = document.createElement('canvas');
+        if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+        const c = cv.getContext('2d');
+        c.clearRect(0, 0, w, h);
+        c.shadowBlur = BLUR;
+        c.fillStyle = '#010c1b';
+        for (const p of pieces) {
+            let rgb = p.colorRgb || this.biome.rgb;
+            if (this.biome.splitTheme) {
+                const wx = p.x + p.w / 2;
+                if (wx < this.width * 0.35) rgb = '255, 42, 95';
+                else if (wx > this.width * 0.65) rgb = '0, 229, 255';
+                else rgb = '128, 143, 156';
+            }
+            c.shadowColor = `rgba(${rgb}, 0.25)`;
+            c.fillRect(p.x - minX + PAD, p.y - minY + PAD, p.w, p.h);
+        }
+        lineage._shadow = { canvas: cv, x: minX - PAD, y: minY - PAD };
+    }
+
     _recomputeLineageEdges(lineage) {
         for (let piece of lineage.pieces) {
             piece._visibleEdges = {
@@ -6574,7 +6733,12 @@ class MapGen {
         }
         ctx.stroke();
 
-        ctx.shadowBlur = (this.templateId === 11 || this.templateId === 12) ? 0 : 10; // PERF: operator map has 150+ walls vs ~20-40 on classic templates; per-shape blur at that count was a real, significant rendering cost invisible to headless testing. Template 12 (~340 walls) is denser still, so it gets the same treatment. Templates 0-9 keep the original blur look unchanged.
+        // PHASE 1 (wall-break perf): apply any carve events from this frame
+        // in ONE coalesced recompute before drawing.
+        this.flushLineageEdges();
+        this._wallDrawPass++;
+        const wallBlur = (this.templateId === 11 || this.templateId === 12) ? 0 : 10;
+        ctx.shadowBlur = wallBlur; // PERF: operator map has 150+ walls vs ~20-40 on classic templates; per-shape blur at that count was a real, significant rendering cost invisible to headless testing. Template 12 (~340 walls) is denser still, so it gets the same treatment. Templates 0-9 keep the original blur look unchanged.
         let bufferX = Math.max(150, visibleW * 0.18);
         let bufferY = Math.max(150, visibleH * 0.18);
         for (let wall of this.walls) {
@@ -6589,11 +6753,26 @@ class MapGen {
                 else if (wx > this.width * 0.65) { wMain = '#00e5ff'; wRgb = '0, 229, 255'; }
                 else { wMain = '#808f9c'; wRgb = '128, 143, 156'; }
             }
+            // PHASE 1 (wall-break perf): carved fragments use the lineage's
+            // cached shadow sprite (blitted once per lineage per pass)
+            // instead of paying per-fragment shadowBlur every frame. Whole,
+            // never-carved walls keep the original per-wall blur exactly.
+            let usingCachedShadow = false;
+            if (wall._lineage && wallBlur > 0) {
+                usingCachedShadow = true;
+                ctx.shadowBlur = 0;
+                const lin = wall._lineage;
+                if (lin._shadow && lin._shadowPass !== this._wallDrawPass) {
+                    lin._shadowPass = this._wallDrawPass;
+                    ctx.drawImage(lin._shadow.canvas, lin._shadow.x - cam.x, lin._shadow.y - cam.y);
+                }
+            }
             ctx.shadowColor = `rgba(${wRgb}, 0.25)`;
             ctx.fillStyle = '#010c1b';
             ctx.strokeStyle = wMain;
             ctx.lineWidth = 2;
             ctx.fillRect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
+            if (usingCachedShadow) ctx.shadowBlur = wallBlur; // restore for the next (whole) wall
 
             // Outline: for the overwhelming majority of walls (never
             // damaged, or not destructible at all) this is still one
@@ -6806,6 +6985,24 @@ class MapGen {
         return candidates[0].n;
     }
 
+    // PHASE 1 (swarm perf): coarse-keyed, short-TTL path cache. Swarmers
+    // funneling toward the same player from the same area produce identical
+    // keys, so a whole swarm pays ~one A* per cache cell per 0.45s instead
+    // of one per swarmer per AI tick. Paths are read-only downstream
+    // (consumers only read path[0]), so sharing the array is safe.
+    getSharedPath(startX, startY, endX, endY, walls) {
+        const CELL = 200, TTL = 0.45;
+        const key = ((startX / CELL) | 0) + ',' + ((startY / CELL) | 0) + '>' +
+                    ((endX / CELL) | 0) + ',' + ((endY / CELL) | 0);
+        const now = (typeof game !== 'undefined' && game) ? game.gameTime : 0;
+        const hit = this._pathCache.get(key);
+        if (hit && (now - hit.t) < TTL) return hit.path;
+        const path = this.findPath(startX, startY, endX, endY, walls);
+        if (this._pathCache.size > 300) this._pathCache.clear();
+        this._pathCache.set(key, { t: now, path });
+        return path;
+    }
+
     findPath(startX, startY, endX, endY, walls) {
         // 1. Check direct line of sight first.
         // PERF: when the caller passed the full map wall array AND both
@@ -6855,6 +7052,14 @@ class MapGen {
 
         // A* algorithm using Priority Queue
         // Comparator breaks ties using hScore (heuristic/distance to target)
+        // PHASE 1 (swarm perf): expansion budget. On the large maps a
+        // pathological query (goal pocketed behind a long carved wall) can
+        // expand thousands of nodes; past the cap we return a best-effort
+        // path to the closest-to-goal node reached so far -- movement stays
+        // sane and the next throttled AI tick retries from closer in.
+        const MAX_EXPANSIONS = 800;
+        let expansions = 0;
+        let bestNode = null, bestH = Infinity;
         let openSet = new PriorityQueue((a, b) => {
             if (a.fScore === b.fScore) {
                 return a.hScore - b.hScore;
@@ -6882,6 +7087,18 @@ class MapGen {
             // Skip popped entries if they belong to an old search, are already closed, or are suboptimal
             if (node.searchId !== this.currentSearchId || node.closedSearchId === this.currentSearchId || fScore > node.fScore) {
                 continue;
+            }
+
+            if (popped.hScore < bestH) { bestH = popped.hScore; bestNode = node; }
+            if (++expansions > MAX_EXPANSIONS) {
+                // Budget exceeded: best-effort partial path toward the goal.
+                let path = [];
+                let temp = bestNode;
+                while (temp && temp.cameFrom && temp.searchId === this.currentSearchId) {
+                    path.unshift({ x: temp.x, y: temp.y });
+                    temp = temp.cameFrom;
+                }
+                return path.length ? path : [{ x: endX, y: endY }];
             }
             
             if (node === endNode) {
@@ -7382,6 +7599,14 @@ class Entity {
         // gate above relies on), so this counts player chip damage only.
         if (this.maxStamina !== undefined && typeof game !== 'undefined' && game && game.runLedger && amt > 0) {
             game.runLedger.recordDamageTaken(amt);
+            // PHASE 1: objectives that care about player damage (uplink
+            // channel interrupts) subscribe via this single hook -- exactly
+            // the damage choke point Phase 0 established.
+            if (game.objectives) {
+                for (const o of game.objectives) {
+                    if (o.onPlayerDamaged) o.onPlayerDamaged(this, amt, game);
+                }
+            }
         }
         // FPV OPERATOR MODE: "marked" bonus damage -- see FPVDrone.detonate's
         // operatorExposedTimer hook. Applies regardless of damage source
@@ -8119,6 +8344,9 @@ class Player extends Entity {
         this.pendingFireTimer = 0;
         this.pendingFireWeaponKey = null;
         this.boltCycled = false;
+        // PHASE 1: carried extraction intel (banked only on evac; dropped
+        // as a recoverable cache on death -- see Game.dropIntelCache).
+        this.carriedIntel = 0;
         // Recoil bias: which way this burst of fire is "climbing." Re-rolled
         // when there's been a gap since the last shot (see fire()).
         this.aimRecoilBiasDir = 1;
@@ -8164,6 +8392,7 @@ class Player extends Entity {
             m1a: 60
         };
         this.ammoTypes = {
+            shotgun: 'buck',   // PHASE 3: 'buck' | 'slug' (mutually exclusive)
             smg: 'standard', 
             lmg: 'standard', 
             sniper: 'standard',
@@ -8493,10 +8722,14 @@ class Player extends Entity {
             let clutchFireRateBuff = (this.hp / this.maxHp < 0.20) ? 0.80 : 1.0;
             
             let fireRateLvl = 0;
+            let glassNervesMult = 1.0;
             if (game && game.runOverclocks) {
                 const ocSuffix = this.isPlayer2 ? 'p2' : 'p1';
                 const oc = game.runOverclocks[ocSuffix];
                 if (oc) fireRateLvl = oc.fireRate || 0;
+                // PHASE 3 (Corrupted OC): GLASS NERVES -- +28% ROF, paid for
+                // in takeDamage's +25% incoming.
+                if (oc && oc.corrupted && oc.corrupted.glassNerves) glassNervesMult = 0.78;
             }
             // REBALANCE (Phase 4): ROF ranks capped at 2 (-10% total, floor
             // 0.90); ranks 3-7 now grant weapon HANDLING instead (tighter
@@ -8504,8 +8737,16 @@ class Player extends Entity {
             // is comparable, but it rewards weapon discipline instead of
             // raising bullets-per-second on screen (handoff lever #4).
             const fireRateOCMult = Math.max(0.90, 1.0 - fireRateLvl * 0.05);
-            let actualFireRate = baseFireRate * clutchFireRateBuff * fireRateOCMult;
-            if (hasAmmo && canFireSemi && (gameTime - this.lastFireTime >= actualFireRate)) {
+            let actualFireRate = baseFireRate * clutchFireRateBuff * fireRateOCMult * glassNervesMult;
+            // PHASE 1 BUGFIX (LMG first-shot double): while an open-bolt
+            // round is still scheduled (pendingFireTimer > 0), the regular
+            // fire path must stay closed. Previously the fire-rate clock
+            // (stamped at the click) came due BEFORE the scheduled round
+            // landed whenever openBoltDelay > fireRate (LMG: 0.14 vs 0.11),
+            // so the first trigger pull banged twice ~30ms apart. boltCycled
+            // now strictly gates the initial shot: nothing fires until the
+            // scheduled round has actually left the barrel.
+            if (hasAmmo && canFireSemi && this.pendingFireTimer <= 0 && (gameTime - this.lastFireTime >= actualFireRate)) {
                 let openBoltDelay = this.weapon.openBoltDelay || 0;
                 if (openBoltDelay > 0 && !this.boltCycled) {
                     // First round of a fresh trigger pull on an open-bolt
@@ -8644,9 +8885,14 @@ class Player extends Entity {
             // instead of a hard snap, a held beat, then a release.
             this.beamCollimationHoldTimer -= dt;
         } else if (this.beamCollimation < 1) {
+            // PHASE 3: refocus speed is a LASER SIGHT ARRAY stat now
+            // (level 0 refocuses sluggishly -- the base laser should feel
+            // weak); resolved through the same laserTuning() the renderer
+            // uses so feel and visuals always agree.
+            let _ltRecover = (game && game.laserTuning) ? game.laserTuning(this).recover : AIM_WEIGHT.COLLIMATION_RECOVER_TIME;
             // Linear recovery back to fully focused -- simple and
             // predictable on purpose; see AIM_WEIGHT.COLLIMATION_RECOVER_TIME.
-            this.beamCollimation = Math.min(1, this.beamCollimation + dt / AIM_WEIGHT.COLLIMATION_RECOVER_TIME);
+            this.beamCollimation = Math.min(1, this.beamCollimation + dt / _ltRecover);
         }
 
         // Open Bolt Delay: countdown to a shot scheduled earlier this same
@@ -8660,6 +8906,11 @@ class Player extends Entity {
                 this.pendingFireTimer = 0;
                 if (!this.dead && game && this.weapon.name.toLowerCase() === this.pendingFireWeaponKey) {
                     this.fire(game);
+                    // PHASE 1 BUGFIX (LMG first-shot double): the sustained
+                    // burst's cadence clock starts from the ACTUAL first
+                    // bang, not the click -- pairs with the pendingFireTimer
+                    // gate in the fire-trigger block.
+                    this.lastFireTime = gameTime;
                 }
                 this.pendingFireWeaponKey = null;
             }
@@ -9522,8 +9773,37 @@ class Player extends Entity {
         } else {
             if (this.pistolHP) isHP = true;
         }
-        
+
+        // PHASE 3 (shotgun slugs): ammo TYPE overrides the fired ballistics
+        // via a per-shot effective-weapon view. The base Weapons entry is
+        // never mutated, and everything by-NAME (recoil table, kickback,
+        // audio, aim weight) still keys off 'Shotgun' unchanged. One heavy
+        // accurate round instead of a cone: a range sidegrade, not an
+        // upgrade -- point-blank buckshot still out-damages it.
+        let effWeapon = this.weapon;
+        if (weaponKey === 'shotgun' && this.ammoTypes.shotgun === 'slug') {
+            effWeapon = Object.assign({}, this.weapon,
+                { dmg: 85, pellets: 1, spread: 0.015, speed: 2600, drag: 0.05 });
+        }
+
+        // PHASE 3 (Corrupted Overclocks): the non-damage sides of the
+        // trades live here in fire(), where spread/recoil/noise are born.
+        let corrupted = null;
+        if (game && game.runOverclocks) {
+            const cOc = game.runOverclocks[this.isPlayer2 ? 'p2' : 'p1'];
+            if (cOc) corrupted = cOc.corrupted || null;
+        }
+
         audio.playShoot(this.weapon.name, this.x, this.y);
+
+        // PHASE 1: gunfire is noise -- feeds the extraction Heat director
+        // (inert in every other mode; see Game.registerNoise).
+        if (game && game.registerNoise) {
+            let noiseMag = EXTRACTION_TUNING.NOISE[weaponKey] || 1.5;
+            // PHASE 3: COLD BARREL's whole point -- shots barely heat the run.
+            if (corrupted && corrupted.coldBarrel) noiseMag *= 0.35;
+            game.registerNoise(this.x, this.y, noiseMag);
+        }
 
         // REBALANCE (Phase 4): Fire Rate OC ranks 3-7 are HANDLING ranks --
         // each gives -7% fired spread and -6% physical kickback (up to
@@ -9550,6 +9830,7 @@ class Player extends Entity {
         // default.
         let recoilForce = this.weapon.name === 'Shotgun' ? 280 : this.weapon.name === 'LMG' ? 120 : this.weapon.name === 'Sniper' ? 800 : this.weapon.name === 'M1A' ? 200 : this.weapon.name === 'SMG' ? 40 : 80;
         recoilForce *= (1 - 0.06 * handlingLvl); // Phase 4 handling ranks
+        if (corrupted && corrupted.overpressure) recoilForce *= 1.40; // PHASE 3: the cost of +25% dmg
         this.vx -= Math.cos(this.angle) * recoilForce;
         this.vy -= Math.sin(this.angle) * recoilForce;
         if (this.camera) {
@@ -9600,18 +9881,19 @@ class Player extends Entity {
         let virtualAimY = this.y + Math.sin(this.angle) * aimDist;
         let baseFireAngle = Math.atan2(virtualAimY - barrelY, virtualAimX - barrelX);
 
-        let pellets = this.weapon.pellets || 1;
+        let pellets = effWeapon.pellets || 1;
         // Focus (see AIM_WEIGHT.FOCUS_*): tightens the fired spread cone by
         // up to FOCUS_SPREAD_MULT at full focus -- the explicit "accuracy"
         // half of the focus payoff, alongside the idle-sway steadying
         // (which moves this.angle itself) and the damage/speed bumps in
         // Bullet.init().
-        let focusSpread = this.weapon.spread * (1 - AIM_WEIGHT.FOCUS_SPREAD_MULT * this.focusLevel);
+        let focusSpread = effWeapon.spread * (1 - AIM_WEIGHT.FOCUS_SPREAD_MULT * this.focusLevel);
         focusSpread *= (1 - 0.07 * handlingLvl); // Phase 4 handling ranks
+        if (corrupted && corrupted.overpressure) focusSpread *= 1.25; // PHASE 3: hot loads pattern wide
         for(let i=0; i<pellets; i++) {
             let spreadAngle = baseFireAngle + (Math.random() - 0.5) * focusSpread;
             
-            game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, this.weapon, this, isAP, isHP, false));
+            game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, effWeapon, this, isAP, isHP, false));
             game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*600, Math.sin(spreadAngle)*600, '#fff', 0.04, 3);
         }
 
@@ -9639,7 +9921,13 @@ class Player extends Entity {
         if (game && game.isTestingMode) {
             amt = 0;
         }
-        
+        // PHASE 3 (Corrupted OC): GLASS NERVES' bill comes due here --
+        // multiplied BEFORE armor absorption so the whole hit runs hotter.
+        if (amt > 0 && game && game.runOverclocks) {
+            const gnOc = game.runOverclocks[this.isPlayer2 ? 'p2' : 'p1'];
+            if (gnOc && gnOc.corrupted && gnOc.corrupted.glassNerves) amt *= 1.25;
+        }
+
         let projectedHp = this.hp;
         if (this.armor && this.armor > 0) {
             let absorb = Math.min(this.armor, amt);
@@ -9653,6 +9941,11 @@ class Player extends Entity {
         }
         
         super.takeDamage(amt, pushDir, pushForce);
+        // PHASE 1 (extraction): a downed operator's carried intel hits the
+        // dirt as a recoverable cache -- in co-op the survivor can grab it.
+        if (game && game.extractionMode && this.dead && (this.carriedIntel || 0) > 0) {
+            game.dropIntelCache(this);
+        }
         this.stamina = Math.max(0, this.stamina - amt * 0.5); // Shock takes away stamina instantly
         this.damageFlashIntensity = 1.0; // Trigger damage flash
         if (this.camera && amt > 0) {
@@ -10036,10 +10329,53 @@ class Enemy extends Entity {
         this.cachedReactingToDrone = false;
         this.reactingToDrone = false;
         this.slowTimer = 0;
+        // PHASE 1 (stuck-enemy fix): base-class stuck detector state.
+        // Must reset on pool reuse or a recycled enemy inherits a stale
+        // position snapshot and can false-positive on its first check.
+        this._stuckTimer = 0;
+        this._stuckX = undefined;
+        this._stuckY = undefined;
+        // PHASE 2 (tactical AI foundations) -- ALL pool-reset, per the
+        // Phase 1 gotcha about fields leaking across Enemy reuse:
+        // - reactionDelay: this body's innate sluggishness, rolled once.
+        //   Scaled down by intensity at the moment of acquisition (higher
+        //   heat/wave = sharper enemies), so the same grunt archetype
+        //   feels sleepier at CALM than at OVERRUN.
+        // - fireHoldTimer: armed on a fresh LOS acquisition; gates fire().
+        // - _spotCooldown: throttles the spotted->registerNoise radio call.
+        this.reactionDelay = MathUtils.rand(0.3, 0.9);
+        this.fireHoldTimer = 0;
+        this._spotCooldown = 0;
     }
     
     update(dt, player, walls, gameTime, allEnemies) {
         if (this.dead) return;
+
+        // PHASE 1 (stuck-enemy fix): generalization of the throttled
+        // position-delta check _updateOperatorAI already uses, applied at
+        // the base class so EVERY enemy in every mode gets it (critical on
+        // the large extraction map, where a wedged enemy would stall the
+        // squad cadence forever). Skips: bosses (scripted movement),
+        // operator mode (has its own detector inside opAI), and enemies
+        // that are legitimately holding (in firing range with LOS, or
+        // fleeing a drone). Far-from-player relocations teleport to a
+        // fresh validated anchor; near ones get a nudge -- see
+        // Game._relocateStuckEnemy.
+        if (game && !game.operatorMode && !(this instanceof Boss)) {
+            this._stuckTimer = (this._stuckTimer || 0) + dt;
+            if (this._stuckTimer >= 3.0) {
+                this._stuckTimer = 0;
+                const lx = this._stuckX, ly = this._stuckY;
+                this._stuckX = this.x; this._stuckY = this.y;
+                if (lx !== undefined) {
+                    const moved = Math.hypot(this.x - lx, this.y - ly);
+                    const holding = this.cachedHasLOS && this.cachedDistToTarget < 300;
+                    if (moved < 14 && !holding && !this.cachedRunFromDrone) {
+                        game._relocateStuckEnemy(this);
+                    }
+                }
+            }
+        }
 
         if (this.slowTimer > 0) {
             this.slowTimer -= dt;
@@ -10050,6 +10386,9 @@ class Enemy extends Entity {
         if (this.markedTimer > 0) { this.markedTimer -= dt; if (this.markedTimer < 0) this.markedTimer = 0; }
         if (this.suppressedTimer > 0) { this.suppressedTimer -= dt; if (this.suppressedTimer < 0) this.suppressedTimer = 0; }
         if (this.enragedTimer > 0) { this.enragedTimer -= dt; if (this.enragedTimer < 0) this.enragedTimer = 0; }
+        // PHASE 2 (tactical AI): reaction-time hold + spot-radio cooldown
+        if (this.fireHoldTimer > 0) { this.fireHoldTimer -= dt; if (this.fireHoldTimer < 0) this.fireHoldTimer = 0; }
+        if (this._spotCooldown > 0) { this._spotCooldown -= dt; if (this._spotCooldown < 0) this._spotCooldown = 0; }
 
         // FPV OPERATOR MODE: exposed/marked timer decay -- see
         // FPVDrone.detonate() (sets it) and Entity.takeDamage (reads it for
@@ -10203,6 +10542,25 @@ class Enemy extends Entity {
                 let cp = MathUtils.closestPointOnSegment(this.x, this.y, target.ax, target.ay, target.bx, target.by);
                 targetX = cp.x;
                 targetY = cp.y;
+            }
+
+            // PHASE 2 (tactical AI): vector anticipation. From intensity
+            // wave 6 up, enemies lead a MOVING target by a slice of its
+            // velocity -- strafing across an enemy's aim stops being free.
+            // Lead ramps with tier (up to ~0.4s), offset capped at 130px
+            // so it never degenerates into aiming at empty map. Applied to
+            // targetX/Y directly (per the roadmap tech note), so both aim
+            // and approach anticipate.
+            if (target.vx !== undefined && target.vy !== undefined && game) {
+                const _iw = game._spawnIntensityWave();
+                if (_iw >= 6) {
+                    const lead = Math.min(0.4, (_iw - 5) * 0.05);
+                    let ldx = target.vx * lead, ldy = target.vy * lead;
+                    const lmag = Math.hypot(ldx, ldy);
+                    if (lmag > 130) { ldx *= 130 / lmag; ldy *= 130 / lmag; }
+                    targetX += ldx;
+                    targetY += ldy;
+                }
             }
 
             // FPV OPERATOR MODE: unalerted cover-to-cover travel. Movement
@@ -10402,13 +10760,37 @@ class Enemy extends Entity {
                     }
                 }
                 
-                let path = game.map.findPath(this.x, this.y, pathTargetX, pathTargetY, checkWalls);
+                // PHASE 1 (swarm perf): swarmers converging on the same
+                // target share a short-TTL cached path keyed on coarse
+                // start/end cells -- a swarm wave stops paying one full A*
+                // per swarmer per AI tick. Other types keep exact paths.
+                let path = (this.type === 'swarmer')
+                    ? game.map.getSharedPath(this.x, this.y, pathTargetX, pathTargetY, checkWalls)
+                    : game.map.findPath(this.x, this.y, pathTargetX, pathTargetY, checkWalls);
                 if (path && path.length > 0) {
                     moveAngle = Math.atan2(path[0].y - this.y, path[0].x - this.x);
                 }
             }
 
             // Cache AI state
+            // PHASE 2 (tactical AI): LOS ACQUISITION moment -- the false->
+            // true transition of the cached LOS flag is "I just saw them".
+            // 1) Reaction time: arm fireHoldTimer (gates fire() below);
+            //    innate delay scaled DOWN by intensity, floor 35% -- a
+            //    CALM-tier grunt hesitates ~0.3-0.9s, an OVERRUN one snaps.
+            // 2) Detection & communication: the spot itself is radioed
+            //    into the Heat director (inert outside extraction, so this
+            //    fires unconditionally like every registerNoise caller).
+            //    Per-enemy 6s cooldown; only meaningful sightings (<900px).
+            if (hasLOS && !this.cachedHasLOS && target instanceof Player) {
+                const _iw = game ? game._spawnIntensityWave() : 1;
+                this.fireHoldTimer = Math.max(this.fireHoldTimer,
+                    this.reactionDelay * Math.max(0.35, 1.1 - _iw * 0.05));
+                if (game && distToTarget < 900 && this._spotCooldown <= 0) {
+                    this._spotCooldown = 6.0;
+                    game.registerNoise(this.x, this.y, EXTRACTION_TUNING.NOISE.spotted);
+                }
+            }
             this.cachedTarget = target;
             this.cachedDistToTarget = distToTarget;
             this.cachedHasLOS = hasLOS;
@@ -10423,7 +10805,7 @@ class Enemy extends Entity {
             // resource: sprint discipline matters because the AI punishes
             // the crash. Standard wave mode only.
             this.cachedPushing = false;
-            if (game && !game.operatorMode && !game.nowMode && game.wave >= TACTICAL_TUNING.PUSH_MIN_WAVE &&
+            if (game && !game.operatorMode && !game.nowMode && game._spawnIntensityWave() >= TACTICAL_TUNING.PUSH_MIN_WAVE &&
                 target && target.isExhausted === true && hasLOS && !runFromDrone &&
                 distToTarget < TACTICAL_TUNING.PUSH_RANGE) {
                 this.cachedPushing = true;
@@ -10513,8 +10895,12 @@ class Enemy extends Entity {
         let slowFactor = (this.slowTimer > 0) ? 0.5 : 1.0;
         // Phase 2: pushing enemies surge (see cachedPushing above).
         // Phase 3: enraged enemies (chaos-perk aggro cost) also surge.
+        // PHASE 2 (tactical AI): flankers SPRINT while on the wide arc
+        // (outside FLANK_DIST) so the envelopment actually closes before
+        // the fight is over -- they drop to normal speed on the commit.
         let pushMult = this.cachedPushing ? TACTICAL_TUNING.PUSH_SPEED_MULT : 1.0;
         if (this.enragedTimer > 0) pushMult = Math.max(pushMult, 1.2);
+        if (this.tactic && this.cachedDistToTarget > TACTICAL_TUNING.FLANK_DIST) pushMult = Math.max(pushMult, 1.3);
         let speedScalar = (this.cachedRunFromDrone ? 1.5 : pushMult) * slowFactor;
         let moveX = Math.cos(this.cachedMoveAngle) * (this.speed * speedScalar) + sepX;
         let moveY = Math.sin(this.cachedMoveAngle) * (this.speed * speedScalar) + sepY;
@@ -10526,7 +10912,9 @@ class Enemy extends Entity {
             if (this.type === 'swarmer') {
                 let actualDistToTarget = Math.hypot(this.cachedTarget.x - this.x, this.cachedTarget.y - this.y);
                 if (actualDistToTarget < this.r + this.cachedTarget.r + 5) {
-                    this.cachedTarget.takeDamage(12, Math.atan2(this.cachedTarget.y - this.y, this.cachedTarget.x - this.x), 200);
+                    // PHASE 2: contact damage scales with difficulty too.
+                    const _cm = (game && game.runConfig && game.runConfig.enemyMults) ? (game.runConfig.enemyMults.dmg || 1) : 1;
+                    this.cachedTarget.takeDamage(12 * _cm, Math.atan2(this.cachedTarget.y - this.y, this.cachedTarget.x - this.x), 200);
                     audio.playHit(this.x, this.y);
                     this.takeDamage(10, Math.atan2(this.y - this.cachedTarget.y, this.x - this.cachedTarget.x), 100);
                 }
@@ -10617,7 +11005,7 @@ class Enemy extends Entity {
                 inEngagementRange = this.cachedDistToTarget < engagementRange;
             }
 
-            if (this.cachedHasLOS && inEngagementRange && gameTime - this.lastFire > this.fireRate && !this.cachedRunFromDrone && !(this.suppressedTimer > 0)) {
+            if (this.cachedHasLOS && inEngagementRange && gameTime - this.lastFire > this.fireRate && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0)) {
                 // Phase 3: Suppressing Fire perk blocks return fire while
                 // suppressedTimer runs (set on player bullet hit).
                 this.fire(game);
@@ -12802,6 +13190,13 @@ class Bullet {
         if (this.shooter && this.shooter.perkFlatline) {
             speed *= 1.25;
         }
+        // PHASE 2 (difficulty = combat pressure): hostile bullets scale by
+        // the RunConfig snapshot. isPlayerBullet is truthy for players
+        // (instance) AND friendly turret/dog fire (boolean true), so this
+        // touches ONLY enemy/boss ordnance; neutral env bullets excluded.
+        const _em = (!isPlayerBullet && !isNeutral && typeof game !== 'undefined' && game && game.runConfig)
+            ? game.runConfig.enemyMults : null;
+        if (_em) speed *= (_em.bulletSpeed || 1);
         // Focus (see AIM_WEIGHT.FOCUS_* + Player.updateAimWeight()): applied
         // once here at bullet-spawn time, same as every other perk below --
         // no per-frame cost of its own.
@@ -12814,11 +13209,18 @@ class Bullet {
         this.drag = weaponInfo.drag;
         
         this.dmg = weaponInfo.dmg;
+        if (_em) this.dmg *= (_em.dmg || 1); // PHASE 2: difficulty damage scaling (enemy fire only)
         if (this.shooter && typeof game !== 'undefined' && game && game.runOverclocks) {
             const suffix = this.shooter.isPlayer2 ? 'p2' : 'p1';
             const oc = game.runOverclocks[suffix];
             if (oc && oc.hollowPoint) {
                 this.dmg *= (1 + oc.hollowPoint * 0.10);
+            }
+            // PHASE 3 (Corrupted Overclocks): damage sides of the trades,
+            // applied at the same single spawn-time site as hollowPoint.
+            if (oc && oc.corrupted) {
+                if (oc.corrupted.overpressure) this.dmg *= 1.25;
+                if (oc.corrupted.coldBarrel)   this.dmg *= 0.85;
             }
         }
         if (this.shooter && this.shooter.perkPointBlank && this.shooter.isSprinting) {
@@ -12912,7 +13314,9 @@ class Bullet {
                 if (nearestEnemy) {
                     let angleToEnemy = Math.atan2(nearestEnemy.y - this.y, nearestEnemy.x - this.x);
                     let angleDiff = Math.atan2(Math.sin(angleToEnemy - currentAngle), Math.cos(angleToEnemy - currentAngle));
-                    let maxSteer = 4.5 * stepDt;
+                    // PHASE 3 (balance): curve strength halved (was 4.5) --
+                    // Smart Munitions was quietly deleting the aim game.
+                    let maxSteer = 2.25 * stepDt;
                     let steer = MathUtils.clamp(angleDiff, -maxSteer, maxSteer);
                     let speed = Math.hypot(this.vx, this.vy);
                     let newAngle = currentAngle + steer;
@@ -13037,7 +13441,7 @@ class Bullet {
                 } else if (this.isNeutral) {
                     canHit = true;
                 } else if (this.isPlayerBullet) {
-                    let isTargetAlly = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof FPVDrone || ent instanceof MiniDrone);
+                    let isTargetAlly = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage);
                     let isTargetEnemy = (ent instanceof Enemy);
                     
                     if (isTargetEnemy) {
@@ -13060,7 +13464,9 @@ class Bullet {
                         }
                     }
                 } else {
-                    canHit = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof FPVDrone || ent instanceof MiniDrone);
+                    // PHASE 2: hostile fire also threatens the escort --
+                    // that risk IS the Asset Recovery mission.
+                    canHit = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage);
                 }
                 
                 if (!canHit) continue;
@@ -13097,6 +13503,11 @@ class Bullet {
                     }
 
                     let wasDeadBefore = ent.dead;
+                    // PHASE 1: accuracy accounting -- a player-fired bullet
+                    // striking any enemy (bosses included) counts as a hit.
+                    if (this.shooter instanceof Player && ent instanceof Enemy && game && game.runLedger) {
+                        game.runLedger.shotsHit++;
+                    }
                     if (ent instanceof ApcBoss) {
                         // Route damage to whichever seat the shot actually
                         // came in on, so shooting the left side reliably
@@ -13972,6 +14383,7 @@ class FPVDrone {
             if (game.isTwoPlayer && game.player2) entities.push(game.player2);
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
             if (game.miniDrones) entities.push(...game.miniDrones);
             if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
             if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
@@ -15584,6 +15996,7 @@ class MiniDrone extends Entity {
             if (game.isTwoPlayer && game.player2) entities.push(game.player2);
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
             if (game.miniDrones) entities.push(...game.miniDrones);
             if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
             if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
@@ -15689,12 +16102,14 @@ class MiniDrone extends Entity {
 }
 
 class ShrapnelGrenade {
-    constructor(x, y, vx, vy) {
+    // PHASE 3: opts lets the Underbarrel Launcher reuse this class with a
+    // launched profile (short fuse, flat arc) instead of a parallel class.
+    constructor(x, y, vx, vy, opts) {
         this.x = x; this.y = y; this.vx = vx; this.vy = vy;
-        this.fuse = 1.8;
+        this.fuse = (opts && opts.fuse !== undefined) ? opts.fuse : 1.8;
         this.r = 6;
         this.z = 0;
-        this.vz = 280;
+        this.vz = (opts && opts.vz !== undefined) ? opts.vz : 280;
     }
     update(dt, walls, game) {
         this.vx *= Math.pow(0.01, dt);
@@ -15753,6 +16168,7 @@ class ShrapnelGrenade {
             if (game.isTwoPlayer && game.player2) entities.push(game.player2);
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
             if (game.miniDrones) entities.push(...game.miniDrones);
             if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
             if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
@@ -15979,6 +16395,7 @@ class EnemyFragGrenade {
         if (game.isTwoPlayer && game.player2) targets.push(game.player2);
         if (game.turrets) targets.push(...game.turrets);
         if (game.dogs) targets.push(...game.dogs);
+        if (game.hostages) targets.push(...game.hostages); // PHASE 2: enemy frags endanger the asset
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -16114,6 +16531,7 @@ class Flashbang {
             if (game.isTwoPlayer && game.player2) entities.push(game.player2);
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
             if (game.miniDrones) entities.push(...game.miniDrones);
             if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
             if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
@@ -16204,6 +16622,7 @@ class TripMine {
             if (game.isTwoPlayer && game.player2) entities.push(game.player2);
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
             if (game.miniDrones) entities.push(...game.miniDrones);
             if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
             if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
@@ -16238,6 +16657,7 @@ class TripMine {
             if (game.isTwoPlayer && game.player2) entities.push(game.player2);
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
             if (game.miniDrones) entities.push(...game.miniDrones);
             if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
             if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
@@ -16372,7 +16792,7 @@ class Item {
                     canCollect = (p.medpacks < 3);
                 } else if (this.type === 'redbull') {
                     canCollect = (p.energyDrinks < 6); // max settled at 6 (stamina drain/regen improved, so fewer backups are needed)
-                } else if (this.type === 'perk_case' || this.type === 'intel') {
+                } else if (this.type === 'perk_case' || this.type === 'intel' || this.type === 'intel_cache') {
                     canCollect = true;
                 } else {
                     let wKey = this.type;
@@ -16443,6 +16863,18 @@ class Item {
             ctx.arc(0, -2, 3, Math.PI, 0);
             ctx.fillRect(-2, -2, 4, 5);
             ctx.fill();
+        } else if (this.type === 'intel_cache') {
+            // PHASE 1: dropped carried-intel cache -- amber lockbox, reads
+            // as "recover me" against the cyan chip.
+            ctx.fillStyle = '#010c1b';
+            ctx.shadowBlur = 14; ctx.shadowColor = '#ffb700';
+            ctx.strokeStyle = '#ffb700'; ctx.lineWidth = 2;
+            ctx.fillRect(-9, -7, 18, 14);
+            ctx.strokeRect(-9, -7, 18, 14);
+            ctx.fillStyle = '#ffb700';
+            ctx.fillRect(-9, -2, 18, 4);
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(-1.5, -1.5, 3, 3);
         } else if (this.type === 'intel') {
             // Glowing Intel Chip visual
             ctx.fillStyle = '#00e5ff';
@@ -16562,6 +16994,7 @@ class ExplosiveBarrel {
             if (game.isTwoPlayer && game.player2) entities.push(game.player2);
             if (game.turrets) entities.push(...game.turrets);
             if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
             if (game.miniDrones) entities.push(...game.miniDrones);
             if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
             if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
@@ -16797,7 +17230,686 @@ class FloatingText {
 // Every run terminates through Game.endRun(outcome) -> the debrief screen.
 // Never add a mode-specific end screen again.
 // =========================================================================
-const RUN_OUTCOMES = { DEATH: 'death', ABANDON: 'abandon', EXTRACTION: 'extraction' };
+const RUN_OUTCOMES = { DEATH: 'death', ABANDON: 'abandon', EXTRACTION: 'extraction', FAILED: 'failed' };
+
+// PHASE 2: run-end ARBITER priority. Objectives never call endRun /
+// completeExtraction directly anymore -- they call
+// Game.requestRunEnd(outcome, reason), and the single resolver
+// (_resolveRunEnd, at the end of the objective tick) picks the winner if
+// two objectives request an ending on the same tick. Failure beats
+// success by design: "the hostage died as you dusted off" resolves as a
+// failed op, never a race.
+const RUN_END_PRIORITY = { extraction: 1, abandon: 2, failed: 3, death: 4 };
+
+// ==== PHASE 1: EXTRACTION mode + Heat director tuning ====
+// Extraction is the flagship replayability loop: no waves, no shop -- a
+// mission defined entirely as DATA (see RunConfig.objectives). Enemy
+// pressure is driven by the HEAT meter (the "director"): time raises a
+// slowly-climbing floor, noise (gunfire, explosions, wall breaches) spikes
+// it, silence bleeds it back down toward the floor. Heat tiers feed the
+// EXISTING tactical squad spawner (live cap + squad gap + composition via a
+// virtual "intensity wave") -- no second spawn system.
+const EXTRACTION_TUNING = {
+    FORCED_MAP_ID: 10,          // the 7500x7500 large map -- the mission is authored for it
+    INSERTION_PREP: 6.0,        // grace seconds before the spawner arms
+
+    TERMINAL_INTEL: 25,         // CARRIED intel per hacked uplink (banked only on evac)
+    INTEL_WEIGHT: 0.5,          // inventory weight per carried intel point (feeds Player.weight)
+
+    EVAC_UNLOCK_NOISE: 30,      // completing the uplink objective slams the heat meter
+
+    // Heat meter (0..100)
+    HEAT_MAX: 100,
+    HEAT_FLOOR_PER_SEC: 0.28,   // the floor only ever climbs -- stealth delays, never resets
+    HEAT_DECAY_PER_SEC: 1.4,    // quiet play bleeds heat back down toward the floor
+    HEAT_TIERS: [               // thresholds at 0/25/50/75; `wave` is the virtual intensity
+        { min: 0,  name: 'CALM',    color: '#39ff14', liveCap: 5,  gapMin: 9.0, gapMax: 14.0, wave: 2  },
+        { min: 25, name: 'ALERT',   color: '#ffea00', liveCap: 8,  gapMin: 6.0, gapMax: 10.0, wave: 5  },
+        { min: 50, name: 'HUNTED',  color: '#ffb700', liveCap: 12, gapMin: 4.0, gapMax: 7.0,  wave: 9  },
+        { min: 75, name: 'OVERRUN', color: '#ff2a5f', liveCap: 16, gapMin: 2.5, gapMax: 4.5,  wave: 14 }
+    ],
+
+    // Squad anchors ring around a random living player instead of the map
+    // edge (edge spawns on a 7500px map would never arrive).
+    SPAWN_RING_MIN: 900,
+    SPAWN_RING_MAX: 1500,
+
+    // Noise magnitudes fed to Game.registerNoise (heat points per event)
+    NOISE: {
+        pistol: 1.2, shotgun: 4.0, smg: 1.6, lmg: 2.4, sniper: 5.0, m1a: 3.0,
+        explosion: 12, breach: 9, aggro: 6,
+        // PHASE 2 (detection & communication): an enemy that VISUALLY
+        // acquires a player radios it in -- being seen is itself noise.
+        // Per-enemy 6s cooldown (see Enemy update) keeps a firefight from
+        // pinning the meter through spotting alone.
+        spotted: 3
+    }
+};
+
+// ==== PHASE 2: DIFFICULTY = COMBAT PRESSURE, NOT A CASH TAX ====
+// The old difficulty knob was purely economic (2.0x..0.75x cash), which
+// made Legendary feel like a paycut instead of a harder fight. Difficulty
+// now scales what enemies DO: their bullet damage and bullet speed
+// (applied at Bullet.init from the RunConfig snapshot -- turret/dog/player
+// bullets are untouched because their isPlayerBullet is truthy), plus
+// swarmer contact damage. Cash multipliers are softened to a small
+// onboarding assist rather than the difficulty axis itself.
+const DIFFICULTY_TUNING = {
+    easy:      { cash: 1.5, enemyDmg: 0.75, enemyBulletSpeed: 0.90, blurb: 'Easy (-25% enemy dmg)' },
+    medium:    { cash: 1.2, enemyDmg: 0.90, enemyBulletSpeed: 0.95, blurb: 'Medium (-10% enemy dmg)' },
+    hard:      { cash: 1.0, enemyDmg: 1.00, enemyBulletSpeed: 1.00, blurb: 'Hard (baseline)' },
+    legendary: { cash: 1.0, enemyDmg: 1.30, enemyBulletSpeed: 1.15, blurb: 'Legendary (+30% dmg, +15% velocity)' }
+};
+
+// ==== PHASE 2: MISSION REGISTRY ====
+// The roadmap's north star made concrete: a mission is a saved
+// buildRunConfig() payload -- objectives are the exact same
+// { type, params } data Phase 1 shipped, plus per-mission tuning
+// (rewardRules, heat modifiers), an entry cost, and unlock predicates
+// evaluated against saveData.careerStats + saveData.missions. The career
+// ladder, and eventually daily contracts, are all just entries here.
+//
+// GUARDRAIL (entry fees gate RETRIES, not first access): entryCost is
+// charged only when saveData.missions.attempts[id] > 0 -- your first
+// insertion into any op you've unlocked is always free.
+const MISSIONS = {
+    op_first_contact: {
+        id: 'op_first_contact', name: 'FIRST CONTACT',
+        desc: 'Crack 2 of 3 uplinks, reach the evac beacon. The network is sleepy — keep it that way.',
+        mapId: 10, entryCost: 0, unlock: null,
+        objectives: [
+            { type: 'HACK_TERMINAL', params: { count: 3, required: 2, hackTime: 6.0, radius: 90 } },
+            { type: 'REACH_ZONE',    params: { radius: 130, channel: 5.0 } }
+        ],
+        rewardRules: { intelPerWave: 2, intelPerElite: 3, intelPerChip: 5, completionIntel: 0 },
+        heat: { floorMult: 1.0, startHeat: 0 }
+    },
+    op_deep_incursion: {
+        id: 'op_deep_incursion', name: 'DEEP INCURSION',
+        desc: 'Four of five hardened uplinks, slower cracks, richer intel. The long haul back is the mission.',
+        mapId: 10, entryCost: 10, unlock: { extractions: 1 },
+        objectives: [
+            { type: 'HACK_TERMINAL', params: { count: 5, required: 4, hackTime: 7.5, radius: 90, intelPer: 35 } },
+            { type: 'REACH_ZONE',    params: { radius: 130, channel: 6.0 } }
+        ],
+        rewardRules: { intelPerWave: 2, intelPerElite: 4, intelPerChip: 6, completionIntel: 20 },
+        heat: { floorMult: 1.15, startHeat: 0 }
+    },
+    op_overrun_protocol: {
+        id: 'op_overrun_protocol', name: 'OVERRUN PROTOCOL',
+        desc: 'Crack one uplink, then HOLD for 90 seconds while the whole grid converges. Evac opens when the storm breaks.',
+        mapId: 10, entryCost: 15, unlock: { extractions: 2, kills: 150 },
+        objectives: [
+            { type: 'HACK_TERMINAL', params: { count: 1, required: 1, hackTime: 5.0, radius: 90, intelPer: 20 } },
+            { type: 'HOLD_OUT',      params: { seconds: 90 } },
+            { type: 'REACH_ZONE',    params: { radius: 130, channel: 5.0 } }
+        ],
+        rewardRules: { intelPerWave: 2, intelPerElite: 5, intelPerChip: 6, completionIntel: 60 },
+        heat: { floorMult: 2.2, startHeat: 20 }
+    },
+    op_asset_recovery: {
+        id: 'op_asset_recovery', name: 'ASSET RECOVERY',
+        desc: 'A captive analyst is worth more than any uplink. Reach them, keep them breathing, walk them to the bird.',
+        mapId: 10, entryCost: 20, unlock: { extractions: 2, missions: { op_overrun_protocol: 1 } },
+        objectives: [
+            { type: 'ESCORT_TARGET', params: { intelOnRescue: 50, hp: 140 } },
+            { type: 'REACH_ZONE',    params: { radius: 130, channel: 6.0, requiresEscort: true } }
+        ],
+        rewardRules: { intelPerWave: 2, intelPerElite: 4, intelPerChip: 6, completionIntel: 40 },
+        heat: { floorMult: 1.3, startHeat: 10 }
+    }
+};
+const MISSION_ORDER = ['op_first_contact', 'op_deep_incursion', 'op_overrun_protocol', 'op_asset_recovery'];
+
+// ==== PHASE 3: INTEL SINKS + BUILDCRAFTING + WEAPON DEPTH ====
+
+// Reserve-ammo baselines. THE single source of truth for max ammo -- the
+// old copies inside _applyExtMags were folded into recalcPlayerMaxAmmo()
+// so meta magazine upgrades and in-run Extended Mags compose instead of
+// clobbering each other.
+const BASE_MAX_AMMO = { shotgun: 48, smg: 360, lmg: 300, sniper: 15, m1a: 60 };
+
+// Meta magazine upgrades: flat reserve added to the base BEFORE the
+// in-run Extended Mags percentage applies (so both purchases keep paying).
+const MAG_META_UPGRADES = {
+    magSmg:     { ammoKey: 'smg',     perLevel: 60 },
+    magM1a:     { ammoKey: 'm1a',     perLevel: 20 },
+    magShotgun: { ammoKey: 'shotgun', perLevel: 12 }
+};
+
+// The Armory store, fully data-driven -- renderArmoryTab, buyArmoryUpgrade
+// and resetArmoryUpgrades all read THIS. Adding an upgrade = one entry.
+const ARMORY_UPGRADES = [
+    { key: 'magneticGear', name: 'MAGNETIC GEAR', maxLevel: 5,
+      costPerLevel: [50, 100, 200, 350, 500],
+      desc: 'Increases item pickup radius. +15px/level.' },
+    { key: 'offshoreAccount', name: 'OFFSHORE ACCOUNT', maxLevel: 5,
+      costPerLevel: [75, 150, 250, 400, 600],
+      desc: 'Retain 20% more cash per level when downed.' },
+    { key: 'kevlarWeave', name: 'KEVLAR WEAVE', maxLevel: 5,
+      costPerLevel: [80, 160, 280, 450, 650],
+      desc: 'Base Max Armor +10% per level. (Base: 50)' },
+    { key: 'firstAidTraining', name: 'FIRST AID TRAINING', maxLevel: 5,
+      costPerLevel: [80, 160, 280, 450, 650],
+      desc: 'Base Max HP +8% per level. (Base: 100)' },
+    { key: 'cardioConditioning', name: 'CARDIO CONDITIONING', maxLevel: 5,
+      costPerLevel: [60, 120, 220, 380, 550],
+      desc: 'Sprint drain -8% & static regen +12% per level.' },
+    // ---- PHASE 3: magazine upgrades ----
+    { key: 'magSmg', name: 'SMG DRUM FEED', maxLevel: 3,
+      costPerLevel: [100, 200, 350],
+      desc: 'SMG reserve +60 rounds per level. (Base: 360)' },
+    { key: 'magM1a', name: 'M1A BANDOLEER', maxLevel: 3,
+      costPerLevel: [100, 200, 350],
+      desc: 'M1A reserve +20 rounds per level. (Base: 60)' },
+    { key: 'magShotgun', name: 'SHELL CARRIER', maxLevel: 3,
+      costPerLevel: [100, 200, 350],
+      desc: 'Shotgun reserve +12 shells per level. (Base: 48)' },
+    // ---- PHASE 3: attachments ----
+    { key: 'laserSight', name: 'LASER SIGHT ARRAY', maxLevel: 3,
+      costPerLevel: [150, 300, 500],
+      desc: 'Lvl1: collimator servo (tighter beam, faster refocus). Lvl2: long-throw emitter (+range). Lvl3: prism array (precision + custom colors).' },
+    { key: 'underbarrelLauncher', name: 'UNDERBARREL LAUNCHER', maxLevel: 1,
+      costPerLevel: [600],
+      desc: 'Grenades fire from an underbarrel tube: flat, fast, short-fused. Same blast, delivered on target.' }
+];
+
+// Laser sight tuning per LASER SIGHT ARRAY level (index = level 0-3).
+// Level 0 is deliberately WEAK -- short throw, fat beam, sluggish refocus
+// after every shot -- so the upgrade track has somewhere real to go.
+const LASER_TUNING = {
+    maxDist:  [950, 1200, 1700, 1700],
+    tightDeg: [0.30, 0.12, 0.10, 0.06],
+    wideDeg:  [2.00, 1.10, 1.10, 0.85],
+    recover:  [0.45, 0.18, 0.15, 0.10]
+};
+// Custom beam colors unlocked at LASER SIGHT ARRAY level 3.
+const LASER_COLORS = [
+    { name: 'CYAN',   rgb: '0, 229, 255'  },
+    { name: 'GREEN',  rgb: '57, 255, 20'  },
+    { name: 'RED',    rgb: '255, 42, 95'  },
+    { name: 'VIOLET', rgb: '213, 0, 249'  },
+    { name: 'AMBER',  rgb: '255, 183, 0'  },
+    { name: 'WHITE',  rgb: '235, 245, 255'}
+];
+
+// Corrupted Overclocks: one-time in-run shop purchases (cash), each a
+// genuine power spike welded to a genuine cost. Effects are consumed at
+// the same single sites the clean overclocks already use (Bullet.init,
+// Player.fire, the fire-rate gate, Player.takeDamage).
+const CORRUPTED_OVERCLOCKS = {
+    overpressure: { name: 'OVERPRESSURE ROUNDS', cost: 250,
+        desc: '+25% bullet damage / +25% spread, +40% kickback' },
+    glassNerves:  { name: 'GLASS NERVES', cost: 300,
+        desc: '+28% fire rate / +25% damage taken' },
+    coldBarrel:   { name: 'COLD BARREL', cost: 200,
+        desc: 'Weapon noise -65% (heat) / -15% bullet damage' }
+};
+
+// Escalation Protocols: opt-in pre-mission risk toggles (extraction only).
+// Each raises real danger and pays a flat bonus multiplier on ALL mission
+// intel -- applied by pre-scaling RunConfig.rewardRules at snapshot time so
+// the ledger (single write path) never needs to know they exist.
+const ESCALATION_PROTOCOLS = {
+    bloodhound: { name: 'BLOODHOUND', bonus: 0.30,
+        desc: 'Heat floor climbs 50% faster; every noise runs 25% hotter. +30% intel.' },
+    ironclad:   { name: 'IRONCLAD', bonus: 0.25,
+        desc: 'Enemy weapon damage +25% (stacks with difficulty). +25% intel.' },
+    exposed:    { name: 'EXPOSED', bonus: 0.25,
+        desc: 'Operator max armor halved for the run. +25% intel.' }
+};
+const ESCALATION_ORDER = ['bloodhound', 'ironclad', 'exposed'];
+
+// ==== PHASE 1: OBJECTIVE FRAMEWORK ====
+// Missions are DATA: RunConfig.objectives is a list of
+// { type, params } entries; each type below is a component factory
+// returning { init, onTick, isComplete, hudLine, draw, markers,
+// onPlayerDamaged }. Game instantiates them in startNewGame() (after the
+// map exists), ticks them in update(), renders hudLine()s generically, and
+// draws world visuals + screen-edge markers. Objectives activate
+// SEQUENTIALLY (first incomplete entry is the active stage).
+const ObjectiveTypes = {
+    // Hack N uplink terminals (stand in radius to channel; taking damage
+    // sets the channel back). Each crack loads CARRIED intel onto the
+    // hacker and pops a small supply drop. Complete at `required` cracks.
+    HACK_TERMINAL: (params) => ({
+        type: 'HACK_TERMINAL',
+        count: params.count || 3,
+        required: Math.min(params.required || 2, params.count || 3),
+        hackTime: params.hackTime || 6.0,
+        radius: params.radius || 90,
+        intelPer: (params.intelPer !== undefined) ? params.intelPer : EXTRACTION_TUNING.TERMINAL_INTEL,
+        terminals: [],
+        done: 0,
+        active: false,
+        init(game) {
+            this.terminals = game._placeObjectivePoints(this.count, 0.24, 0.42)
+                .map(pt => ({ x: pt.x, y: pt.y, progress: 0, hacked: false }));
+        },
+        onTick(dt, game) {
+            if (!this.active || this.isComplete()) return;
+            for (const t of this.terminals) {
+                if (t.hacked) continue;
+                let hacker = null;
+                for (const p of [game.player, game.player2]) {
+                    if (p && !p.dead && Math.hypot(p.x - t.x, p.y - t.y) < this.radius) { hacker = p; break; }
+                }
+                if (!hacker) continue;
+                t.progress += dt;
+                if (t.progress >= this.hackTime) {
+                    t.hacked = true;
+                    this.done++;
+                    hacker.carriedIntel = (hacker.carriedIntel || 0) + this.intelPer;
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        t.x, t.y - 26, 'UPLINK CRACKED — +' + this.intelPer + ' INTEL (CARRIED)',
+                        '#ffb700', 2.2, 0, -50, 200, true));
+                    // Small supply drop keeps a shopless run sustainable.
+                    game.items.push(new Item(t.x + 24, t.y, 'medpack'));
+                    game.items.push(new Item(t.x - 24, t.y, 'redbull'));
+                    if (audio && audio.playTadah) audio.playTadah();
+                    // Cracking an uplink is LOUD -- the network notices.
+                    game.registerNoise(t.x, t.y, EXTRACTION_TUNING.EVAC_UNLOCK_NOISE / this.required);
+                    if (this.isComplete()) {
+                        game.floatingTexts.push(game.spawnFloatingText(
+                            t.x, t.y - 48, 'EVAC BEACON ONLINE', '#39ff14', 2.6, 0, -40, 160, true));
+                    }
+                }
+            }
+        },
+        onPlayerDamaged(p, amt, game) {
+            if (!this.active) return;
+            for (const t of this.terminals) {
+                if (t.hacked || t.progress <= 0) continue;
+                if (Math.hypot(p.x - t.x, p.y - t.y) < this.radius) {
+                    t.progress = Math.max(0, t.progress - this.hackTime * 0.35);
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        t.x, t.y - 20, 'UPLINK INTERRUPTED', '#ff2a5f', 1.2, 0, -40, 200, true));
+                }
+            }
+        },
+        isComplete() { return this.done >= this.required; },
+        hudLine() {
+            const cls = this.isComplete() ? 'obj-done' : (this.active ? 'obj-active' : 'obj-locked');
+            let channel = '';
+            if (this.active && !this.isComplete()) {
+                for (const t of this.terminals) {
+                    if (!t.hacked && t.progress > 0) { channel = ' [' + Math.round(t.progress / this.hackTime * 100) + '%]'; break; }
+                }
+            }
+            return '<div class="obj-line ' + cls + '">◆ CRACK UPLINKS: ' + this.done + '/' + this.required + channel + '</div>';
+        },
+        markers() {
+            if (!this.active || this.isComplete()) return [];
+            return this.terminals.filter(t => !t.hacked).map(t => ({ x: t.x, y: t.y, color: '#00e5ff', label: 'UPLINK' }));
+        },
+        draw(ctx, cam, game) {
+            for (const t of this.terminals) {
+                const sx = t.x - cam.x, sy = t.y - cam.y;
+                const col = t.hacked ? '#39ff14' : (this.active ? '#00e5ff' : '#5a6a75');
+                ctx.save();
+                // Radius ring
+                if (!t.hacked && this.active) {
+                    ctx.strokeStyle = 'rgba(0,229,255,0.35)';
+                    ctx.setLineDash([6, 6]);
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath(); ctx.arc(sx, sy, this.radius, 0, Math.PI * 2); ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+                // Terminal body
+                const pulse = t.hacked ? 0 : Math.sin(Date.now() / 220) * 2;
+                ctx.shadowBlur = 12; ctx.shadowColor = col;
+                ctx.fillStyle = '#010c1b'; ctx.strokeStyle = col; ctx.lineWidth = 2;
+                ctx.fillRect(sx - 12, sy - 12, 24, 24);
+                ctx.strokeRect(sx - 12 - pulse, sy - 12 - pulse, 24 + pulse * 2, 24 + pulse * 2);
+                ctx.fillStyle = col;
+                ctx.fillRect(sx - 7, sy - 7, 14, 4);
+                ctx.fillRect(sx - 7, sy - 1, 9, 3);
+                // Channel progress arc
+                if (!t.hacked && t.progress > 0) {
+                    ctx.strokeStyle = '#ffb700'; ctx.lineWidth = 3.5;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, 22, -Math.PI / 2, -Math.PI / 2 + (t.progress / this.hackTime) * Math.PI * 2);
+                    ctx.stroke();
+                }
+                ctx.shadowBlur = 0;
+                ctx.font = 'bold 9px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = col;
+                ctx.fillText(t.hacked ? 'CRACKED' : 'UPLINK', sx, sy - 20);
+                ctx.restore();
+            }
+        }
+    }),
+
+    // Reach the evac zone and hold inside it to channel out. Completing it
+    // banks all carried intel through the ledger and ends the run through
+    // the unified debrief (endRun(EXTRACTION)).
+    REACH_ZONE: (params) => ({
+        type: 'REACH_ZONE',
+        radius: params.radius || 130,
+        channel: params.channel || 5.0,
+        // PHASE 2 (Asset Recovery): the dustoff channel additionally
+        // requires the escorted entity alive and inside the ring.
+        requiresEscort: !!params.requiresEscort,
+        x: 0, y: 0, t: 0,
+        complete: false,
+        active: false,
+        init(game) {
+            const pt = game._placeObjectivePoints(1, 0.42, 0.5)[0];
+            this.x = pt.x; this.y = pt.y;
+        },
+        onTick(dt, game) {
+            if (!this.active || this.complete) { return; }
+            let inside = false;
+            for (const p of [game.player, game.player2]) {
+                if (p && !p.dead && Math.hypot(p.x - this.x, p.y - this.y) < this.radius) { inside = true; break; }
+            }
+            this._waitingOnEscort = false;
+            if (inside && this.requiresEscort) {
+                const h = game._escortEntity;
+                if (!h || h.dead || Math.hypot(h.x - this.x, h.y - this.y) >= this.radius) {
+                    inside = false;
+                    this._waitingOnEscort = !!(h && !h.dead);
+                }
+            }
+            if (inside) {
+                this.t += dt;
+                if (this.t >= this.channel) {
+                    this.complete = true;
+                    // PHASE 2: request, don't end -- the arbiter resolves
+                    // once per tick after every objective has spoken.
+                    game.requestRunEnd(RUN_OUTCOMES.EXTRACTION, 'evac');
+                }
+            } else {
+                this.t = Math.max(0, this.t - dt * 2);
+            }
+        },
+        isComplete() { return this.complete; },
+        hudLine() {
+            const cls = this.complete ? 'obj-done' : (this.active ? 'obj-active' : 'obj-locked');
+            const status = this.complete ? 'COMPLETE'
+                : !this.active ? 'OFFLINE'
+                : this._waitingOnEscort ? 'ASSET MUST BE IN ZONE'
+                : this.t > 0 ? ('DUSTOFF ' + Math.ceil(this.channel - this.t) + 's') : 'MOVE TO ZONE';
+            return '<div class="obj-line ' + cls + '">◆ EVAC: ' + status + '</div>';
+        },
+        markers() {
+            if (!this.active || this.complete) return [];
+            return [{ x: this.x, y: this.y, color: '#39ff14', label: 'EVAC' }];
+        },
+        draw(ctx, cam, game) {
+            const sx = this.x - cam.x, sy = this.y - cam.y;
+            const col = this.active ? '#39ff14' : '#5a6a75';
+            ctx.save();
+            ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+            ctx.setLineDash([12, 8]);
+            ctx.lineDashOffset = this.active ? -(Date.now() / 40 % 20) : 0;
+            ctx.globalAlpha = this.active ? 0.9 : 0.4;
+            ctx.beginPath(); ctx.arc(sx, sy, this.radius, 0, Math.PI * 2); ctx.stroke();
+            ctx.setLineDash([]);
+            if (this.active) {
+                ctx.shadowBlur = 10; ctx.shadowColor = col;
+                if (this.t > 0) {
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, this.radius * 0.55, -Math.PI / 2, -Math.PI / 2 + (this.t / this.channel) * Math.PI * 2);
+                    ctx.stroke();
+                }
+            }
+            ctx.font = 'bold 11px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = col;
+            ctx.fillText(this.active ? 'EVAC ZONE' : 'EVAC (OFFLINE)', sx, sy - this.radius - 10);
+            ctx.restore();
+        }
+    }),
+
+    // Survive for N seconds while the objective is active. Not used by the
+    // Phase 1 extraction mission; exists so the registry has a pure-timer
+    // component ready for Phase 2 mission data.
+    HOLD_OUT: (params) => ({
+        type: 'HOLD_OUT',
+        seconds: params.seconds || 60,
+        t: 0, active: false,
+        init() {},
+        onTick(dt) { if (this.active && !this.isComplete()) this.t += dt; },
+        isComplete() { return this.t >= this.seconds; },
+        hudLine() {
+            const cls = this.isComplete() ? 'obj-done' : (this.active ? 'obj-active' : 'obj-locked');
+            return '<div class="obj-line ' + cls + '">◆ HOLD OUT: ' + Math.ceil(Math.max(0, this.seconds - this.t)) + 's</div>';
+        },
+        markers() { return []; },
+        draw() {}
+    }),
+
+    // Eliminate N enemies while active (counts via the ledger's single
+    // kill-accounting point -- no new hooks). Registry-ready for Phase 2.
+    ELIMINATE: (params) => ({
+        type: 'ELIMINATE',
+        kills: params.kills || 10,
+        baseline: null, active: false,
+        init() {},
+        onTick(dt, game) {
+            if (this.active && this.baseline === null && game.runLedger) this.baseline = game.runLedger.kills;
+        },
+        progress(game) {
+            if (this.baseline === null || !game.runLedger) return 0;
+            return Math.min(this.kills, game.runLedger.kills - this.baseline);
+        },
+        isComplete() {
+            return this.baseline !== null && typeof game !== 'undefined' && game && game.runLedger &&
+                (game.runLedger.kills - this.baseline) >= this.kills;
+        },
+        hudLine() {
+            const cls = this.isComplete() ? 'obj-done' : (this.active ? 'obj-active' : 'obj-locked');
+            const cur = (typeof game !== 'undefined' && game) ? this.progress(game) : 0;
+            return '<div class="obj-line ' + cls + '">◆ ELIMINATE: ' + cur + '/' + this.kills + '</div>';
+        },
+        markers() { return []; },
+        draw() {}
+    }),
+
+    // PHASE 2 (Hostage Rescue / Asset Recovery): reach the captive to
+    // rescue them (they start following the rescuer), keep them alive.
+    // Rescue completes THIS component; walking them into the evac ring is
+    // the composed REACH_ZONE(requiresEscort) stage. The hostage dying at
+    // ANY point (even after this stage completed) fails the run through
+    // the arbiter -- which is exactly why the arbiter exists.
+    ESCORT_TARGET: (params) => ({
+        type: 'ESCORT_TARGET',
+        intelOnRescue: (params.intelOnRescue !== undefined) ? params.intelOnRescue : 50,
+        hp: params.hp || 140,
+        rescued: false,
+        hostage: null,
+        active: false,
+        init(game) {
+            const pt = game._placeObjectivePoints(1, 0.30, 0.46)[0];
+            this.hostage = new Hostage(pt.x, pt.y, this.hp);
+            game.hostages.push(this.hostage);
+            game._escortEntity = this.hostage;
+        },
+        onTick(dt, game) {
+            const h = this.hostage;
+            if (!h) return;
+            if (h.dead) {
+                game.requestRunEnd(RUN_OUTCOMES.FAILED, 'asset_killed');
+                return;
+            }
+            if (!this.rescued && h.state === 'FOLLOWING') {
+                this.rescued = true;
+                if (h.rescuer) {
+                    h.rescuer.carriedIntel = (h.rescuer.carriedIntel || 0) + this.intelOnRescue;
+                }
+                game.floatingTexts.push(game.spawnFloatingText(
+                    h.x, h.y - 30, 'ASSET SECURED — +' + this.intelOnRescue + ' INTEL (CARRIED)',
+                    '#ffb700', 2.4, 0, -45, 180, true));
+                // Freeing the asset trips every silent alarm on the grid.
+                game.registerNoise(h.x, h.y, EXTRACTION_TUNING.NOISE.aggro * 2);
+                if (audio && audio.playTadah) audio.playTadah();
+            }
+        },
+        isComplete() { return this.rescued; },
+        hudLine() {
+            const cls = this.rescued ? 'obj-done' : (this.active ? 'obj-active' : 'obj-locked');
+            let status = this.rescued ? 'SECURED' : 'LOCATE THE ASSET';
+            if (this.hostage && !this.hostage.dead && this.rescued) {
+                status = 'SECURED [' + Math.ceil(this.hostage.hp) + ' HP]';
+            }
+            return '<div class="obj-line ' + cls + '">◆ ASSET: ' + status + '</div>';
+        },
+        markers() {
+            if (!this.hostage || this.hostage.dead) return [];
+            // Keep the marker up even after rescue -- in 2P the non-escort
+            // player still wants to know where the asset is.
+            return [{ x: this.hostage.x, y: this.hostage.y, color: '#ffb700', label: this.rescued ? 'ASSET' : 'CAPTIVE' }];
+        },
+        draw() {} // the Hostage entity draws itself with the other entities
+    })
+};
+
+// ==== PHASE 2: HOSTAGE ENTITY ====
+// Deliberately simpler than RobotDog (no weapons, no waypoint economy):
+// stands captive until a player closes to rescue range, then follows the
+// nearest living player -- direct steering with LOS, throttled
+// MapGen.findPath when blocked (the RobotDog nav recipe, minus everything
+// the roadmap tech note said we didn't need). Damageable by enemy fire
+// and explosions (registered in the bullet/blast entity lists), which is
+// the entire risk profile of the escort mission.
+class Hostage extends Entity {
+    constructor(x, y, hp) {
+        super(x, y, 13);
+        this.hp = hp || 140;
+        this.maxHp = this.hp;
+        this.state = 'CAPTIVE';    // CAPTIVE -> FOLLOWING
+        this.rescuer = null;
+        this.speed = 195;
+        this._pathTimer = 0;
+        this._path = null;
+        this._pathIdx = 0;
+        this.walkCycle = 0;
+        this._hurtFlash = 0;
+    }
+
+    takeDamage(amt, pushDir, pushForce) {
+        this._hurtFlash = 0.25;
+        super.takeDamage(amt, pushDir, pushForce);
+        if (game && !this.dead && Math.random() < 0.4) {
+            game.floatingTexts.push(game.spawnFloatingText(
+                this.x, this.y - 20, 'ASSET TAKING FIRE', '#ff2a5f', 1.0, 0, -40, 200, true));
+        }
+    }
+
+    onDeath() {
+        if (game) {
+            for (let i = 0; i < 14; i++) {
+                let a = Math.random() * Math.PI * 2;
+                let spd = Math.random() * 130 + 40;
+                game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ffb700', 0.5, 2.5);
+            }
+        }
+        if (audio) audio.playExplosion(0.6, this.x, this.y);
+    }
+
+    update(dt, game) {
+        if (this.dead) return;
+        if (this._hurtFlash > 0) this._hurtFlash -= dt;
+        this.walkCycle += dt * 8;
+
+        // Nearest living player (the follow target once rescued)
+        let best = null, bestD = Infinity;
+        for (const p of [game.player, game.player2]) {
+            if (!p || p.dead) continue;
+            const d = Math.hypot(p.x - this.x, p.y - this.y);
+            if (d < bestD) { bestD = d; best = p; }
+        }
+
+        if (this.state === 'CAPTIVE') {
+            if (best && bestD < 75) {
+                this.state = 'FOLLOWING';
+                this.rescuer = best;
+            }
+            this.updatePhysics(dt, game.map.getWallsNear(this.x, this.y));
+            return;
+        }
+
+        // FOLLOWING: hang ~90px off the nearest player; path around walls.
+        if (best && bestD > 90) {
+            let tx = best.x, ty = best.y;
+            const nearbyWalls = game.map.getWallsNear(this.x, this.y);
+            const directClear = !nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, best.x, best.y, w));
+            if (!directClear) {
+                this._pathTimer -= dt;
+                if (this._pathTimer <= 0 || !this._path) {
+                    this._pathTimer = 0.6;
+                    this._path = game.map.findPath(this.x, this.y, best.x, best.y, game.map.walls);
+                    this._pathIdx = 0;
+                }
+                if (this._path && this._path.length) {
+                    while (this._pathIdx < this._path.length - 1 &&
+                           Math.hypot(this._path[this._pathIdx].x - this.x, this._path[this._pathIdx].y - this.y) < 40) {
+                        this._pathIdx++;
+                    }
+                    const node = this._path[Math.min(this._pathIdx, this._path.length - 1)];
+                    tx = node.x; ty = node.y;
+                }
+            } else {
+                this._path = null;
+            }
+            const ang = Math.atan2(ty - this.y, tx - this.x);
+            this.angle = ang;
+            // Sprint a little when far behind so it never gets dropped.
+            const spd = this.speed * (bestD > 320 ? 1.35 : 1.0);
+            this.vx += Math.cos(ang) * spd * 3.0 * dt;
+            this.vy += Math.sin(ang) * spd * 3.0 * dt;
+        }
+        this.updatePhysics(dt, game.map.getWallsNear(this.x, this.y));
+    }
+
+    draw(ctx, cam) {
+        const sx = this.x - cam.x, sy = this.y - cam.y;
+        const col = this.dead ? '#5a6a75' : (this._hurtFlash > 0 ? '#ff2a5f' : '#ffb700');
+        ctx.save();
+        drawDropShadow(ctx, cam, this.x, this.y, this.r);
+        // Captive state: pulsing containment ring
+        if (this.state === 'CAPTIVE' && !this.dead) {
+            const pulse = 4 + Math.sin(Date.now() / 250) * 3;
+            ctx.strokeStyle = 'rgba(255,183,0,0.45)';
+            ctx.setLineDash([5, 5]);
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(sx, sy, this.r + 8 + pulse, 0, Math.PI * 2); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        ctx.translate(sx, sy);
+        ctx.rotate(this.angle);
+        ctx.shadowBlur = 8; ctx.shadowColor = col;
+        // Body
+        ctx.fillStyle = '#1a1408';
+        ctx.strokeStyle = col; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 0, this.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        // Simple bobbing "arms" when following
+        if (this.state === 'FOLLOWING' && !this.dead) {
+            const bob = Math.sin(this.walkCycle) * 3;
+            ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.moveTo(2, -this.r + 2); ctx.lineTo(9, -this.r - 2 + bob); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(2, this.r - 2); ctx.lineTo(9, this.r + 2 - bob); ctx.stroke();
+        }
+        ctx.rotate(-this.angle);
+        ctx.shadowBlur = 0;
+        ctx.font = 'bold 9px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = col;
+        ctx.fillText(this.state === 'CAPTIVE' ? 'CAPTIVE' : 'ASSET', 0, -this.r - 8);
+        // HP bar while following (that's when it's at risk)
+        if (this.state === 'FOLLOWING' && !this.dead) {
+            const w = 26, frac = Math.max(0, this.hp / this.maxHp);
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(-w / 2, this.r + 6, w, 3);
+            ctx.fillStyle = frac > 0.4 ? '#39ff14' : '#ff2a5f';
+            ctx.fillRect(-w / 2, this.r + 6, w * frac, 3);
+        }
+        ctx.restore();
+    }
+}
 
 class RunLedger {
     constructor(runConfig, game) {
@@ -16816,8 +17928,11 @@ class RunLedger {
         this.damageTaken = 0;
         this.intelEarned = 0;          // actually committed to the bank
         this.intelDenied = 0;          // would-have-earned on ineligible/tainted runs
-        this.shotsFired = 0;           // PHASE 1 hook (accuracy) -- not yet wired
-        this.shotsHit = 0;             // PHASE 1 hook
+        this.shotsFired = 0;           // PHASE 1: player-fired shots (wired in Game.spawnBullet)
+        this.shotsHit = 0;             // PHASE 1: player shots that struck an enemy
+        this.carriedIntelBanked = 0;   // PHASE 1: carried intel banked by a successful evac
+        this.carriedIntelLost = 0;     // PHASE 1: carried intel lost to death/abandon
+        this.entryFeePaid = 0;         // PHASE 2: mission entry fee charged at insertion
         this.unlocks = [];             // PHASE 2 hook: [{label}] cards flipped on the debrief
 
         this.startWave = 1;
@@ -16967,6 +18082,7 @@ class Game {
         this.mines = [];
         this.turrets = [];
         this.dogs = [];
+        this.hostages = [];      // PHASE 2: escort entities (Asset Recovery)
         this.miniDrones = [];
         this.floatingTexts = [];
         this.dustMotes = [];
@@ -16981,7 +18097,21 @@ class Game {
         // Wave Mutator state
         this.activeMutator       = null;   // String: 'blackout'|'swarm'|'adrenaline'|'juggernaut'|null
         this.mutatorBaseTimeScale= 1.0;    // Saved timeScale before Adrenaline multiplies it
-        this.mutatorBaseNightMode= false;  // Saved nightMode before Blackout forces it on
+        // PHASE 1 BUGFIX (day/night on game start): must start UNDEFINED,
+        // not false. rollWaveMutator()'s restore branch fires whenever this
+        // is defined -- initializing it to `false` meant the very first
+        // wave-1 mutator roll stomped this.nightMode = false, silently
+        // reverting the player's NIGHT menu selection at run start.
+        this.mutatorBaseNightMode= undefined;
+
+        // PHASE 1: objective components (instantiated from
+        // RunConfig.objectives in startNewGame, after the map exists) and
+        // the Heat director (extraction mode only).
+        this.objectives = [];
+        this.extractionMode = false;
+        this.heat = 0;
+        this.heatFloor = 0;
+        this.heatTier = 0;
 
         // In-run Overclock tracking (reset each new game, not persisted)
         this.runOverclocks       = {};     // { p1: { hollowPoint: 0, exoServos: 0, extMags: {} }, p2: {...} }
@@ -17018,8 +18148,9 @@ class Game {
             'hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost', 
             'barrier', 'barrier_upgrade', 'drone', 'drone_upgrade', 'fiber_optic', 'turret', 'turret_mk2',
             'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
-            'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap',
-            'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC', 'ready'
+            'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap', 'ammo_shotgun_slug',
+            'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC',
+            'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel', 'ready'
         ];
         this.shopSelectedIndex = 0;
         this.dpadCooldown = 0;
@@ -17089,6 +18220,12 @@ class Game {
     }
     
     spawnBullet(x, y, angle, weaponInfo, isPlayerBullet, isAP = false, isHP = false, isNeutral = false) {
+        // PHASE 1: accuracy accounting at the single bullet factory. A
+        // player-FIRED bullet passes the Player object itself as
+        // isPlayerBullet; turrets/dogs pass boolean true -- the instanceof
+        // check counts only genuine player trigger pulls (shotgun pellets
+        // each count, so accuracy is per-projectile).
+        if (isPlayerBullet instanceof Player && this.runLedger) this.runLedger.shotsFired++;
         let b;
         if (this.inactiveBullets.length > 0) {
             b = this.inactiveBullets.pop();
@@ -17168,6 +18305,8 @@ class Game {
     // NOW mode (horde fantasy) and Operator mode (own AI economy) exempt.
     enrageEnemiesNear(x, y, r) {
         if (this.nowMode || this.operatorMode) return;
+        // PHASE 1: chaos-perk aggro is also NOISE -- loud builds run hot.
+        this.registerNoise(x, y, EXTRACTION_TUNING.NOISE.aggro);
         for (let e of this.enemies) {
             if (e.dead || e instanceof Boss) continue;
             let dx = e.x - x, dy = e.y - y;
@@ -17175,9 +18314,280 @@ class Game {
         }
     }
 
+    // ================= PHASE 1: HEAT DIRECTOR + OBJECTIVES =================
+
+    // Single noise entry point (the roadmap's "Heat system is the
+    // director"). Weapon fire, explosions, wall breaches, and chaos-perk
+    // aggro all funnel through here. Position params are reserved for
+    // future localized reactions; today heat is global. Inert outside a
+    // live extraction run, so every caller can fire unconditionally.
+    registerNoise(x, y, magnitude) {
+        if (!this.extractionMode || this.state !== 'playing' || !magnitude) return;
+        // PHASE 3 (BLOODHOUND): every noise runs hotter. Config-snapshotted.
+        if (this.runConfig && this.runConfig.noiseMult) magnitude *= this.runConfig.noiseMult;
+        this.heat = Math.min(EXTRACTION_TUNING.HEAT_MAX, this.heat + magnitude);
+    }
+
+    // Per-frame heat integration: the floor climbs with mission time (you
+    // can delay the pressure, never reset it) and heat bleeds back toward
+    // the floor while quiet. Tier changes announce themselves.
+    _updateHeat(dt) {
+        const T = EXTRACTION_TUNING;
+        // PHASE 2: missions can accelerate the floor (OVERRUN PROTOCOL's
+        // whole identity is a 2.2x floor climb).
+        this.heatFloor = Math.min(T.HEAT_MAX, this.heatFloor + T.HEAT_FLOOR_PER_SEC * (this._heatFloorMult || 1) * dt);
+        if (this.heat > this.heatFloor) {
+            this.heat = Math.max(this.heatFloor, this.heat - T.HEAT_DECAY_PER_SEC * dt);
+        } else {
+            this.heat = this.heatFloor;
+        }
+        let tier = 0;
+        for (let i = T.HEAT_TIERS.length - 1; i >= 0; i--) {
+            if (this.heat >= T.HEAT_TIERS[i].min) { tier = i; break; }
+        }
+        if (tier > this.heatTier) {
+            const t = T.HEAT_TIERS[tier];
+            for (const p of [this.player, this.player2]) {
+                if (p && !p.dead) {
+                    this.floatingTexts.push(this.spawnFloatingText(
+                        p.x, p.y - 48, 'HEAT RISING: ' + t.name, t.color, 2.0, 0, -35, 180, true));
+                }
+            }
+            if (audio) audio.playBakedSound('bolt_clack', audio.sfxGain, 0.5);
+        }
+        this.heatTier = tier;
+    }
+
+    // Virtual "intensity wave" -- the ONE value the tactical spawner's
+    // wave-scaled formulas (live cap growth, squad composition, flank
+    // chance, HP/speed scaling, push behavior) read. Wave modes: the real
+    // wave counter, unchanged. Extraction: the current heat tier's mapped
+    // intensity, so heat drives the exact same spawner instead of a
+    // parallel one.
+    _spawnIntensityWave() {
+        if (this.extractionMode) return EXTRACTION_TUNING.HEAT_TIERS[this.heatTier].wave;
+        return this.wave;
+    }
+
+    // First-incomplete objective is the active stage; everything after it
+    // is locked. Called on start and after each tick.
+    _refreshObjectiveStages() {
+        let stageFound = false;
+        for (const o of this.objectives) {
+            if (!stageFound && !o.isComplete()) {
+                o.active = true;
+                stageFound = true;
+            } else {
+                o.active = false;
+            }
+        }
+    }
+
+    // PHASE 2: the run-end ARBITER. Objectives (and future mission-fail
+    // conditions) REQUEST endings; exactly one resolver applies the
+    // highest-priority request after all objectives have ticked. This kills
+    // the class of race where two objectives try to end the same run on
+    // the same frame (e.g. hostage death + evac completion) -- failure
+    // outranks success by RUN_END_PRIORITY.
+    requestRunEnd(outcome, reason) {
+        if (this.state !== 'playing') return;
+        if (!this._pendingRunEnd ||
+            (RUN_END_PRIORITY[outcome] || 0) > (RUN_END_PRIORITY[this._pendingRunEnd.outcome] || 0)) {
+            this._pendingRunEnd = { outcome, reason };
+        }
+    }
+
+    _resolveRunEnd() {
+        const req = this._pendingRunEnd;
+        if (!req) return;
+        this._pendingRunEnd = null;
+        if (this.state !== 'playing') return;
+        if (req.outcome === RUN_OUTCOMES.EXTRACTION) {
+            this.completeExtraction();
+        } else {
+            this.endRun(req.outcome);
+        }
+    }
+
+    _updateObjectives(dt) {
+        if (!this.objectives || this.objectives.length === 0) return;
+        for (const o of this.objectives) {
+            if (o.onTick) o.onTick(dt, this);
+            if (this.state !== 'playing') return; // defensive: nothing should end mid-tick anymore
+        }
+        this._resolveRunEnd(); // one ending per tick, highest priority wins
+        if (this.state !== 'playing') return;
+        this._refreshObjectiveStages();
+    }
+
+    // Scatters `count` objective points on unblocked nav nodes within a
+    // distance band (fractions of the map's min dimension) from the player
+    // spawn, mutually separated so terminals don't cluster. Nav nodes only
+    // exist where a character-sized circle fits -- placement inside a wall
+    // is impossible by construction (same trick as barrel spawns).
+    _placeObjectivePoints(count, minFrac, maxFrac) {
+        const cx = this.mapW / 2, cy = this.mapH / 2;
+        const minDim = Math.min(this.mapW, this.mapH);
+        const minD = minDim * minFrac, maxD = minDim * maxFrac;
+        const pts = [];
+        let candidates = [];
+        for (const n of this.map.navNodes) {
+            if (n.blocked) continue;
+            const d = Math.hypot(n.x - cx, n.y - cy);
+            if (d >= minD && d <= maxD) candidates.push(n);
+        }
+        if (candidates.length === 0) candidates = this.map.navNodes.filter(n => !n.blocked);
+        const minSep = Math.max(400, minDim * 0.18);
+        let guard = 0;
+        while (pts.length < count && guard++ < 400 && candidates.length) {
+            const n = candidates[Math.floor(Math.random() * candidates.length)];
+            let ok = true;
+            for (const p of pts) {
+                if (Math.hypot(p.x - n.x, p.y - n.y) < minSep) { ok = false; break; }
+            }
+            if (ok || guard > 300) pts.push({ x: n.x, y: n.y });
+        }
+        while (pts.length < count) pts.push({ x: cx + (Math.random() - 0.5) * minDim * 0.6, y: cy + (Math.random() - 0.5) * minDim * 0.6 });
+        return pts;
+    }
+
+    // Extraction has no waves: the wave counter stays parked at 1, the
+    // spawner runs endless (enemiesToSpawn topped up every frame so the
+    // round-win/shop path can never trigger), and pacing state is owned by
+    // the Heat director. Ends ONLY through evac (completeExtraction) or
+    // the standard death/abandon paths -- all via endRun().
+    _startExtractionRun() {
+        this.wave = 1;
+        this.waveStarted = true;      // no initial-shop semantics in this mode
+        this.prepTimer = EXTRACTION_TUNING.INSERTION_PREP;
+        this.enemiesToSpawn = 9999;
+        this.activeMutator = null;
+        this.allEnemiesAreElite = false;
+        this.isBossWave = false;
+        this.pendingBossKey = null;
+        this.spawnTimer = 0;
+        this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: EXTRACTION_TUNING.INSERTION_PREP + 2.0 };
+        for (const p of [this.player, this.player2]) if (p) p.carriedIntel = 0;
+        // PHASE 2: announce the OP, not a hardcoded uplink briefing.
+        const _mn = (this.runConfig && this.runConfig.missionId && MISSIONS[this.runConfig.missionId])
+            ? MISSIONS[this.runConfig.missionId].name : 'EXTRACTION';
+        this.floatingTexts.push(this.spawnFloatingText(
+            this.mapW / 2, this.mapH / 2 - 110,
+            'INFILTRATION LIVE — ' + _mn, '#00e5ff', 4.0, 0, 0, 100, false));
+        this.updateHUD();
+    }
+
+    // Evac channel complete: bank ALL carried intel through the ledger
+    // (single write path preserved), then end through the unified debrief.
+    completeExtraction() {
+        let total = 0;
+        for (const p of [this.player, this.player2]) {
+            if (p) { total += (p.carriedIntel || 0); p.carriedIntel = 0; }
+        }
+        // PHASE 2: flat mission completion bonus rides the same single
+        // write path -- tainted runs get it denied honestly like all intel.
+        const bonus = (this.runConfig && this.runConfig.rewardRules && this.runConfig.rewardRules.completionIntel) || 0;
+        if (bonus > 0 && this.runLedger) this.runLedger.addIntel(bonus, 'mission_bonus');
+        const banked = this.runLedger ? this.runLedger.addIntel(total, 'extracted') : 0;
+        if (this.runLedger) {
+            this.runLedger.carriedIntelBanked = banked;
+            if (banked < total) this.runLedger.carriedIntelLost += (total - banked); // tainted run: honest accounting
+            this.intelEarnedThisRun = this.runLedger.intelEarned;
+        }
+        this.endRun(RUN_OUTCOMES.EXTRACTION);
+    }
+
+    // A downed operator drops their carried intel as a recoverable cache
+    // (2P: the survivor can pick it up and carry on; the round-trip is
+    // exact because the cache stores the dropped value).
+    dropIntelCache(p) {
+        if (!p || !(p.carriedIntel > 0)) return;
+        const cache = new Item(p.x, p.y, 'intel_cache');
+        cache.cacheValue = p.carriedIntel;
+        p.carriedIntel = 0;
+        this.items.push(cache);
+        this.floatingTexts.push(this.spawnFloatingText(
+            p.x, p.y - 30, 'INTEL CACHE DROPPED (' + cache.cacheValue + ')', '#ffb700', 2.4, 0, -40, 160, true));
+    }
+
+    // PHASE 1 (stuck-enemy fix): give a wedged enemy a fresh, validated
+    // position. Far from every player: silent teleport to a new squad
+    // anchor (with a small poof so headless traces still see the event).
+    // Near a player (where a teleport would read as a glitch): a physics
+    // nudge + forced AI recompute instead.
+    _relocateStuckEnemy(e) {
+        let nearestPlayerDist = Infinity;
+        for (const p of [this.player, this.player2]) {
+            if (p && !p.dead) nearestPlayerDist = Math.min(nearestPlayerDist, Math.hypot(p.x - e.x, p.y - e.y));
+        }
+        if (nearestPlayerDist > 700) {
+            const anchor = this._pickSquadAnchor();
+            for (let i = 0; i < 6; i++) {
+                const a = Math.random() * Math.PI * 2;
+                this.addParticle(e.x, e.y, Math.cos(a) * 90, Math.sin(a) * 90, '#5a6a75', 0.4, 2);
+            }
+            e.x = anchor.x; e.y = anchor.y;
+            e.vx = 0; e.vy = 0;
+        } else {
+            const a = Math.random() * Math.PI * 2;
+            e.vx += Math.cos(a) * 260;
+            e.vy += Math.sin(a) * 260;
+        }
+        // Force a full AI recompute next frame (cachedMoveAngle undefined
+        // is one of shouldUpdateAI's explicit triggers).
+        e.cachedMoveAngle = undefined;
+        e.cachedTarget = null;
+    }
+
+    // Screen-edge markers for the active objective (same elliptical edge
+    // clamp + padding the teammate indicator uses). Screen-space; called
+    // from drawScreenOverlays per viewport.
+    drawObjectiveMarkers(p, cam, x, y, w, h) {
+        if (!this.objectives || this.objectives.length === 0 || !cam) return;
+        const visibleW = w / cam.zoom;
+        const visibleH = h / cam.zoom;
+        for (const o of this.objectives) {
+            if (!o.markers) continue;
+            for (const m of o.markers(this)) {
+                const onScreen = m.x >= cam.x && m.x <= cam.x + visibleW &&
+                                 m.y >= cam.y && m.y <= cam.y + visibleH;
+                if (onScreen) continue;
+                const centerX = x + w / 2, centerY = y + h / 2;
+                const angle = Math.atan2(m.y - (cam.y + visibleH / 2), m.x - (cam.x + visibleW / 2));
+                const padX = 70, padY = 85;
+                const drawX = centerX + Math.cos(angle) * ((w - padX * 2) / 2);
+                const drawY = centerY + Math.sin(angle) * ((h - padY * 2) / 2);
+                const dist = Math.hypot(m.x - p.x, m.y - p.y);
+                this.ctx.save();
+                this.ctx.translate(drawX, drawY);
+                this.ctx.rotate(angle);
+                this.ctx.fillStyle = m.color;
+                this.ctx.strokeStyle = '#fff';
+                this.ctx.lineWidth = 1;
+                this.ctx.shadowBlur = 8;
+                this.ctx.shadowColor = m.color;
+                this.ctx.beginPath();
+                this.ctx.moveTo(14, 0);
+                this.ctx.lineTo(-8, -9);
+                this.ctx.lineTo(-8, 9);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                this.ctx.rotate(-angle);
+                this.ctx.shadowBlur = 0;
+                this.ctx.font = 'bold 9px "Courier New", monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(m.label + ' ' + Math.round(dist / 50) + 'm', 0, 24);
+                this.ctx.restore();
+            }
+        }
+    }
+
     // Wave-scaled live-enemy cap. Swarm-mutator waves get a higher cap so
     // that mutator keeps its "flood of 1-hp swarmers" identity.
     _tacticalLiveCap() {
+        // PHASE 1: in extraction the heat tier IS the cap curve.
+        if (this.extractionMode) return EXTRACTION_TUNING.HEAT_TIERS[this.heatTier].liveCap;
         let cap = Math.min(TACTICAL_TUNING.LIVE_CAP_MAX,
             Math.floor(TACTICAL_TUNING.LIVE_CAP_BASE + this.wave * TACTICAL_TUNING.LIVE_CAP_PER_WAVE));
         if (this.activeMutator === 'swarm') cap = Math.round(cap * TACTICAL_TUNING.SWARM_CAP_MULT);
@@ -17190,7 +18600,8 @@ class Game {
     // templates as waves climb -- "harder decisions per enemy" replaces
     // "more enemies per second" as the lategame difficulty currency.
     _rollSquadPlan() {
-        const w = this.wave;
+        // PHASE 1: heat tier maps to a virtual intensity wave in extraction.
+        const w = this._spawnIntensityWave();
         if (this.activeMutator === 'swarm') {
             // Swarm mutator: everything is a swarmer regardless of template.
             let n = 4 + Math.floor(Math.random() * 3);
@@ -17226,6 +18637,38 @@ class Game {
     // computes its compass bearing for the contact ping.
     _pickSquadAnchor() {
         const SPAWN_WALL_CHECK_R = 18;
+        // PHASE 1 (extraction): the 7500px map makes edge spawns useless --
+        // squads anchor on a ring around a random living player instead
+        // (far enough to arrive as a squad, close enough to matter). Falls
+        // through to the stock edge picker if no valid ring point is found.
+        if (this.extractionMode) {
+            const targets = [this.player, this.player2].filter(p => p && !p.dead);
+            if (targets.length) {
+                for (let attempts = 0; attempts < 80; attempts++) {
+                    const t = targets[Math.floor(Math.random() * targets.length)];
+                    const a = Math.random() * Math.PI * 2;
+                    const d = MathUtils.rand(EXTRACTION_TUNING.SPAWN_RING_MIN, EXTRACTION_TUNING.SPAWN_RING_MAX);
+                    const ex = Math.max(60, Math.min(this.mapW - 60, t.x + Math.cos(a) * d));
+                    const ey = Math.max(60, Math.min(this.mapH - 60, t.y + Math.sin(a) * d));
+                    let ok = true;
+                    for (const p of targets) {
+                        if (Math.hypot(p.x - ex, p.y - ey) < 600) { ok = false; break; }
+                    }
+                    if (ok) {
+                        for (const wall of this.map.getWallsNear(ex, ey)) {
+                            if (MathUtils.circleIntersectAABB(ex, ey, SPAWN_WALL_CHECK_R, wall).hit) { ok = false; break; }
+                        }
+                    }
+                    if (ok) {
+                        const dx = ex - t.x, dy = ey - t.y;
+                        let ns = '', ew = '';
+                        if (Math.abs(dy) > d * 0.35) ns = dy < 0 ? 'NORTH' : 'SOUTH';
+                        if (Math.abs(dx) > d * 0.35) ew = dx < 0 ? 'WEST' : 'EAST';
+                        return { x: ex, y: ey, bearing: (ns && ew) ? ns + '-' + ew : (ns || ew || 'CLOSE') };
+                    }
+                }
+            }
+        }
         let ex = 60, ey = 60, valid = false, attempts = 0;
         while (!valid && attempts < 100) {
             attempts++;
@@ -17282,11 +18725,15 @@ class Game {
         if (this.activeMutator === 'swarm') chosenType = EnemyTypes.swarmer;
 
         let enemy = this.spawnEnemy(ex, ey, chosenType);
-        let scaleHP = 1.0 + (this.wave - 1) * 0.04;
+        // PHASE 1: _spawnIntensityWave() == this.wave in wave modes
+        // (byte-identical behavior); in extraction it's the heat tier's
+        // mapped intensity, so hotter runs field tougher bodies too.
+        const iw = this._spawnIntensityWave();
+        let scaleHP = 1.0 + (iw - 1) * 0.04;
         // Phase 2: speed scaling capped early (~wave 8) -- lategame
         // difficulty comes from smarter squads (flankers, pushes, tougher
         // composition), not permanently faster bodies. HP scaling unchanged.
-        let scaleSpeed = Math.min(TACTICAL_TUNING.SPEED_SCALE_MAX, 1.0 + (this.wave - 1) * 0.015);
+        let scaleSpeed = Math.min(TACTICAL_TUNING.SPEED_SCALE_MAX, 1.0 + (iw - 1) * 0.015);
         if (this.activeMutator === 'swarm') {
             enemy.hp = 1; enemy.maxHp = 1;
         } else {
@@ -17328,7 +18775,7 @@ class Game {
                 if (e && e.type !== 'swarmer' && e.type !== 'sapper') {
                     let isPointman = (ss.rolesAssigned || 0) === 0;
                     let flankChance = Math.min(TACTICAL_TUNING.FLANK_MAX,
-                        TACTICAL_TUNING.FLANK_BASE + this.wave * TACTICAL_TUNING.FLANK_PER_WAVE);
+                        TACTICAL_TUNING.FLANK_BASE + this._spawnIntensityWave() * TACTICAL_TUNING.FLANK_PER_WAVE);
                     if (!isPointman && Math.random() < flankChance) {
                         ss.flankSide = -(ss.flankSide || 1);
                         e.tactic = ss.flankSide > 0 ? 'flank_right' : 'flank_left';
@@ -17362,7 +18809,14 @@ class Game {
         ss.rolesAssigned = 0;
         ss.anchor = this._pickSquadAnchor();
         ss.memberTimer = 0; // first member releases this frame
-        ss.gapTimer = MathUtils.rand(TACTICAL_TUNING.SQUAD_GAP_MIN, TACTICAL_TUNING.SQUAD_GAP_MAX);
+        // PHASE 1: extraction squad cadence is the heat tier's, not the
+        // fixed wave-mode band -- CALM is sparse, OVERRUN is relentless.
+        if (this.extractionMode) {
+            const tier = EXTRACTION_TUNING.HEAT_TIERS[this.heatTier];
+            ss.gapTimer = MathUtils.rand(tier.gapMin, tier.gapMax);
+        } else {
+            ss.gapTimer = MathUtils.rand(TACTICAL_TUNING.SQUAD_GAP_MIN, TACTICAL_TUNING.SQUAD_GAP_MAX);
+        }
 
         // Contact ping: readable threat info is what makes the pressure
         // tactical instead of chaotic (handoff lever #6). World-space text
@@ -17572,6 +19026,10 @@ class Game {
     }
 
     applyExplosionShake(x, y, maxShake, blastRadius) {
+        // PHASE 1: every explosion is noise for the Heat director (inert
+        // outside extraction). One hook here covers grenades, barrels,
+        // shells, sappers -- everything that shakes the screen.
+        if (this.registerNoise) this.registerNoise(x, y, EXTRACTION_TUNING.NOISE.explosion);
         let maxDist = Math.max(600, blastRadius * 3);
         
         if (this.player && !this.player.dead) {
@@ -17756,7 +19214,12 @@ class Game {
     }
 
     spawnCorpseDebris(x, y, impactAngle, enemyColor, enemyRadius, overkill = 0, hpReference = 100) {
-        let debrisCount = 6 + Math.floor(Math.random() * 5); // 6–10 pieces
+        // PHASE 1 (guts polish): debris volume and spawn footprint respect
+        // the body that produced them -- a 9px swarmer pops a small puff, a
+        // 15px (or 1.45x elite) enforcer throws noticeably more material
+        // from across its whole silhouette instead of a single point.
+        const sizeScale = MathUtils.clamp((enemyRadius || 12) / 12, 0.7, 2.4);
+        let debrisCount = Math.round((6 + Math.floor(Math.random() * 5)) * sizeScale); // 6–10 pieces at baseline size
         // Overkill physics: damage far beyond what was needed to kill scales
         // 0..1 over a full hpReference's worth of excess, tightening the
         // spread cone and boosting speed along the hit direction -- a
@@ -17767,7 +19230,9 @@ class Game {
         let spreadMult = 1.0 - overkillFactor * 0.7; // tightens toward a narrow cone
         let speedBoost = 1.0 + overkillFactor * 1.2; // up to +120% speed
         for (let i = 0; i < debrisCount; i++) {
-            let spread = (Math.random() - 0.5) * 1.0 * spreadMult;
+            // Spread cone widens gently with body size (bigger corpse, wider
+            // material fan) while overkill still tightens it.
+            let spread = (Math.random() - 0.5) * (0.85 + sizeScale * 0.15) * spreadMult;
             let debrisAngle = impactAngle + spread;
             let speed = (120 + Math.random() * 250) * speedBoost;
             let vx = Math.cos(debrisAngle) * speed;
@@ -17775,7 +19240,10 @@ class Game {
             let size = 2 + Math.random() * (enemyRadius * 0.35);
             let life = 0.5 + Math.random() * 0.8;
             
-            let p = this.spawnParticle(x, y, vx, vy, enemyColor, life, size);
+            // Spawn from across the body's disc, not a single point.
+            let ox = (Math.random() - 0.5) * 2 * (enemyRadius || 12) * 0.7;
+            let oy = (Math.random() - 0.5) * 2 * (enemyRadius || 12) * 0.7;
+            let p = this.spawnParticle(x + ox, y + oy, vx, vy, enemyColor, life, size);
             if (p) {
                 p.isCorpseDebris = true;
                 p.debrisColor = enemyColor;
@@ -18597,11 +20065,13 @@ class Game {
             ammo_lmg_std: 'btn-buy-ammo-lmg-std', ammo_lmg_ap: 'btn-buy-ammo-lmg-ap',
             ammo_sniper_std: 'btn-buy-ammo-sniper-std', ammo_sniper_ap: 'btn-buy-ammo-sniper-ap', ammo_pistol_hp: 'btn-buy-ammo-pistol-hp',
             ammo_m1a_std: 'btn-buy-ammo-m1a-std', ammo_m1a_ap: 'btn-buy-ammo-m1a-ap',
+            ammo_shotgun_slug: 'btn-buy-ammo-shotgun-slug',
             oc_hollowPoint: 'btn-buy-oc-hollow',
             oc_exoServos: 'btn-buy-oc-servos',
             oc_extMags: 'btn-buy-oc-mags',
             oc_fireRate: 'btn-buy-oc-firerate',
             oc_maxHpOC: 'btn-buy-oc-maxhp',
+            oc_overpressure: 'btn-buy-oc-overpressure', oc_glassNerves: 'btn-buy-oc-glassnerves', oc_coldBarrel: 'btn-buy-oc-coldbarrel',
             ready: 'btn-ready'
         };
 
@@ -20009,9 +21479,50 @@ class Game {
         this.pendingActions.push({ t: delaySeconds, fn });
     }
 
+    // PHASE 3: THE single formula for reserve ammo capacity. Meta magazine
+    // upgrades add FLAT rounds to the base; the in-run Extended Mags
+    // overclock then multiplies the whole thing -- both purchases always
+    // pay, and neither recompute can clobber the other (the old bug risk:
+    // _applyExtMags recomputed from a private hardcoded base table).
+    recalcPlayerMaxAmmo(p) {
+        if (!p || !p.maxAmmo) return;
+        const MA = this.saveData.metaUpgrades || {};
+        const suffix = p.isPlayer2 ? 'p2' : 'p1';
+        const oc = (this.runOverclocks && this.runOverclocks[suffix]) || null;
+        for (const key in BASE_MAX_AMMO) {
+            let base = BASE_MAX_AMMO[key];
+            for (const metaKey in MAG_META_UPGRADES) {
+                const mu = MAG_META_UPGRADES[metaKey];
+                if (mu.ammoKey === key) base += (MA[metaKey] || 0) * mu.perLevel;
+            }
+            const extLvl = (oc && oc.extMags && oc.extMags[key]) || 0;
+            p.maxAmmo[key] = Math.round(base * (1 + extLvl * 0.25));
+        }
+    }
+
+    // PHASE 3: laser sight tuning resolved from LASER SIGHT ARRAY level.
+    // Consumed by the beam draw block AND Player.update's collimation
+    // recovery -- one resolver so the two can't drift apart.
+    laserTuning(p) {
+        const lvl = Math.min(3, (this.saveData && this.saveData.metaUpgrades && this.saveData.metaUpgrades.laserSight) || 0);
+        let rgb = p && p.isPlayer2 ? '255, 183, 0' : '0, 229, 255';
+        if (lvl >= 3 && this.saveData) {
+            const saved = p && p.isPlayer2 ? this.saveData.laserColorP2 : this.saveData.laserColorP1;
+            if (saved) rgb = saved;
+        }
+        return {
+            maxDist:  LASER_TUNING.maxDist[lvl],
+            tightDeg: LASER_TUNING.tightDeg[lvl],
+            wideDeg:  LASER_TUNING.wideDeg[lvl],
+            recover:  LASER_TUNING.recover[lvl],
+            rgb
+        };
+    }
+
     _applyMetaStatsToPlayer(p) {
         if (!p) return;
         const MA = this.saveData.metaUpgrades;
+        this.recalcPlayerMaxAmmo(p);   // PHASE 3: magazine meta upgrades
         p.maxHp    = 100 * (1 + (MA.firstAidTraining || 0) * 0.08);
         p.hp       = p.maxHp;
         p.maxArmor = 50 * (1 + (MA.kevlarWeave || 0) * 0.10);
@@ -20039,11 +21550,29 @@ class Game {
     // Phase 1/2 migrate mode setup fully onto the config). The economy and
     // end-of-run pipeline read ONLY the config + ledger.
     buildRunConfig() {
+        // PHASE 3: Escalation Protocols -- resolved ONCE at snapshot time.
+        // Reward rules are pre-scaled here so the ledger (single write
+        // path) and every award site stay escalation-blind.
+        const escActive = this.extractionMode
+            ? ESCALATION_ORDER.filter(id => this.saveData.escalations && this.saveData.escalations[id])
+            : [];
+        const escBonus = escActive.reduce((s, id) => s + ESCALATION_PROTOCOLS[id].bonus, 0);
+        const escaleRewards = (rr) => {
+            if (escBonus <= 0) return rr;
+            const out = {};
+            for (const k in rr) out[k] = Math.round(rr[k] * (1 + escBonus));
+            return out;
+        };
+        const missionHeat = this.extractionMode
+            ? Object.assign({ floorMult: 1.0, startHeat: 0 }, this._selectedMission().heat)
+            : null;
+        if (missionHeat && escActive.includes('bloodhound')) missionHeat.floorMult *= 1.5;
         return {
             id: 'run_' + Date.now(),
             modeId: this.gameMode || (this.isTestingMode ? 'sandbox'
                      : this.operatorMode ? 'operator'
-                     : this.nowMode ? 'now' : 'normal'),
+                     : this.nowMode ? 'now'
+                     : this.extractionMode ? 'extraction' : 'normal'),
             mapId: this.selectedMapId,
             isTwoPlayer: !!this.isTwoPlayer,
             difficulty: this.difficultyMode,
@@ -20054,10 +21583,33 @@ class Game {
                 nightMode: !!this.nightMode,
                 forcedMutator: this.forcedMutator || null
             },
-            objectives: [],                  // PHASE 1: objective component list
-            rewardRules: { intelPerWave: 2, intelPerElite: 3, intelPerChip: 5 },
-            entryCost: 0,                    // PHASE 2: mission entry fees
-            unlockRequirements: null,        // PHASE 2: read by the mission registry
+            // PHASE 2: the mission registry IS the source of extraction
+            // run data now -- objectives, reward rules, entry fee, and
+            // heat modifiers all come from the selected MISSIONS entry
+            // (Phase 1's hardcoded mission became op_first_contact).
+            missionId: this.extractionMode ? (this._selectedMission().id) : null,
+            objectives: this.extractionMode
+                ? JSON.parse(JSON.stringify(this._selectedMission().objectives))
+                : [],
+            rewardRules: this.extractionMode
+                ? escaleRewards(Object.assign({ intelPerWave: 2, intelPerElite: 3, intelPerChip: 5, completionIntel: 0 }, this._selectedMission().rewardRules))
+                : { intelPerWave: 2, intelPerElite: 3, intelPerChip: 5 },
+            missionHeat: missionHeat,
+            // PHASE 3: active protocol ids + total bonus (debrief display)
+            // and BLOODHOUND's noise amplifier (consumed in registerNoise).
+            escalations: escActive,
+            escalationBonus: escBonus,
+            noiseMult: escActive.includes('bloodhound') ? 1.25 : 1.0,
+            entryCost: this.extractionMode ? (this._selectedMission().entryCost || 0) : 0,
+            unlockRequirements: this.extractionMode ? (this._selectedMission().unlock || null) : null,
+            // PHASE 2 (difficulty = combat pressure): snapshotted so a
+            // menu change mid-run can't retune live bullets.
+            enemyMults: {
+                // PHASE 3: IRONCLAD stacks a flat +25% on the difficulty mult.
+                dmg: (DIFFICULTY_TUNING[this.difficultyMode] || DIFFICULTY_TUNING.hard).enemyDmg
+                     * (escActive.includes('ironclad') ? 1.25 : 1.0),
+                bulletSpeed: (DIFFICULTY_TUNING[this.difficultyMode] || DIFFICULTY_TUNING.hard).enemyBulletSpeed
+            },
             // The ONE flag that drives the "no Intel this run" banner and
             // every earning gate. Sandbox is ineligible by construction;
             // god mode / dev spawns taint an eligible run mid-flight.
@@ -20066,17 +21618,77 @@ class Game {
     }
 
     startNewGame() {
+        // PHASE 2: mission gate. Locked missions can't start (belt +
+        // suspenders -- the UI already blocks selecting them), and the
+        // entry fee is charged here -- but ONLY on retries (guardrail:
+        // fees gate retries, never first access). Insufficient intel
+        // bounces back to the menu with a message instead of starting.
+        if (this.extractionMode) {
+            const m = this._selectedMission();
+            if (!this.isMissionUnlocked(m)) { this.setGameMode('extraction'); return; }
+            const fee = this._missionEntryFeeDue(m);
+            if (fee > 0) {
+                if ((this.saveData.intel || 0) < fee) {
+                    const lbl = document.getElementById('mission-fee-warning');
+                    if (lbl) { lbl.textContent = 'INSUFFICIENT INTEL — ENTRY FEE ' + fee; lbl.classList.remove('hidden'); }
+                    return;
+                }
+                this.saveData.intel -= fee;   // the spend side of the intel economy (mirrors buyArmoryUpgrade)
+                this._entryFeePaidThisRun = fee;
+            } else {
+                this._entryFeePaidThisRun = 0;
+            }
+            this.saveData.missions.attempts[m.id] = (this.saveData.missions.attempts[m.id] || 0) + 1;
+            this.saveGameData();
+        } else {
+            this._entryFeePaidThisRun = 0; // stale-flag guard: fee only ever belongs to the extraction run that paid it
+        }
+
+        // PHASE 2: snapshot which missions are unlocked BEFORE this run so
+        // endRun can diff and flip "MISSION UNLOCKED" debrief cards.
+        this._unlockedMissionsAtStart = MISSION_ORDER.filter(id => this.isMissionUnlocked(MISSIONS[id]));
+
         // PHASE 0: snapshot the rules of this run + open a fresh ledger
         // BEFORE any other reset -- everything below may consult them.
         this.runConfig = this.buildRunConfig();
         this.runLedger = new RunLedger(this.runConfig, this);
+        if (this._entryFeePaidThisRun) this.runLedger.entryFeePaid = this._entryFeePaidThisRun;
         this.runLedger.startWave = this.runConfig.startWave;
         this._clearDebriefTimers();
         toggleClass('debrief-screen', 'hidden', true);
 
+        // PHASE 1 BUGFIX (day/night on game start): a run that ended
+        // mid-Blackout left this.nightMode stuck true and
+        // mutatorBaseNightMode holding a stale value. Re-assert the
+        // player's actual environment choice from the config snapshot and
+        // clear the restore latch so wave 1's rollWaveMutator() can't
+        // stomp it. Same for timeScale after a run ending mid-Adrenaline
+        // (extraction/operator never call rollWaveMutator, so they'd
+        // otherwise inherit the 1.4x scale forever).
+        this.nightMode = !!(this.runConfig.modifiers && this.runConfig.modifiers.nightMode);
+        this.mutatorBaseNightMode = undefined;
+        {
+            const sld = document.getElementById('sld-time-scale');
+            this.timeScale = sld ? (parseFloat(sld.value) || 1.0) : (this.saveData.timeScale || 1.0);
+        }
+
+        // PHASE 1: heat + objectives reset (components instantiated below,
+        // after the map exists -- placement needs nav nodes).
+        // PHASE 2: missions can start pre-heated / with a faster floor.
+        const mh = this.runConfig.missionHeat;
+        this.heat = mh ? (mh.startHeat || 0) : 0;
+        this.heatFloor = this.heat;
+        this._heatFloorMult = mh ? (mh.floorMult || 1.0) : 1.0;
+        this.heatTier = 0;
+        this.objectives = [];
+        // PHASE 2: arbiter + escort state reset
+        this._pendingRunEnd = null;
+        this.hostages = [];
+        this._escortEntity = null;
+
         this.runOverclocks = {
-            p1: { hollowPoint: 0, exoServos: 0, extMags: {}, fireRate: 0, maxHpOC: 0 },
-            p2: { hollowPoint: 0, exoServos: 0, extMags: {}, fireRate: 0, maxHpOC: 0 }
+            p1: { hollowPoint: 0, exoServos: 0, extMags: {}, fireRate: 0, maxHpOC: 0, corrupted: {} },
+            p2: { hollowPoint: 0, exoServos: 0, extMags: {}, fireRate: 0, maxHpOC: 0, corrupted: {} }
         };
         this.intelEarnedThisRun = 0;
         this.isDevShopActive = false;
@@ -20126,6 +21738,18 @@ class Game {
         this._applyMetaStatsToPlayer(this.player);
         if (this.isTwoPlayer && this.player2) {
             this._applyMetaStatsToPlayer(this.player2);
+        }
+
+        // PHASE 3 (EXPOSED protocol): max armor halved for the run --
+        // applied AFTER meta stats (same ordering rationale as operator
+        // mode below) so kevlar levels are cut too, not bypassed.
+        if (this.extractionMode && this.runConfig && this.runConfig.escalations
+            && this.runConfig.escalations.includes('exposed')) {
+            for (const p of [this.player, this.player2]) {
+                if (!p) continue;
+                p.maxArmor *= 0.5;
+                p.armor = Math.min(p.armor, p.maxArmor);
+            }
         }
 
         // FPV OPERATOR MODE: spawn inside the hardened bunker (not map
@@ -20197,6 +21821,7 @@ class Game {
         this.mines = [];
         this.turrets = [];
         this.dogs = [];
+        if (!this.hostages) this.hostages = []; // (reset properly in startNewGame; guard for legacy paths)
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
                 md.stopAudio();
@@ -20273,6 +21898,20 @@ class Game {
             }
         }
 
+        // PHASE 1: instantiate objective components from the config's data
+        // list. Done here (not at config build) because placement needs the
+        // freshly generated map's nav nodes and the player spawn position.
+        this.objectives = (this.runConfig.objectives || []).map(entry => {
+            const factory = ObjectiveTypes[entry.type];
+            if (!factory) { console.warn('Unknown objective type:', entry.type); return null; }
+            const o = factory(entry.params || {});
+            o.init(this);
+            return o;
+        }).filter(Boolean);
+        this._refreshObjectiveStages();
+        toggleClass('hud-objectives', 'hidden', this.objectives.length === 0);
+        toggleClass('hud-heat-wrap', 'hidden', !this.extractionMode);
+
         // ---- Boss run-state reset ----
         this.bossDrones = [];       // hostile drones launched by SpotBoss instances
         this.activeBoss = null;     // the currently-alive boss this run, if any (drives the boss HUD bar)
@@ -20327,7 +21966,10 @@ class Game {
         this.waveStarted = false;
         this.isPaused = false;
         
-        if (this.isTestingMode || this.nowMode) {
+        if (this.extractionMode) {
+            this.state = 'playing';
+            this._startExtractionRun();
+        } else if (this.isTestingMode || this.nowMode) {
             this.state = 'shop';
             this.openShopInterface();
             if (this.nowMode) {
@@ -20734,6 +22376,18 @@ class Game {
         } else if (it.type === 'perk_case') {
             pickedUp = true;
             this.grantRandomPerk(p);
+        } else if (it.type === 'intel_cache') {
+            // PHASE 1 (extraction): recovered cache goes back to CARRIED
+            // intel (not the bank) -- the round-trip is exact because the
+            // cache stored the dropped value. Banking still only happens at
+            // evac, through the ledger.
+            pickedUp = true;
+            const v = it.cacheValue || 0;
+            p.carriedIntel = (p.carriedIntel || 0) + v;
+            this.floatingTexts.push(this.spawnFloatingText(
+                it.x, it.y - 12, '+' + v + ' INTEL RECOVERED (CARRIED)', '#ffb700', 1.8,
+                (Math.random() - 0.5) * 60, -80, 240, true));
+            audio.playPickup('money');
         } else if (it.type === 'intel') {
             pickedUp = true;
             // PHASE 0: chip value comes from RunConfig.rewardRules; award
@@ -21026,6 +22680,20 @@ class Game {
                     player.x, player.y - 20, ocLabel, '#ffd700', 1.8
                 ));
             }
+        } else if (CORRUPTED_OVERCLOCKS[type]) {
+            // PHASE 3: Corrupted Overclocks -- one-time, per-player, per-run.
+            // Stat effects are read live from oc.corrupted at the existing
+            // single consumption sites; nothing to "apply" here.
+            const spec = CORRUPTED_OVERCLOCKS[type];
+            if (!oc.corrupted) oc.corrupted = {};
+            if (!oc.corrupted[type] && player.cash >= spec.cost) {
+                player.cash -= spec.cost;
+                oc.corrupted[type] = true;
+                if (audio) audio.playPickup('weapon');
+                this.floatingTexts.push(this.spawnFloatingText(
+                    player.x, player.y - 20, 'CORRUPTED: ' + spec.name, '#d500f9', 1.8
+                ));
+            }
         } else if (type === 'maxHpOC') {
             let cost = Math.round(175 * Math.pow(1.5, oc.maxHpOC || 0));
             if (player.cash >= cost) {
@@ -21116,17 +22784,14 @@ class Game {
             const oc = this.runOverclocks[suffix];
             oc.extMags[weaponKey] = (oc.extMags[weaponKey] || 0) + 1;
             
-            // Apply Extended Mags: +25% maxAmmo limit
-            const BaseMaxAmmo = {
-                shotgun: 48,
-                smg: 360,
-                lmg: 300,
-                sniper: 15,
-                m1a: 60
-            };
-            const bonus = 1 + oc.extMags[weaponKey] * 0.25;
-            player.maxAmmo[weaponKey] = Math.round(BaseMaxAmmo[weaponKey] * bonus);
-            player.ammo[weaponKey] = Math.min(player.maxAmmo[weaponKey], player.ammo[weaponKey] + Math.round(BaseMaxAmmo[weaponKey] * 0.25));
+            // PHASE 3: capacity comes from the ONE formula (base + meta
+            // flat, then the ext-mags multiplier) -- the old private base
+            // table here silently erased meta magazine upgrades.
+            const prevMax = player.maxAmmo[weaponKey];
+            this.recalcPlayerMaxAmmo(player);
+            // Each purchase still grants the capacity it just added as ammo.
+            const granted = Math.max(0, player.maxAmmo[weaponKey] - prevMax);
+            player.ammo[weaponKey] = Math.min(player.maxAmmo[weaponKey], player.ammo[weaponKey] + granted);
             
             if (audio) audio.playPickup('weapon');
             this.floatingTexts.push(this.spawnFloatingText(
@@ -21522,6 +23187,21 @@ class Game {
         this.frameCounter = (this.frameCounter || 0) + 1;
         this.gameTime += dt;
 
+        // PHASE 1: Heat director + objective ticks. Extraction runs
+        // endless -- top the spawn budget up every frame so the
+        // round-win/shop transition can never fire (its guard requires
+        // enemiesToSpawn === 0). Objectives may end the run mid-tick
+        // (evac -> endRun), so bail out of the frame if the state left
+        // 'playing'.
+        if (this.extractionMode) {
+            this._updateHeat(dt);
+            this.enemiesToSpawn = 9999;
+        }
+        if (this.objectives && this.objectives.length) {
+            this._updateObjectives(dt);
+            if (this.state !== 'playing') return;
+        }
+
         if (this.operatorMode && this.map && this.map.updateOperatorRoofAlpha) {
             this.map.updateOperatorRoofAlpha(dt);
         }
@@ -21793,6 +23473,11 @@ class Game {
                 if (d.hp > 0) entities.push(d);
             }
         }
+        if (this.hostages) {
+            for (let h of this.hostages) {
+                if (!h.dead) entities.push(h); // PHASE 2: hostages are hittable/pushable
+            }
+        }
         for (let e of this.enemies) entities.push(e);
 
         // Chain-reaction fuses: game-time countdown (pause/abandon safe --
@@ -21902,6 +23587,13 @@ class Game {
                     this.dogs.pop();
                 }
             }
+        }
+
+        // PHASE 2: escort entities. Dead hostages stay in the array (the
+        // ESCORT_TARGET objective reads .dead to fail the run; splicing
+        // would hide the body from it) -- they just stop updating/colliding.
+        if (this.hostages) {
+            for (let h of this.hostages) h.update(dt, this);
         }
 
         if (this.miniDrones) {
@@ -22018,7 +23710,15 @@ class Game {
                 }
 
                 this.items.push(new Item(e.x, e.y, 'money'));
-                
+
+                // PHASE 1 (extraction): elites drop an intel chip -- banked
+                // immediately on pickup through the ledger (Phase 0 chip
+                // semantics), a steady trickle on top of the carried
+                // uplink haul.
+                if (this.extractionMode && e.isElite) {
+                    this.items.push(new Item(e.x + MathUtils.rand(-12, 12), e.y + MathUtils.rand(-12, 12), 'intel'));
+                }
+
                 let dropRoll = Math.random();
                 if (dropRoll < 0.08) {
                     let weapons = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a'];
@@ -22050,6 +23750,11 @@ class Game {
                 this.enemies.pop();
             }
         }
+
+        // PHASE 1 (wall-break perf): the draw pass normally flushes carve
+        // events; flush here too so headless harness runs (no draw loop)
+        // still see fresh _visibleEdges.
+        if (this.map && this.map.flushLineageEdges) this.map.flushLineageEdges();
 
         let bothDead = this.player.dead && (!this.isTwoPlayer || !this.player2 || this.player2.dead);
         if (bothDead) {
@@ -22089,7 +23794,7 @@ class Game {
             p.inventory = [{ ...Weapons.pistol }];
             p.weaponIdx = 0;
             p.ammo = { shotgun: 0, smg: 0, lmg: 0, sniper: 0, m1a: 0 };
-            p.ammoTypes = { smg: 'standard', lmg: 'standard', sniper: 'standard', m1a: 'standard' };
+            p.ammoTypes = { shotgun: 'buck', smg: 'standard', lmg: 'standard', sniper: 'standard', m1a: 'standard' };
 
             // RE-APPLY META STATS: restores correct maxHp and maxArmor from Armory upgrades.
             this._applyMetaStatsToPlayer(p);
@@ -22234,7 +23939,7 @@ class Game {
             let headers = panel.querySelectorAll('.shop-section-title');
             for (let h of headers) {
                 let text = h.textContent.trim();
-                let hideHeader = this.operatorMode && (text === 'Standard Munitions' || text === 'Specialty Ammunition' || text === 'Weapon Overclocks' || text === 'Inventory Ammunition');
+                let hideHeader = this.operatorMode && (text === 'Standard Munitions' || text === 'Specialty Ammunition' || text === 'Weapon Overclocks' || text === 'Corrupted Overclocks' || text === 'Inventory Ammunition');
                 h.style.display = hideHeader ? 'none' : '';
             }
         }
@@ -22548,7 +24253,8 @@ class Game {
                 }
             };
 
-            checkAmmoCap('btn-buy-ammo-shotgun-' + suffix, p.ammo.shotgun, p.maxAmmo.shotgun, "Shotgun x12 ($30)");
+            checkAmmoCap('btn-buy-ammo-shotgun-' + suffix, p.ammo.shotgun, p.maxAmmo.shotgun, "Shotgun Buckshot x12 ($30)");
+            checkAmmoCap('btn-buy-ammo-shotgun-slug-' + suffix, p.ammo.shotgun, p.maxAmmo.shotgun, "Shotgun Slugs x8 ($60)");
             checkAmmoCap('btn-buy-ammo-smg-std-' + suffix, p.ammo.smg, p.maxAmmo.smg, "SMG Std x60 ($30)");
             checkAmmoCap('btn-buy-ammo-smg-hp-' + suffix, p.ammo.smg, p.maxAmmo.smg, "SMG HP x60 ($75)");
             checkAmmoCap('btn-buy-ammo-lmg-std-' + suffix, p.ammo.lmg, p.maxAmmo.lmg, "LMG Std x100 ($40)");
@@ -22606,6 +24312,27 @@ class Game {
                     let lvl = oc.maxHpOC || 0;
                     btnMaxHpOC.innerText = `Max HP Lvl.${lvl + 1} ($${costMaxHpOC})`;
                     btnMaxHpOC.disabled = p.cash < costMaxHpOC;
+                }
+
+                // PHASE 3: Corrupted Overclock buttons -- one-time buys; an
+                // owned corruption reads OWNED and locks. Title tooltips
+                // carry the full trade text.
+                const CORRUPTED_BTN_IDS = { overpressure: 'overpressure', glassNerves: 'glassnerves', coldBarrel: 'coldbarrel' };
+                for (const cKey in CORRUPTED_BTN_IDS) {
+                    const btn = document.getElementById('btn-buy-oc-' + CORRUPTED_BTN_IDS[cKey] + '-' + suffix);
+                    if (!btn) continue;
+                    const spec = CORRUPTED_OVERCLOCKS[cKey];
+                    const owned = !!(oc.corrupted && oc.corrupted[cKey]);
+                    btn.title = spec.desc;
+                    if (owned) {
+                        btn.innerText = spec.name + ' (OWNED)';
+                        btn.disabled = true;
+                        btn.classList.add('maxed');
+                    } else {
+                        btn.innerText = spec.name + ' ($' + spec.cost + ')';
+                        btn.disabled = p.cash < spec.cost;
+                        btn.classList.remove('maxed');
+                    }
                 }
             }
         };
@@ -22743,7 +24470,11 @@ class Game {
             p.hunterSwarmCount += 4;
             audio.playPickup('weapon');
         } else if (type === 'ammo_shotgun' && p.cash >= 30 && p.ammo.shotgun < p.maxAmmo.shotgun) {
-            p.cash -= 30; p.ammo.shotgun = Math.min(p.maxAmmo.shotgun, p.ammo.shotgun + 12);
+            p.cash -= 30; p.ammo.shotgun = Math.min(p.maxAmmo.shotgun, p.ammo.shotgun + 12); p.ammoTypes.shotgun = 'buck';
+        } else if (type === 'ammo_shotgun_slug' && p.cash >= 60 && p.ammo.shotgun < p.maxAmmo.shotgun) {
+            // PHASE 3: slugs are mutually exclusive with buckshot -- same
+            // reserve pool, the TYPE flips wholesale (the SMG HP/std pattern).
+            p.cash -= 60; p.ammo.shotgun = Math.min(p.maxAmmo.shotgun, p.ammo.shotgun + 8); p.ammoTypes.shotgun = 'slug';
         } else if (type === 'ammo_smg_std' && p.cash >= 30 && p.ammo.smg < p.maxAmmo.smg) {
             p.cash -= 30; p.ammo.smg = Math.min(p.maxAmmo.smg, p.ammo.smg + 60); p.ammoTypes.smg = 'standard';
         } else if (type === 'ammo_smg_hp' && p.cash >= 75 && p.ammo.smg < p.maxAmmo.smg) {
@@ -22818,11 +24549,16 @@ class Game {
         if (this.state !== 'playing' && this.state !== 'shop') return;
         
         // Namespaced HUD dirty checking helper
-        const setHtmlCached = (id, val) => {
+        // PHASE 2 BUGFIX: despite the name, this helper always wrote via
+        // innerText -- fine for every plain-text HUD counter, but the
+        // objectives panel feeds it MARKUP (obj-line divs), which rendered
+        // as literal '<div class=...>' text on screen. `asHtml` opts a
+        // caller into innerHTML; everything else keeps the safe text path.
+        const setHtmlCached = (id, val, asHtml) => {
             let strVal = String(val);
             if (this.hudState[id] !== strVal) {
                 const el = document.getElementById(id);
-                if (el) el.innerText = strVal;
+                if (el) { if (asHtml) el.innerHTML = strVal; else el.innerText = strVal; }
                 this.hudState[id] = strVal;
             }
         };
@@ -22868,8 +24604,10 @@ class Game {
         };
 
         // Player 1 HUD updates (Top Bar Core Stats)
-        setHtmlCached('ui-wave', this.wave);
-        setHtmlCached('ui-enemies', this.enemies.length + this.enemiesToSpawn);
+        setHtmlCached('ui-wave', this.extractionMode ? '—' : this.wave);
+        // PHASE 1: extraction's spawn budget is an endless sentinel -- show
+        // live hostiles only there.
+        setHtmlCached('ui-enemies', this.extractionMode ? this.enemies.length : (this.enemies.length + this.enemiesToSpawn));
         setHtmlCached('ui-cash', this.player.cash);
         // PHASE 0: per-run intel readout + eligibility banner (dirty-cached)
         setHtmlCached('ui-intel', this.runLedger ? this.runLedger.intelEarned : (this.intelEarnedThisRun || 0));
@@ -22912,13 +24650,43 @@ class Game {
             }
         }
 
+        // PHASE 1: objective list + heat meter (dirty-cached like every
+        // other HUD element; the strings only change on real progress).
+        if (this.objectives && this.objectives.length) {
+            let objHtml = '';
+            for (const o of this.objectives) objHtml += o.hudLine();
+            let carried = (this.player ? (this.player.carriedIntel || 0) : 0) +
+                          (this.player2 ? (this.player2.carriedIntel || 0) : 0);
+            if (this.extractionMode) {
+                objHtml += '<div class="obj-line obj-carried">CARRIED INTEL: ' + carried + (carried > 0 ? ' — EXTRACT TO BANK' : '') + '</div>';
+            }
+            setHtmlCached('hud-objectives', objHtml, true);
+        }
+        if (this.extractionMode) {
+            const tier = EXTRACTION_TUNING.HEAT_TIERS[this.heatTier];
+            setHtmlCached('hud-heat-label', 'HEAT: ' + tier.name);
+            const labelColorKey = 'hud-heat-label_color';
+            if (this.hudState[labelColorKey] !== tier.color) {
+                const el = document.getElementById('hud-heat-label');
+                if (el) el.style.color = tier.color;
+                this.hudState[labelColorKey] = tier.color;
+            }
+            setStyleWidthCached('hud-heat-bar', Math.round(this.heat) + '%');
+            const barColorKey = 'hud-heat-bar_color';
+            if (this.hudState[barColorKey] !== tier.color) {
+                const el = document.getElementById('hud-heat-bar');
+                if (el) el.style.backgroundColor = tier.color;
+                this.hudState[barColorKey] = tier.color;
+            }
+        }
+
         // Render Carousels for Player 1
         renderHUDSelectors(this.player, 'p1');
 
         // Player 2 HUD updates (Co-op)
         if (this.isTwoPlayer && this.player2) {
-            setHtmlCached('ui-wave-p2', this.wave);
-            setHtmlCached('ui-enemies-p2', this.enemies.length + this.enemiesToSpawn);
+            setHtmlCached('ui-wave-p2', this.extractionMode ? '—' : this.wave);
+            setHtmlCached('ui-enemies-p2', this.extractionMode ? this.enemies.length : (this.enemies.length + this.enemiesToSpawn));
             setHtmlCached('ui-cash-p2', this.player2.cash);
             setHtmlCached('ui-hp-val-p2', Math.ceil(this.player2.hp));
             setHtmlCached('ui-armor-val-p2', Math.ceil(this.player2.armor));
@@ -22998,12 +24766,15 @@ class Game {
             let dataStr = localStorage.getItem('frozensoldat_save');
             if (dataStr) {
                 let parsed = JSON.parse(dataStr);
-                if (parsed) {
+                // PHASE 2 (schema hardening): anything that isn't a plain
+                // object is a corrupt save -- fall back to defaults rather
+                // than letting the migration/defaults section crash on it.
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
                     this.saveData = parsed;
-                    if (this.saveData.movementScheme) {
+                    if (typeof this.saveData.movementScheme === 'string') {
                         this.movementScheme = this.saveData.movementScheme;
                     }
-                    if (!this.saveData.highScores) {
+                    if (!Array.isArray(this.saveData.highScores)) {
                         this.saveData.highScores = [];
                     }
                 }
@@ -23011,17 +24782,59 @@ class Game {
         } catch(e) {
             console.error("Failed to load save data:", e);
         }
-        // PHASE 0: save schema versioning. v1 = implicit legacy save (no
-        // version field). v2 adds the version stamp + careerStats (lifetime
-        // Dossier accumulator, fed by endRun). Migrations are additive-only:
-        // legacy/unknown fields always survive the JSON round-trip untouched.
-        if (this.saveData.version === undefined) this.saveData.version = 1;
-        if (this.saveData.version < 2) {
-            if (!this.saveData.careerStats) {
-                this.saveData.careerStats = { runs: 0, kills: 0, eliteKills: 0, bossKills: 0, gloryKills: 0, wavesCleared: 0, intelEarned: 0, deaths: 0, extractions: 0 };
+        // PHASE 2 (migration discipline): versioned upgraders, run in
+        // order, each additive-only (legacy/unknown fields always survive
+        // the JSON round-trip untouched). Adding a schema version means
+        // adding ONE entry here -- never editing an old one. The whole
+        // pass is guarded: a save that still explodes mid-migration is
+        // reset to factory rather than hard-crashing the menu.
+        //   v1: implicit legacy save (no version field)
+        //   v2: version stamp + careerStats (lifetime Dossier accumulator)
+        //   v3: missions bookkeeping (attempts/completions) + selected
+        //       mission + missionsFailed career counter
+        const SAVE_MIGRATIONS = [
+            { to: 2, up: (sd) => {
+                if (!sd.careerStats || typeof sd.careerStats !== 'object') {
+                    sd.careerStats = { runs: 0, kills: 0, eliteKills: 0, bossKills: 0, gloryKills: 0, wavesCleared: 0, intelEarned: 0, deaths: 0, extractions: 0 };
+                }
+            }},
+            { to: 3, up: (sd) => {
+                if (!sd.missions || typeof sd.missions !== 'object') sd.missions = {};
+                if (!sd.missions.attempts || typeof sd.missions.attempts !== 'object') sd.missions.attempts = {};
+                if (!sd.missions.completions || typeof sd.missions.completions !== 'object') sd.missions.completions = {};
+                if (sd.careerStats && sd.careerStats.missionsFailed === undefined) sd.careerStats.missionsFailed = 0;
+                if (typeof sd.selectedMissionId !== 'string' || !MISSIONS[sd.selectedMissionId]) sd.selectedMissionId = 'op_first_contact';
+            }},
+            // v4 (PHASE 3): Escalation Protocol toggles + prism-array laser
+            // colors + new metaUpgrades keys (mags/attachments). Additive
+            // only, per migration discipline.
+            { to: 4, up: (sd) => {
+                if (!sd.escalations || typeof sd.escalations !== 'object') sd.escalations = {};
+                for (const k of ESCALATION_ORDER) {
+                    if (typeof sd.escalations[k] !== 'boolean') sd.escalations[k] = false;
+                }
+                if (typeof sd.laserColorP1 !== 'string') sd.laserColorP1 = '';
+                if (typeof sd.laserColorP2 !== 'string') sd.laserColorP2 = '';
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                for (const k of ['magSmg', 'magM1a', 'magShotgun', 'laserSight', 'underbarrelLauncher']) {
+                    if (typeof sd.metaUpgrades[k] !== 'number') sd.metaUpgrades[k] = 0;
+                }
+            }}
+        ];
+        const runMigrations = (sd) => {
+            if (sd.version === undefined || typeof sd.version !== 'number') sd.version = 1;
+            for (const m of SAVE_MIGRATIONS) {
+                if (sd.version < m.to) { m.up(sd); sd.version = m.to; }
             }
-            this.saveData.version = 2;
+        };
+        try {
+            runMigrations(this.saveData);
+        } catch (e) {
+            console.error("Save migration failed -- resetting to factory:", e);
+            this.saveData = {};
+            runMigrations(this.saveData);
         }
+        this.selectedMissionId = this.saveData.selectedMissionId || 'op_first_contact';
 
         if (this.saveData.musicTrack === undefined) this.saveData.musicTrack = 'off';
         if (this.saveData.musicVolume === undefined) this.saveData.musicVolume = 0.5;
@@ -23206,41 +25019,15 @@ class Game {
     }
 
     renderArmoryTab() {
+        // PHASE 3: fully data-driven off ARMORY_UPGRADES -- render, buy and
+        // reset all read the same table. Adding an upgrade = one entry there.
         const MA = this.saveData.metaUpgrades;
         document.getElementById('lbl-intel-balance').textContent = this.saveData.intel;
-
-        const upgrades = [
-            {
-                key: 'magneticGear', name: 'MAGNETIC GEAR', maxLevel: 5,
-                costPerLevel: [50, 100, 200, 350, 500],
-                desc: 'Increases item pickup radius. +15px/level.'
-            },
-            {
-                key: 'offshoreAccount', name: 'OFFSHORE ACCOUNT', maxLevel: 5,
-                costPerLevel: [75, 150, 250, 400, 600],
-                desc: 'Retain 20% more cash per level when downed.'
-            },
-            {
-                key: 'kevlarWeave', name: 'KEVLAR WEAVE', maxLevel: 5,
-                costPerLevel: [80, 160, 280, 450, 650],
-                desc: 'Base Max Armor +10% per level. (Base: 50)'
-            },
-            {
-                key: 'firstAidTraining', name: 'FIRST AID TRAINING', maxLevel: 5,
-                costPerLevel: [80, 160, 280, 450, 650],
-                desc: 'Base Max HP +8% per level. (Base: 100)'
-            },
-            {
-                key: 'cardioConditioning', name: 'CARDIO CONDITIONING', maxLevel: 5,
-                costPerLevel: [60, 120, 220, 380, 550],
-                desc: 'Sprint drain -8% & static regen +12% per level.'
-            }
-        ];
 
         const grid = document.getElementById('armory-grid');
         grid.innerHTML = '';
 
-        for (const upg of upgrades) {
+        for (const upg of ARMORY_UPGRADES) {
             const currentLevel = MA[upg.key] || 0;
             const isMaxed = currentLevel >= upg.maxLevel;
             const cost = isMaxed ? 0 : upg.costPerLevel[currentLevel];
@@ -23255,9 +25042,24 @@ class Game {
             }
 
             const btnClass = isMaxed ? 'armory-buy-btn maxed-out' : 'armory-buy-btn';
-            const btnText  = isMaxed ? 'MAXED'
-                           : !canAfford ? `UPGRADE [${cost} INTEL]`
+            const btnText  = isMaxed ? (upg.maxLevel === 1 ? 'OWNED' : 'MAXED')
                            : `UPGRADE [${cost} INTEL]`;
+
+            // PHASE 3: prism array (laser lvl 3) unlocks per-player beam
+            // color swatches, rendered inside the card once owned.
+            let extraHTML = '';
+            if (upg.key === 'laserSight' && currentLevel >= 3) {
+                const swatchRow = (pKey, label) => {
+                    const cur = this.saveData[pKey] || '';
+                    let out = `<div style="display:flex; align-items:center; gap:4px; margin-top:4px;"><span style="font-size:9px; color:#a9c2c7; width:20px;">${label}</span>`;
+                    for (const c of LASER_COLORS) {
+                        const sel = (cur === c.rgb) || (!cur && c.rgb === (pKey === 'laserColorP2' ? '255, 183, 0' : '0, 229, 255'));
+                        out += `<div title="${c.name}" onclick="game.setLaserColor('${pKey}','${c.rgb}')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:rgb(${c.rgb}); border:2px solid ${sel ? '#fff' : 'transparent'};"></div>`;
+                    }
+                    return out + '</div>';
+                };
+                extraHTML = swatchRow('laserColorP1', 'P1') + swatchRow('laserColorP2', 'P2');
+            }
 
             grid.innerHTML += `
                 <div class="armory-card">
@@ -23268,25 +25070,28 @@ class Game {
                         ${isMaxed || !canAfford ? 'disabled' : ''}
                         onclick="game.buyArmoryUpgrade('${upg.key}')">
                         ${btnText}
-                    </button>
+                    </button>${extraHTML}
                 </div>`;
         }
     }
 
+    // PHASE 3: prism-array beam color selection. Persisted; consumed by the
+    // laser draw block via laserTuning().
+    setLaserColor(pKey, rgb) {
+        if ((this.saveData.metaUpgrades.laserSight || 0) < 3) return;
+        this.saveData[pKey] = rgb;
+        this.saveGameData();
+        this.renderArmoryTab();
+        if (audio) audio.playPickup('money');
+    }
+
     buyArmoryUpgrade(key) {
-        const MA     = this.saveData.metaUpgrades;
-        const maxLvl = 5;
-        if ((MA[key] || 0) >= maxLvl) return;
+        const MA  = this.saveData.metaUpgrades;
+        const upg = ARMORY_UPGRADES.find(u => u.key === key);
+        if (!upg) return;
+        if ((MA[key] || 0) >= upg.maxLevel) return;
 
-        const costs = {
-            magneticGear:      [50, 100, 200, 350, 500],
-            offshoreAccount:   [75, 150, 250, 400, 600],
-            kevlarWeave:       [80, 160, 280, 450, 650],
-            firstAidTraining:  [80, 160, 280, 450, 650],
-            cardioConditioning:[60, 120, 220, 380, 550]
-        };
-
-        const cost = costs[key][MA[key] || 0];
+        const cost = upg.costPerLevel[MA[key] || 0];
         if (this.saveData.intel < cost) return;
 
         this.saveData.intel -= cost;
@@ -23298,21 +25103,13 @@ class Game {
 
     resetArmoryUpgrades() {
         const MA = this.saveData.metaUpgrades;
-        const costs = {
-            magneticGear:      [50, 100, 200, 350, 500],
-            offshoreAccount:   [75, 150, 250, 400, 600],
-            kevlarWeave:       [80, 160, 280, 450, 650],
-            firstAidTraining:  [80, 160, 280, 450, 650],
-            cardioConditioning:[60, 120, 220, 380, 550]
-        };
-        
         let refundedIntel = 0;
-        for (const key in costs) {
-            const currentLevel = MA[key] || 0;
+        for (const upg of ARMORY_UPGRADES) {
+            const currentLevel = Math.min(MA[upg.key] || 0, upg.maxLevel);
             for (let lvl = 0; lvl < currentLevel; lvl++) {
-                refundedIntel += costs[key][lvl];
+                refundedIntel += upg.costPerLevel[lvl];
             }
-            MA[key] = 0; // Reset level to 0
+            MA[upg.key] = 0; // Reset level to 0
         }
         
         this.saveData.intel = (this.saveData.intel || 0) + refundedIntel;
@@ -23419,14 +25216,132 @@ class Game {
         this.setGameMode(enabled ? 'sandbox' : 'normal');
     }
 
+    // ==== PHASE 2: MISSION REGISTRY HELPERS ====
+
+    _selectedMission() {
+        return MISSIONS[this.selectedMissionId] || MISSIONS.op_first_contact;
+    }
+
+    // Unlock predicates read ONLY the two accumulators that already
+    // persist: saveData.careerStats and saveData.missions.completions.
+    // Shape: { extractions: n, kills: n, missions: { missionId: n } }.
+    isMissionUnlocked(mission) {
+        if (!mission || !mission.unlock) return true;
+        const u = mission.unlock;
+        const c = (this.saveData && this.saveData.careerStats) || {};
+        const done = (this.saveData && this.saveData.missions && this.saveData.missions.completions) || {};
+        if (u.extractions !== undefined && (c.extractions || 0) < u.extractions) return false;
+        if (u.kills !== undefined && (c.kills || 0) < u.kills) return false;
+        if (u.missions) {
+            for (const mid in u.missions) {
+                if ((done[mid] || 0) < u.missions[mid]) return false;
+            }
+        }
+        return true;
+    }
+
+    _missionUnlockText(mission) {
+        if (!mission.unlock) return '';
+        const parts = [];
+        const u = mission.unlock;
+        if (u.extractions) parts.push(u.extractions + ' EXTRACTION' + (u.extractions > 1 ? 'S' : ''));
+        if (u.kills) parts.push(u.kills + ' CAREER KILLS');
+        if (u.missions) {
+            for (const mid in u.missions) {
+                parts.push('COMPLETE ' + (MISSIONS[mid] ? MISSIONS[mid].name : mid));
+            }
+        }
+        return 'REQUIRES: ' + parts.join(' + ');
+    }
+
+    // GUARDRAIL: fees gate retries, not first access -- your first
+    // insertion into an unlocked op is always free.
+    _missionEntryFeeDue(mission) {
+        if (!mission || !mission.entryCost) return 0;
+        const attempts = (this.saveData.missions && this.saveData.missions.attempts[mission.id]) || 0;
+        return attempts > 0 ? mission.entryCost : 0;
+    }
+
+    selectMission(id) {
+        if (!MISSIONS[id]) return;
+        if (!this.isMissionUnlocked(MISSIONS[id])) return; // UI shows lock state; hard-block anyway
+        this.selectedMissionId = id;
+        this.saveData.selectedMissionId = id;
+        this.saveGameData();
+        this.renderMissionList();
+    }
+
+    renderMissionList() {
+        const wrap = document.getElementById('mission-list');
+        if (!wrap) return;
+        const feeWarn = document.getElementById('mission-fee-warning');
+        if (feeWarn) feeWarn.classList.add('hidden');
+        let html = '';
+        for (const id of MISSION_ORDER) {
+            const m = MISSIONS[id];
+            const unlocked = this.isMissionUnlocked(m);
+            const selected = (this.selectedMissionId === id);
+            const completions = (this.saveData.missions && this.saveData.missions.completions[id]) || 0;
+            const feeDue = this._missionEntryFeeDue(m);
+            let feeText = m.entryCost > 0
+                ? (feeDue > 0 ? ('ENTRY: ' + feeDue + ' INTEL') : ('FIRST INSERTION FREE — RETRIES ' + m.entryCost))
+                : 'NO ENTRY FEE';
+            html += '<div class="mission-card' + (selected ? ' selected' : '') + (unlocked ? '' : ' locked') + '"'
+                 + (unlocked ? ' onclick="game.selectMission(\'' + id + '\')"' : '') + '>'
+                 + '<div class="mission-card-name">' + (unlocked ? '' : '🔒 ') + m.name
+                 + (completions > 0 ? ' <span class="mission-completions">×' + completions + '</span>' : '') + '</div>'
+                 + '<div class="mission-card-desc">' + (unlocked ? m.desc : this._missionUnlockText(m)) + '</div>'
+                 + (unlocked ? '<div class="mission-card-fee">' + feeText + '</div>' : '')
+                 + '</div>';
+        }
+        wrap.innerHTML = html;
+        this.renderEscalationList(); // PHASE 3: risk toggles live under the ladder
+    }
+
+    // PHASE 3: Escalation Protocol toggle chips. Persisted in
+    // saveData.escalations; consumed once per run by buildRunConfig().
+    renderEscalationList() {
+        const wrap = document.getElementById('escalation-list');
+        if (!wrap) return;
+        const esc = this.saveData.escalations || {};
+        let html = '';
+        let bonus = 0;
+        for (const id of ESCALATION_ORDER) {
+            const p = ESCALATION_PROTOCOLS[id];
+            const on = !!esc[id];
+            if (on) bonus += p.bonus;
+            html += '<div class="mission-card' + (on ? ' selected' : '') + '" title="' + p.desc + '"'
+                 + ' style="padding:5px 8px; cursor:pointer; border-color:' + (on ? '#d500f9' : 'rgba(213,0,249,0.35)') + ';"'
+                 + ' onclick="game.toggleEscalation(\'' + id + '\')">'
+                 + '<div class="mission-card-name" style="color:#d500f9; font-size:10px;">' + (on ? '☑ ' : '☐ ') + p.name
+                 + ' <span style="color:#39ff14;">+' + Math.round(p.bonus * 100) + '%</span></div>'
+                 + '</div>';
+        }
+        wrap.innerHTML = html;
+        const lbl = document.getElementById('escalation-bonus-lbl');
+        if (lbl) lbl.textContent = bonus > 0
+            ? '— ACTIVE INTEL BONUS +' + Math.round(bonus * 100) + '%'
+            : '— OPT-IN RISK, BONUS INTEL';
+    }
+
+    toggleEscalation(id) {
+        if (!ESCALATION_PROTOCOLS[id]) return;
+        if (!this.saveData.escalations) this.saveData.escalations = {};
+        this.saveData.escalations[id] = !this.saveData.escalations[id];
+        this.saveGameData();
+        this.renderEscalationList();
+        if (audio) audio.playPickup('money');
+    }
+
     setGameMode(mode) {
-        // mode: 'normal' | 'sandbox' | 'operator' | 'now'
+        // mode: 'normal' | 'sandbox' | 'operator' | 'now' | 'extraction'
         this.gameMode = mode;
         this.isTestingMode = (mode === 'sandbox');
         this.operatorMode = (mode === 'operator');
         this.nowMode = (mode === 'now');
+        this.extractionMode = (mode === 'extraction');
 
-        ['normal', 'sandbox', 'operator', 'now'].forEach(m => {
+        ['normal', 'sandbox', 'operator', 'now', 'extraction'].forEach(m => {
             const btn = document.getElementById('btn-gm-' + m);
             if (btn) btn.classList.toggle('active-mode', m === mode);
         });
@@ -23447,6 +25362,17 @@ class Game {
             ffButtons.forEach(b => { if (b) { b.disabled = true; b.style.opacity = '0.35'; } });
             if (coopBtn) { coopBtn.disabled = true; coopBtn.style.opacity = '0.35'; }
             if (soloBtn) soloBtn.style.opacity = '1';
+        } else if (mode === 'extraction') {
+            // PHASE 2: the mission's registry entry owns the map now (all
+            // current ops author for map 10; contracts may not). Same
+            // lock-the-selector pattern as operator. Co-op and FF remain
+            // free choices. Map 10 is a legitimate pick for other modes,
+            // so switching AWAY deliberately does not reset it.
+            this.setMap(this._selectedMission().mapId || EXTRACTION_TUNING.FORCED_MAP_ID);
+            if (mapListEl) mapListEl.style.opacity = '0.35';
+            if (mapListEl) mapListEl.style.pointerEvents = 'none';
+            ffButtons.forEach(b => { if (b) { b.disabled = false; b.style.opacity = '1'; } });
+            if (coopBtn) { coopBtn.disabled = false; coopBtn.style.opacity = '1'; }
         } else {
             if (mapListEl) mapListEl.style.opacity = '1';
             if (mapListEl) mapListEl.style.pointerEvents = 'auto';
@@ -23466,20 +25392,23 @@ class Game {
         const fundsButtons = ['btn-cash-down', 'btn-cash-up'].map(id => document.getElementById(id));
         fundsButtons.forEach(b => { if (b) b.disabled = (mode === 'now'); });
 
+        // PHASE 2: the mission select strip lives under the mode row and
+        // only exists for extraction ops.
+        const missionWrap = document.getElementById('mission-select-wrap');
+        if (missionWrap) missionWrap.classList.toggle('hidden', mode !== 'extraction');
+        if (mode === 'extraction') this.renderMissionList();
+
         this.saveGameData();
     }
 
     setDifficulty(mode) {
+        // PHASE 2: difficulty is combat pressure now (see
+        // DIFFICULTY_TUNING). cashMultiplier survives as a softened
+        // onboarding assist; enemy dmg/bullet-speed multipliers are
+        // snapshotted into RunConfig.enemyMults at run start.
+        if (!DIFFICULTY_TUNING[mode]) mode = 'hard';
         this.difficultyMode = mode;
-        if (mode === 'easy') {
-            this.cashMultiplier = 2.0;
-        } else if (mode === 'medium') {
-            this.cashMultiplier = 1.5;
-        } else if (mode === 'hard') {
-            this.cashMultiplier = 1.0;
-        } else if (mode === 'legendary') {
-            this.cashMultiplier = 0.75;
-        }
+        this.cashMultiplier = DIFFICULTY_TUNING[mode].cash;
         
         ['easy', 'medium', 'hard', 'legendary'].forEach(m => {
             const btn = document.getElementById('btn-diff-' + m);
@@ -23606,16 +25535,55 @@ class Game {
     endRun(outcome) {
         if (this.state === 'debrief') return;                 // double-entry guard
         if (!this.runLedger) { this.returnToMainMenu(); return; } // pathological (no run ever started)
+
+        // PHASE 1 (extraction): any intel still carried (on players or
+        // sitting in an unrecovered cache) at a non-evac ending is LOST --
+        // recorded on the ledger for an honest debrief row.
+        if (this.extractionMode && outcome !== RUN_OUTCOMES.EXTRACTION) {
+            let lost = 0;
+            for (const p of [this.player, this.player2]) {
+                if (p) { lost += (p.carriedIntel || 0); p.carriedIntel = 0; }
+            }
+            if (this.items) {
+                for (const it of this.items) {
+                    if (it.type === 'intel_cache') lost += (it.cacheValue || 0);
+                }
+            }
+            this.runLedger.carriedIntelLost += lost;
+        }
+
+        // PHASE 2: mission ledger. Completions feed unlock predicates;
+        // newly-unlocked missions flip debrief cards (the Phase 0
+        // ledger.unlocks hook, finally fed).
+        if (this.runConfig && this.runConfig.missionId && this.saveData && this.saveData.missions) {
+            const mid = this.runConfig.missionId;
+            if (outcome === RUN_OUTCOMES.EXTRACTION) {
+                this.saveData.missions.completions[mid] = (this.saveData.missions.completions[mid] || 0) + 1;
+            }
+        }
+
         this.runLedger.finalize(outcome, this);
 
         // High score: deaths only (legacy behavior preserved). saveHighScore
         // already guards sandbox; tainted runs are additionally excluded so
-        // god-mode marathons can't poison the board.
-        if (outcome === RUN_OUTCOMES.DEATH && !this.runLedger.tainted) {
+        // god-mode marathons can't poison the board. Extraction is excluded
+        // too -- its wave counter is parked at 1 (heat, not waves, is the
+        // difficulty axis), so a board entry would be meaningless.
+        if (outcome === RUN_OUTCOMES.DEATH && !this.runLedger.tainted && !this.extractionMode) {
             this.saveHighScore(this.wave);
         }
 
         this._accumulateCareerStats(this.runLedger);          // PHASE 2 Dossier feed
+
+        // PHASE 2: any mission that just crossed its unlock threshold gets
+        // a debrief card (the free ledger.unlocks -> card-flip hook).
+        if (this._unlockedMissionsAtStart) {
+            for (const id of MISSION_ORDER) {
+                if (this._unlockedMissionsAtStart.indexOf(id) === -1 && this.isMissionUnlocked(MISSIONS[id])) {
+                    this.runLedger.unlocks.push({ label: 'MISSION UNLOCKED: ' + MISSIONS[id].name });
+                }
+            }
+        }
 
         this._stopRunAudio();
         this.isPaused = false;
@@ -23643,6 +25611,7 @@ class Game {
         c.intelEarned  += L.intelEarned;
         if (L.outcome === RUN_OUTCOMES.DEATH)      c.deaths++;
         if (L.outcome === RUN_OUTCOMES.EXTRACTION) c.extractions++;
+        if (L.outcome === RUN_OUTCOMES.FAILED)     c.missionsFailed = (c.missionsFailed || 0) + 1;
         this.saveGameData();
     }
 
@@ -23658,7 +25627,8 @@ class Game {
         const meta = ({
             death:      { title: 'OPERATOR ELIMINATED', color: 'var(--red)' },
             abandon:    { title: 'MISSION ABANDONED',   color: '#ffb700' },
-            extraction: { title: 'EXTRACTION COMPLETE', color: 'var(--green)' }
+            extraction: { title: 'EXTRACTION COMPLETE', color: 'var(--green)' },
+            failed:     { title: 'MISSION FAILED',      color: 'var(--red)' }
         })[L.outcome] || { title: 'RUN COMPLETE', color: 'var(--neon-blue)' };
         if (titleEl) {
             titleEl.innerText = meta.title;
@@ -23667,7 +25637,13 @@ class Game {
         }
         if (subEl) {
             const modeName = (L.config && L.config.modeId ? String(L.config.modeId) : 'run').toUpperCase();
-            subEl.innerText = 'AFTER-ACTION REPORT \u2014 ' + modeName + ' \u2014 WAVE ' + L.endWave;
+            // PHASE 1: extraction has no wave counter -- report the op, not
+            // a parked "WAVE 1". PHASE 2: report WHICH op.
+            const missionName = (L.config && L.config.missionId && MISSIONS[L.config.missionId])
+                ? MISSIONS[L.config.missionId].name : 'EXTRACTION OP';
+            subEl.innerText = (L.config && L.config.modeId === 'extraction')
+                ? 'AFTER-ACTION REPORT \u2014 ' + missionName
+                : 'AFTER-ACTION REPORT \u2014 ' + modeName + ' \u2014 WAVE ' + L.endWave;
         }
 
         const mins = Math.floor(L.durationSec / 60);
@@ -23681,6 +25657,18 @@ class Game {
             ['DAMAGE TAKEN',  Math.round(L.damageTaken)],
             ['TIME IN FIELD', mins + ':' + String(secs).padStart(2, '0')]
         ];
+        // PHASE 1: carried-intel outcome rows (extraction runs only) +
+        // accuracy once the counters are live.
+        if (L.carriedIntelBanked > 0) rows.push(['INTEL EXTRACTED', '+' + L.carriedIntelBanked]);
+        if (L.carriedIntelLost > 0)   rows.push(['INTEL LOST IN FIELD', L.carriedIntelLost]);
+        if (L.entryFeePaid > 0)       rows.push(['ENTRY FEE PAID', '-' + L.entryFeePaid]);
+        // PHASE 3: escalation report -- which protocols ran, what they paid.
+        if (L.config && L.config.escalations && L.config.escalations.length > 0) {
+            rows.push(['PROTOCOLS ACTIVE',
+                L.config.escalations.map(id => ESCALATION_PROTOCOLS[id] ? ESCALATION_PROTOCOLS[id].name : id).join(' / ')
+                + ' (+' + Math.round((L.config.escalationBonus || 0) * 100) + '% INTEL)']);
+        }
+        if (L.shotsFired > 0)         rows.push(['ACCURACY', Math.round(L.shotsHit / L.shotsFired * 100) + '%']);
         const rowsEl = document.getElementById('debrief-rows');
         if (rowsEl) {
             rowsEl.innerHTML = '';
@@ -24111,7 +26099,11 @@ class Game {
                     let virtualAimY = p.y + Math.sin(lAngle) * aimDist;
                     laserAngle = Math.atan2(virtualAimY - lStartY, virtualAimX - lStartX);
                 }
-                let baseMaxLaserDist = p.isSprinting ? AIM_WEIGHT.LOW_READY_LASER_MAX_DIST : 1700; // was flat 1400 -- a bit longer now that this is the ONLY aim reference during gameplay
+                // PHASE 3: LASER SIGHT ARRAY meta upgrade drives throw
+                // distance, beam divergence and (lvl 3) color. Level 0 is
+                // deliberately weak -- see LASER_TUNING.
+                let lt = this.laserTuning(p);
+                let baseMaxLaserDist = p.isSprinting ? Math.min(AIM_WEIGHT.LOW_READY_LASER_MAX_DIST, lt.maxDist) : lt.maxDist;
                 let maxLaserDist = baseMaxLaserDist;
                 let hitPt = this.getLaserEndPoint(lStartX, lStartY, laserAngle, maxLaserDist, this.map.walls);
                 
@@ -24136,7 +26128,7 @@ class Game {
                 // of truth for where the gun is actually pointed.
                 let startAlpha = 0.62;
                 let opacityMult = p.isSprinting ? AIM_WEIGHT.LOW_READY_LASER_ALPHA_MULT : 1.0;
-                let laserRGB = p.isPlayer2 ? '255, 183, 0' : '0, 229, 255';
+                let laserRGB = lt.rgb; // PHASE 3: prism array custom colors (defaults preserved)
 
                 // Collimation: 1 = focused/tight, 0 = just fired/wide. Drives
                 // THREE things together, not just angle -- a wider,
@@ -24146,8 +26138,8 @@ class Game {
                 // exactly what a same-brightness/same-range wide beam
                 // looked like). All three lerp together off one value.
                 let collim = MathUtils.clamp(p.beamCollimation ?? 1, 0, 1);
-                let halfAngleDeg = AIM_WEIGHT.COLLIMATION_WIDE_HALF_ANGLE_DEG +
-                    (AIM_WEIGHT.COLLIMATION_TIGHT_HALF_ANGLE_DEG - AIM_WEIGHT.COLLIMATION_WIDE_HALF_ANGLE_DEG) * collim;
+                let halfAngleDeg = lt.wideDeg +
+                    (lt.tightDeg - lt.wideDeg) * collim; // PHASE 3: upgrade-tier divergence
                 let halfAngle = halfAngleDeg * Math.PI / 180;
                 // Effective range collapses toward WIDE_EFFECTIVE_RANGE as
                 // collimation drops -- a diverged beam physically can't
@@ -24255,6 +26247,12 @@ class Game {
         }
 
         for (let i of this.items) i.draw(this.ctx, cam);
+        // PHASE 1: objective world visuals (uplink terminals, evac zone).
+        if (this.objectives) {
+            for (const o of this.objectives) {
+                if (o.draw) o.draw(this.ctx, cam, this);
+            }
+        }
         for (let m of this.mines) m.draw(this.ctx, cam);
         for (let g of this.grenades) g.draw(this.ctx, cam);
         for (let p of this.particles) p.draw(this.ctx, cam);
@@ -24306,6 +26304,9 @@ class Game {
         }
         if (this.turrets) {
             for (let t of this.turrets) t.draw(this.ctx, cam);
+        }
+        if (this.hostages) {
+            for (let h of this.hostages) h.draw(this.ctx, cam); // PHASE 2: escort entities
         }
         if (this.dogs) {
             for (let d of this.dogs) {
@@ -24699,6 +26700,13 @@ class Game {
     }
 
     drawScreenOverlays(p, x, y, w, h) {
+        // PHASE 1: screen-edge markers pointing at the active objective --
+        // essential wayfinding on the 7500px extraction map.
+        if (this.objectives && this.objectives.length && this.state === 'playing') {
+            const cam = (p === this.player) ? this.camera : this.camera2;
+            this.drawObjectiveMarkers(p, cam, x, y, w, h);
+        }
+
         // 1. VIGNETTE
         let vignette = this.ctx.createRadialGradient(
             x + w / 2, y + h / 2, h * 0.25,
