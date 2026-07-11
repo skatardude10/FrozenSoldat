@@ -862,6 +862,12 @@
                     </div>
                 </div>
 
+                <!-- PHASE 4: operator kit selection (unlocks live in ARMORY) -->
+                <div id="kit-select-wrap" style="display: flex; align-items: flex-start; margin: 6px 0;">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">OPERATOR KIT:</label>
+                    <div id="kit-select-list" style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;"></div>
+                </div>
+
                 <!-- PHASE 2: mission select (extraction ops only) -->
                 <div id="mission-select-wrap" class="hidden" style="margin: 8px 0 2px 0;">
                     <label style="font-weight: bold; color: #39ff14; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin-bottom:6px;">SELECT OPERATION:</label>
@@ -869,6 +875,9 @@
                     <!-- PHASE 3: opt-in risk/reward toggles -->
                     <label style="font-weight: bold; color: #d500f9; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin: 8px 0 4px 0;">ESCALATION PROTOCOLS <span id="escalation-bonus-lbl" style="color:#a9c2c7; font-weight:normal;"></span></label>
                     <div id="escalation-list" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+                    <!-- PHASE 4: loadout presets (mission + protocols + kits + difficulty) -->
+                    <label style="font-weight: bold; color: #00e5ff; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin: 8px 0 4px 0;">LOADOUT PRESETS <span style="color:#a9c2c7; font-weight:normal;">— TAP TO APPLY, 💾 TO SAVE CURRENT</span></label>
+                    <div id="preset-list" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
                     <div id="mission-fee-warning" class="hidden" style="color: var(--red); font-size: 11px; letter-spacing: 1px; margin-top: 6px; text-align:left;"></div>
                 </div>
             </div>
@@ -1126,6 +1135,11 @@
                     <li><b>Corrupted Overclocks:</b> One-time purchases with real drawbacks — Overpressure (+damage / +spread &amp; kick), Glass Nerves (+fire rate / +damage taken), Cold Barrel (quiet shots / -damage).</li>
                     <li><b>Shotgun Slugs:</b> Specialty ammo that swaps the pellet cone for one heavy accurate round. Mutually exclusive with buckshot.</li>
                     <li><b>Escalation Protocols:</b> Opt-in extraction modifiers (menu) that raise danger for bonus Intel on everything you earn.</li>
+                    <li><b>Operator Kits (Phase 4):</b> Unlock BREACHER / GHOST / TECHNICIAN in the Armory, then pick one per player on the main menu — each grants a starting loadout, a passive, and cash back on a shop category.</li>
+                    <li><b>Mission Modifiers:</b> Some ops run under field conditions — CRYO (iced ground, everyone slides), BLACKOUT (forced night), SCRAMBLER (objective markers only resolve close-in). Badges show on the mission card.</li>
+                    <li><b>Patrols:</b> Below HUNTED heat, extraction squads walk patrol beats instead of converging on you. Stay quiet and unseen and they stay dumb; get spotted, shot at, or let the grid hit HUNTED and it's weapons-free.</li>
+                    <li><b>Ricochet Fuse:</b> Underbarrel Launcher level 2 — launched grenades bank hard off walls for corner shots.</li>
+                    <li><b>Loadout Presets:</b> Three slots under the mission ladder snapshot your mission + protocols + kits + difficulty for one-tap redeploys.</li>
                 </ul>
 
                 <h3 style="color: #ff2a5f; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 42, 95, 0.3); padding-bottom: 3px;">4. PERSISTENT UPGRADES (INTEL)</h3>
@@ -1855,10 +1869,17 @@ function useLeftItem(player) {
             // a tube -- much faster, nearly flat, short-fused so they
             // detonate on/near arrival instead of cooking on the floor.
             // Same ShrapnelGrenade, same blast; only the delivery changes.
-            const hasGL = game && game.saveData && game.saveData.metaUpgrades
-                && (game.saveData.metaUpgrades.underbarrelLauncher || 0) > 0;
+            const glLvl = (game && game.saveData && game.saveData.metaUpgrades)
+                ? (game.saveData.metaUpgrades.underbarrelLauncher || 0) : 0;
+            const hasGL = glLvl > 0;
             let power = hasGL ? 2600 : 1480;
-            let opts  = hasGL ? { fuse: 0.75, vz: 60 } : undefined;
+            let opts  = hasGL ? { fuse: 0.75, vz: 60 } : {};
+            // PHASE 4 (BREACHER kit): +15% blast radius rides the opts param.
+            if (player.kitBlastMult && player.kitBlastMult !== 1) opts.radiusMult = player.kitBlastMult;
+            // PHASE 4 (RICOCHET FUSE, launcher L2): launched rounds bank
+            // hard off walls (restitution 0.85 vs the default 0.5) with a
+            // slightly longer fuse so a corner shot has time to arrive.
+            if (glLvl >= 2) { opts.restitution = 0.85; opts.fuse = 0.9; }
             game.grenades.push(new ShrapnelGrenade(player.x, player.y, Math.cos(player.angle)*power + player.vx, Math.sin(player.angle)*power + player.vy, opts));
             if (hasGL && game.registerNoise) {
                 // The tube's THOONK is loud -- launched ordnance heats the run.
@@ -7535,7 +7556,12 @@ class Entity {
         // that entity for just as long as it's set; everyone/everything
         // else (enemies, physics props, the player the rest of the time)
         // is completely unaffected.
-        let dragRate = (this.customDragRate !== undefined) ? this.customDragRate : 0.0006;
+        // PHASE 4 (CRYO modifier): iced ground for players and enemies --
+        // much weaker drag, so momentum carries (see CRYO_TUNING math note).
+        // customDragRate (dives etc.) still wins while set; props/bullets
+        // and every non-cryo run are byte-identical.
+        let dragRate = (this.customDragRate !== undefined) ? this.customDragRate
+            : ((typeof game !== 'undefined' && game && game._cryoActive && (this.maxStamina !== undefined || this instanceof Enemy)) ? CRYO_TUNING.DRAG : 0.0006);
         this.vx *= Math.pow(dragRate, dt);
         this.vy *= Math.pow(dragRate, dt);
         
@@ -7614,6 +7640,15 @@ class Entity {
         // finishing off a softened enemy with whatever's on hand.
         if (this.operatorExposedTimer > 0 && amt > 0) {
             amt *= 1.5;
+        }
+        // PHASE 4 (patrolling AI): getting shot ends the beat immediately.
+        // cachedMoveAngle=undefined is an explicit shouldUpdateAI trigger
+        // (Phase 1 pattern), so the switch to combat AI is same-frame-ish
+        // instead of waiting out the 30-frame stagger.
+        if (this.patrolUntilContact && amt > 0) {
+            this.patrolUntilContact = false;
+            this._patrolWp = null;
+            this.cachedMoveAngle = undefined;
         }
         if(this.armor && this.armor > 0) {
             let absorb = Math.min(this.armor, amt);
@@ -9204,6 +9239,9 @@ class Player extends Entity {
                 : AIM_WEIGHT.MOVE_STRAFE_MULT + (AIM_WEIGHT.MOVE_STRAFE_MULT - AIM_WEIGHT.MOVE_BACKPEDAL_MULT) * alignDot;
         }
         let curAccel = this.accel * directionalMult * (1.0 + Math.min(2, this.speedUpgrades) * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff * exoServosAccelMulti * weaponMoveSpeedMult;
+        // PHASE 4 (CRYO): force scaled down so equilibrium top speed stays
+        // ~unchanged while the weak ice drag stretches stop/turn inertia.
+        if (game && game._cryoActive) curAccel *= CRYO_TUNING.FORCE_MULT;
         
         // Combat Dive: "cannot change your movement direction" mid-dive --
         // skip the normal steering accel entirely so held WASD can't redirect
@@ -9802,6 +9840,9 @@ class Player extends Entity {
             let noiseMag = EXTRACTION_TUNING.NOISE[weaponKey] || 1.5;
             // PHASE 3: COLD BARREL's whole point -- shots barely heat the run.
             if (corrupted && corrupted.coldBarrel) noiseMag *= 0.35;
+            // PHASE 4 (GHOST kit): personal suppressor discipline. Stacks
+            // multiplicatively with Cold Barrel (0.65 * 0.35 = whisper).
+            if (this.kitNoiseMult && this.kitNoiseMult !== 1) noiseMag *= this.kitNoiseMult;
             game.registerNoise(this.x, this.y, noiseMag);
         }
 
@@ -10346,6 +10387,12 @@ class Enemy extends Entity {
         this.reactionDelay = MathUtils.rand(0.3, 0.9);
         this.fireHoldTimer = 0;
         this._spotCooldown = 0;
+        // PHASE 4 (patrolling AI) -- pool-reset per the Phase 1 gotcha.
+        // patrolUntilContact: extraction-only pre-detection state (tagged
+        // at spawn in _spawnSquadMember while the grid is still cool);
+        // _patrolWp: current beat waypoint (a nearby nav node).
+        this.patrolUntilContact = false;
+        this._patrolWp = null;
     }
     
     update(dt, player, walls, gameTime, allEnemies) {
@@ -10711,6 +10758,50 @@ class Enemy extends Entity {
                 }
             }
 
+            // PHASE 4 (patrolling AI): pre-detection beat walking. The
+            // engage transitions live HERE (the throttled tick) so break
+            // checks are cheap: sighting a player (<800px with LOS -- the
+            // same hasLOS the acquisition hook below consumes), or the grid
+            // going HUNTED, permanently drops the enemy into stock combat
+            // AI. Taking damage also breaks it (see Entity.takeDamage).
+            // While patrolling, moveTargetX/Y is steered at a wandering
+            // nav-node waypoint -- the exact movement-only override pattern
+            // the operator cover-route and flanker arcs already use, so
+            // combat ranging (distToTarget) stays honest throughout.
+            if (this.patrolUntilContact) {
+                if (!game || !game.extractionMode || game.heatTier >= 2
+                    || (hasLOS && target instanceof Player && distToTarget < 800)) {
+                    this.patrolUntilContact = false;
+                    this._patrolWp = null;
+                } else {
+                    if (!this._patrolWp || Math.hypot(this._patrolWp.x - this.x, this._patrolWp.y - this.y) < 70) {
+                        // Pick a fresh beat point: random bearing, 250-600px
+                        // out, wall-validated (the _pickSquadAnchor sampling
+                        // idea, localized). Falls back to standing its post
+                        // if all tries land in walls -- pathfinding below
+                        // still routes around anything between here and a
+                        // valid pick, and the stuck detector relocates a
+                        // truly wedged patroller.
+                        for (let tries = 0; tries < 10; tries++) {
+                            const ang = Math.random() * Math.PI * 2;
+                            const d = 250 + Math.random() * 350;
+                            const px = Math.max(60, Math.min(game.mapW - 60, this.x + Math.cos(ang) * d));
+                            const py = Math.max(60, Math.min(game.mapH - 60, this.y + Math.sin(ang) * d));
+                            let clear = true;
+                            const wn = game.map.getWallsNear(px, py);
+                            for (const w of wn) {
+                                if (MathUtils.circleIntersectAABB(px, py, 20, w).hit) { clear = false; break; }
+                            }
+                            if (clear) { this._patrolWp = { x: px, y: py }; break; }
+                        }
+                    }
+                    if (this._patrolWp) {
+                        moveTargetX = this._patrolWp.x;
+                        moveTargetY = this._patrolWp.y;
+                    }
+                }
+            }
+
             // Pathfinding move angle -- uses moveTargetX/Y (which is either
             // the real combat target or, in operator mode while sneaking,
             // the cover-route waypoint -- see moveTargetX/Y assignment
@@ -10902,8 +10993,13 @@ class Enemy extends Entity {
         if (this.enragedTimer > 0) pushMult = Math.max(pushMult, 1.2);
         if (this.tactic && this.cachedDistToTarget > TACTICAL_TUNING.FLANK_DIST) pushMult = Math.max(pushMult, 1.3);
         let speedScalar = (this.cachedRunFromDrone ? 1.5 : pushMult) * slowFactor;
+        // PHASE 4 (patrolling AI): unengaged patrollers WALK their beat --
+        // the drop back to combat speed on contact is part of the tell.
+        if (this.patrolUntilContact) speedScalar *= 0.55;
         let moveX = Math.cos(this.cachedMoveAngle) * (this.speed * speedScalar) + sepX;
         let moveY = Math.sin(this.cachedMoveAngle) * (this.speed * speedScalar) + sepY;
+        // PHASE 4 (CRYO): enemies slide on the same ice (see player accel site).
+        if (game && game._cryoActive) { moveX *= CRYO_TUNING.FORCE_MULT; moveY *= CRYO_TUNING.FORCE_MULT; }
 
         if (this.type === 'swarmer' || this.type === 'sapper') {
             this.vx += moveX * 4.0 * dt;
@@ -10976,7 +11072,7 @@ class Enemy extends Entity {
                 }
             }
         } else {
-            if (this.cachedHasLOS && this.cachedDistToTarget < 240 && !this.cachedRunFromDrone && !this.cachedPushing) {
+            if (this.cachedHasLOS && this.cachedDistToTarget < 240 && !this.cachedRunFromDrone && !this.cachedPushing && !this.patrolUntilContact) {
                 this.vx -= Math.cos(this.angle) * this.speed * dt * 1.5;
                 this.vy -= Math.sin(this.angle) * this.speed * dt * 1.5;
             } else {
@@ -11005,7 +11101,11 @@ class Enemy extends Entity {
                 inEngagementRange = this.cachedDistToTarget < engagementRange;
             }
 
-            if (this.cachedHasLOS && inEngagementRange && gameTime - this.lastFire > this.fireRate && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0)) {
+            // PHASE 4: patrollers never open fire -- the same tick they
+            // could legally shoot (LOS <800px), the patrol state breaks and
+            // the reaction-delay hold takes over. This gate only covers the
+            // long-LOS window (open sightlines past detection range).
+            if (this.cachedHasLOS && inEngagementRange && gameTime - this.lastFire > this.fireRate && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact) {
                 // Phase 3: Suppressing Fire perk blocks return fire while
                 // suppressedTimer runs (set on player bullet hit).
                 this.fire(game);
@@ -16110,6 +16210,10 @@ class ShrapnelGrenade {
         this.r = 6;
         this.z = 0;
         this.vz = (opts && opts.vz !== undefined) ? opts.vz : 280;
+        // PHASE 4: blast scale (BREACHER kit) + wall-bounce energy
+        // retention (RICOCHET FUSE launcher upgrade) -- both plain opts.
+        this.radiusMult  = (opts && opts.radiusMult)  || 1.0;
+        this.restitution = (opts && opts.restitution !== undefined) ? opts.restitution : 0.5;
     }
     update(dt, walls, game) {
         this.vx *= Math.pow(0.01, dt);
@@ -16126,8 +16230,10 @@ class ShrapnelGrenade {
                     let overlap = this.r - col.dist;
                     this.x += nx * overlap;
                     this.y += ny * overlap;
-                    if (nx !== 0) this.vx *= -0.5;
-                    if (ny !== 0) this.vy *= -0.5;
+                    // PHASE 4: restitution is 0.5 for thrown grenades
+                    // (unchanged) and 0.85 for RICOCHET FUSE launcher rounds.
+                    if (nx !== 0) this.vx *= -this.restitution;
+                    if (ny !== 0) this.vy *= -this.restitution;
                 }
             }
         }
@@ -16152,11 +16258,14 @@ class ShrapnelGrenade {
         audio.playExplosion(1.0, this.x, this.y);
         game.applyExplosionShake(this.x, this.y, 35, 180);
         
-        game.spawnShockwave(this.x, this.y, 180 * 1.2, 0.3);
+        // PHASE 4 (BREACHER kit): radiusMult scales the whole blast --
+        // damage falloff, shockwave, wall damage and barrel triggering all
+        // read blastRadius below, so one multiply covers everything.
+        let blastRadius = 180 * this.radiusMult;
+        game.spawnShockwave(this.x, this.y, blastRadius * 1.2, 0.3);
         game.camera.punchZoom(0.08);
         if (game.camera2) game.camera2.punchZoom(0.08);
-        
-        let blastRadius = 180;
+
         let entities = [];
         if (game.friendlyFireMode === 'off') {
             entities = [...game.enemies];
@@ -17357,9 +17466,24 @@ const MISSIONS = {
         ],
         rewardRules: { intelPerWave: 2, intelPerElite: 4, intelPerChip: 6, completionIntel: 40 },
         heat: { floorMult: 1.3, startHeat: 10 }
+    },
+    // PHASE 4: the modifier-framework capstone -- a mission that is
+    // NOTHING but data + three library modifiers stacked. Proves modifiers
+    // compose without any mission-specific code.
+    op_whiteout: {
+        id: 'op_whiteout', name: 'WHITEOUT',
+        desc: 'Storm op: iced ground, total darkness, jammed wayfinding. Three uplinks, then find the bird by memory.',
+        mapId: 10, entryCost: 25, unlock: { extractions: 3, missions: { op_asset_recovery: 1 } },
+        modifiers: ['cryo', 'blackout', 'scrambler'],
+        objectives: [
+            { type: 'HACK_TERMINAL', params: { count: 4, required: 3, hackTime: 7.0, radius: 90, intelPer: 35 } },
+            { type: 'REACH_ZONE',    params: { radius: 130, channel: 6.0 } }
+        ],
+        rewardRules: { intelPerWave: 2, intelPerElite: 5, intelPerChip: 7, completionIntel: 80 },
+        heat: { floorMult: 1.5, startHeat: 10 }
     }
 };
-const MISSION_ORDER = ['op_first_contact', 'op_deep_incursion', 'op_overrun_protocol', 'op_asset_recovery'];
+const MISSION_ORDER = ['op_first_contact', 'op_deep_incursion', 'op_overrun_protocol', 'op_asset_recovery', 'op_whiteout'];
 
 // ==== PHASE 3: INTEL SINKS + BUILDCRAFTING + WEAPON DEPTH ====
 
@@ -17409,9 +17533,22 @@ const ARMORY_UPGRADES = [
     { key: 'laserSight', name: 'LASER SIGHT ARRAY', maxLevel: 3,
       costPerLevel: [150, 300, 500],
       desc: 'Lvl1: collimator servo (tighter beam, faster refocus). Lvl2: long-throw emitter (+range). Lvl3: prism array (precision + custom colors).' },
-    { key: 'underbarrelLauncher', name: 'UNDERBARREL LAUNCHER', maxLevel: 1,
-      costPerLevel: [600],
-      desc: 'Grenades fire from an underbarrel tube: flat, fast, short-fused. Same blast, delivered on target.' }
+    // PHASE 4: L2 (deferred attachment complexity from the roadmap) --
+    // ricochet rounds; the bounce is an opts.restitution on the SAME
+    // ShrapnelGrenade class (its wall-bounce physics were already there).
+    { key: 'underbarrelLauncher', name: 'UNDERBARREL LAUNCHER', maxLevel: 2,
+      costPerLevel: [600, 350],
+      desc: 'Lvl1: grenades fire from an underbarrel tube — flat, fast, short-fused. Lvl2: RICOCHET FUSE — launched rounds bank hard off walls (corner shots).' },
+    // ---- PHASE 4: operator kit unlocks (selection lives in the menu) ----
+    { key: 'kitBreacher', name: 'KIT: BREACHER', maxLevel: 1,
+      costPerLevel: [350],
+      desc: 'Start: combat shotgun + 16 shells + 2 grenades. Passive: +15% grenade blast radius. Requisition: 20% cash back on ordnance.' },
+    { key: 'kitGhost', name: 'KIT: GHOST', maxLevel: 1,
+      costPerLevel: [450],
+      desc: 'Start: +2 energy drinks. Passive: your weapon noise -35% (stacks with Cold Barrel). Requisition: 20% cash back on ammunition.' },
+    { key: 'kitTechnician', name: 'KIT: TECHNICIAN', maxLevel: 1,
+      costPerLevel: [450],
+      desc: 'Start: 1 auto turret + 1 barrier. Passive: +30% uplink hack speed. Requisition: 20% cash back on gadgets.' }
 ];
 
 // Laser sight tuning per LASER SIGHT ARRAY level (index = level 0-3).
@@ -17460,6 +17597,56 @@ const ESCALATION_PROTOCOLS = {
 };
 const ESCALATION_ORDER = ['bloodhound', 'ironclad', 'exposed'];
 
+// ==== PHASE 4: MISSION MODIFIERS LIBRARY ====
+// A modifier is pure DATA on a MISSIONS entry (modifiers: ['cryo', ...]),
+// resolved ONCE by buildRunConfig() into RunConfig.missionModifiers (the
+// escalation pattern: resolve at snapshot, plain data downstream). Each
+// modifier's effect lives at exactly one consumption site:
+//   cryo      -> Entity.updatePhysics (ice drag) + the two accel/force
+//                sites (player accel, enemy move force) + a viewport tint
+//   blackout  -> buildRunConfig forces modifiers.nightMode (startNewGame
+//                already re-asserts nightMode from the config -- free)
+//   scrambler -> drawObjectiveMarkers range-gates edge arrows (>1800px)
+const MISSION_MODIFIERS = {
+    cryo:      { name: 'CRYO',      desc: 'Iced ground: everyone slides. Stopping and turning cost real distance.' },
+    blackout:  { name: 'BLACKOUT',  desc: 'Night op. The grid runs dark for the whole mission.' },
+    scrambler: { name: 'SCRAMBLER', desc: 'Wayfinding jammed: objective markers only resolve within 36m.' }
+};
+// Cryo physics: base drag 0.0006 has -ln = 7.42; ice drag 0.05 has -ln =
+// 3.0. Equilibrium speed = force / -ln(drag), so FORCE_MULT 0.40 keeps top
+// speed ~unchanged while stop/turn inertia stretches ~2.5x (that's the ice).
+const CRYO_TUNING = { DRAG: 0.05, FORCE_MULT: 0.40, SCRAMBLER_RANGE: 1800 };
+
+// ==== PHASE 4: OPERATOR KITS v1 ====
+// A kit = starting loadout + one passive + a shop bias (cash rebate on a
+// requisition category). Kits are one-time Intel unlocks (ARMORY_UPGRADES
+// entries below -- purchase machinery is free by being data), selected
+// per-player in the menu (saveData.kitP1/kitP2), snapshotted into
+// RunConfig.kits, and applied in startNewGame() right after
+// _applyMetaStatsToPlayer (post-meta, pre-mode -- the EXPOSED ordering).
+// Passives are consumed at single existing sites: GHOST at fire()'s
+// registerNoise call (beside COLD BARREL), TECHNICIAN at HACK_TERMINAL's
+// channel tick, BREACHER inside ShrapnelGrenade via the opts param.
+// Shop bias is a post-purchase rebate at the single exit of buyItem() --
+// no price literal in the big chain had to change.
+const OPERATOR_KITS = {
+    standard: { name: 'STANDARD ISSUE', armoryKey: null,
+        desc: 'Baseline field gear. No modifiers.' },
+    breacher: { name: 'BREACHER', armoryKey: 'kitBreacher',
+        desc: 'Start: combat shotgun + 16 shells + 2 grenades. Passive: +15% grenade blast radius. Requisition: 20% cash back on ordnance.' },
+    ghost: { name: 'GHOST', armoryKey: 'kitGhost',
+        desc: 'Start: +2 energy drinks. Passive: your weapon noise -35% (stacks with Cold Barrel). Requisition: 20% cash back on ammunition.' },
+    technician: { name: 'TECHNICIAN', armoryKey: 'kitTechnician',
+        desc: 'Start: 1 auto turret + 1 barrier. Passive: +30% uplink hack speed. Requisition: 20% cash back on gadgets.' }
+};
+const KIT_ORDER = ['standard', 'breacher', 'ghost', 'technician'];
+// Shop-bias categories, matched against buyItem's type string.
+const KIT_SHOP_REBATE = {
+    breacher:   { pct: 0.20, match: (t) => t === 'grenade' || t === 'mine' },
+    ghost:      { pct: 0.20, match: (t) => typeof t === 'string' && t.indexOf('ammo_') === 0 },
+    technician: { pct: 0.20, match: (t) => ['barrier', 'barrier_upgrade', 'turret', 'turret_mk2', 'drone', 'drone_upgrade', 'fiber_optic', 'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack'].indexOf(t) >= 0 }
+};
+
 // ==== PHASE 1: OBJECTIVE FRAMEWORK ====
 // Missions are DATA: RunConfig.objectives is a list of
 // { type, params } entries; each type below is a component factory
@@ -17495,7 +17682,8 @@ const ObjectiveTypes = {
                     if (p && !p.dead && Math.hypot(p.x - t.x, p.y - t.y) < this.radius) { hacker = p; break; }
                 }
                 if (!hacker) continue;
-                t.progress += dt;
+                // PHASE 4 (TECHNICIAN kit): the hacker's kit speeds the channel.
+                t.progress += dt * (hacker.kitHackMult || 1);
                 if (t.progress >= this.hackTime) {
                     t.hacked = true;
                     this.done++;
@@ -18552,6 +18740,13 @@ class Game {
                 const onScreen = m.x >= cam.x && m.x <= cam.x + visibleW &&
                                  m.y >= cam.y && m.y <= cam.y + visibleH;
                 if (onScreen) continue;
+                // PHASE 4 (SCRAMBLER modifier): wayfinding jammed -- edge
+                // arrows only resolve inside CRYO_TUNING.SCRAMBLER_RANGE.
+                // HUD objective text still lists WHAT to do; the WHERE is
+                // the mission.
+                if (this.runConfig && this.runConfig.missionModifiers
+                    && this.runConfig.missionModifiers.includes('scrambler')
+                    && Math.hypot(m.x - p.x, m.y - p.y) > CRYO_TUNING.SCRAMBLER_RANGE) continue;
                 const centerX = x + w / 2, centerY = y + h / 2;
                 const angle = Math.atan2(m.y - (cam.y + visibleH / 2), m.x - (cam.x + visibleW / 2));
                 const padX = 70, padY = 85;
@@ -18749,6 +18944,17 @@ class Game {
             enemy.hp = Math.round(enemy.hp * 2.2);
             enemy.maxHp = enemy.hp;
             enemy.r *= 1.45;
+        }
+        // PHASE 4 (patrolling AI): while the grid is still cool (below
+        // HUNTED) extraction squads spawn as PATROLS -- they walk beats
+        // around their insertion point instead of beelining at the player,
+        // until they see someone (<800px LOS), get shot, or the heat tier
+        // hits HUNTED (the grid goes weapons-free). Swarmers/sappers keep
+        // their beeline identity.
+        if (this.extractionMode && this.heatTier < 2
+            && enemy.type !== 'swarmer' && enemy.type !== 'sapper') {
+            enemy.patrolUntilContact = true;
+            enemy._patrolWp = null;
         }
         this.enemies.push(enemy);
         this.enemiesToSpawn--;
@@ -21542,6 +21748,35 @@ class Game {
         p.perkCombatScanner = false;
         p.perkSuppression = false;
         p.perkAmbusher = false;
+        // PHASE 4: kit state baseline -- _applyOperatorKit (called right
+        // after this in startNewGame) overwrites for the selected kit.
+        p.kitId = 'standard';
+        p.kitBlastMult = 1.0;
+        p.kitNoiseMult = 1.0;
+        p.kitHackMult = 1.0;
+    }
+
+    // PHASE 4: apply the run-config-snapshotted kit to a player. Runs in
+    // startNewGame AFTER _applyMetaStatsToPlayer (so meta stats are the
+    // base) and BEFORE the EXPOSED-protocol / operator-mode blocks (so
+    // those still get the last word -- same ordering rationale as EXPOSED).
+    _applyOperatorKit(p) {
+        if (!p || !this.runConfig || !this.runConfig.kits) return;
+        const id = p.isPlayer2 ? this.runConfig.kits.p2 : this.runConfig.kits.p1;
+        p.kitId = OPERATOR_KITS[id] ? id : 'standard';
+        if (p.kitId === 'breacher') {
+            p.inventory.push({ ...Weapons.shotgun });
+            p.ammo.shotgun = Math.min(p.maxAmmo.shotgun, (p.ammo.shotgun || 0) + 16);
+            p.grenades = Math.min(3, (p.grenades || 0) + 2);
+            p.kitBlastMult = 1.15;   // consumed via ShrapnelGrenade opts (useLeftItem)
+        } else if (p.kitId === 'ghost') {
+            p.energyDrinks = (p.energyDrinks || 0) + 2;
+            p.kitNoiseMult = 0.65;   // consumed at fire()'s registerNoise call
+        } else if (p.kitId === 'technician') {
+            p.turretsCount = (p.turretsCount || 0) + 1;
+            p.barriersCount = (p.barriersCount || 0) + 1;
+            p.kitHackMult = 1.3;     // consumed at HACK_TERMINAL's channel tick
+        }
     }
 
     // ---- PHASE 0: RunConfig factory --------------------------------------
@@ -21567,6 +21802,26 @@ class Game {
             ? Object.assign({ floorMult: 1.0, startHeat: 0 }, this._selectedMission().heat)
             : null;
         if (missionHeat && escActive.includes('bloodhound')) missionHeat.floorMult *= 1.5;
+        // PHASE 4: mission modifiers -- resolved once, snapshotted as plain
+        // data (the escalation pattern). BLACKOUT is applied right here by
+        // forcing the nightMode flag the config already carries; startNewGame
+        // re-asserts nightMode from the config, so no new consumer needed.
+        const missionMods = this.extractionMode
+            ? (this._selectedMission().modifiers || []).filter(id => MISSION_MODIFIERS[id])
+            : [];
+        // PHASE 4: operator kit snapshot. Selection persists in saveData;
+        // validated against ownership here so a stale save can't smuggle in
+        // an unowned kit. Operator mode forces STANDARD (fixed baseline by
+        // spec -- its loadout strip already runs after kit application).
+        const kitValid = (id) => {
+            const k = OPERATOR_KITS[id];
+            if (!k) return 'standard';
+            if (k.armoryKey && !((this.saveData.metaUpgrades || {})[k.armoryKey] > 0)) return 'standard';
+            return id;
+        };
+        const kits = this.operatorMode
+            ? { p1: 'standard', p2: 'standard' }
+            : { p1: kitValid(this.saveData.kitP1 || 'standard'), p2: kitValid(this.saveData.kitP2 || 'standard') };
         return {
             id: 'run_' + Date.now(),
             modeId: this.gameMode || (this.isTestingMode ? 'sandbox'
@@ -21580,9 +21835,12 @@ class Game {
             startingCash: this.nowMode ? NOW_MODE.STARTING_CASH : this.startingCash,
             startWave: this.nowMode ? NOW_MODE.START_WAVE : 1,
             modifiers: {
-                nightMode: !!this.nightMode,
+                nightMode: !!this.nightMode || missionMods.includes('blackout'),
                 forcedMutator: this.forcedMutator || null
             },
+            // PHASE 4: mission modifiers + per-player kit ids (plain data).
+            missionModifiers: missionMods,
+            kits: kits,
             // PHASE 2: the mission registry IS the source of extraction
             // run data now -- objectives, reward rules, entry fee, and
             // heat modifiers all come from the selected MISSIONS entry
@@ -21675,6 +21933,12 @@ class Game {
         // PHASE 1: heat + objectives reset (components instantiated below,
         // after the map exists -- placement needs nav nodes).
         // PHASE 2: missions can start pre-heated / with a faster floor.
+        // PHASE 4 (mission modifiers): CRYO cached as one boolean the three
+        // physics consumption sites read every frame (config lookups in the
+        // hot path would be silly). Always assigned, so a cryo mission can
+        // never leak ice into the next run.
+        this._cryoActive = !!(this.runConfig.missionModifiers && this.runConfig.missionModifiers.includes('cryo'));
+
         const mh = this.runConfig.missionHeat;
         this.heat = mh ? (mh.startHeat || 0) : 0;
         this.heatFloor = this.heat;
@@ -21739,6 +22003,10 @@ class Game {
         if (this.isTwoPlayer && this.player2) {
             this._applyMetaStatsToPlayer(this.player2);
         }
+
+        // PHASE 4: operator kits -- post-meta, pre-mode (see method comment).
+        this._applyOperatorKit(this.player);
+        if (this.isTwoPlayer && this.player2) this._applyOperatorKit(this.player2);
 
         // PHASE 3 (EXPOSED protocol): max armor halved for the run --
         // applied AFTER meta stats (same ordering rationale as operator
@@ -24356,6 +24624,11 @@ class Game {
             return;
         }
         let p = buyer || this.player;
+        // PHASE 4 (kit shop bias): snapshot cash so the single exit below
+        // can rebate a slice of whatever the big if/else chain charged --
+        // zero price literals touched, works for every current and future
+        // branch automatically.
+        const _cashBeforeBuy = p.cash;
         if (type === 'hp' && p.cash >= 50 && p.hp < p.maxHp) {
             p.cash -= 50; p.hp = Math.min(p.maxHp, p.hp + 50);
         } else if (type === 'armor' && p.cash >= 30 && p.armor < 100) {
@@ -24493,6 +24766,25 @@ class Game {
             p.cash -= 35; p.ammo.m1a = Math.min(p.maxAmmo.m1a, p.ammo.m1a + 20); p.ammoTypes.m1a = 'standard';
         } else if (type === 'ammo_m1a_ap' && p.cash >= 85 && p.ammo.m1a < p.maxAmmo.m1a) {
             p.cash -= 85; p.ammo.m1a = Math.min(p.maxAmmo.m1a, p.ammo.m1a + 20); p.ammoTypes.m1a = 'ap';
+        }
+
+        // PHASE 4 (kit shop bias): requisition rebate. If a purchase
+        // happened (cash went down) and the buyer's kit covers this
+        // category, refund a cut on the spot. Rebate never touches the
+        // Ledger -- it's cash, not Intel.
+        {
+            const spent = _cashBeforeBuy - p.cash;
+            const reb = p.kitId ? KIT_SHOP_REBATE[p.kitId] : null;
+            if (spent > 0 && reb && reb.match(type)) {
+                const back = Math.round(spent * reb.pct);
+                if (back > 0) {
+                    p.cash += back;
+                    if (this.floatingTexts && this.spawnFloatingText) {
+                        this.floatingTexts.push(this.spawnFloatingText(
+                            p.x, p.y - 30, 'REQUISITION +$' + back, '#39ff14', 1.2, 0, -40, 160, true));
+                    }
+                }
+            }
         }
 
         this.openShopInterface(); 
@@ -24819,6 +25111,20 @@ class Game {
                 for (const k of ['magSmg', 'magM1a', 'magShotgun', 'laserSight', 'underbarrelLauncher']) {
                     if (typeof sd.metaUpgrades[k] !== 'number') sd.metaUpgrades[k] = 0;
                 }
+            }},
+            // v5 (PHASE 4): operator kits (three one-time unlocks + a
+            // per-player selection) and loadout presets (3 slots of plain
+            // pre-mission config). Additive only, per migration discipline.
+            { to: 5, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                for (const k of ['kitBreacher', 'kitGhost', 'kitTechnician']) {
+                    if (typeof sd.metaUpgrades[k] !== 'number') sd.metaUpgrades[k] = 0;
+                }
+                if (typeof sd.kitP1 !== 'string' || !OPERATOR_KITS[sd.kitP1]) sd.kitP1 = 'standard';
+                if (typeof sd.kitP2 !== 'string' || !OPERATOR_KITS[sd.kitP2]) sd.kitP2 = 'standard';
+                if (!Array.isArray(sd.loadoutPresets) || sd.loadoutPresets.length !== 3) {
+                    sd.loadoutPresets = [null, null, null];
+                }
             }}
         ];
         const runMigrations = (sd) => {
@@ -24887,6 +25193,7 @@ class Game {
         if (this.saveData.p1GamepadChoice === undefined) this.saveData.p1GamepadChoice = 'auto';
         if (this.saveData.p2GamepadChoice === undefined) this.saveData.p2GamepadChoice = 'auto';
         this.refreshGamepadAssignmentUI();
+        this.renderKitSelector(); // PHASE 4: kit chips reflect the loaded save
     }
 
     saveGameData() {
@@ -25098,6 +25405,7 @@ class Game {
         MA[key] = (MA[key] || 0) + 1;
         this.saveGameData();
         this.renderArmoryTab();   // Refresh the UI
+        this.renderKitSelector(); // PHASE 4: a freshly bought kit becomes selectable
         if (audio) audio.playPickup('money');
     }
 
@@ -25113,8 +25421,13 @@ class Game {
         }
         
         this.saveData.intel = (this.saveData.intel || 0) + refundedIntel;
+        // PHASE 4: refunded kits must not stay selected (buildRunConfig
+        // validates too -- belt and suspenders).
+        if (!this._kitOwned(this.saveData.kitP1)) this.saveData.kitP1 = 'standard';
+        if (!this._kitOwned(this.saveData.kitP2)) this.saveData.kitP2 = 'standard';
         this.saveGameData();
         this.renderArmoryTab();
+        this.renderKitSelector();
         if (audio) audio.playPickup('money');
     }
 
@@ -25291,11 +25604,16 @@ class Game {
                  + '<div class="mission-card-name">' + (unlocked ? '' : '🔒 ') + m.name
                  + (completions > 0 ? ' <span class="mission-completions">×' + completions + '</span>' : '') + '</div>'
                  + '<div class="mission-card-desc">' + (unlocked ? m.desc : this._missionUnlockText(m)) + '</div>'
+                 // PHASE 4: mission modifier badges (library entries on the card)
+                 + ((unlocked && m.modifiers && m.modifiers.length)
+                     ? '<div style="font-size:9px; color:#7de8ff; letter-spacing:1px; margin-top:2px;">' + m.modifiers.map(md => MISSION_MODIFIERS[md] ? '❄ ' + MISSION_MODIFIERS[md].name : md).join(' · ') + '</div>'
+                     : '')
                  + (unlocked ? '<div class="mission-card-fee">' + feeText + '</div>' : '')
                  + '</div>';
         }
         wrap.innerHTML = html;
         this.renderEscalationList(); // PHASE 3: risk toggles live under the ladder
+        this.renderPresetList();     // PHASE 4: presets live under the toggles
     }
 
     // PHASE 3: Escalation Protocol toggle chips. Persisted in
@@ -25330,6 +25648,115 @@ class Game {
         this.saveData.escalations[id] = !this.saveData.escalations[id];
         this.saveGameData();
         this.renderEscalationList();
+        if (audio) audio.playPickup('money');
+    }
+
+    // ==== PHASE 4: operator kit selection ====
+    // Chips per player. Unowned kits render locked (unlocks are ARMORY
+    // cards); selection persists in saveData.kitP1/kitP2 and is snapshotted
+    // (and ownership-validated) by buildRunConfig().
+    _kitOwned(id) {
+        const k = OPERATOR_KITS[id];
+        if (!k) return false;
+        if (!k.armoryKey) return true; // standard issue
+        return ((this.saveData.metaUpgrades || {})[k.armoryKey] || 0) > 0;
+    }
+
+    renderKitSelector() {
+        const wrap = document.getElementById('kit-select-list');
+        if (!wrap) return;
+        const row = (pKey, label, color) => {
+            const cur = OPERATOR_KITS[this.saveData[pKey]] ? this.saveData[pKey] : 'standard';
+            let out = '<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">'
+                    + '<span style="font-size:10px; color:' + color + '; width:20px; text-align:left;">' + label + '</span>';
+            for (const id of KIT_ORDER) {
+                const k = OPERATOR_KITS[id];
+                const owned = this._kitOwned(id);
+                const sel = (cur === id);
+                out += '<div class="mission-card' + (sel ? ' selected' : '') + (owned ? '' : ' locked') + '"'
+                     + ' title="' + k.desc + (owned ? '' : ' (UNLOCK IN ARMORY)') + '"'
+                     + ' style="padding:4px 8px; cursor:' + (owned ? 'pointer' : 'default') + '; font-size:10px;'
+                     + ' border-color:' + (sel ? '#00e5ff' : 'rgba(0,229,255,0.3)') + ';"'
+                     + (owned ? ' onclick="game.setKit(\'' + pKey + '\',\'' + id + '\')"' : '') + '>'
+                     + (owned ? (sel ? '☑ ' : '☐ ') : '🔒 ') + k.name + '</div>';
+            }
+            return out + '</div>';
+        };
+        let html = row('kitP1', 'P1', '#00e5ff');
+        if (this.isTwoPlayer) html += row('kitP2', 'P2', '#ffb700');
+        wrap.innerHTML = html;
+    }
+
+    setKit(pKey, id) {
+        if (pKey !== 'kitP1' && pKey !== 'kitP2') return;
+        if (!this._kitOwned(id)) return;
+        this.saveData[pKey] = id;
+        this.saveGameData();
+        this.renderKitSelector();
+        if (audio) audio.playPickup('money');
+    }
+
+    // ==== PHASE 4: loadout presets ====
+    // A preset is a plain snapshot of the pre-mission config knobs:
+    // mission + escalation toggles + kit selections + difficulty. Applying
+    // one routes through the SAME setters/renderers the manual UI uses, so
+    // unlock/ownership gating can't be bypassed by a stale preset.
+    renderPresetList() {
+        const wrap = document.getElementById('preset-list');
+        if (!wrap) return;
+        const slots = this.saveData.loadoutPresets || [null, null, null];
+        let html = '';
+        for (let i = 0; i < 3; i++) {
+            const ps = slots[i];
+            html += '<div style="display:flex; align-items:stretch;">'
+                 + '<div class="mission-card' + (ps ? '' : ' locked') + '" style="padding:5px 8px; font-size:10px; cursor:' + (ps ? 'pointer' : 'default') + '; border-right:none;"'
+                 + (ps ? ' title="' + ps.name + '" onclick="game.applyPreset(' + i + ')"' : '')
+                 + '>' + (ps ? ps.name : 'SLOT ' + (i + 1) + ' — EMPTY') + '</div>'
+                 + '<div class="mission-card" style="padding:5px 6px; font-size:10px; cursor:pointer;" title="Save current mission/protocols/kits/difficulty to slot ' + (i + 1) + '"'
+                 + ' onclick="game.savePreset(' + i + ')">💾</div>'
+                 + '</div>';
+        }
+        wrap.innerHTML = html;
+    }
+
+    savePreset(i) {
+        if (i < 0 || i > 2) return;
+        if (!Array.isArray(this.saveData.loadoutPresets)) this.saveData.loadoutPresets = [null, null, null];
+        const esc = {};
+        for (const id of ESCALATION_ORDER) esc[id] = !!(this.saveData.escalations && this.saveData.escalations[id]);
+        const escCount = ESCALATION_ORDER.filter(id => esc[id]).length;
+        const m = this._selectedMission();
+        this.saveData.loadoutPresets[i] = {
+            name: m.name + (escCount ? ' +' + escCount + 'ESC' : '')
+                + ((this.saveData.kitP1 || 'standard') !== 'standard' ? ' · ' + OPERATOR_KITS[this.saveData.kitP1].name : ''),
+            missionId: m.id,
+            difficulty: this.difficultyMode,
+            escalations: esc,
+            kitP1: this.saveData.kitP1 || 'standard',
+            kitP2: this.saveData.kitP2 || 'standard'
+        };
+        this.saveGameData();
+        this.renderPresetList();
+        if (audio) audio.playPickup('money');
+    }
+
+    applyPreset(i) {
+        const ps = (this.saveData.loadoutPresets || [])[i];
+        if (!ps) return;
+        // Mission: only if still unlocked (selectMission hard-blocks anyway).
+        if (MISSIONS[ps.missionId] && this.isMissionUnlocked(MISSIONS[ps.missionId])) {
+            this.selectedMissionId = ps.missionId;
+            this.saveData.selectedMissionId = ps.missionId;
+        }
+        if (ps.difficulty && DIFFICULTY_TUNING[ps.difficulty]) this.setDifficulty(ps.difficulty);
+        if (!this.saveData.escalations) this.saveData.escalations = {};
+        for (const id of ESCALATION_ORDER) this.saveData.escalations[id] = !!(ps.escalations && ps.escalations[id]);
+        // Kits: ownership-validated (a refunded kit falls back to standard).
+        this.saveData.kitP1 = this._kitOwned(ps.kitP1) ? ps.kitP1 : 'standard';
+        this.saveData.kitP2 = this._kitOwned(ps.kitP2) ? ps.kitP2 : 'standard';
+        this.saveGameData();
+        this.renderMissionList();   // re-renders escalations + presets too
+        this.renderKitSelector();
         if (audio) audio.playPickup('money');
     }
 
@@ -25397,6 +25824,11 @@ class Game {
         const missionWrap = document.getElementById('mission-select-wrap');
         if (missionWrap) missionWrap.classList.toggle('hidden', mode !== 'extraction');
         if (mode === 'extraction') this.renderMissionList();
+        // PHASE 4: kit selection is meaningless in operator mode (fixed
+        // baseline by spec -- buildRunConfig forces STANDARD there too).
+        const kitWrap = document.getElementById('kit-select-wrap');
+        if (kitWrap) kitWrap.style.display = (mode === 'operator') ? 'none' : 'flex';
+        this.renderKitSelector();
 
         this.saveGameData();
     }
@@ -25667,6 +26099,17 @@ class Game {
             rows.push(['PROTOCOLS ACTIVE',
                 L.config.escalations.map(id => ESCALATION_PROTOCOLS[id] ? ESCALATION_PROTOCOLS[id].name : id).join(' / ')
                 + ' (+' + Math.round((L.config.escalationBonus || 0) * 100) + '% INTEL)']);
+        }
+        // PHASE 4: field conditions (mission modifiers) + non-standard kits.
+        if (L.config && L.config.missionModifiers && L.config.missionModifiers.length > 0) {
+            rows.push(['FIELD CONDITIONS',
+                L.config.missionModifiers.map(id => MISSION_MODIFIERS[id] ? MISSION_MODIFIERS[id].name : id).join(' / ')]);
+        }
+        if (L.config && L.config.kits) {
+            const kb = [];
+            if (L.config.kits.p1 && L.config.kits.p1 !== 'standard') kb.push('P1 ' + OPERATOR_KITS[L.config.kits.p1].name);
+            if (L.config.isTwoPlayer && L.config.kits.p2 && L.config.kits.p2 !== 'standard') kb.push('P2 ' + OPERATOR_KITS[L.config.kits.p2].name);
+            if (kb.length) rows.push(['OPERATOR KIT', kb.join(' / ')]);
         }
         if (L.shotsFired > 0)         rows.push(['ACCURACY', Math.round(L.shotsHit / L.shotsFired * 100) + '%']);
         const rowsEl = document.getElementById('debrief-rows');
