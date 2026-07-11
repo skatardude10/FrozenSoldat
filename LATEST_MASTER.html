@@ -859,6 +859,7 @@
                         <button id="btn-gm-operator" onclick="game.setGameMode('operator')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff7a00; color: #ff7a00;">FPV OPERATOR</button>
                         <button id="btn-gm-now" onclick="game.setGameMode('now')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff2a5f; color: #ff2a5f; box-shadow: 0 0 8px rgba(255, 42, 95, 0.4);">ACTION NOW</button>
                         <button id="btn-gm-extraction" onclick="game.setGameMode('extraction')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #d500f9; color: #d500f9; box-shadow: 0 0 8px rgba(213, 0, 249, 0.35);">EXTRACTION</button>
+                        <button id="btn-gm-chaos_draft" onclick="game.setGameMode('chaos_draft')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #00e5ff; color: #00e5ff; box-shadow: 0 0 8px rgba(0, 229, 255, 0.35);">CHAOS DRAFT</button>
                     </div>
                 </div>
 
@@ -1551,6 +1552,33 @@
             </div>
         </div>
         
+    </div>
+</div>
+
+<div id="chaos-draft-screen" class="menu-overlay hidden" style="background: rgba(0, 2, 8, 0.95); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); overflow-y: auto; padding: 20px 0;">
+    <div class="menu-box" style="width: 90%; max-width: 920px; padding: 30px; border-color: #d500f9; box-shadow: 0 0 25px rgba(213, 0, 249, 0.25); display: flex; flex-direction: column; max-height: 90vh; margin: auto;">
+        <div id="chaos-draft-player-indicator" style="
+            font-size: 12px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase;
+            color: #d500f9; margin-bottom: 6px;
+            padding: 4px 14px; border: 1px solid currentColor;
+            border-radius: 3px; display: inline-block;
+            box-shadow: 0 0 12px rgba(213, 0, 249, 0.2);
+        ">PLAYER 1 — CHAOS DRAFT</div>
+        <h1 style="color: #d500f9; letter-spacing: 3px; font-size: 24px; margin-bottom: 5px; text-shadow: 0 0 10px #d500f9;">PROTOCOL: CHAOS DRAFT</h1>
+        <p style="font-size: 12px; color: #a9c2c7; margin-bottom: 30px; letter-spacing: 1px;">CHOOSE ONE UPGRADE TO PERMANENTLY STACK FOR THE RUN. SHOP IS DISABLED.</p>
+        
+        <div id="chaos-draft-choices-container" style="
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            width: 100%;
+            margin-bottom: 20px;
+            overflow-y: auto;
+            padding: 8px;
+            flex-grow: 1;
+        ">
+            <!-- Dynamic cards go here -->
+        </div>
     </div>
 </div>
 
@@ -7853,6 +7881,12 @@ class Entity {
             this._patrolWp = null;
             this.cachedMoveAngle = undefined;
         }
+        if (this.chaosDraftShield && this.chaosDraftShield > 0) {
+            let absorb = Math.min(this.chaosDraftShield, amt);
+            this.chaosDraftShield -= absorb;
+            amt -= absorb;
+        }
+
         if(this.armor && this.armor > 0) {
             let absorb = Math.min(this.armor, amt);
             this.armor -= absorb;
@@ -8750,6 +8784,10 @@ class Player extends Entity {
 
     update(dt, input, walls, gameTime, gp = null) {
         if (this.dead) return;
+
+        if (this.passiveRegen && this.hp < this.maxHp) {
+            this.hp = Math.min(this.maxHp, this.hp + this.passiveRegen * dt);
+        }
 
         // --- Aim Angle Determination ---
         // This section only ever determines *intent* (targetAngle). Nothing
@@ -17159,7 +17197,7 @@ class Item {
                 let dist = Math.hypot(dx, dy);
                 let basePickupRadius = 60;
                 if (game && game.saveData && game.saveData.metaUpgrades) {
-                    basePickupRadius += (game.saveData.metaUpgrades.magneticGear || 0) * 15;
+                    basePickupRadius += ((game.saveData.metaUpgrades.magneticGear || 0) + (p.magneticGearBonus || 0)) * 15;
                 }
                 if (dist < basePickupRadius && dist > 0) {
                     let pullForce = 800;
@@ -20498,6 +20536,10 @@ class Game {
         let { gp1, gp2 } = frame.resolved;
 
         // --- Sub-Modal Overlay Interception (must be checked before all other states) ---
+        if (this._chaosDraftQueue && this._chaosDraftQueue.length > 0) {
+            this.handleChaosDraftMenuNavigation(gpList);
+            return true;
+        }
         if (this.perkSelectingPlayer) {
             this.handlePerkMenuNavigation(gpList);
             return true;
@@ -22898,7 +22940,7 @@ class Game {
         // ACTION NOW: near-instant incursion timer every wave (not just the
         // first) -- the whole point of the mode is skipping the calm
         // between fights, not just the initial grind up to a loadout.
-        this.prepTimer = this.nowMode ? NOW_MODE.PREP_TIME : 15.0;
+        this.prepTimer = this.nowMode ? NOW_MODE.PREP_TIME : (this.chaosDraftMode ? 5.0 : 15.0);
         
         this.enemiesToSpawn = 5 + this.wave * 4;
         this.rollBossWave(); // may reduce enemiesToSpawn to an escort-sized fraction and set this.isBossWave/pendingBoss
@@ -22949,22 +22991,30 @@ class Game {
 
         if (this.isTestingMode) return; // sandbox never auto-rolls a boss; use the dev menu instead
         if (this.operatorMode) return;  // FPV OPERATOR MODE: no boss waves -- per spec, escalating grunt pressure only (see startNextWave's operator branch)
-        if (this.wave < 4 && !this.forcedBossKey) return; // no organic bosses before the player has a basic loadout -- forced (dev menu) bosses bypass this for testing
-
-        this.wavesSinceLastBoss = (this.wavesSinceLastBoss || 0) + 1;
-
-        // Escalating-chance roll: never happens two waves running, always
-        // happens eventually. Minimum 6-wave gap, chance climbs from there
-        // so it settles around an 7-10 wave cadence on average (median ~8)
-        // rather than the tighter 4-6 spacing this started at -- bosses stay
-        // a genuine event instead of something you cycle through twice by
-        // wave 20.
+        
         let roll = false;
         if (this.forcedBossKey) {
             roll = true;
-        } else if (this.wavesSinceLastBoss >= 6) {
-            let chance = Math.min(0.9, 0.16 * (this.wavesSinceLastBoss - 5));
-            roll = Math.random() < chance;
+        } else if (this.chaosDraftMode) {
+            if (this.wave > 0 && this.wave % 5 === 0) {
+                roll = true;
+            } else {
+                return; // no bosses on other waves in Chaos Draft
+            }
+        } else {
+            if (this.wave < 4 && !this.forcedBossKey) return; // no organic bosses before the player has a basic loadout
+            this.wavesSinceLastBoss = (this.wavesSinceLastBoss || 0) + 1;
+
+            // Escalating-chance roll: never happens two waves running, always
+            // happens eventually. Minimum 6-wave gap, chance climbs from there
+            // so it settles around an 7-10 wave cadence on average (median ~8)
+            // rather than the tighter 4-6 spacing this started at -- bosses stay
+            // a genuine event instead of something you cycle through twice by
+            // wave 20.
+            if (this.wavesSinceLastBoss >= 6) {
+                let chance = Math.min(0.9, 0.16 * (this.wavesSinceLastBoss - 5));
+                roll = Math.random() < chance;
+            }
         }
         if (!roll) return;
 
@@ -23038,6 +23088,28 @@ class Game {
 
         let BossClass = meta.bossClass;
         let boss = new BossClass(sx, sy, key, hpMult);
+
+        if (this.chaosDraftMode) {
+            let trait = ['shielded', 'enraged', 'haste'][Math.floor(Math.random() * 3)];
+            boss.chaosDraftModifier = trait;
+            if (trait === 'shielded') {
+                boss.chaosDraftShield = boss.hp * 0.5;
+            } else if (trait === 'haste') {
+                boss.speed *= 1.35;
+            }
+
+            let traitNames = {
+                shielded: 'SHIELDED (+50% SHIELD)',
+                enraged: 'ENRAGED (SPEED / ATK x1.5 AT <50% HP)',
+                haste: 'SUPERCHARGED (+35% SPEED)'
+            };
+            this.floatingTexts.push(this.spawnFloatingText(
+                boss.x, boss.y - 45,
+                `BOSS TRAIT: ${traitNames[trait]}`,
+                '#ff2a5f', 3.0, 0, -40, 200, true
+            ));
+        }
+
         this.enemies.push(boss);
         this.activeBoss = boss;
         this.setBossHudVisible(true);
@@ -23054,21 +23126,32 @@ class Game {
             this.nightMode = this.mutatorBaseNightMode;
             this.mutatorBaseNightMode = undefined;
         }
+
+        // Restore cryoActive to its pre-mutator value
+        if (this.mutatorBaseCryo !== undefined) {
+            this._cryoActive = this.mutatorBaseCryo;
+            this.mutatorBaseCryo = undefined;
+        }
         
         // Restore timeScale to its slider/default value
         const sld = document.getElementById('sld-time-scale');
         this.timeScale = sld ? parseFloat(sld.value) || 1.0 : 1.0;
         
-        // 2. Check if we should activate a mutator (either random 30% chance from wave 6, or forced by dev dashboard)
+        // 2. Check if we should activate a mutator (either random 30% chance from wave 6, forced by dev dashboard, or forced by Chaos Draft starting at wave 2)
         let roll = false;
         if (this.forcedMutator) {
             roll = true;
-        } else if (this.wave >= 6 && Math.random() < 0.30) {
+        } else if (this.chaosDraftMode && this.wave >= 2) {
+            roll = true;
+        } else if (!this.chaosDraftMode && this.wave >= 6 && Math.random() < 0.30) {
             roll = true;
         }
         
         if (roll) {
-            const mutators = ['blackout', 'swarm', 'adrenaline', 'juggernaut'];
+            let mutators = ['blackout', 'swarm', 'adrenaline', 'juggernaut'];
+            if (this.chaosDraftMode) {
+                mutators.push('cryo');
+            }
             this.activeMutator = this.forcedMutator || mutators[Math.floor(Math.random() * mutators.length)];
             this.forcedMutator = null;
             
@@ -23076,6 +23159,9 @@ class Game {
             if (this.activeMutator === 'blackout') {
                 this.mutatorBaseNightMode = this.nightMode;
                 this.nightMode = true;
+            } else if (this.activeMutator === 'cryo') {
+                this.mutatorBaseCryo = this._cryoActive;
+                this._cryoActive = true;
             } else if (this.activeMutator === 'swarm') {
                 this.enemiesToSpawn = Math.round((5 + this.wave * 4) * 3.0);
             } else if (this.activeMutator === 'adrenaline') {
@@ -23090,7 +23176,8 @@ class Game {
                 blackout: 'BLACKOUT PROTOCOL',
                 swarm: 'SWARM SEASON',
                 adrenaline: 'ADRENALINE RUSH',
-                juggernaut: 'JUGGERNAUT PROTOCOL'
+                juggernaut: 'JUGGERNAUT PROTOCOL',
+                cryo: 'CRYOGENIC ICE STORM'
             };
             
             this.floatingTexts.push(this.spawnFloatingText(
@@ -23449,6 +23536,396 @@ class Game {
         this._safeUnpause();
         if (document.activeElement) document.activeElement.blur();
         this._advanceNowModePerkQueue();
+    }
+
+    openChaosDraftInterface() {
+        this.isPaused = true;
+        this.state = 'shop';
+
+        // Replenish players
+        let activePlayers = [this.player];
+        if (this.isTwoPlayer && this.player2 && !this.player2.dead) {
+            activePlayers.push(this.player2);
+        }
+
+        activePlayers.forEach(p => {
+            // Restore 50% health
+            p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.5);
+            // Restore 50% armor
+            p.armor = Math.min(p.maxArmor, p.armor + p.maxArmor * 0.5);
+
+            // Restock empty/low weapons to 10% max ammo
+            if (p.inventory && p.maxAmmo) {
+                p.inventory.forEach(w => {
+                    let wKey = w.name.toLowerCase();
+                    if (p.ammo[wKey] !== undefined) {
+                        let minAmmo = Math.ceil(p.maxAmmo[wKey] * 0.10);
+                        if (p.ammo[wKey] < minAmmo) {
+                            p.ammo[wKey] = minAmmo;
+                        }
+                    }
+                });
+            }
+        });
+
+        // Initialize queue of players for draft choice
+        this._chaosDraftQueue = [...activePlayers];
+        this._advanceChaosDraftQueue();
+    }
+
+    _advanceChaosDraftQueue() {
+        if (!this._chaosDraftQueue || this._chaosDraftQueue.length === 0) {
+            // Close draft screen, choose mutator, start wave
+            toggleClass('chaos-draft-screen', 'hidden', true);
+            this.state = 'playing';
+            this.isPaused = false;
+            this.startNextWave(); // rolls mutator and spawns next wave!
+            return;
+        }
+
+        const p = this._chaosDraftQueue.shift();
+
+        // Update label
+        const indicator = document.getElementById('chaos-draft-player-indicator');
+        if (indicator) {
+            const isP2 = (p === this.player2);
+            indicator.textContent = isP2 ? 'PLAYER 2 — CHAOS DRAFT' : 'PLAYER 1 — CHAOS DRAFT';
+            indicator.style.color = isP2 ? '#ffb700' : '#d500f9';
+            indicator.style.borderColor = isP2 ? '#ffb700' : '#d500f9';
+            indicator.style.boxShadow = isP2 ? '0 0 12px rgba(255, 183, 0, 0.2)' : '0 0 12px rgba(213, 0, 249, 0.2)';
+        }
+
+        this.chaosDraftSelectionIndex = 0;
+
+        const choices = this.generateChaosDraftChoices(p);
+        const container = document.getElementById('chaos-draft-choices-container');
+        if (container) {
+            container.innerHTML = '';
+            choices.forEach((card, idx) => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'menu-box';
+                cardEl.style.border = `2px solid ${card.color}`;
+                cardEl.style.boxShadow = `0 0 15px ${card.color}40`;
+                cardEl.style.padding = '20px';
+                cardEl.style.cursor = 'pointer';
+                cardEl.style.display = 'flex';
+                cardEl.style.flexDirection = 'column';
+                cardEl.style.justifyContent = 'space-between';
+                cardEl.style.alignItems = 'center';
+                cardEl.style.textAlign = 'center';
+                cardEl.style.transition = 'transform 0.15s ease';
+                cardEl.onmouseenter = () => {
+                    this.chaosDraftSelectionIndex = idx;
+                    this.refreshChaosDraftHighlight();
+                };
+
+                cardEl.innerHTML = `
+                    <div style="width: 100%;">
+                        <div style="font-size: 11px; font-weight: bold; color: ${card.color}; letter-spacing: 2px; margin-bottom: 8px;">[${card.type}]</div>
+                        <div style="font-size: 16px; font-weight: bold; color: #fff; text-shadow: 0 0 5px #fff; margin-bottom: 12px; letter-spacing: 1px;">${card.title}</div>
+                        <div style="font-size: 11px; color: #a9c2c7; line-height: 1.6; margin-bottom: 20px;">${card.desc}</div>
+                    </div>
+                    <button class="neon-btn" style="width: 100%; border-color: ${card.color}; color: ${card.color}; box-shadow: 0 0 8px ${card.color}30; margin: 0;">CHOOSE</button>
+                `;
+
+                cardEl.onclick = () => {
+                    card.apply(p);
+                    // play pickup sound
+                    if (audio) audio.playPickup('weapon');
+                    
+                    // Show confirmation floating text
+                    this.floatingTexts.push(this.spawnFloatingText(
+                        p.x, p.y - 25, `CHOSE: ${card.title}`, card.color, 2.0
+                    ));
+                    
+                    this._advanceChaosDraftQueue();
+                };
+
+                container.appendChild(cardEl);
+            });
+
+            this.refreshChaosDraftHighlight();
+        }
+
+        toggleClass('chaos-draft-screen', 'hidden', false);
+    }
+
+    refreshChaosDraftHighlight() {
+        const container = document.getElementById('chaos-draft-choices-container');
+        if (!container) return;
+        const cards = container.children;
+        for (let i = 0; i < cards.length; i++) {
+            const cardEl = cards[i];
+            const btn = cardEl.querySelector('button');
+            if (i === this.chaosDraftSelectionIndex) {
+                cardEl.style.transform = 'scale(1.05)';
+                cardEl.style.boxShadow = `0 0 25px ${btn ? btn.style.borderColor : 'var(--neon-blue)'}`;
+                if (btn) {
+                    btn.style.backgroundColor = btn.style.borderColor;
+                    btn.style.color = '#000';
+                }
+            } else {
+                cardEl.style.transform = 'scale(1)';
+                cardEl.style.boxShadow = `0 0 15px ${btn ? btn.style.borderColor : 'var(--neon-blue)'}40`;
+                if (btn) {
+                    btn.style.backgroundColor = 'transparent';
+                    btn.style.color = btn.style.borderColor;
+                }
+            }
+        }
+    }
+
+    handleChaosDraftMenuNavigation(gpList) {
+        if (!this._chaosDraftQueue || this._chaosDraftQueue.length === 0) return;
+        if (this.chaosDraftSelectionIndex === undefined) this.chaosDraftSelectionIndex = 0;
+        
+        for (let gp of gpList) {
+            let dLeft = gp.buttons[14].pressed || (gp.axes[0] && gp.axes[0] < -0.5);
+            let dRight = gp.buttons[15].pressed || (gp.axes[0] && gp.axes[0] > 0.5);
+            let btnA = gp.buttons[0].pressed;
+            
+            if (this.dpadCooldown <= 0) {
+                if (dLeft) {
+                    this.chaosDraftSelectionIndex = (this.chaosDraftSelectionIndex - 1 + 3) % 3;
+                    this.dpadCooldown = 0.22;
+                    this.refreshChaosDraftHighlight();
+                    if (audio) audio.playPickup('money');
+                    return;
+                } else if (dRight) {
+                    this.chaosDraftSelectionIndex = (this.chaosDraftSelectionIndex + 1) % 3;
+                    this.dpadCooldown = 0.22;
+                    this.refreshChaosDraftHighlight();
+                    if (audio) audio.playPickup('money');
+                    return;
+                }
+            }
+            
+            if (btnA && this.dpadCooldown <= 0) {
+                const container = document.getElementById('chaos-draft-choices-container');
+                if (container) {
+                    const cards = container.children;
+                    const selectedCard = cards[this.chaosDraftSelectionIndex];
+                    if (selectedCard) {
+                        this.dpadCooldown = 0.30;
+                        selectedCard.click();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    generateChaosDraftChoices(p) {
+        let generators = [];
+
+        // Pool 1: Tactical Perks (from PERK_DEFS that the player doesn't already have)
+        const availablePerks = PERK_DEFS.filter(perk => !p[perk.key]);
+        availablePerks.forEach(perk => {
+            generators.push({
+                type: 'PERK',
+                title: perk.name,
+                desc: perk.desc,
+                color: '#00e5ff',
+                apply: (player) => {
+                    player[perk.key] = true;
+                }
+            });
+        });
+
+        // Pool 2: Cursed Overclocks
+        const oc = this.runOverclocks[p.isPlayer2 ? 'p2' : 'p1'];
+        if (oc) {
+            if (!oc.corrupted.overpressure) {
+                generators.push({
+                    type: 'CURSED OC',
+                    title: 'OVERPRESSURE ROUNDS',
+                    desc: '+25% bullet damage, recoil force +40%, spreads +25%.',
+                    color: '#ff2a5f',
+                    apply: (player) => {
+                        oc.corrupted.overpressure = true;
+                    }
+                });
+            }
+            if (!oc.corrupted.glassNerves) {
+                generators.push({
+                    type: 'CURSED OC',
+                    title: 'GLASS NERVES',
+                    desc: '+28% fire rate, but you take +25% damage.',
+                    color: '#ff2a5f',
+                    apply: (player) => {
+                        oc.corrupted.glassNerves = true;
+                    }
+                });
+            }
+            if (!oc.corrupted.coldBarrel) {
+                generators.push({
+                    type: 'CURSED OC',
+                    title: 'COLD BARREL',
+                    desc: 'Weapon noise -65%, but bullet damage reduced by -15%.',
+                    color: '#ff2a5f',
+                    apply: (player) => {
+                        oc.corrupted.coldBarrel = true;
+                    }
+                });
+            }
+
+            generators.push({
+                type: 'OVERCLOCK',
+                title: 'HOLLOW POINT',
+                desc: 'Increase bullet damage by +10% (stacks).',
+                color: '#ff7a00',
+                apply: (player) => {
+                    oc.hollowPoint = (oc.hollowPoint || 0) + 1;
+                }
+            });
+            generators.push({
+                type: 'OVERCLOCK',
+                title: 'EXO SERVOS',
+                desc: 'Reload and swap speeds improved by +15% (stacks).',
+                color: '#ff7a00',
+                apply: (player) => {
+                    oc.exoServos = (oc.exoServos || 0) + 1;
+                }
+            });
+        }
+
+        // Pool 3: Exo Upgrades (Temporary Meta Progression)
+        generators.push({
+            type: 'EXO UPGRADE',
+            title: 'KEVLAR PLATING',
+            desc: '+25 Max Armor (stacks). Refills armor.',
+            color: '#d500f9',
+            apply: (player) => {
+                player.maxArmor = (player.maxArmor || 50) + 25;
+                player.armor = player.maxArmor;
+            }
+        });
+        generators.push({
+            type: 'EXO UPGRADE',
+            title: 'FIRST AID BUNDLE',
+            desc: '+25 Max HP (stacks). Refills health.',
+            color: '#d500f9',
+            apply: (player) => {
+                player.maxHp = (player.maxHp || 100) + 25;
+                player.hp = player.maxHp;
+            }
+        });
+        generators.push({
+            type: 'EXO UPGRADE',
+            title: 'MAGNETIC HARNESS',
+            desc: '+15px item pickup radius (stacks).',
+            color: '#d500f9',
+            apply: (player) => {
+                player.magneticGearBonus = (player.magneticGearBonus || 0) + 1;
+            }
+        });
+        generators.push({
+            type: 'EXO UPGRADE',
+            title: 'CARDIO BOOSTER',
+            desc: '+20 Max Stamina (stacks). Refills stamina.',
+            color: '#d500f9',
+            apply: (player) => {
+                player.maxStamina = (player.maxStamina || 120) + 20;
+                player.stamina = player.maxStamina;
+            }
+        });
+
+        // Pool 4: Supply Drops (Instants)
+        generators.push({
+            type: 'SUPPLY DROP',
+            title: 'AMMUNITION CRATE',
+            desc: 'Refills reserves to 100% capacity for all carried weapons and +2 grenades.',
+            color: '#ffb700',
+            apply: (player) => {
+                if (player.inventory && player.maxAmmo) {
+                    player.inventory.forEach(w => {
+                        let wKey = w.name.toLowerCase();
+                        if (player.ammo[wKey] !== undefined) {
+                            player.ammo[wKey] = player.maxAmmo[wKey];
+                        }
+                    });
+                }
+                player.grenades = Math.min(player.maxGrenades || 3, player.grenades + 2);
+            }
+        });
+        generators.push({
+            type: 'SUPPLY DROP',
+            title: 'TACTICAL BUNDLE',
+            desc: 'Spawn 1 Auto Turret and 1 Deployable Barrier in inventory.',
+            color: '#ffb700',
+            apply: (player) => {
+                player.turretsCount = (player.turretsCount || 0) + 1;
+                player.barriersCount = (player.barriersCount || 0) + 1;
+            }
+        });
+        generators.push({
+            type: 'SUPPLY DROP',
+            title: 'AIR SUPPORT PACK',
+            desc: 'Launches 4 active Hunter Swarm Drones to defend you.',
+            color: '#ffb700',
+            apply: (player) => {
+                player.hunterSwarmCount = (player.hunterSwarmCount || 0) + 4;
+            }
+        });
+        generators.push({
+            type: 'SUPPLY DROP',
+            title: 'UTILITY PACK',
+            desc: 'Spawns 2 Medpacks and 2 Energy Drinks in inventory.',
+            color: '#ffb700',
+            apply: (player) => {
+                player.medpacks = Math.min(3, (player.medpacks || 0) + 2);
+                player.energyDrinks = Math.min(6, (player.energyDrinks || 0) + 2);
+            }
+        });
+
+        // Expanded Cards: Bad rolls / Extreme pay-offs / Synergies
+        generators.push({
+            type: 'CURSED OC',
+            title: 'CHRONOS MODULE',
+            desc: 'Slows down global time to 0.7x (enemies/bullets crawl), but your actions remain real-time!',
+            color: '#ff2a5f',
+            apply: (player) => {
+                this.setTimeScale(0.70);
+                player.chronosActive = true;
+            }
+        });
+
+        generators.push({
+            type: 'CURSED OC',
+            title: 'EXO-OVERDRIVE CORE',
+            desc: 'Permanent +20% movement acceleration, but max stamina is reduced by -25.',
+            color: '#ff2a5f',
+            apply: (player) => {
+                player.accel *= 1.20;
+                player.maxStamina = Math.max(40, (player.maxStamina || 120) - 25);
+                player.stamina = Math.min(player.maxStamina, player.stamina);
+            }
+        });
+
+        generators.push({
+            type: 'EXO UPGRADE',
+            title: 'NANO-RECOVERY HARNESS',
+            desc: 'Auto-regenerates 2 HP/sec, but movement acceleration is reduced by -10%.',
+            color: '#d500f9',
+            apply: (player) => {
+                player.passiveRegen = (player.passiveRegen || 0) + 2.0;
+                player.accel *= 0.90;
+            }
+        });
+
+        generators.push({
+            type: 'OVERCLOCK',
+            title: 'HAIR TRIGGER',
+            desc: 'Increase weapon fire rate by +5% or improve handling (stacks).',
+            color: '#ff7a00',
+            apply: (player) => {
+                oc.fireRate = (oc.fireRate || 0) + 1;
+            }
+        });
+
+        // Pick 3 random distinct choices
+        let shuffled = generators.sort(() => 0.5 - Math.random());
+        return shuffled.slice(0, 3);
     }
 
     handlePerkMenuNavigation(gpList) {
@@ -24247,22 +24724,24 @@ class Game {
         let { gp1, gp2 } = this._gpFrame.resolved;
 
         let p1Walls = this.map.getWallsNear(this.player.x, this.player.y);
-        this.player.update(dt, this.input, p1Walls, this.gameTime, gp1);
+        let p1Dt = (this.player.chronosActive && this.timeScale > 0) ? (dt / this.timeScale) : dt;
+        this.player.update(p1Dt, this.input, p1Walls, this.gameTime, gp1);
         
         let aimCoords1 = this.getWorldAimCoords(this.player);
         let p1MaxZoom = this.player.weapon.maxZoom || 0.15;
-        this.camera.update(this.player, this.mapW, this.mapH, (this.isTwoPlayer) ? this.width / 2 : this.width, this.height, dt, aimCoords1.x, aimCoords1.y, p1MaxZoom);
+        this.camera.update(this.player, this.mapW, this.mapH, (this.isTwoPlayer) ? this.width / 2 : this.width, this.height, p1Dt, aimCoords1.x, aimCoords1.y, p1MaxZoom);
         
         if (this.isTwoPlayer && this.player2) {
             if (!this.input2) {
                 this.input2 = { keys: {}, mx: this.width / 4, my: this.height / 2, mouseDown: false };
             }
             let p2Walls = this.map.getWallsNear(this.player2.x, this.player2.y);
-            this.player2.update(dt, this.input2, p2Walls, this.gameTime, gp2);
+            let p2Dt = (this.player2.chronosActive && this.timeScale > 0) ? (dt / this.timeScale) : dt;
+            this.player2.update(p2Dt, this.input2, p2Walls, this.gameTime, gp2);
             
             let aimCoords2 = this.getWorldAimCoords(this.player2);
             let p2MaxZoom = this.player2.weapon.maxZoom || 0.15;
-            this.camera2.update(this.player2, this.mapW, this.mapH, this.width / 2, this.height, dt, aimCoords2.x, aimCoords2.y, p2MaxZoom);
+            this.camera2.update(this.player2, this.mapW, this.mapH, this.width / 2, this.height, p2Dt, aimCoords2.x, aimCoords2.y, p2MaxZoom);
         }
         
         let activePlayer = this.player;
@@ -24313,7 +24792,11 @@ class Game {
         }
 
         for (let e of this.enemies) {
-            e.update(dt, this.player, this.map.walls, this.gameTime, this.enemies);
+            let enemyDt = dt;
+            if (e.chaosDraftModifier === 'enraged' && e.hp < e.maxHp * 0.5) {
+                enemyDt *= 1.5;
+            }
+            e.update(enemyDt, this.player, this.map.walls, this.gameTime, this.enemies);
         }
 
         if (this.bossDrones && this.bossDrones.length > 0) {
@@ -24912,6 +25395,46 @@ class Game {
         }
         if (this.player) this.player.flashOpacity = 0;
         if (this.player2) this.player2.flashOpacity = 0;
+
+        if (this.chaosDraftMode) {
+            // Apply automatic wave completion replenishment
+            let activePlayers = [this.player];
+            if (this.isTwoPlayer && this.player2 && !this.player2.dead) {
+                activePlayers.push(this.player2);
+            }
+            activePlayers.forEach(p => {
+                p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.5);
+                p.armor = Math.min(p.maxArmor, p.armor + p.maxArmor * 0.5);
+                if (p.inventory && p.maxAmmo) {
+                    p.inventory.forEach(w => {
+                        let wKey = w.name.toLowerCase();
+                        if (p.ammo[wKey] !== undefined) {
+                            let minAmmo = Math.ceil(p.maxAmmo[wKey] * 0.10);
+                            if (p.ammo[wKey] < minAmmo) {
+                                p.ammo[wKey] = minAmmo;
+                            }
+                        }
+                    });
+                }
+            });
+
+            // Check if upcoming wave is a boss wave (multiple of 5)
+            let nextWave = this.wave + 1;
+            let isBoss = (nextWave > 0 && nextWave % 5 === 0);
+            if (isBoss) {
+                // Auto-advance to boss wave immediately
+                this.floatingTexts.push(this.spawnFloatingText(
+                    this.player.x, this.player.y - 40,
+                    `BOSS SIGNALS DETECTED! PREPARE FOR INVASION`,
+                    '#ff2a5f', 3.0, 0, -30, 200, true
+                ));
+                this.startNextWave();
+            } else {
+                // Open the Chaos Draft selection menu
+                this.openChaosDraftInterface();
+            }
+            return;
+        }
 
         // Toggle P2 shop visibility
         toggleClass('shop-box-p2', 'hidden', !this.isTwoPlayer);
@@ -26388,14 +26911,15 @@ class Game {
     }
 
     setGameMode(mode) {
-        // mode: 'normal' | 'sandbox' | 'operator' | 'now' | 'extraction'
+        // mode: 'normal' | 'sandbox' | 'operator' | 'now' | 'extraction' | 'chaos_draft'
         this.gameMode = mode;
         this.isTestingMode = (mode === 'sandbox');
         this.operatorMode = (mode === 'operator');
         this.nowMode = (mode === 'now');
         this.extractionMode = (mode === 'extraction');
+        this.chaosDraftMode = (mode === 'chaos_draft');
 
-        ['normal', 'sandbox', 'operator', 'now', 'extraction'].forEach(m => {
+        ['normal', 'sandbox', 'operator', 'now', 'extraction', 'chaos_draft'].forEach(m => {
             const btn = document.getElementById('btn-gm-' + m);
             if (btn) btn.classList.toggle('active-mode', m === mode);
         });
@@ -27386,7 +27910,21 @@ class Game {
         this.ctx.globalAlpha = 1.0;
         this.ctx.shadowBlur = 0;
         this.ctx.restore();
-        for (let e of this.enemies) e.draw(this.ctx, cam);
+        for (let e of this.enemies) {
+            e.draw(this.ctx, cam);
+            if (e.chaosDraftShield && e.chaosDraftShield > 0) {
+                this.ctx.save();
+                this.ctx.strokeStyle = '#00e5ff';
+                this.ctx.shadowBlur = 10;
+                this.ctx.shadowColor = '#00e5ff';
+                this.ctx.lineWidth = 3;
+                let shieldRadius = (e.r || 20) * 1.5 + Math.sin(Date.now() / 200) * 3;
+                this.ctx.beginPath();
+                this.ctx.arc(e.x - cam.x, e.y - cam.y, shieldRadius, 0, Math.PI * 2);
+                this.ctx.stroke();
+                this.ctx.restore();
+            }
+        }
         if (this.bossDrones) {
             for (let d of this.bossDrones) d.draw(this.ctx, cam);
         }
