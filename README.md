@@ -61,3 +61,6 @@ If you want to break the game, test heavy artillery early, or turn on god mode:
 1. Rapidly click the "FROZEN SOLDAT" title text on the main menu **10 times**. 
 2. Once the notification pops up, press `~` or `F1` during a match to open the Developer Command Center.
 3. Spawn bosses, force wave mutators (like *Blackout* or *Swarm Season*), and toggle experimental perks.
+
+## Additional Inspiraion:
+Perks, overclocks, skill trees, armory, game mutators inspired by various games from Cyberpunk to Vampire Survivors among others.
