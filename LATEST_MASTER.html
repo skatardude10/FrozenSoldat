@@ -1880,7 +1880,7 @@ function useLeftItem(player) {
             // hard off walls (restitution 0.85 vs the default 0.5) with a
             // slightly longer fuse so a corner shot has time to arrive.
             if (glLvl >= 2) { opts.restitution = 0.85; opts.fuse = 0.9; }
-            game.grenades.push(game.spawnShrapnelGrenade(player.x, player.y, Math.cos(player.angle)*power + player.vx, Math.sin(player.angle)*power + player.vy, opts));
+            game.grenades.push(new ShrapnelGrenade(player.x, player.y, Math.cos(player.angle)*power + player.vx, Math.sin(player.angle)*power + player.vy, opts));
             if (hasGL && game.registerNoise) {
                 // The tube's THOONK is loud -- launched ordnance heats the run.
                 game.registerNoise(player.x, player.y, 2.5);
@@ -4555,9 +4555,7 @@ const cachedPlayerFlashlightCanvas = (() => {
     grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(256, 256);
-    ctx.arc(256, 256, 256, -Math.PI / 4.4, Math.PI / 4.4);
-    ctx.closePath();
+    ctx.arc(256, 256, 256, 0, Math.PI * 2);
     ctx.fill();
     return canvas;
 })();
@@ -4574,9 +4572,7 @@ const cachedDogFlashlightCanvas = (() => {
     grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(128, 128);
-    ctx.arc(128, 128, 128, -Math.PI / 3.0, Math.PI / 3.0);
-    ctx.closePath();
+    ctx.arc(128, 128, 128, 0, Math.PI * 2);
     ctx.fill();
     return canvas;
 })();
@@ -4593,9 +4589,7 @@ const cachedTurretFlashlightCanvas = (() => {
     grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(128, 128);
-    ctx.arc(128, 128, 128, -Math.PI / 12.0, Math.PI / 12.0);
-    ctx.closePath();
+    ctx.arc(128, 128, 128, 0, Math.PI * 2);
     ctx.fill();
     return canvas;
 })();
@@ -6985,33 +6979,15 @@ class MapGen {
     // sensing/LOS lines -- see FPVDrone's sensingTarget) instead of
     // scanning every wall on the map for every candidate.
     _findNearestClearNode(x, y, walls) {
-        if (!this._nodeIndexArray) {
-            this._nodeIndexArray = [];
-            this._nodeDistanceArray = new Float32Array(1024);
-        }
-        if (this._nodeDistanceArray.length < this.navNodes.length) {
-            this._nodeDistanceArray = new Float32Array(this.navNodes.length * 2);
-        }
-
-        let count = 0;
-        for (let i = 0; i < this.navNodes.length; i++) {
-            let n = this.navNodes[i];
+        let candidates = [];
+        for (let n of this.navNodes) {
             if (n.blocked) continue;
-            let dx = n.x - x;
-            let dy = n.y - y;
-            this._nodeDistanceArray[i] = dx*dx + dy*dy;
-            this._nodeIndexArray[count++] = i;
+            candidates.push({ n, d: Math.hypot(n.x - x, n.y - y) });
         }
+        if (candidates.length === 0) return null;
+        candidates.sort((a, b) => a.d - b.d);
 
-        if (count === 0) return null;
-        this._nodeIndexArray.length = count;
-
-        let dists = this._nodeDistanceArray;
-        this._nodeIndexArray.sort((a, b) => dists[a] - dists[b]);
-
-        for (let i = 0; i < count; i++) {
-            let idx = this._nodeIndexArray[i];
-            let n = this.navNodes[idx];
+        for (let { n } of candidates) {
             let midX = (x + n.x) / 2, midY = (y + n.y) / 2;
             let localWalls = this.getWallsNear(midX, midY);
             let clear = !localWalls.some(w => MathUtils.lineIntersectAABB(x, y, n.x, n.y, w));
@@ -7027,7 +7003,7 @@ class MapGen {
         }
         // Fallback: no node had clear LOS -- nearest one regardless (same
         // as the original fallback behavior).
-        return this.navNodes[this._nodeIndexArray[0]];
+        return candidates[0].n;
     }
 
     // PHASE 1 (swarm perf): coarse-keyed, short-TTL path cache. Swarmers
@@ -7105,33 +7081,12 @@ class MapGen {
         const MAX_EXPANSIONS = 800;
         let expansions = 0;
         let bestNode = null, bestH = Infinity;
-        
-        if (!this._astarOpenSet) {
-            this._astarOpenSet = new PriorityQueue((a, b) => {
-                if (a.fScore === b.fScore) {
-                    return a.hScore - b.hScore;
-                }
-                return a.fScore - b.fScore;
-            });
-            this._astarWrapperPool = [];
-        } else {
-            this._astarOpenSet.heap.length = 0;
-        }
-        let openSet = this._astarOpenSet;
-        this._astarWrapperPoolIndex = 0;
-        
-        let getWrapper = (node, fScore, hScore) => {
-            let poolIdx = this._astarWrapperPoolIndex++;
-            if (poolIdx >= this._astarWrapperPool.length) {
-                this._astarWrapperPool.push({ node: null, fScore: 0, hScore: 0, searchId: 0 });
+        let openSet = new PriorityQueue((a, b) => {
+            if (a.fScore === b.fScore) {
+                return a.hScore - b.hScore;
             }
-            let w = this._astarWrapperPool[poolIdx];
-            w.node = node;
-            w.fScore = fScore;
-            w.hScore = hScore;
-            w.searchId = this.currentSearchId;
-            return w;
-        };
+            return a.fScore - b.fScore;
+        });
 
         startNode.gScore = 0;
         let startH = Math.hypot(startNode.x - endX, startNode.y - endY);
@@ -7139,7 +7094,12 @@ class MapGen {
         startNode.searchId = this.currentSearchId;
         startNode.cameFrom = null;
         
-        openSet.push(getWrapper(startNode, startNode.fScore, startH));
+        openSet.push({
+            node: startNode,
+            fScore: startNode.fScore,
+            hScore: startH,
+            searchId: this.currentSearchId
+        });
         
         while (!openSet.isEmpty()) {
             let popped = openSet.pop();
@@ -7198,7 +7158,12 @@ class MapGen {
                     neighbor.fScore = tentativeG + neighborH;
                     neighbor.searchId = this.currentSearchId;
                     
-                    openSet.push(getWrapper(neighbor, neighbor.fScore, neighborH));
+                    openSet.push({
+                        node: neighbor,
+                        fScore: neighbor.fScore,
+                        hScore: neighborH,
+                        searchId: this.currentSearchId
+                    });
                 }
             }
         }
@@ -10373,7 +10338,6 @@ class Enemy extends Entity {
         this.scoreVal = config.score;
         this.weaponType = config.weapon || 'pistol';
         this.lastFire = 0;
-        this.lastMiniDroneTargetTime = 0;
         
         if (this.weaponType === 'sniper') {
             this.fireRate = MathUtils.rand(2.2, 3.5);
@@ -10590,12 +10554,8 @@ class Enemy extends Entity {
                     let dy = p.y - this.y;
                     let dSq = dx*dx + dy*dy;
                     if (dSq < preferredDistSq) {
-                        let hasLOS;
-                        if (this.weaponType === 'sniper') {
-                            hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, p.x, p.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, p.x, p.y, w));
-                        } else {
-                            hasLOS = !nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, p.x, p.y, w));
-                        }
+                        let checkWalls = (this.weaponType === 'sniper') ? walls : nearbyWalls;
+                        let hasLOS = !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, p.x, p.y, w));
                         if (hasLOS) {
                             preferredDistSq = dSq;
                             preferredPlayer = p;
@@ -10769,57 +10729,30 @@ class Enemy extends Entity {
             }
 
             // Line of sight to target
-            let hasLOS;
-            if (this.weaponType === 'sniper') {
-                hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, targetX, targetY).some(w => MathUtils.lineIntersectAABB(this.x, this.y, targetX, targetY, w));
-            } else {
-                hasLOS = !nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, targetX, targetY, w));
-            }
+            let checkWalls = (this.weaponType === 'sniper') ? walls : nearbyWalls;
+            let hasLOS = !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, targetX, targetY, w));
             
             // Player visibility check (for rendering/opacity/name visibility)
             let visibleToPlayers = false;
             if (game) {
-                if (this.weaponType === 'sniper') {
-                    if (!game.player.dead && !game.map.getWallsAlongSegment(this.x, this.y, game.player.x, game.player.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player.x, game.player.y, w))) {
-                        visibleToPlayers = true;
-                    }
-                    if (!visibleToPlayers && game.isTwoPlayer && game.player2 && !game.player2.dead && !game.map.getWallsAlongSegment(this.x, this.y, game.player2.x, game.player2.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player2.x, game.player2.y, w))) {
-                        visibleToPlayers = true;
-                    }
-                    if (!visibleToPlayers && game.player && game.player.activeDrone && !game.player.activeDrone.dead && !game.map.getWallsAlongSegment(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y, w))) {
-                        visibleToPlayers = true;
-                    }
-                    if (!visibleToPlayers && game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && !game.map.getWallsAlongSegment(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y, w))) {
-                        visibleToPlayers = true;
-                    }
-                    if (!visibleToPlayers && game.dogs) {
-                        for (let dog of game.dogs) {
-                            if (!dog.dead && !game.map.getWallsAlongSegment(this.x, this.y, dog.x, dog.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, dog.x, dog.y, w))) {
-                                visibleToPlayers = true;
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    let checkWalls = nearbyWalls;
-                    if (!game.player.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player.x, game.player.y, w))) {
-                        visibleToPlayers = true;
-                    }
-                    if (game.isTwoPlayer && game.player2 && !game.player2.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player2.x, game.player2.y, w))) {
-                        visibleToPlayers = true;
-                    }
-                    if (game.player && game.player.activeDrone && !game.player.activeDrone.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y, w))) {
-                        visibleToPlayers = true;
-                    }
-                    if (game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y, w))) {
-                        visibleToPlayers = true;
-                    }
-                    if (game.dogs) {
-                        for (let dog of game.dogs) {
-                            if (!dog.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, dog.x, dog.y, w))) {
-                                visibleToPlayers = true;
-                                break;
-                            }
+                let checkWalls = (this.weaponType === 'sniper') ? walls : nearbyWalls;
+                if (!game.player.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player.x, game.player.y, w))) {
+                    visibleToPlayers = true;
+                }
+                if (game.isTwoPlayer && game.player2 && !game.player2.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player2.x, game.player2.y, w))) {
+                    visibleToPlayers = true;
+                }
+                if (game.player && game.player.activeDrone && !game.player.activeDrone.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y, w))) {
+                    visibleToPlayers = true;
+                }
+                if (game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y, w))) {
+                    visibleToPlayers = true;
+                }
+                if (game.dogs) {
+                    for (let dog of game.dogs) {
+                        if (!dog.dead && !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, dog.x, dog.y, w))) {
+                            visibleToPlayers = true;
+                            break;
                         }
                     }
                 }
@@ -11037,28 +10970,16 @@ class Enemy extends Entity {
         }
 
         let sepX = 0, sepY = 0;
-        let myCx = (this.x / 128) | 0;
-        let myCy = (this.y / 128) | 0;
-        
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-                let key = ((myCx + dx) * 4096) + (myCy + dy);
-                let bucket = game._sepBuckets.get(key);
-                if (bucket) {
-                    for (let i = 0; i < bucket.length; i++) {
-                        let other = bucket[i];
-                        if (other === this) continue;
-                        let ox = other.x - this.x;
-                        let oy = other.y - this.y;
-                        let dSq = ox*ox + oy*oy;
-                        let minDist = this.r + other.r + 10;
-                        if (dSq < minDist * minDist && dSq > 0) {
-                            let d = Math.sqrt(dSq);
-                            sepX += (this.x - other.x)/d * 180;
-                            sepY += (this.y - other.y)/d * 180;
-                        }
-                    }
-                }
+        for (let other of allEnemies) {
+            if (other === this) continue;
+            let dx = other.x - this.x;
+            let dy = other.y - this.y;
+            let dSq = dx*dx + dy*dy;
+            let minDist = this.r + other.r + 10;
+            if (dSq < minDist * minDist && dSq > 0) {
+                let d = Math.sqrt(dSq);
+                sepX += (this.x - other.x)/d * 180;
+                sepY += (this.y - other.y)/d * 180;
             }
         }
 
@@ -11200,7 +11121,7 @@ class Enemy extends Entity {
                     this.flashCooldown = MathUtils.rand(40, 75);
                     let throwAngle = Math.atan2(closestPlayer.y - this.y, closestPlayer.x - this.x) + (Math.random() - 0.5) * 0.15;
                     let power = 380;
-                    game.grenades.push(game.spawnFlashbang(
+                    game.grenades.push(new Flashbang(
                         this.x, this.y,
                         Math.cos(throwAngle) * power + this.vx,
                         Math.sin(throwAngle) * power + this.vy
@@ -11883,7 +11804,7 @@ class Enemy extends Entity {
             if (!game.operatorMode) {
                 let dropRoll = Math.random();
                 let dropType = dropRoll < 0.4 ? 'medpack' : dropRoll < 0.7 ? 'grenade' : 'redbull';
-                game.items.push(game.spawnItem(this.x, this.y, dropType));
+                game.items.push(new Item(this.x, this.y, dropType));
                 
                 // Kinetic floating text for elite cash
                 let eliteAmt_vx = (Math.random() - 0.5) * 60;
@@ -11902,7 +11823,7 @@ class Enemy extends Entity {
                 if (Math.random() < 0.02) {
                     let perkX = this.x + (Math.random() - 0.5) * 30;
                     let perkY = this.y + (Math.random() - 0.5) * 30;
-                    game.items.push(game.spawnItem(perkX, perkY, 'perk_case'));
+                    game.items.push(new Item(perkX, perkY, 'perk_case'));
                     game.floatingTexts.push(game.spawnFloatingText(
                         perkX, perkY - 20, '⚡ PERK CASE DROPPED', '#00e5ff', 2.0
                     ));
@@ -12037,11 +11958,11 @@ class Boss extends Enemy {
 
         // Bosses always drop a small guaranteed cache -- a real "boss loot"
         // moment rather than the standard per-grunt money-pinata roll.
-        game.items.push(game.spawnItem(this.x - 20, this.y, 'medpack'));
-        game.items.push(game.spawnItem(this.x + 20, this.y, 'grenade'));
-        game.items.push(game.spawnItem(this.x, this.y + 20, 'perk_case'));
+        game.items.push(new Item(this.x - 20, this.y, 'medpack'));
+        game.items.push(new Item(this.x + 20, this.y, 'grenade'));
+        game.items.push(new Item(this.x, this.y + 20, 'perk_case'));
         for (let i = 0; i < 3; i++) {
-            game.items.push(game.spawnItem(this.x + MathUtils.rand(-40, 40), this.y + MathUtils.rand(-40, 40), 'money'));
+            game.items.push(new Item(this.x + MathUtils.rand(-40, 40), this.y + MathUtils.rand(-40, 40), 'money'));
         }
 
         game.applyExplosionShake(this.x, this.y, 45, 260);
@@ -12168,7 +12089,7 @@ class InfiltratorBoss extends Boss {
                 let throwAngle = angleToTarget + (Math.random() - 0.5) * 0.1;
                 let power = MathUtils.clamp(dist * 1.3, 300, 650);
                 if (!game.grenades) game.grenades = [];
-                game.grenades.push(game.spawnEnemyFragGrenade(
+                game.grenades.push(new EnemyFragGrenade(
                     this.x, this.y,
                     Math.cos(throwAngle) * power, Math.sin(throwAngle) * power
                 ));
@@ -13136,7 +13057,10 @@ class MortarMarker {
         game.applyExplosionShake(this.x, this.y, 28, this.r * 1.5);
         game.spawnShockwave(this.x, this.y, this.r * 1.3, 0.3);
 
-        let targets = game.getEnemyBulletBlastEntities();
+        let targets = [game.player];
+        if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+        if (game.turrets) targets.push(...game.turrets);
+        if (game.dogs) targets.push(...game.dogs);
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -14035,24 +13959,22 @@ class Bullet {
         let tracerLen = Math.min(500, Math.max(150, spd * 0.20));
         tracerLen = Math.min(tracerLen, distFromStart);
         
-        let sprite = Bullet._tracerSprites.get(this.color);
-        if (!sprite) {
-            sprite = document.createElement('canvas');
-            sprite.width = 128;
-            sprite.height = 4;
-            let sctx = sprite.getContext('2d');
-            let grad = sctx.createLinearGradient(0, 0, 128, 0); // left to right
-            grad.addColorStop(0, 'rgba(0,0,0,0)'); // left tail
-            grad.addColorStop(1, this.color); // right head
-            sctx.fillStyle = grad;
-            sctx.fillRect(0, 0, 128, 4);
-            Bullet._tracerSprites.set(this.color, sprite);
-        }
+        let nx = this.vx / (spd || 1);
+        let ny = this.vy / (spd || 1);
+        let tailX = bx - nx * tracerLen;
+        let tailY = by - ny * tracerLen;
+        
+        let grad = ctx.createLinearGradient(bx, by, tailX, tailY);
+        grad.addColorStop(0, this.color);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
         
         ctx.save();
-        ctx.translate(bx, by);
-        ctx.rotate(Math.atan2(this.vy, this.vx));
-        ctx.drawImage(sprite, -tracerLen, -0.75, tracerLen, 1.5);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1.0; // Narrower line width as requested
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(tailX, tailY);
+        ctx.stroke();
         ctx.restore();
     }
 
@@ -14074,7 +13996,11 @@ class Bullet {
         let blastRadius = 60;
         let damage = this.dmg * 0.75;
 
-        let targets = game.getBulletBlastEntities(this.shooter);
+        let targets = [...game.enemies];
+        if (game.friendlyFireMode !== 'off') {
+            if (game.player && game.player !== this.shooter) targets.push(game.player);
+            if (game.isTwoPlayer && game.player2 && game.player2 !== this.shooter) targets.push(game.player2);
+        }
 
         for (let ent of targets) {
             if (ent.dead) continue;
@@ -14133,7 +14059,6 @@ class Bullet {
         }
     }
 }
-Bullet._tracerSprites = new Map();
 
 class FPVDrone {
     constructor(x, y, pilot) {
@@ -14547,7 +14472,22 @@ class FPVDrone {
         if (game.camera2) game.camera2.punchZoom(0.12);
         
         let blastRadius = 300; 
-        let entities = game.getBlastEntities();
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
+        }
         
         let preDead = 0;
         for (let ent of entities) {
@@ -14704,7 +14644,7 @@ class FPVDrone {
         if (this.bombsDropped < 3) {
             this.bombsDropped++;
             if (game) {
-                let grenade = game.spawnShrapnelGrenade(this.x, this.y, 0, 0);
+                let grenade = new ShrapnelGrenade(this.x, this.y, 0, 0);
                 game.grenades.push(grenade);
                 audio.playPickup('weapon');
                 for (let i = 0; i < 8; i++) {
@@ -15434,7 +15374,14 @@ class RobotDog extends Entity {
         
         // Separation behavior from other entities (enemies, turrets, barriers, players)
         let sepX = 0, sepY = 0;
-        let entities = game.getDogSeparationEntities(this);
+        let entities = [...game.enemies, game.player];
+        if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+        for (let t of game.turrets) entities.push(t);
+        if (game.dogs) {
+            for (let otherDog of game.dogs) {
+                if (otherDog !== this) entities.push(otherDog);
+            }
+        }
         for (let other of entities) {
             if (other === this || other.dead) continue;
             let d = Math.hypot(other.x - this.x, other.y - this.y);
@@ -16138,7 +16085,22 @@ class MiniDrone extends Entity {
         if (game.camera2) game.camera2.punchZoom(0.04);
         
         let blastRadius = 65;
-        let entities = game.getBlastEntities();
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
+        }
         let preDead = 0;
         for (let ent of entities) {
             if (ent instanceof Enemy && ent.dead) preDead++;
@@ -16243,9 +16205,6 @@ class ShrapnelGrenade {
     // PHASE 3: opts lets the Underbarrel Launcher reuse this class with a
     // launched profile (short fuse, flat arc) instead of a parallel class.
     constructor(x, y, vx, vy, opts) {
-        this.init(x, y, vx, vy, opts);
-    }
-    init(x, y, vx, vy, opts) {
         this.x = x; this.y = y; this.vx = vx; this.vy = vy;
         this.fuse = (opts && opts.fuse !== undefined) ? opts.fuse : 1.8;
         this.r = 6;
@@ -16307,7 +16266,22 @@ class ShrapnelGrenade {
         game.camera.punchZoom(0.08);
         if (game.camera2) game.camera2.punchZoom(0.08);
 
-        let entities = game.getBlastEntities();
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
+        }
         
         let preDead = 0;
         for (let ent of entities) {
@@ -16405,7 +16379,10 @@ class HeCannonShell {
         // Explodes on contact with any player or player-owned asset -- it's
         // an enemy weapon, so its valid targets mirror what enemy Bullets
         // can hit (see Bullet.update's canHit logic for the same list).
-        let targets = game.getEnemyBulletBlastEntities();
+        let targets = [game.player];
+        if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+        if (game.turrets) targets.push(...game.turrets);
+        if (game.dogs) targets.push(...game.dogs);
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dx = this.x - ent.x, dy = this.y - ent.y;
@@ -16427,7 +16404,10 @@ class HeCannonShell {
         game.spawnShockwave(this.x, this.y, 110, 0.25);
 
         let blastRadius = 110;
-        let targets = game.getEnemyBulletBlastEntities();
+        let targets = [game.player];
+        if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+        if (game.turrets) targets.push(...game.turrets);
+        if (game.dogs) targets.push(...game.dogs);
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -16473,9 +16453,6 @@ class HeCannonShell {
 // HeCannonShell/MortarMarker.
 class EnemyFragGrenade {
     constructor(x, y, vx, vy) {
-        this.init(x, y, vx, vy);
-    }
-    init(x, y, vx, vy) {
         this.x = x; this.y = y; this.vx = vx; this.vy = vy;
         this.fuse = 1.5;
         this.r = 6;
@@ -16523,7 +16500,11 @@ class EnemyFragGrenade {
         game.spawnShockwave(this.x, this.y, 150, 0.28);
 
         let blastRadius = 150;
-        let targets = game.getEnemyFragBlastEntities();
+        let targets = [game.player];
+        if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+        if (game.turrets) targets.push(...game.turrets);
+        if (game.dogs) targets.push(...game.dogs);
+        if (game.hostages) targets.push(...game.hostages); // PHASE 2: enemy frags endanger the asset
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -16568,9 +16549,6 @@ class EnemyFragGrenade {
 
 class Flashbang {
     constructor(x, y, vx, vy) {
-        this.init(x, y, vx, vy);
-    }
-    init(x, y, vx, vy) {
         this.x = x; this.y = y; this.vx = vx; this.vy = vy;
         this.fuse = 1.5;
         this.r = 5;
@@ -16651,7 +16629,22 @@ class Flashbang {
         }
 
         // Add up to 15 blast damage to entities (players and enemies) in proximity
-        let entities = game.getBlastEntities();
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
+        }
         
         for (let ent of entities) {
             if (!ent || ent.dead) continue;
@@ -16727,7 +16720,22 @@ class TripMine {
             return true;
         }
 
-        let entities = game.getBlastEntities();
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
+        }
         for (let ent of entities) {
             if (ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -16747,7 +16755,22 @@ class TripMine {
         if (game.camera2) game.camera2.punchZoom(0.06);
         
         let blastRadius = 140;
-        let entities = game.getBlastEntities();
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
+        }
         
         let preDead = 0;
         for (let ent of entities) {
@@ -16824,10 +16847,6 @@ class TripMine {
 
 class Item {
     constructor(x, y, type) {
-        this.init(x, y, type);
-    }
-
-    init(x, y, type) {
         this.x = x; this.y = y; this.type = type; 
         this.r = 8;
         this.t = 0;
@@ -16839,8 +16858,6 @@ class Item {
         // pressure to actually go collect any of it. Aging items out gives
         // a reason to grab loot promptly instead of letting it pile up.
         this.spawnWave = (typeof game !== 'undefined' && game) ? game.wave : 1;
-        this.cacheValue = 0;
-        this.isSandbox = false;
     }
 
     // Waves elapsed since this item dropped. 0 = dropped this wave.
@@ -17075,7 +17092,22 @@ class ExplosiveBarrel {
         if (game.camera2) game.camera2.punchZoom(0.12);
 
         let blastRadius = 300; // same footprint as the FPV drone's detonation
-        let entities = game.getBlastEntities();
+        let entities = [];
+        if (game.friendlyFireMode === 'off') {
+            entities = [...game.enemies];
+        } else if (game.friendlyFireMode === 'standard') {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+        } else {
+            entities = [...game.enemies, game.player];
+            if (game.isTwoPlayer && game.player2) entities.push(game.player2);
+            if (game.turrets) entities.push(...game.turrets);
+            if (game.dogs) entities.push(...game.dogs);
+            if (game.hostages) entities.push(...game.hostages); // PHASE 2: careless splash can kill the asset
+            if (game.miniDrones) entities.push(...game.miniDrones);
+            if (game.player && game.player.activeDrone) entities.push(game.player.activeDrone);
+            if (game.player2 && game.player2.activeDrone) entities.push(game.player2.activeDrone);
+        }
 
         let preDead = 0;
         for (let ent of entities) {
@@ -17660,8 +17692,8 @@ const ObjectiveTypes = {
                         t.x, t.y - 26, 'UPLINK CRACKED — +' + this.intelPer + ' INTEL (CARRIED)',
                         '#ffb700', 2.2, 0, -50, 200, true));
                     // Small supply drop keeps a shopless run sustainable.
-                    game.items.push(game.spawnItem(t.x + 24, t.y, 'medpack'));
-                    game.items.push(game.spawnItem(t.x - 24, t.y, 'redbull'));
+                    game.items.push(new Item(t.x + 24, t.y, 'medpack'));
+                    game.items.push(new Item(t.x - 24, t.y, 'redbull'));
                     if (audio && audio.playTadah) audio.playTadah();
                     // Cracking an uplink is LOUD -- the network notices.
                     game.registerNoise(t.x, t.y, EXTRACTION_TUNING.EVAC_UNLOCK_NOISE / this.required);
@@ -18147,12 +18179,6 @@ class RunLedger {
 
 class Game {
     constructor() {
-        if (!Game._vignetteCache) {
-            Game._vignetteCache = new Map();
-            Game._lowHpPulseCache = new Map();
-            Game._fpvThreatPulseCache = new Map();
-            Game._gogglesVignetteCache = new Map();
-        }
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d', { alpha: false });
         this.crosshair = document.getElementById('crosshair');
@@ -18167,8 +18193,6 @@ class Game {
         this.canvas.width = this.width; this.canvas.height = this.height;
         
         this.mapW = 2200; this.mapH = 2200;
-        this._sepBuckets = new Map();
-        this._sepTouched = [];
         this.permanentMarks = [];
         // Cap on blood/casing/debris/scorch marks kept on the ground at
         // once (see _pushPermanentMark). Was a hardcoded 3000, which at
@@ -18300,10 +18324,6 @@ class Game {
         this.inactiveBullets = [];
         this.inactiveEnemies = [];
         this.inactiveFloatingTexts = [];
-        this.inactiveItems = [];
-        this.inactiveShrapnelGrenades = [];
-        this.inactiveFlashbangs = [];
-        this.inactiveEnemyFrags = [];
         // Ever-incrementing id source for the AI update stagger (see
         // spawnEnemy/RobotDog and the shouldUpdateAI checks in
         // Enemy.update/RobotDog.update). Deliberately never reset/reused --
@@ -18386,121 +18406,6 @@ class Game {
 
         requestAnimationFrame((t) => this.loop(t));
     }
-
-    _nextBlastScratch() {
-        if (!this._blastRing) {
-            this._blastRing = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []];
-            this._blastRingIdx = 0;
-        }
-        let arr = this._blastRing[this._blastRingIdx];
-        this._blastRingIdx = (this._blastRingIdx + 1) & 15;
-        arr.length = 0;
-        return arr;
-    }
-
-    getBlastEntities() {
-        let arr = this._nextBlastScratch();
-        
-        for (let i = 0; i < this.enemies.length; i++) {
-            arr.push(this.enemies[i]);
-        }
-        
-        if (this.friendlyFireMode === 'off') {
-            return arr;
-        }
-        
-        if (this.player) arr.push(this.player);
-        if (this.isTwoPlayer && this.player2) arr.push(this.player2);
-        
-        if (this.friendlyFireMode === 'standard') {
-            return arr;
-        }
-        
-        if (this.turrets) {
-            for (let i = 0; i < this.turrets.length; i++) arr.push(this.turrets[i]);
-        }
-        if (this.dogs) {
-            for (let i = 0; i < this.dogs.length; i++) arr.push(this.dogs[i]);
-        }
-        if (this.hostages) {
-            for (let i = 0; i < this.hostages.length; i++) arr.push(this.hostages[i]);
-        }
-        if (this.miniDrones) {
-            for (let i = 0; i < this.miniDrones.length; i++) arr.push(this.miniDrones[i]);
-        }
-        if (this.player && this.player.activeDrone) arr.push(this.player.activeDrone);
-        if (this.player2 && this.player2.activeDrone) arr.push(this.player2.activeDrone);
-        
-        return arr;
-    }
-
-    getBulletBlastEntities(shooter) {
-        let arr = this._nextBlastScratch();
-        
-        for (let i = 0; i < this.enemies.length; i++) {
-            arr.push(this.enemies[i]);
-        }
-        if (this.friendlyFireMode !== 'off') {
-            if (this.player && this.player !== shooter) arr.push(this.player);
-            if (this.isTwoPlayer && this.player2 && this.player2 !== shooter) arr.push(this.player2);
-        }
-        return arr;
-    }
-
-    getDogSeparationEntities(selfDog) {
-        if (!this._sharedEntityList) {
-            this._sharedEntityList = [];
-        }
-        let arr = this._sharedEntityList;
-        arr.length = 0;
-        
-        for (let i = 0; i < this.enemies.length; i++) {
-            arr.push(this.enemies[i]);
-        }
-        if (this.player) arr.push(this.player);
-        if (this.isTwoPlayer && this.player2) arr.push(this.player2);
-        if (this.turrets) {
-            for (let i = 0; i < this.turrets.length; i++) arr.push(this.turrets[i]);
-        }
-        if (this.dogs) {
-            for (let i = 0; i < this.dogs.length; i++) {
-                let d = this.dogs[i];
-                if (d !== selfDog) arr.push(d);
-            }
-        }
-        return arr;
-    }
-
-    getEnemyFragBlastEntities() {
-        let arr = this._nextBlastScratch();
-        
-        if (this.player) arr.push(this.player);
-        if (this.isTwoPlayer && this.player2) arr.push(this.player2);
-        if (this.turrets) {
-            for (let i = 0; i < this.turrets.length; i++) arr.push(this.turrets[i]);
-        }
-        if (this.dogs) {
-            for (let i = 0; i < this.dogs.length; i++) arr.push(this.dogs[i]);
-        }
-        if (this.hostages) {
-            for (let i = 0; i < this.hostages.length; i++) arr.push(this.hostages[i]);
-        }
-        return arr;
-    }
-
-    getEnemyBulletBlastEntities() {
-        let arr = this._nextBlastScratch();
-        
-        if (this.player) arr.push(this.player);
-        if (this.isTwoPlayer && this.player2) arr.push(this.player2);
-        if (this.turrets) {
-            for (let i = 0; i < this.turrets.length; i++) arr.push(this.turrets[i]);
-        }
-        if (this.dogs) {
-            for (let i = 0; i < this.dogs.length; i++) arr.push(this.dogs[i]);
-        }
-        return arr;
-    }
     
     spawnBullet(x, y, angle, weaponInfo, isPlayerBullet, isAP = false, isHP = false, isNeutral = false) {
         // PHASE 1: accuracy accounting at the single bullet factory. A
@@ -18517,62 +18422,6 @@ class Game {
             b = new Bullet(x, y, angle, weaponInfo, isPlayerBullet, isAP, isHP, isNeutral);
         }
         return b;
-    }
-
-    spawnItem(x, y, type) {
-        if (!this.inactiveItems) {
-            this.inactiveItems = [];
-        }
-        let it;
-        if (this.inactiveItems.length > 0) {
-            it = this.inactiveItems.pop();
-            it.init(x, y, type);
-        } else {
-            it = new Item(x, y, type);
-        }
-        return it;
-    }
-
-    spawnShrapnelGrenade(x, y, vx, vy, opts) {
-        if (!this.inactiveShrapnelGrenades) {
-            this.inactiveShrapnelGrenades = [];
-        }
-        let g;
-        if (this.inactiveShrapnelGrenades.length > 0) {
-            g = this.inactiveShrapnelGrenades.pop();
-            g.init(x, y, vx, vy, opts);
-        } else {
-            g = new ShrapnelGrenade(x, y, vx, vy, opts);
-        }
-        return g;
-    }
-
-    spawnFlashbang(x, y, vx, vy) {
-        if (!this.inactiveFlashbangs) {
-            this.inactiveFlashbangs = [];
-        }
-        let g;
-        if (this.inactiveFlashbangs.length > 0) {
-            g = this.inactiveFlashbangs.pop();
-            g.init(x, y, vx, vy);
-        } else {
-            g = new Flashbang(x, y, vx, vy);
-        }
-        return g;
-    }
-
-    spawnEnemyFragGrenade(x, y, vx, vy) {
-        if (!this.inactiveEnemyFrags) {
-            this.inactiveEnemyFrags = [];
-        }
-        let g;
-        if (this.inactiveEnemyFrags.length > 0) {
-            g = this.inactiveEnemyFrags.pop();
-            g.init(x, y, vx, vy);
-        } else {
-            g = new EnemyFragGrenade(x, y, vx, vy);
-        }
-        return g;
     }
 
     spawnEnemy(x, y, config) {
@@ -18841,7 +18690,7 @@ class Game {
     // exact because the cache stores the dropped value).
     dropIntelCache(p) {
         if (!p || !(p.carriedIntel > 0)) return;
-        const cache = this.spawnItem(p.x, p.y, 'intel_cache');
+        const cache = new Item(p.x, p.y, 'intel_cache');
         cache.cacheValue = p.carriedIntel;
         p.carriedIntel = 0;
         this.items.push(cache);
@@ -21634,19 +21483,14 @@ class Game {
         // just "mostly dark" -- feedback was that even a small amount of
         // world bleed at the boundary read as "transparent" rather than a
         // solid feed. Center stays clear for functional flying.
-        let key = px + "|" + py + "|" + pw + "|" + ph;
-        let vg = Game._gogglesVignetteCache.get(key);
-        if (!vg) {
-            vg = this.ctx.createRadialGradient(
-                px + pw / 2, py + ph / 2, Math.min(pw, ph) * 0.18,
-                px + pw / 2, py + ph / 2, Math.max(pw, ph) * 0.62
-            );
-            vg.addColorStop(0, 'rgba(0,0,0,0)');
-            vg.addColorStop(0.5, 'rgba(0,4,2,0.45)');
-            vg.addColorStop(0.85, 'rgba(0,4,2,0.95)');
-            vg.addColorStop(1, 'rgba(0,4,2,1.0)');
-            Game._gogglesVignetteCache.set(key, vg);
-        }
+        let vg = this.ctx.createRadialGradient(
+            px + pw / 2, py + ph / 2, Math.min(pw, ph) * 0.18,
+            px + pw / 2, py + ph / 2, Math.max(pw, ph) * 0.62
+        );
+        vg.addColorStop(0, 'rgba(0,0,0,0)');
+        vg.addColorStop(0.5, 'rgba(0,4,2,0.45)');
+        vg.addColorStop(0.85, 'rgba(0,4,2,0.95)');
+        vg.addColorStop(1, 'rgba(0,4,2,1.0)');
         this.ctx.fillStyle = vg;
         this.ctx.fillRect(px, py, pw, ph);
 
@@ -22353,7 +22197,7 @@ class Game {
             let itemsToSpawn = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a', 'grenade', 'medpack', 'redbull'];
             let startX = this.mapW / 2 - (itemsToSpawn.length - 1) * 35;
             itemsToSpawn.forEach((type, idx) => {
-                let it = this.spawnItem(startX + idx * 70, this.mapH / 2 - 80, type);
+                let it = new Item(startX + idx * 70, this.mapH / 2 - 80, type);
                 it.isSandbox = true;
                 this.items.push(it);
             });
@@ -22847,8 +22691,6 @@ class Game {
             
             this.items[idxInArray] = this.items[this.items.length - 1];
             this.items.pop();
-            if (!this.inactiveItems) this.inactiveItems = [];
-            this.inactiveItems.push(it);
             
             if (isSandbox && this.isTestingMode) {
                 // STABILITY: game-time queue (see queueGameTimeAction). The
@@ -22857,7 +22699,7 @@ class Game {
                 // the new one. Queue is cleared on reset, so that's gone.
                 this.queueGameTimeAction(3.0, () => {
                     if (this.state === 'playing' && this.items) {
-                        let respawnedItem = this.spawnItem(x, y, type);
+                        let respawnedItem = new Item(x, y, type);
                         respawnedItem.isSandbox = true;
                         this.items.push(respawnedItem);
                     }
@@ -23526,7 +23368,7 @@ class Game {
             spawnX = Math.max(60, Math.min(this.mapW - 60, spawnX));
             spawnY = Math.max(60, Math.min(this.mapH - 60, spawnY));
             
-            this.items.push(this.spawnItem(spawnX, spawnY, itemType));
+            this.items.push(new Item(spawnX, spawnY, itemType));
             if (audio) audio.playPickup('money');
         }
         this.toggleDevDashboard();
@@ -23853,27 +23695,6 @@ class Game {
             this.player2.activeDrone.update(dt, this);
         }
         
-        for (let i = 0; i < this._sepTouched.length; i++) {
-            this._sepTouched[i].length = 0;
-        }
-        this._sepTouched.length = 0;
-        for (let i = 0; i < this.enemies.length; i++) {
-            let e = this.enemies[i];
-            if (e.dead) continue;
-            let cx = (e.x / 128) | 0;
-            let cy = (e.y / 128) | 0;
-            let key = (cx * 4096) + cy;
-            let bucket = this._sepBuckets.get(key);
-            if (!bucket) {
-                bucket = [];
-                this._sepBuckets.set(key, bucket);
-            }
-            if (bucket.length === 0) {
-                this._sepTouched.push(bucket);
-            }
-            bucket.push(e);
-        }
-
         for (let e of this.enemies) {
             e.update(dt, this.player, this.map.walls, this.gameTime, this.enemies);
         }
@@ -24005,16 +23826,6 @@ class Game {
             let gWalls = this.map.getWallsNear(g.x, g.y);
             let active = g.update(dt, gWalls, this);
             if (!active) {
-                if (g instanceof ShrapnelGrenade) {
-                    if (!this.inactiveShrapnelGrenades) this.inactiveShrapnelGrenades = [];
-                    this.inactiveShrapnelGrenades.push(g);
-                } else if (g instanceof Flashbang) {
-                    if (!this.inactiveFlashbangs) this.inactiveFlashbangs = [];
-                    this.inactiveFlashbangs.push(g);
-                } else if (g instanceof EnemyFragGrenade) {
-                    if (!this.inactiveEnemyFragGrenades) this.inactiveEnemyFragGrenades = [];
-                    this.inactiveEnemyFragGrenades.push(g);
-                }
                 this.grenades[i] = this.grenades[this.grenades.length - 1];
                 this.grenades.pop();
             }
@@ -24129,8 +23940,6 @@ class Game {
             if (it.isExpired()) {
                 this.items[i] = this.items[this.items.length - 1];
                 this.items.pop();
-                if (!this.inactiveItems) this.inactiveItems = [];
-                this.inactiveItems.push(it);
                 continue;
             }
 
@@ -24168,27 +23977,27 @@ class Game {
                     continue;
                 }
 
-                this.items.push(this.spawnItem(e.x, e.y, 'money'));
+                this.items.push(new Item(e.x, e.y, 'money'));
 
                 // PHASE 1 (extraction): elites drop an intel chip -- banked
                 // immediately on pickup through the ledger (Phase 0 chip
                 // semantics), a steady trickle on top of the carried
                 // uplink haul.
                 if (this.extractionMode && e.isElite) {
-                    this.items.push(this.spawnItem(e.x + MathUtils.rand(-12, 12), e.y + MathUtils.rand(-12, 12), 'intel'));
+                    this.items.push(new Item(e.x + MathUtils.rand(-12, 12), e.y + MathUtils.rand(-12, 12), 'intel'));
                 }
 
                 let dropRoll = Math.random();
                 if (dropRoll < 0.08) {
                     let weapons = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a'];
                     let weaponToDrop = weapons[Math.floor(Math.random() * weapons.length)];
-                    this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), weaponToDrop));
+                    this.items.push(new Item(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), weaponToDrop));
                 } else if (dropRoll < 0.13) {
-                    this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'grenade'));
+                    this.items.push(new Item(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'grenade'));
                 } else if (dropRoll < 0.15) { 
-                    this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'medpack'));
+                    this.items.push(new Item(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'medpack'));
                 } else if (dropRoll < 0.17) {
-                    this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'redbull'));
+                    this.items.push(new Item(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'redbull'));
                 }
                 
                 // Sterilize pooled references immediately on death rather
@@ -27143,10 +26952,17 @@ class Game {
                 nightCtx.restore();
 
                 // Flashlight cone
+                let coneAngle = Math.PI / 2.2;
+                let startAngle = p.angle - coneAngle / 2;
+                let endAngle = p.angle + coneAngle / 2;
+
                 nightCtx.save();
-                nightCtx.translate(px, py);
-                nightCtx.rotate(p.angle);
-                nightCtx.drawImage(cachedPlayerFlashlightCanvas, -coneRadius, -coneRadius, coneRadius * 2, coneRadius * 2);
+                nightCtx.beginPath();
+                nightCtx.moveTo(px, py);
+                nightCtx.arc(px, py, coneRadius, startAngle, endAngle);
+                nightCtx.closePath();
+                nightCtx.clip();
+                nightCtx.drawImage(cachedPlayerFlashlightCanvas, px - coneRadius, py - coneRadius, coneRadius * 2, coneRadius * 2);
                 nightCtx.restore();
             }
 
@@ -27157,6 +26973,9 @@ class Game {
                     let pos = worldToCanvas(dog.x, dog.y);
                     let coneRadius = 260 * cam.zoom;
                     let ambientRadius = 70 * cam.zoom;
+                    let coneAngle = Math.PI / 1.5;
+                    let startAngle = dog.angle - coneAngle / 2;
+                    let endAngle = dog.angle + coneAngle / 2;
 
                     nightCtx.save();
                     nightCtx.translate(pos.x, pos.y);
@@ -27164,9 +26983,12 @@ class Game {
                     nightCtx.restore();
 
                     nightCtx.save();
-                    nightCtx.translate(pos.x, pos.y);
-                    nightCtx.rotate(dog.angle);
-                    nightCtx.drawImage(cachedDogFlashlightCanvas, -coneRadius, -coneRadius, coneRadius * 2, coneRadius * 2);
+                    nightCtx.beginPath();
+                    nightCtx.moveTo(pos.x, pos.y);
+                    nightCtx.arc(pos.x, pos.y, coneRadius, startAngle, endAngle);
+                    nightCtx.closePath();
+                    nightCtx.clip();
+                    nightCtx.drawImage(cachedDogFlashlightCanvas, pos.x - coneRadius, pos.y - coneRadius, coneRadius * 2, coneRadius * 2);
                     nightCtx.restore();
                 }
             }
@@ -27178,6 +27000,9 @@ class Game {
                     let pos = worldToCanvas(turret.x, turret.y);
                     let coneRadius = 500 * cam.zoom;
                     let ambientRadius = 90 * cam.zoom;
+                    let coneAngle = Math.PI / 6.0;
+                    let startAngle = turret.angle - coneAngle / 2;
+                    let endAngle = turret.angle + coneAngle / 2;
 
                     nightCtx.save();
                     nightCtx.translate(pos.x, pos.y);
@@ -27185,9 +27010,12 @@ class Game {
                     nightCtx.restore();
 
                     nightCtx.save();
-                    nightCtx.translate(pos.x, pos.y);
-                    nightCtx.rotate(turret.angle);
-                    nightCtx.drawImage(cachedTurretFlashlightCanvas, -coneRadius, -coneRadius, coneRadius * 2, coneRadius * 2);
+                    nightCtx.beginPath();
+                    nightCtx.moveTo(pos.x, pos.y);
+                    nightCtx.arc(pos.x, pos.y, coneRadius, startAngle, endAngle);
+                    nightCtx.closePath();
+                    nightCtx.clip();
+                    nightCtx.drawImage(cachedTurretFlashlightCanvas, pos.x - coneRadius, pos.y - coneRadius, coneRadius * 2, coneRadius * 2);
                     nightCtx.restore();
                 }
             }
@@ -27323,17 +27151,12 @@ class Game {
         }
 
         // 1. VIGNETTE
-        let key = x + "|" + y + "|" + w + "|" + h;
-        let vignette = Game._vignetteCache.get(key);
-        if (!vignette) {
-            vignette = this.ctx.createRadialGradient(
-                x + w / 2, y + h / 2, h * 0.25,
-                x + w / 2, y + h / 2, w * 0.75
-            );
-            vignette.addColorStop(0, 'rgba(0,0,0,0)');
-            vignette.addColorStop(1, 'rgba(0,4,12,0.85)');
-            Game._vignetteCache.set(key, vignette);
-        }
+        let vignette = this.ctx.createRadialGradient(
+            x + w / 2, y + h / 2, h * 0.25,
+            x + w / 2, y + h / 2, w * 0.75
+        );
+        vignette.addColorStop(0, 'rgba(0,0,0,0)');
+        vignette.addColorStop(1, 'rgba(0,4,12,0.85)');
         this.ctx.fillStyle = vignette;
         this.ctx.fillRect(x, y, w, h);
 
@@ -27422,17 +27245,12 @@ class Game {
             
             this.ctx.save();
             this.ctx.globalAlpha = Math.max(0, vigAlpha);
-            let key = x + "|" + y + "|" + w + "|" + h;
-            let radGrad = Game._lowHpPulseCache.get(key);
-            if (!radGrad) {
-                radGrad = this.ctx.createRadialGradient(
-                    x + w / 2, y + h / 2, h * 0.15,
-                    x + w / 2, y + h / 2, w * 0.70
-                );
-                radGrad.addColorStop(0, 'rgba(255, 0, 42, 0)');
-                radGrad.addColorStop(1, 'rgba(255, 0, 42, 1.0)');
-                Game._lowHpPulseCache.set(key, radGrad);
-            }
+            let radGrad = this.ctx.createRadialGradient(
+                x + w / 2, y + h / 2, h * 0.15,
+                x + w / 2, y + h / 2, w * 0.70
+            );
+            radGrad.addColorStop(0, 'rgba(255, 0, 42, 0)');
+            radGrad.addColorStop(1, 'rgba(255, 0, 42, 1.0)');
             this.ctx.fillStyle = radGrad;
             this.ctx.fillRect(x, y, w, h);
             this.ctx.restore();
@@ -27450,17 +27268,12 @@ class Game {
 
             this.ctx.save();
             this.ctx.globalAlpha = Math.max(0, vigAlpha);
-            let key = x + "|" + y + "|" + w + "|" + h;
-            let radGrad = Game._fpvThreatPulseCache.get(key);
-            if (!radGrad) {
-                radGrad = this.ctx.createRadialGradient(
-                    x + w / 2, y + h / 2, h * 0.20,
-                    x + w / 2, y + h / 2, w * 0.70
-                );
-                radGrad.addColorStop(0, 'rgba(255, 140, 0, 0)');
-                radGrad.addColorStop(1, 'rgba(255, 140, 0, 1.0)');
-                Game._fpvThreatPulseCache.set(key, radGrad);
-            }
+            let radGrad = this.ctx.createRadialGradient(
+                x + w / 2, y + h / 2, h * 0.20,
+                x + w / 2, y + h / 2, w * 0.70
+            );
+            radGrad.addColorStop(0, 'rgba(255, 140, 0, 0)');
+            radGrad.addColorStop(1, 'rgba(255, 140, 0, 1.0)');
             this.ctx.fillStyle = radGrad;
             this.ctx.fillRect(x, y, w, h);
             this.ctx.restore();
