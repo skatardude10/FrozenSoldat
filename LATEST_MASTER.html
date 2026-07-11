@@ -1132,6 +1132,24 @@
                     <input type="range" id="sld-max-marks" min="0" max="300000" step="1000" value="30000" style="width: 100%; cursor: pointer;" oninput="game.setMaxPermanentMarks(this.value)">
                     <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 30,000 &nbsp;|&nbsp; Range: 0 – 300,000</div>
                 </div>
+
+                <!-- SAVE DATA: export/import for cross-device sync -->
+                <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold; margin-top: 18px;">SAVE DATA (CROSS-DEVICE SYNC)</p>
+                <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left;">
+                    <div style="font-size: 10px; color: #a9c2c7; margin-bottom: 12px; line-height: 1.5;">
+                        Your progress, unlocks, colors, and settings live only in this browser on this device. Export a save file, sync it across your devices (e.g. via Tailscale), and Import it anywhere to carry everything over. Import fully replaces the current save on this device.
+                    </div>
+                    <div id="save-sync-status" style="font-size: 10px; color: #808f9c; margin-bottom: 10px; min-height: 12px;"></div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button id="btn-save-export-file" class="neon-btn" onclick="game.exportSaveFile()" style="margin: 0; font-size: 10px; padding: 6px 12px; border-color: var(--green); color: var(--green);">⬇ EXPORT FILE</button>
+                        <button id="btn-save-import-file" class="neon-btn" onclick="game.importSaveFile()" style="margin: 0; font-size: 10px; padding: 6px 12px; border-color: var(--neon-blue); color: var(--neon-blue);">⬆ IMPORT FILE</button>
+                        <button id="btn-save-export-copy" class="neon-btn" onclick="game.exportSaveClipboard()" style="margin: 0; font-size: 10px; padding: 6px 12px;">📋 COPY</button>
+                        <button id="btn-save-import-paste" class="neon-btn" onclick="game.importSavePrompt()" style="margin: 0; font-size: 10px; padding: 6px 12px;">📥 PASTE</button>
+                    </div>
+                    <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Tip: Export writes <b>frozensoldat_save.json</b>. Point your file-sync at it, then Import that same file on any device.</div>
+                </div>
+                <!-- Hidden file input reused by importSaveFile() -->
+                <input type="file" id="save-import-file-input" accept="application/json,.json" style="display:none;" onchange="game.handleSaveFilePicked(event)">
             </div>
         </div>
         
@@ -21400,7 +21418,9 @@ class Game {
                 ['sld-sfx-vol']
             ],
             performance: [
-                ['sld-max-marks']
+                ['sld-max-marks'],
+                ['btn-save-export-file', 'btn-save-import-file'],
+                ['btn-save-export-copy', 'btn-save-import-paste']
             ]
         };
         // Extraction adds a per-operation nav row (one row per mission card,
@@ -27053,6 +27073,172 @@ class Game {
         } catch(e) {
             console.error("Failed to save data:", e);
         }
+    }
+
+    // ===== SAVE EXPORT / IMPORT (cross-device sync) =====
+    // The game stays a single self-contained HTML: this just moves saveData
+    // in and out of localStorage as JSON. A browser can't silently read a
+    // sibling file (file:// sandbox), so sync is: Export -> your file-sync
+    // moves the bytes -> Import (one tap) on the other device. Imports run
+    // through SAVE_MIGRATIONS, so an older save self-upgrades on the way in.
+
+    _saveStatus(msg, color) {
+        const el = document.getElementById('save-sync-status');
+        if (el) { el.textContent = msg; el.style.color = color || '#808f9c'; }
+    }
+
+    // Serialize current save + a device-agnostic export stamp (used for the
+    // "this file is newer than mine" nicety on import).
+    _serializeSave() {
+        this.saveGameData(); // flush live settings into saveData first
+        const payload = JSON.parse(JSON.stringify(this.saveData));
+        payload.lastExport = Date.now();
+        payload._exportTag = 'frozensoldat';
+        return JSON.stringify(payload, null, 2);
+    }
+
+    exportSaveFile() {
+        try {
+            const data = this._serializeSave();
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'frozensoldat_save.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            this._saveStatus('Exported frozensoldat_save.json ✓', '#39ff14');
+            if (audio) audio.playPickup('money');
+        } catch (e) {
+            console.error('Export failed:', e);
+            this._saveStatus('Export failed — see console.', '#ff2a5f');
+        }
+    }
+
+    exportSaveClipboard() {
+        try {
+            const data = this._serializeSave();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(data).then(
+                    () => this._saveStatus('Save copied to clipboard ✓', '#39ff14'),
+                    () => this._clipboardFallback(data)
+                );
+            } else {
+                this._clipboardFallback(data);
+            }
+            if (audio) audio.playPickup('money');
+        } catch (e) {
+            console.error('Copy failed:', e);
+            this._saveStatus('Copy failed — see console.', '#ff2a5f');
+        }
+    }
+
+    // Clipboard API needs a secure context; on plain file:// it can be absent.
+    // Fall back to a prompt the user can copy from manually.
+    _clipboardFallback(data) {
+        try { window.prompt('Copy your save data:', data); this._saveStatus('Copy from the dialog above.', '#ffb700'); }
+        catch (e) { this._saveStatus('Clipboard unavailable — use Export File.', '#ff2a5f'); }
+    }
+
+    importSaveFile() {
+        const input = document.getElementById('save-import-file-input');
+        if (input) { input.value = ''; input.click(); }
+    }
+
+    handleSaveFilePicked(event) {
+        const file = event && event.target && event.target.files && event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => this._applyImportedSave(reader.result);
+        reader.onerror = () => this._saveStatus('Could not read that file.', '#ff2a5f');
+        reader.readAsText(file);
+    }
+
+    importSavePrompt() {
+        const pasted = window.prompt('Paste your exported save data here:');
+        if (pasted && pasted.trim()) this._applyImportedSave(pasted.trim());
+    }
+
+    // Single import path: parse -> sanity check -> migrate -> commit -> refresh
+    // every dependent menu. Full replace, no confirm (by design).
+    _applyImportedSave(text) {
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch (e) {
+            this._saveStatus('Invalid save data (not valid JSON).', '#ff2a5f');
+            return;
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            this._saveStatus('Invalid save data (wrong format).', '#ff2a5f');
+            return;
+        }
+
+        // "Newer save" nicety: note the relationship, but import regardless.
+        const incomingStamp = typeof parsed.lastExport === 'number' ? parsed.lastExport : null;
+        const currentStamp = typeof this.saveData.lastExport === 'number' ? this.saveData.lastExport : null;
+        let rel = '';
+        if (incomingStamp && currentStamp) {
+            rel = incomingStamp > currentStamp ? ' (newer than local)' :
+                  incomingStamp < currentStamp ? ' (OLDER than local)' : ' (same age as local)';
+        }
+
+        // Strip the transport-only tag; keep lastExport so age carries forward.
+        delete parsed._exportTag;
+
+        // Commit, then run the SAME persistence path (migrations + defaults)
+        // the game uses at boot, so an imported older save self-upgrades and
+        // any missing keys are backfilled. localStorage is written by
+        // loadGameData()'s save at the end of its pipeline via saveGameData().
+        try {
+            localStorage.setItem('frozensoldat_save', JSON.stringify(parsed));
+        } catch (e) {
+            this._saveStatus('Could not write save to this browser.', '#ff2a5f');
+            return;
+        }
+        // Reload the just-written save through the full migration/defaults
+        // pipeline, then re-apply everything that reads saveData.
+        this.loadGameData();
+        this.saveGameData();
+
+        // Refresh all menus/cosmetics that derive from saveData.
+        if (this.renderArmoryTab) this.renderArmoryTab();
+        if (this.renderKitSelector) this.renderKitSelector();
+        if (this.applyPrestigeCosmetics) this.applyPrestigeCosmetics();
+        if (this.renderEscalationList) this.renderEscalationList();
+        if (this.renderPresetList) this.renderPresetList();
+        if (this.refreshAudioTabUI) this.refreshAudioTabUI();
+        if (this.refreshGamepadAssignmentUI) this.refreshGamepadAssignmentUI();
+        this._syncSettingsUIFromSave();
+
+        this._saveStatus('Save imported ✓' + rel + ' — everything updated.', '#39ff14');
+        if (audio) { audio.playPickup('weapon'); }
+    }
+
+    // Push imported saveData values back into the visible Settings controls
+    // (sliders/among buttons) AND live subsystems (audio engine, movement
+    // scheme) so the UI + game state match the freshly loaded save.
+    _syncSettingsUIFromSave() {
+        try {
+            if (this.setScheme) this.setScheme(this.movementScheme);
+            const marks = document.getElementById('sld-max-marks');
+            if (marks) marks.value = this.maxPermanentMarks;
+            const marksLbl = document.getElementById('lbl-max-marks');
+            if (marksLbl) marksLbl.textContent = Number(this.maxPermanentMarks).toLocaleString();
+            const ts = document.getElementById('sld-time-scale');
+            if (ts) ts.value = this.timeScale;
+            // Audio: route through the same single apply-paths the UI uses so
+            // engine gain, sliders, and labels all move together.
+            if (this.changeVolume) {
+                this.changeVolume('music', Math.round((this.saveData.musicVolume ?? 0.5) * 100));
+                this.changeVolume('sfx', Math.round((this.saveData.sfxVolume ?? 0.5) * 100));
+            }
+            if (typeof musicEngine !== 'undefined' && musicEngine && musicEngine.setTrack) {
+                musicEngine.setTrack(this.saveData.musicTrack || 'off');
+            }
+        } catch (e) { /* non-fatal cosmetic sync */ }
     }
 
     saveHighScore(wave) {
