@@ -466,6 +466,14 @@
         background: rgba(57, 255, 20, 0.03); transition: border-color 0.15s, background 0.15s;
     }
     .mission-card:hover { border-color: rgba(57, 255, 20, 0.6); }
+    /* Controller focus highlight for the div-based chips (kits, escalation
+       protocols, mission cards) -- .focused-btn is added by the pad nav code
+       but the base focused-btn rule only targets <button>/<input>. */
+    .mission-card.focused-btn {
+        border-color: #00e5ff !important;
+        box-shadow: 0 0 12px rgba(0, 229, 255, 0.6) !important;
+        background: rgba(0, 229, 255, 0.10) !important;
+    }
     .mission-card.selected {
         border-color: #39ff14; background: rgba(57, 255, 20, 0.09);
         box-shadow: 0 0 10px rgba(57, 255, 20, 0.25);
@@ -866,7 +874,12 @@
                 <!-- PHASE 4: operator kit selection (unlocks live in ARMORY) -->
                 <div id="kit-select-wrap" style="display: flex; align-items: flex-start; margin: 6px 0;">
                     <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">OPERATOR KIT:</label>
-                    <div id="kit-select-list" style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;"></div>
+                    <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
+                        <div id="kit-select-list" style="display: flex; flex-direction: column; gap: 4px;"></div>
+                        <!-- Always-visible description of the currently selected/focused kit.
+                             Fixes touch/mouse users having no way to read the title-attr tooltip. -->
+                        <div id="kit-desc-panel" style="font-size:10px; color:#a9c2c7; line-height:1.4; min-height:14px; border-left:2px solid rgba(0,229,255,0.4); padding-left:8px; margin-top:2px;"></div>
+                    </div>
                 </div>
 
                 <!-- PHASE 2: mission select (extraction ops only) -->
@@ -876,6 +889,8 @@
                     <!-- PHASE 3: opt-in risk/reward toggles -->
                     <label style="font-weight: bold; color: #d500f9; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin: 8px 0 4px 0;">ESCALATION PROTOCOLS <span id="escalation-bonus-lbl" style="color:#a9c2c7; font-weight:normal;"></span></label>
                     <div id="escalation-list" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+                    <!-- Always-visible description of the selected/focused protocol (touch/mouse/controller). -->
+                    <div id="escalation-desc-panel" style="font-size:10px; color:#a9c2c7; line-height:1.4; min-height:14px; border-left:2px solid rgba(213,0,249,0.4); padding-left:8px; margin-top:4px;"></div>
                     <!-- PHASE 4: loadout presets (mission + protocols + kits + difficulty) -->
                     <label style="font-weight: bold; color: #00e5ff; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin: 8px 0 4px 0;">LOADOUT PRESETS <span style="color:#a9c2c7; font-weight:normal;">— TAP TO APPLY, 💾 TO SAVE CURRENT</span></label>
                     <div id="preset-list" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
@@ -18580,7 +18595,7 @@ class Game {
         this.prepTimer = 0;
         this.selectedMapId = -1;
         this.saveData = {
-            movementScheme: 'player',
+            movementScheme: 'screen',
             highScores: [],
             timeScale: 1.0,
             startingCash: 0,
@@ -18601,7 +18616,7 @@ class Game {
         this.startingCash = 0;
         this.friendlyFireMode = 'standard';
         this.nightMode = false;
-        this.movementScheme = 'player'; 
+        this.movementScheme = 'screen'; 
         this.gamepadConnected = false;
         
         this.initializeParticlePool();
@@ -20586,7 +20601,7 @@ class Game {
         let { gp1, gp2 } = frame.resolved;
 
         // --- Sub-Modal Overlay Interception (must be checked before all other states) ---
-        if (this._chaosDraftQueue && this._chaosDraftQueue.length > 0) {
+        if (this._chaosDraftActive) {
             this.handleChaosDraftMenuNavigation(gpList);
             return true;
         }
@@ -20805,6 +20820,20 @@ class Game {
                         this.gpadButtonCooldown = 0.3;
                     }
                 }
+
+                // --- F / USE key controller mapping ---
+                // The drill (Player.update's `input.keys['f']` block) and the
+                // discrete pickup share the physical F key on keyboard. Square
+                // (button 2) already fires the ONE-SHOT pickup above; here we
+                // additionally bridge a HELD button straight into the same
+                // `input.keys['f']` flag the keyboard sets, so holding it grinds
+                // walls / drills exactly like holding F. Button 2 (Square/X) is
+                // the natural "use" face button -- hold it to drill, tap it to
+                // pick up (the cooldown-gated pickup above still fires on tap).
+                // Player-2 writes into its own input object (input2), mirroring
+                // how the keyboard-only P1 path works, so co-op drills too.
+                let pIn = playerInstance.isPlayer2 ? this.input2 : this.input;
+                if (pIn) pIn.keys['f'] = gp.buttons[2].pressed;
 
                 // Left Stick Press (L3) - Use Left Selector. Tracked via a
                 // real prev-frame press/release edge (not the shared
@@ -21259,10 +21288,17 @@ class Game {
             ['btn-mode-1p', 'btn-mode-2p'],
             ['btn-env-day', 'btn-env-night'],
             ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
-            ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator', 'btn-gm-now', 'btn-gm-extraction']
+            ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator', 'btn-gm-now', 'btn-gm-extraction', 'btn-gm-chaos_draft']
         ];
+        // Operator kit chips as a horizontal nav row (P1 ids only -- see
+        // renderKitSelector). Only owned chips carry an onclick, but every id
+        // exists in the DOM so the pad can traverse them; A on a locked chip
+        // just re-shows its (UNLOCK IN ARMORY) description, harmless.
+        playRows.push(KIT_ORDER.map(id => 'kit-chip-' + id));
         if (this.extractionMode) {
             for (const missionId of MISSION_ORDER) playRows.push(['mission-card-' + missionId]);
+            // Escalation protocol toggles (only rendered in extraction mode).
+            playRows.push(ESCALATION_ORDER.map(id => 'esc-chip-' + id));
         }
         playRows.push(['btn-start']);
         playRows.push(['btn-exit']);
@@ -21523,7 +21559,7 @@ class Game {
     }
 
     refreshMainMenuHighlight() {
-        let allBtns = document.querySelectorAll('#start-screen button, #start-screen input');
+        let allBtns = document.querySelectorAll('#start-screen button, #start-screen input, #start-screen .mission-card');
         allBtns.forEach(btn => btn.classList.remove('focused-btn'));
 
         let activeTabElement = document.querySelector('.tab-content.active');
@@ -21557,6 +21593,11 @@ class Game {
                 if (mId === 'random') mId = '-1';
                 if (this.previewMap) this.previewMap(parseInt(mId));
             }
+            // Surface the focused kit/protocol description for controller users
+            // (same panel touch/mouse populate), so a pad player can read what
+            // each chip does without a hover cursor.
+            if (targetElement.id.startsWith('kit-chip-')) this.showKitDesc(targetElement);
+            else if (targetElement.id.startsWith('esc-chip-')) this.showEscDesc(targetElement);
         }
     }
 
@@ -23638,6 +23679,7 @@ class Game {
     _advanceChaosDraftQueue() {
         if (!this._chaosDraftQueue || this._chaosDraftQueue.length === 0) {
             // Close draft screen, choose mutator, start wave
+            this._chaosDraftActive = false; // gamepad dispatch guard -- draft is over
             toggleClass('chaos-draft-screen', 'hidden', true);
             this.state = 'playing';
             this.isPaused = false;
@@ -23646,6 +23688,12 @@ class Game {
         }
 
         const p = this._chaosDraftQueue.shift();
+        // A card screen is now on-screen for THIS player. The queue may be
+        // empty at this point (e.g. single-player: one entry, just shifted),
+        // so queue length alone can't tell the gamepad dispatcher a draft is
+        // live -- this explicit flag does. Cleared only when the whole draft
+        // sequence closes (above).
+        this._chaosDraftActive = true;
 
         // Update label
         const indicator = document.getElementById('chaos-draft-player-indicator');
@@ -23738,7 +23786,7 @@ class Game {
     }
 
     handleChaosDraftMenuNavigation(gpList) {
-        if (!this._chaosDraftQueue || this._chaosDraftQueue.length === 0) return;
+        if (!this._chaosDraftActive) return;
         if (this.chaosDraftSelectionIndex === undefined) this.chaosDraftSelectionIndex = 0;
         
         for (let gp of gpList) {
@@ -26909,9 +26957,12 @@ class Game {
             const p = ESCALATION_PROTOCOLS[id];
             const on = !!esc[id];
             if (on) bonus += p.bonus;
-            html += '<div class="mission-card' + (on ? ' selected' : '') + '" title="' + p.desc + '"'
+            const descTxt = p.desc.replace(/"/g, '&quot;');
+            html += '<div class="mission-card' + (on ? ' selected' : '') + '" id="esc-chip-' + id + '" title="' + descTxt + '"'
+                 + ' data-escname="' + p.name.replace(/"/g, '&quot;') + '" data-escdesc="' + descTxt + '"'
                  + ' style="padding:5px 8px; cursor:pointer; border-color:' + (on ? '#d500f9' : 'rgba(213,0,249,0.35)') + ';"'
-                 + ' onclick="game.toggleEscalation(\'' + id + '\')">'
+                 + ' onmouseenter="game.showEscDesc(this)"'
+                 + ' onclick="game.toggleEscalation(\'' + id + '\'); game.showEscDesc(this)">'
                  + '<div class="mission-card-name" style="color:#d500f9; font-size:10px;">' + (on ? '☑ ' : '☐ ') + p.name
                  + ' <span style="color:#39ff14;">+' + Math.round(p.bonus * 100) + '%</span></div>'
                  + '</div>';
@@ -26921,6 +26972,19 @@ class Game {
         if (lbl) lbl.textContent = bonus > 0
             ? '— ACTIVE INTEL BONUS +' + Math.round(bonus * 100) + '%'
             : '— OPT-IN RISK, BONUS INTEL';
+        // Seed the desc panel so it's populated for touch/mouse before any hover.
+        const seed = wrap.querySelector('.mission-card');
+        if (seed) this.showEscDesc(seed);
+    }
+
+    // Escalation twin of showKitDesc -- populates the always-visible protocol
+    // description panel from hover, tap/click, or controller focus.
+    showEscDesc(el) {
+        const panel = document.getElementById('escalation-desc-panel');
+        if (!panel || !el) return;
+        const nm = el.getAttribute('data-escname') || '';
+        const ds = el.getAttribute('data-escdesc') || '';
+        panel.innerHTML = nm ? ('<span style="color:#d500f9; font-weight:bold;">' + nm + '</span> — ' + ds) : ds;
     }
 
     toggleEscalation(id) {
@@ -26946,7 +27010,11 @@ class Game {
     renderKitSelector() {
         const wrap = document.getElementById('kit-select-list');
         if (!wrap) return;
-        const row = (pKey, label, color) => {
+        // pIdx marks the P1 row so ONLY its chips get the stable, gamepad-
+        // navigable ids (kit-chip-<id>). getMainMenuTabRows() references those
+        // exact ids; P2 kit selection stays mouse/touch, matching how the pad
+        // menu nav is P1-centric everywhere else.
+        const row = (pKey, label, color, pIdx) => {
             const cur = OPERATOR_KITS[this.saveData[pKey]] ? this.saveData[pKey] : 'standard';
             let out = '<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">'
                     + '<span style="font-size:10px; color:' + color + '; width:20px; text-align:left;">' + label + '</span>';
@@ -26954,18 +27022,39 @@ class Game {
                 const k = OPERATOR_KITS[id];
                 const owned = this._kitOwned(id);
                 const sel = (cur === id);
+                const descTxt = (k.desc + (owned ? '' : ' (UNLOCK IN ARMORY)')).replace(/"/g, '&quot;');
                 out += '<div class="mission-card' + (sel ? ' selected' : '') + (owned ? '' : ' locked') + '"'
-                     + ' title="' + k.desc + (owned ? '' : ' (UNLOCK IN ARMORY)') + '"'
+                     + (pIdx === 1 ? ' id="kit-chip-' + id + '"' : '')
+                     + ' data-kitname="' + (k.name).replace(/"/g, '&quot;') + '"'
+                     + ' data-kitdesc="' + descTxt + '"'
+                     + ' title="' + descTxt + '"'
                      + ' style="padding:4px 8px; cursor:' + (owned ? 'pointer' : 'default') + '; font-size:10px;'
                      + ' border-color:' + (sel ? '#00e5ff' : 'rgba(0,229,255,0.3)') + ';"'
-                     + (owned ? ' onclick="game.setKit(\'' + pKey + '\',\'' + id + '\')"' : '') + '>'
+                     + ' onmouseenter="game.showKitDesc(this)"'
+                     + (owned ? ' onclick="game.setKit(\'' + pKey + '\',\'' + id + '\'); game.showKitDesc(this)"' : ' onclick="game.showKitDesc(this)"') + '>'
                      + (owned ? (sel ? '☑ ' : '☐ ') : '🔒 ') + k.name + '</div>';
             }
             return out + '</div>';
         };
-        let html = row('kitP1', 'P1', '#00e5ff');
-        if (this.isTwoPlayer) html += row('kitP2', 'P2', '#ffb700');
+        let html = row('kitP1', 'P1', '#00e5ff', 1);
+        if (this.isTwoPlayer) html += row('kitP2', 'P2', '#ffb700', 2);
         wrap.innerHTML = html;
+        // Seed the description panel with the currently-selected P1 kit so the
+        // panel is never blank on first render (touch/mouse users see it too).
+        const curId = OPERATOR_KITS[this.saveData.kitP1] ? this.saveData.kitP1 : 'standard';
+        const seed = wrap.querySelector('#kit-chip-' + curId) || wrap.querySelector('.mission-card');
+        if (seed) this.showKitDesc(seed);
+    }
+
+    // Writes the given kit chip's name+desc into the always-visible panel.
+    // Shared by hover, tap/click, and controller-focus so every input method
+    // surfaces the same info (the old title= tooltip was mouse-hover only).
+    showKitDesc(el) {
+        const panel = document.getElementById('kit-desc-panel');
+        if (!panel || !el) return;
+        const nm = el.getAttribute('data-kitname') || '';
+        const ds = el.getAttribute('data-kitdesc') || '';
+        panel.innerHTML = nm ? ('<span style="color:#00e5ff; font-weight:bold;">' + nm + '</span> — ' + ds) : ds;
     }
 
     setKit(pKey, id) {
