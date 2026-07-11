@@ -858,7 +858,7 @@
                         <button id="btn-gm-sandbox" onclick="game.setGameMode('sandbox')" style="font-size: 11px; padding: 5px 10px; margin: 0;">TESTING SANDBOX</button>
                         <button id="btn-gm-operator" onclick="game.setGameMode('operator')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff7a00; color: #ff7a00;">FPV OPERATOR</button>
                         <button id="btn-gm-now" onclick="game.setGameMode('now')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff2a5f; color: #ff2a5f; box-shadow: 0 0 8px rgba(255, 42, 95, 0.4);">ACTION NOW</button>
-                        <button id="btn-gm-extraction" onclick="game.setGameMode('extraction')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #39ff14; color: #39ff14; box-shadow: 0 0 8px rgba(57, 255, 20, 0.35);">EXTRACTION</button>
+                        <button id="btn-gm-extraction" onclick="game.setGameMode('extraction')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #d500f9; color: #d500f9; box-shadow: 0 0 8px rgba(213, 0, 249, 0.35);">EXTRACTION</button>
                     </div>
                 </div>
 
@@ -1138,7 +1138,7 @@
                     <li><b>Operator Kits (Phase 4):</b> Unlock BREACHER / GHOST / TECHNICIAN in the Armory, then pick one per player on the main menu — each grants a starting loadout, a passive, and cash back on a shop category.</li>
                     <li><b>Mission Modifiers:</b> Some ops run under field conditions — CRYO (iced ground, everyone slides), BLACKOUT (forced night), SCRAMBLER (objective markers only resolve close-in). Badges show on the mission card.</li>
                     <li><b>Patrols:</b> Below HUNTED heat, extraction squads walk patrol beats instead of converging on you. Stay quiet and unseen and they stay dumb; get spotted, shot at, or let the grid hit HUNTED and it's weapons-free.</li>
-                    <li><b>Ricochet Fuse:</b> Underbarrel Launcher level 2 — launched grenades bank hard off walls for corner shots.</li>
+                    <li><b>ARC SIGHTS:</b> Underbarrel Launcher level 2 — hold to walk out a range marker, release to lob a grenade dead onto it, clean over cover.</li>
                     <li><b>Loadout Presets:</b> Three slots under the mission ladder snapshot your mission + protocols + kits + difficulty for one-tap redeploys.</li>
                 </ul>
 
@@ -1180,7 +1180,7 @@
                     <div class="stat-line">Speed Upgrade: <span id="shop-stat-speed-p1" style="color:#ffb700">0</span> / 4</div>
                     <div class="stat-line">Loadout Weight: <span id="shop-stat-weight-p1" style="color:var(--red)">0</span> lbs</div>
                     <div class="stat-line">Exosuit Speed: <span id="shop-stat-speed-multi-p1" style="color:var(--red)">100%</span></div>
-                    <div class="stat-line">Grenades: <span id="shop-stat-grenades-p1">0</span> / 3</div>
+                    <div class="stat-line">Grenades: <span id="shop-stat-grenades-p1">0</span> / <span id="shop-stat-maxgrenades-p1">3</span></div>
                     <div class="stat-line">Trip Mines: <span id="shop-stat-mines-p1">0</span> / 3</div>
                     <div class="stat-line">Barriers: <span id="shop-stat-barriers-p1">0</span> / 5</div>
                     <div class="stat-line">FPV Drones: <span id="shop-stat-drones-p1">0</span> / 3</div>
@@ -1282,7 +1282,7 @@
                     <div class="stat-line">Speed Upgrade: <span id="shop-stat-speed-p2" style="color:#ffb700">0</span> / 4</div>
                     <div class="stat-line">Loadout Weight: <span id="shop-stat-weight-p2" style="color:var(--red)">0</span> lbs</div>
                     <div class="stat-line">Exosuit Speed: <span id="shop-stat-speed-multi-p2" style="color:var(--red)">100%</span></div>
-                    <div class="stat-line">Grenades: <span id="shop-stat-grenades-p2">0</span> / 3</div>
+                    <div class="stat-line">Grenades: <span id="shop-stat-grenades-p2">0</span> / <span id="shop-stat-maxgrenades-p2">3</span></div>
                     <div class="stat-line">Trip Mines: <span id="shop-stat-mines-p2">0</span> / 3</div>
                     <div class="stat-line">Barriers: <span id="shop-stat-barriers-p2">0</span> / 5</div>
                     <div class="stat-line">FPV Drones: <span id="shop-stat-drones-p2">0</span> / 3</div>
@@ -1876,10 +1876,6 @@ function useLeftItem(player) {
             let opts  = hasGL ? { fuse: 0.75, vz: 60 } : {};
             // PHASE 4 (BREACHER kit): +15% blast radius rides the opts param.
             if (player.kitBlastMult && player.kitBlastMult !== 1) opts.radiusMult = player.kitBlastMult;
-            // PHASE 4 (RICOCHET FUSE, launcher L2): launched rounds bank
-            // hard off walls (restitution 0.85 vs the default 0.5) with a
-            // slightly longer fuse so a corner shot has time to arrive.
-            if (glLvl >= 2) { opts.restitution = 0.85; opts.fuse = 0.9; }
             game.grenades.push(game.spawnShrapnelGrenade(player.x, player.y, Math.cos(player.angle)*power + player.vx, Math.sin(player.angle)*power + player.vy, opts));
             if (hasGL && game.registerNoise) {
                 // The tube's THOONK is loud -- launched ordnance heats the run.
@@ -1898,6 +1894,75 @@ function useLeftItem(player) {
                 audio.playMinePlace(player.x, player.y);
             }
         }
+    }
+}
+
+// PHASE 5 (UNDERBARREL LAUNCHER Lvl2 ARC SIGHTS): the actual lob, fired on
+// release of a genuine hold. Same ShrapnelGrenade/blast as the flat tube
+// shot -- only the delivery (velocity + isArcShot wall-passthrough) differs.
+function fireArcShot(player) {
+    if (!player || player.grenades <= 0) return;
+    player.grenades--;
+    const dist = player.glChargeDist || GL_ARC.MIN_DIST;
+    const targetX = player.x + Math.cos(player.angle) * dist;
+    const targetY = player.y + Math.sin(player.angle) * dist;
+    const vx = (targetX - player.x) / GL_ARC.FLIGHT_TIME;
+    const vy = (targetY - player.y) / GL_ARC.FLIGHT_TIME;
+    let opts = { fuse: GL_ARC.FLIGHT_TIME, vz: GL_ARC.ARC_VZ, isArcShot: true };
+    // PHASE 4 (BREACHER kit): +15% blast radius rides the opts param, same
+    // passthrough as the flat tube shot.
+    if (player.kitBlastMult && player.kitBlastMult !== 1) opts.radiusMult = player.kitBlastMult;
+    game.grenades.push(game.spawnShrapnelGrenade(player.x, player.y, vx, vy, opts));
+    if (game.registerNoise) {
+        // Same THOONK as the flat tube shot -- launched ordnance heats the run.
+        game.registerNoise(player.x, player.y, 2.5);
+    }
+    if (audio && audio.playGrenadeThrow) {
+        audio.playGrenadeThrow(player.x, player.y);
+    }
+}
+
+// Press/release wiring shared by keyboard, gamepad, and touch so all three
+// input paths behave identically. tryStartGLCharge() returns true when it
+// took over the press (caller must NOT also call useLeftItem in that
+// case); every other left item, and GL at L0/L1, returns false so callers
+// fall through to the existing instant tap-to-use path untouched.
+function tryStartGLCharge(player) {
+    if (!player || player.leftSelectIdx !== 2) return false;
+    const glLvl = (game && game.saveData && game.saveData.metaUpgrades)
+        ? (game.saveData.metaUpgrades.underbarrelLauncher || 0) : 0;
+    if (glLvl < 2 || player.grenades <= 0) return false;
+    if (!player.glCharging) {
+        player.glCharging = true;
+        player.glChargeDist = GL_ARC.MIN_DIST;
+        player.glHoldTime = 0;
+    }
+    return true; // already-charging repeats (e.g. keyboard auto-repeat) are a no-op
+}
+
+function releaseGLCharge(player) {
+    if (!player || !player.glCharging) return;
+    const tapped = player.glHoldTime < 0.15; // muscle-memory tap == the old instant L1 shot
+    const savedDist = player.glChargeDist;    // snapshot BEFORE clearing
+    player.glCharging = false;
+    player.glChargeDist = 0;
+    player.glHoldTime = 0;
+    if (tapped) {
+        useLeftItem(player);
+    } else {
+        player.glChargeDist = savedDist;      // restore so fireArcShot reads it
+        fireArcShot(player);
+        player.glChargeDist = 0;              // clean up after launch
+    }
+}
+
+// Cancel with no launch and no refund (the grenade isn't spent until
+// release) -- used on death, pause-menu open, and weapon/selector swaps.
+function cancelGLCharge(player) {
+    if (player && player.glCharging) {
+        player.glCharging = false;
+        player.glChargeDist = 0;
+        player.glHoldTime = 0;
     }
 }
 
@@ -2071,7 +2136,7 @@ function renderHUDSelectors(player, suffix) {
             let items = [
                 { name: 'Medpack', count: player.medpacks, max: 3, icon: SVGIcons.medpack },
                 { name: 'Energy Drink', count: player.energyDrinks, max: 6, icon: SVGIcons.boost },
-                { name: 'Grenade', count: player.grenades, max: 3, icon: SVGIcons.grenade },
+                { name: 'Grenade', count: player.grenades, max: player.maxGrenades || 3, icon: SVGIcons.grenade },
                 { name: 'Trip Mine', count: player.mines, max: 3, icon: SVGIcons.mine }
             ];
             items.forEach((item, idx) => {
@@ -2300,6 +2365,33 @@ class AudioEngine {
         this.echoGain2.connect(this.lowpassFilter);
         
         this.noiseBuffer = this.createNoiseBuffer();
+        this._initVoicePool();
+    }
+
+    // PERF (item 10): a pool of pre-connected Filter->Gain->EchoGain
+    // chains, reused by playBakedSound() instead of building a fresh
+    // Filter+Gain graph for every single sound event. AudioBufferSourceNode
+    // is one-shot by spec (can't be pooled or have its buffer swapped after
+    // start()) -- only the chain DOWNSTREAM of the source is poolable, so
+    // that's all this pools. echoGain is always connected to echoBusInput
+    // and just held at 0 gain when a given sound doesn't use the echo tap,
+    // avoiding a connect/disconnect per use for that tap specifically.
+    _initVoicePool() {
+        const VOICE_COUNT = 24;
+        this.voicePool = [];
+        for (let i = 0; i < VOICE_COUNT; i++) {
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 20000;
+            const gain = this.ctx.createGain();
+            gain.gain.value = 1.0;
+            filter.connect(gain);
+            const echoGain = this.ctx.createGain();
+            echoGain.gain.value = 0;
+            gain.connect(echoGain);
+            if (this.echoBusInput) echoGain.connect(this.echoBusInput);
+            this.voicePool.push({ filter, gain, echoGain, busyUntil: 0, destination: null });
+        }
     }
     
     resume() { 
@@ -3217,6 +3309,36 @@ class AudioEngine {
         }
         let hasEcho = this.echoBusInput && this.ECHO_SOUNDS.has(baseName);
 
+        // PERF (item 10): reuse a free pooled Filter->Gain->EchoGain chain
+        // (see _initVoicePool) instead of building a fresh one. A voice is
+        // free once its previous tail has fully finished (busyUntil <=
+        // now) -- never touch a still-busy voice, that would pop its tail.
+        let voice = null;
+        if (this.voicePool) {
+            const now = this.ctx.currentTime;
+            for (let i = 0; i < this.voicePool.length; i++) {
+                if (this.voicePool[i].busyUntil <= now) { voice = this.voicePool[i]; break; }
+            }
+        }
+
+        if (voice) {
+            voice.filter.frequency.value = cutoff < 18000 ? cutoff : 20000; // wide-open lowpass reads as no filtering
+            voice.gain.gain.value = gainValue;
+            voice.echoGain.gain.value = hasEcho ? 1 : 0;
+            if (voice.destination !== destination) {
+                if (voice.destination) voice.gain.disconnect(voice.destination);
+                voice.gain.connect(destination);
+                voice.destination = destination;
+            }
+            source.connect(voice.filter);
+            source.start(this.ctx.currentTime + delay);
+            voice.busyUntil = this.ctx.currentTime + delay + source.buffer.duration;
+            source.onended = () => source.disconnect(); // frees the source; the chain persists
+            return;
+        }
+
+        // Fallback: no free voice (24 simultaneous overlapping tails is
+        // rare) -- today's throwaway per-event Filter/Gain nodes, unchanged.
         let lastNode = source;
         if (cutoff < 18000) {
             const filterNode = this.ctx.createBiquadFilter();
@@ -4451,16 +4573,16 @@ const TACTICAL_TUNING = {
 // standard wave mode (see Game.enrageEnemiesNear) -- crowd damage trades
 // away calm, readable squads. Descriptions state the trade honestly.
 const PERK_DEFS = [
-    { key: 'perkFlatline', name: 'FLATLINE', desc: 'Increases bullet velocity by 25%.' },
+    { key: 'perkFlatline', name: 'FLATLINE', desc: 'Sprinting primes your rounds: +20% bullet damage while sprinting and for 2.5s after.' },
     { key: 'perkPointBlank', name: 'POINT BLANK', desc: 'Sprinting increases bullet damage by 20%.' },
     { key: 'perkGhost', name: 'GHOST BULLETS', desc: 'Bullets have a 30% chance to pass through solid walls.' },
     { key: 'perkVampiric', name: 'VAMPIRIC ROUNDS', desc: 'On hitting an enemy, restore +1 HP.' },
     { key: 'perkVolatileCorpses', name: 'VOLATILE CORPSES', desc: 'Killed enemies trigger a shockwave and mini-explosion. Blasts enrage nearby enemies.' },
-    { key: 'perkRubberBullets', name: 'RUBBER BULLETS', desc: 'Modify maximum bounces from 2 to 6.' },
+    { key: 'perkRubberBullets', name: 'RUBBER BULLETS', desc: 'Rounds ricochet off walls at up to steep angles; max bounces 2 → 5.' },
     { key: 'perkSmartMunitions', name: 'SMART MUNITIONS', desc: 'Bullets gently steer towards nearest forward enemy.' },
     { key: 'perkExplosiveRounds', name: 'EXPLOSIVE ROUNDS', desc: 'Bullets explode on impact. Self-damage disabled. Blasts enrage nearby enemies.' },
     { key: 'perkShrapnelRounds', name: 'SHRAPNEL ROUNDS', desc: 'Explosions fling 3-4 low-damage fragments outward.' },
-    { key: 'perkCombatScanner', name: 'COMBAT SCANNER', desc: 'Enemies you hit are marked and tracked through walls for 4s.' },
+    { key: 'perkCombatScanner', name: 'COMBAT SCANNER', desc: 'Hits mark the target and all hostiles within 275u — tracked through walls for 6s.' },
     { key: 'perkSuppression', name: 'SUPPRESSING FIRE', desc: 'Enemies you hit are suppressed and cannot fire for 1.5s.' },
     { key: 'perkAmbusher', name: 'AMBUSHER', desc: 'Hits on enemies with no line of sight to their target deal +35% damage.' }
 ];
@@ -6768,6 +6890,13 @@ class MapGen {
         ctx.shadowBlur = wallBlur; // PERF: operator map has 150+ walls vs ~20-40 on classic templates; per-shape blur at that count was a real, significant rendering cost invisible to headless testing. Template 12 (~340 walls) is denser still, so it gets the same treatment. Templates 0-9 keep the original blur look unchanged.
         let bufferX = Math.max(150, visibleW * 0.18);
         let bufferY = Math.max(150, visibleH * 0.18);
+        // PERF (item 9a): fillStyle/lineWidth are loop-invariant -- every
+        // wall body is the same fill, and the outline lineWidth never
+        // changes -- so they're set ONCE here instead of per wall. Only
+        // _drawWallDamage() touches fillStyle again (its own cosmetic
+        // erosion color), so it's re-set once right after that call below.
+        ctx.fillStyle = '#010c1b';
+        ctx.lineWidth = 2;
         for (let wall of this.walls) {
             if (wall.x + wall.w < cam.x - bufferX || wall.x > cam.x + visibleW + bufferX ||
                 wall.y + wall.h < cam.y - bufferY || wall.y > cam.y + visibleH + bufferY) continue;
@@ -6795,9 +6924,7 @@ class MapGen {
                 }
             }
             ctx.shadowColor = `rgba(${wRgb}, 0.25)`;
-            ctx.fillStyle = '#010c1b';
             ctx.strokeStyle = wMain;
-            ctx.lineWidth = 2;
             ctx.fillRect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
             if (usingCachedShadow) ctx.shadowBlur = wallBlur; // restore for the next (whole) wall
 
@@ -6838,14 +6965,55 @@ class MapGen {
             // camera-culled loop as everything else here.
             if (wall.destructible && wall._dmg) {
                 this._drawWallDamage(ctx, cam, wall);
+                ctx.fillStyle = '#010c1b'; // _drawWallDamage() left its own erosion color active
             }
+        }
 
+        // PERF (item 9b): the diagonal cross-hatch used to switch
+        // strokeStyle and stroke() once PER WALL (~680 extra ops/frame on
+        // template 12). Batched into one pass per distinct wRgb color
+        // group instead -- one beginPath, all moveTo/lineTo pairs for
+        // every on-screen wall sharing that color, one strokeStyle set,
+        // one stroke(). Draw order is unaffected (diagonals still render
+        // above outlines/damage either way, same as the old per-wall
+        // block did). _diagRgbGroups is the finite set of colors actually
+        // present in this map -- computed once and cached (colorRgb never
+        // changes after generation; carved fragments copy their parent's
+        // color rather than introducing new ones), so this loop reads it
+        // for free instead of allocating anything per frame.
+        if (!this._diagRgbGroups) {
+            const seen = new Set();
+            this._diagRgbGroups = [];
+            for (let w of this.walls) {
+                let rgb = w.colorRgb || this.biome.rgb;
+                if (this.biome.splitTheme) {
+                    let wx = w.x + w.w / 2;
+                    if (wx < this.width * 0.35) rgb = '255, 42, 95';
+                    else if (wx > this.width * 0.65) rgb = '0, 229, 255';
+                    else rgb = '128, 143, 156';
+                }
+                if (!seen.has(rgb)) { seen.add(rgb); this._diagRgbGroups.push(rgb); }
+            }
+        }
+        for (let rgb of this._diagRgbGroups) {
             ctx.beginPath();
-            ctx.moveTo(wall.x - cam.x, wall.y - cam.y);
-            ctx.lineTo(wall.x + wall.w - cam.x, wall.y + wall.h - cam.y);
-            ctx.moveTo(wall.x + wall.w - cam.x, wall.y - cam.y);
-            ctx.lineTo(wall.x - cam.x, wall.y + wall.h - cam.y);
-            ctx.strokeStyle = `rgba(${wRgb}, 0.05)`;
+            for (let wall of this.walls) {
+                if (wall.x + wall.w < cam.x - bufferX || wall.x > cam.x + visibleW + bufferX ||
+                    wall.y + wall.h < cam.y - bufferY || wall.y > cam.y + visibleH + bufferY) continue;
+                let wRgb = wall.colorRgb || this.biome.rgb;
+                if (this.biome.splitTheme) {
+                    let wx = wall.x + wall.w / 2;
+                    if (wx < this.width * 0.35) wRgb = '255, 42, 95';
+                    else if (wx > this.width * 0.65) wRgb = '0, 229, 255';
+                    else wRgb = '128, 143, 156';
+                }
+                if (wRgb !== rgb) continue;
+                ctx.moveTo(wall.x - cam.x, wall.y - cam.y);
+                ctx.lineTo(wall.x + wall.w - cam.x, wall.y + wall.h - cam.y);
+                ctx.moveTo(wall.x + wall.w - cam.x, wall.y - cam.y);
+                ctx.lineTo(wall.x - cam.x, wall.y + wall.h - cam.y);
+            }
+            ctx.strokeStyle = `rgba(${rgb}, 0.05)`;
             ctx.stroke();
         }
         ctx.shadowBlur = 0;
@@ -8432,7 +8600,18 @@ class Player extends Entity {
         this.turretsInventory = [];
         
         this.grenades = 1;
+        this.maxGrenades = 3;
         this.mines = 0;
+        // PHASE 5 (FLATLINE redesign): counts down from 2.5s after sprint
+        // ends (held, not drained, WHILE sprinting -- see Player.update).
+        this.flatlinePrimeTimer = 0;
+        // PHASE 5 (UNDERBARREL LAUNCHER Lvl2 ARC SIGHTS): hold-to-charge
+        // lob state. glChargeDist walks from GL_ARC.MIN_DIST to MAX_DIST
+        // while glCharging; glHoldTime distinguishes a tap (fires the
+        // normal L1 flat shot) from a genuine hold (fires the arc lob).
+        this.glCharging = false;
+        this.glChargeDist = 0;
+        this.glHoldTime = 0;
         this.barriersCount = 0;
         this.turretsCount = 0;
         this.dronesCount = 0;
@@ -8756,6 +8935,23 @@ class Player extends Entity {
 
         this.isSprinting = isSprinting;
         this.applySprintStaminaAndMove(dt, moveX, moveY, isSprinting);
+
+        // PHASE 5 (FLATLINE redesign): sprinting primes rounds; the window
+        // holds at 2.5s the whole time sprinting (no drain mid-sprint) and
+        // only starts counting down once sprint stops.
+        if (this.perkFlatline && this.isSprinting) {
+            this.flatlinePrimeTimer = 2.5;
+        } else if (this.flatlinePrimeTimer > 0) {
+            this.flatlinePrimeTimer -= dt;
+        }
+
+        // PHASE 5 (ARC SIGHTS): while charging, the range marker slides
+        // out and the hold timer accrues (used on release to tell a tap
+        // from a genuine hold -- see releaseGLCharge()).
+        if (this.glCharging) {
+            this.glHoldTime += dt;
+            this.glChargeDist = Math.min(GL_ARC.MAX_DIST, this.glChargeDist + GL_ARC.SLIDE_SPEED * dt);
+        }
 
         // --- Fire System (Interchangeable Mouse/Trigger) ---
         let isFiring = !this.isPlayer2 && input.mouseDown;
@@ -10266,6 +10462,7 @@ class Player extends Entity {
     
     switchWeapon(dir) {
         this.weaponIdx = (this.weaponIdx + dir + this.inventory.length) % this.inventory.length;
+        cancelGLCharge(this);
         if (audio && audio.playWeaponSwitch) {
             audio.playWeaponSwitch(this.x, this.y);
         }
@@ -10317,6 +10514,7 @@ class Player extends Entity {
     // applyDeadPlayerHardcorePenalties()/triggerRoundWinEffects(), which
     // this must not interfere with).
     onDeath() {
+        cancelGLCharge(this);
         if (game && game.operatorMode && this.activeDrone && !this.activeDrone.dead) {
             this.activeDrone.stopAudio();
             this.activeDrone.isPiloted = false;
@@ -13352,6 +13550,13 @@ class SniperWalkerBoss extends Boss {
     }
 }
 
+// Ricochet absorb threshold: |dotProduct| below this bounces, at/above it
+// absorbs. Default is grazing-only (~27deg from the wall surface); RUBBER
+// BULLETS raises it so hits up to ~65deg from the surface still bounce
+// (near-perpendicular hits still absorb).
+const RICOCHET_DOT = 0.45;
+const RICOCHET_DOT_RUBBER = 0.90;
+
 class Bullet {
     constructor(x, y, angle, weaponInfo, isPlayerBullet, isAP = false, isHP = false, isNeutral = false) {
         this.init(x, y, angle, weaponInfo, isPlayerBullet, isAP, isHP, isNeutral);
@@ -13363,9 +13568,8 @@ class Bullet {
         this.shooter = (isPlayerBullet && typeof isPlayerBullet === 'object') ? isPlayerBullet : null;
         
         let speed = weaponInfo.speed;
-        if (this.shooter && this.shooter.perkFlatline) {
-            speed *= 1.25;
-        }
+        // PHASE 5: Flatline redesigned as sprint-primed damage (see the
+        // this.dmg block below) -- bullet speed is back to weapon baseline.
         // PHASE 2 (difficulty = combat pressure): hostile bullets scale by
         // the RunConfig snapshot. isPlayerBullet is truthy for players
         // (instance) AND friendly turret/dog fire (boolean true), so this
@@ -13402,6 +13606,13 @@ class Bullet {
         if (this.shooter && this.shooter.perkPointBlank && this.shooter.isSprinting) {
             this.dmg *= 1.20;
         }
+        // PHASE 5 (FLATLINE redesign): sprinting primes rounds for +20%
+        // damage, and the window holds for 2.5s after sprint ends (see
+        // flatlinePrimeTimer in Player.update). Snapshotted here at fire
+        // time -- bullets already in flight keep their damage.
+        if (this.shooter && this.shooter.perkFlatline && this.shooter.flatlinePrimeTimer > 0) {
+            this.dmg *= 1.20;
+        }
         if (this.shooter && this.shooter.focusLevel > 0) {
             this.dmg *= 1 + AIM_WEIGHT.FOCUS_DAMAGE_BONUS * this.shooter.focusLevel;
         }
@@ -13416,7 +13627,7 @@ class Bullet {
         this.weaponName = weaponInfo.name;
         this.active = true;
         this.bounces = 0;
-        this.maxBounces = (this.shooter && this.shooter.perkRubberBullets) ? 6 : 2;
+        this.maxBounces = (this.shooter && this.shooter.perkRubberBullets) ? 5 : 2;
         
         this.isAP = isAP;
         this.isHP = isHP;
@@ -13490,9 +13701,14 @@ class Bullet {
                 if (nearestEnemy) {
                     let angleToEnemy = Math.atan2(nearestEnemy.y - this.y, nearestEnemy.x - this.x);
                     let angleDiff = Math.atan2(Math.sin(angleToEnemy - currentAngle), Math.cos(angleToEnemy - currentAngle));
-                    // PHASE 3 (balance): curve strength halved (was 4.5) --
-                    // Smart Munitions was quietly deleting the aim game.
-                    let maxSteer = 2.25 * stepDt;
+                    // PHASE 5 (balance): curve strength reduced again --
+                    // was 2.25 (itself already halved from an original 4.5,
+                    // see the PHASE 3 note this replaces). Doc anchor
+                    // assumed a starting value of 2.5 (-> 1.8 target); the
+                    // actual constant here was 2.25, so per the doc's
+                    // fallback rule this is scaled by the same x0.72 ratio
+                    // (1.8/2.5) -> 1.62. Deviation logged per guardrails.
+                    let maxSteer = 1.62 * stepDt;
                     let steer = MathUtils.clamp(angleDiff, -maxSteer, maxSteer);
                     let speed = Math.hypot(this.vx, this.vy);
                     let newAngle = currentAngle + steer;
@@ -13772,7 +13988,7 @@ class Bullet {
                         // walls; Suppression stops its return fire briefly
                         // (bosses have their own fire logic and resist).
                         if (ent instanceof Enemy && !ent.dead) {
-                            if (this.shooter.perkCombatScanner) ent.markedTimer = 4.0;
+                            if (this.shooter.perkCombatScanner) game.applyScannerMark(ent);
                             if (this.shooter.perkSuppression && !(ent instanceof Boss)) ent.suppressedTimer = 1.5;
                         }
                         if (this.shooter.perkExplosiveRounds) {
@@ -13981,10 +14197,10 @@ class Bullet {
 
                     // Explosive Rounds + Rubber Bullets synergy: with both
                     // perks active, a hit that would normally be absorbed
-                    // (steep angle, dotProduct >= 0.45) bounces instead --
+                    // (steep angle, dotProduct >= ricochetDot) bounces instead --
                     // detonating a mini-explosion at the bounce point first.
-                    // Bounded by maxBounces (6 with Rubber Bullets), so at
-                    // most 6 explosions total over one bullet's life -- no
+                    // Bounded by maxBounces (5 with Rubber Bullets), so at
+                    // most 5 explosions total over one bullet's life -- no
                     // meaningful cost beyond what Explosive Rounds already
                     // pays per shot.
                     let comboExplosiveRubber = this.isPlayerBullet && this.shooter &&
@@ -13992,8 +14208,10 @@ class Bullet {
 
                     let speed = Math.sqrt(curSpeedSq);
                     let dotProduct = (this.vx / speed) * nx + (this.vy / speed) * ny;
-                    
-                    if (Math.abs(dotProduct) < 0.45 || comboExplosiveRubber) { 
+                    let hasRubberBullets = this.isPlayerBullet && this.shooter && this.shooter.perkRubberBullets;
+                    let ricochetDot = hasRubberBullets ? RICOCHET_DOT_RUBBER : RICOCHET_DOT;
+
+                    if (Math.abs(dotProduct) < ricochetDot || comboExplosiveRubber) { 
                         if (nx !== 0) this.vx *= -0.7;
                         if (ny !== 0) this.vy *= -0.7;
                         this.x = prevX; this.y = prevY; 
@@ -14734,6 +14952,11 @@ class AutoTurret extends Entity {
         this.fireCooldown = 0;
         this.maxRange = 1000;
         this.aimSpeed = 5;
+        // PERF (item 12): full-acquisition retarget throttle -- random
+        // phase so many turrets never all scan on the same frame. Turrets
+        // aren't pooled, but this is set in the constructor for shape
+        // stability anyway (mirror in init() if that ever changes).
+        this.retargetTimer = MathUtils.rand(0, 0.15);
     }
     
     updatePhysics(dt, walls) {
@@ -14763,28 +14986,52 @@ class AutoTurret extends Entity {
     update(dt, game) {
         if (this.dead) return;
 
-        let nearestHostile = null;
-        let nearestDist = this.maxRange;
+        this.retargetTimer -= dt;
 
-        let hostiles = game.getHostilesFor(this);
-
-        for (let h of hostiles) {
-            if (h.dead) continue;
-            let d = Math.hypot(h.x - this.x, h.y - this.y);
-            if (d < nearestDist) {
-                // PERF: per-candidate segment-filtered walls (was: full wall
-                // array per hostile per frame -- the single hottest LOS scan
-                // in the game on dense maps).
-                let segWalls = game.map.getWallsAlongSegment(this.x, this.y, h.x, h.y);
-                let hasLOS = !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w));
-                if (hasLOS) {
-                    nearestDist = d;
-                    nearestHostile = h;
+        // Cheap per-frame validation of the CURRENT target only -- dead or
+        // out-of-range clears it immediately and forces an instant re-scan
+        // next frame (no perceptible delay on target death); a single LOS
+        // ray keeps aim-tracking honest about walls the instant LOS breaks,
+        // without re-running the full O(hostiles) acquisition scan.
+        if (this.target) {
+            if (this.target.dead || Math.hypot(this.target.x - this.x, this.target.y - this.y) > this.maxRange) {
+                this.target = null;
+                this.retargetTimer = 0;
+            } else {
+                let curSegWalls = game.map.getWallsAlongSegment(this.x, this.y, this.target.x, this.target.y);
+                let curHasLOS = !curSegWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, this.target.x, this.target.y, w));
+                if (!curHasLOS) {
+                    this.target = null;
+                    this.retargetTimer = 0;
                 }
             }
         }
 
-        this.target = nearestHostile;
+        if (this.retargetTimer <= 0) {
+            let nearestHostile = null;
+            let nearestDist = this.maxRange;
+
+            let hostiles = game.getHostilesFor(this);
+
+            for (let h of hostiles) {
+                if (h.dead) continue;
+                let d = Math.hypot(h.x - this.x, h.y - this.y);
+                if (d < nearestDist) {
+                    // PERF: per-candidate segment-filtered walls (was: full wall
+                    // array per hostile per frame -- the single hottest LOS scan
+                    // in the game on dense maps).
+                    let segWalls = game.map.getWallsAlongSegment(this.x, this.y, h.x, h.y);
+                    let hasLOS = !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w));
+                    if (hasLOS) {
+                        nearestDist = d;
+                        nearestHostile = h;
+                    }
+                }
+            }
+
+            this.target = nearestHostile;
+            this.retargetTimer = 0.15;
+        }
 
         if (this.target) {
             let targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
@@ -16252,16 +16499,26 @@ class ShrapnelGrenade {
         this.z = 0;
         this.vz = (opts && opts.vz !== undefined) ? opts.vz : 280;
         // PHASE 4: blast scale (BREACHER kit) + wall-bounce energy
-        // retention (RICOCHET FUSE launcher upgrade) -- both plain opts.
+        // retention (thrown-grenade default; launcher rounds use the same).
         this.radiusMult  = (opts && opts.radiusMult)  || 1.0;
         this.restitution = (opts && opts.restitution !== undefined) ? opts.restitution : 0.5;
+        // PHASE 5 (ARC SIGHTS): true for a released hold-charge lob -- see
+        // the wall-collision skip in update(). Declared here for pool-
+        // shape stability / revive reset (this class is pooled).
+        this.isArcShot = (opts && opts.isArcShot) || false;
     }
     update(dt, walls, game) {
-        this.vx *= Math.pow(0.01, dt);
-        this.vy *= Math.pow(0.01, dt);
+        if (!this.isArcShot) {
+            this.vx *= Math.pow(0.01, dt);
+            this.vy *= Math.pow(0.01, dt);
+        }
         this.x += this.vx * dt;
         this.y += this.vy * dt;
 
+        // PHASE 5 (ARC SIGHTS): an arc shot flies OVER walls/cover for its
+        // whole flight (it explodes on the fuse timer, not on impact) --
+        // simplest correct rule, visually justified by the high z-arc.
+        if (!this.isArcShot) {
         for (let wall of walls) {
             let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
             if (col.hit) {
@@ -16272,11 +16529,12 @@ class ShrapnelGrenade {
                     this.x += nx * overlap;
                     this.y += ny * overlap;
                     // PHASE 4: restitution is 0.5 for thrown grenades
-                    // (unchanged) and 0.85 for RICOCHET FUSE launcher rounds.
+                    // (unchanged); launcher rounds share the same default.
                     if (nx !== 0) this.vx *= -this.restitution;
                     if (ny !== 0) this.vy *= -this.restitution;
                 }
             }
+        }
         }
 
         const GRAVITY = 680;
@@ -16879,7 +17137,7 @@ class Item {
                 if (this.type === 'money') {
                     canCollect = true;
                 } else if (this.type === 'grenade') {
-                    canCollect = (p.grenades < 3);
+                    canCollect = (p.grenades < (p.maxGrenades || 3));
                 } else if (this.type === 'medpack') {
                     canCollect = (p.medpacks < 3);
                 } else if (this.type === 'redbull') {
@@ -17506,7 +17764,7 @@ const ARMORY_UPGRADES = [
     // ShrapnelGrenade class (its wall-bounce physics were already there).
     { key: 'underbarrelLauncher', name: 'UNDERBARREL LAUNCHER', maxLevel: 2,
       costPerLevel: [600, 350],
-      desc: 'Lvl1: grenades fire from an underbarrel tube — flat, fast, short-fused. Lvl2: RICOCHET FUSE — launched rounds bank hard off walls (corner shots).' },
+      desc: 'Lvl1: grenades fire from an underbarrel tube — flat, fast, short-fused. +1 max grenades (4). Lvl2: ARC SIGHTS — hold [F] to walk a range marker out (2× reach); release to lob the round dead onto it, clean over cover. +3 max grenades (6).' },
     // ---- PHASE 4: operator kit unlocks (selection lives in the menu) ----
     { key: 'kitBreacher', name: 'KIT: BREACHER', maxLevel: 1,
       costPerLevel: [350],
@@ -17519,14 +17777,27 @@ const ARMORY_UPGRADES = [
       desc: 'Start: 1 auto turret + 1 barrier. Passive: +30% uplink hack speed. Requisition: 20% cash back on gadgets.' }
 ];
 
+// GL_ARC: Underbarrel Launcher Lvl2 ARC SIGHTS tuning (replaces the old
+// RICOCHET FUSE restitution branch). Holding the grenade-launcher trigger
+// walks a range marker out from MIN_DIST to MAX_DIST over ~1.1s
+// (SLIDE_SPEED = (MAX_DIST-MIN_DIST)/1.1); releasing lobs the round to
+// land on the marker via a high z-arc that clears cover. MAX_DIST is 2x
+// the L1 flat-shot's measured landing distance (power 2600, fuse 0.75;
+// update()'s Math.pow(0.01, dt) drag integrates to ~547u over 0.75s).
+const GL_ARC = { MIN_DIST: 220, MAX_DIST: 1100, SLIDE_SPEED: 800, FLIGHT_TIME: 0.55, ARC_VZ: 187 };
+
 // Laser sight tuning per LASER SIGHT ARRAY level (index = level 0-3).
 // Level 0 is deliberately WEAK -- short throw, fat beam, sluggish refocus
 // after every shot -- so the upgrade track has somewhere real to go.
 const LASER_TUNING = {
-    maxDist:  [950, 1200, 1700, 1700],
+    maxDist:  [600, 950, 1500, 2550],
     tightDeg: [0.30, 0.12, 0.10, 0.06],
     wideDeg:  [2.00, 1.10, 1.10, 0.85],
-    recover:  [0.45, 0.18, 0.15, 0.10]
+    recover:  [0.45, 0.18, 0.15, 0.10],
+    // Peak muzzle brightness per level (base was a flat 0.62 constant --
+    // see startAlpha in the beam draw block). Lvl0 dimmer, lvl1-2 unchanged,
+    // lvl3 brighter -- all comfortably under the 1.0 alpha ceiling.
+    peakAlpha: [0.496, 0.62, 0.62, 0.744]
 };
 // Custom beam colors unlocked at LASER SIGHT ARRAY level 3.
 const LASER_COLORS = [
@@ -18654,6 +18925,21 @@ class Game {
     }
 
     // ================= PHASE 1: HEAT DIRECTOR + OBJECTIVES =================
+
+    // PHASE 5 (COMBAT SCANNER squad-wide mark): event-driven on hit, not
+    // per-frame, so a single linear pass with squared distance is strictly
+    // simpler and just as safe as bucketing at this frequency -- see the
+    // perf note in the actionable-fixes doc. Marks OVERWRITE to 6.0
+    // (refresh, don't stack).
+    applyScannerMark(hitEnemy) {
+        hitEnemy.markedTimer = 6.0;
+        const R2 = 275 * 275;
+        for (let e of this.enemies) {
+            if (e === hitEnemy || e.dead) continue;
+            let dx = e.x - hitEnemy.x, dy = e.y - hitEnemy.y;
+            if (dx*dx + dy*dy <= R2) e.markedTimer = 6.0;
+        }
+    }
 
     // Single noise entry point (the roadmap's "Heat system is the
     // director"). Weapon fire, explosions, wall breaches, and chaos-perk
@@ -20025,10 +20311,11 @@ class Game {
                 }
                 
                 if (key === 'q') {
+                    cancelGLCharge(this.player);
                     this.player.leftSelectIdx = (this.player.leftSelectIdx + 1) % 4;
                 }
                 if (key === 'e') {
-                    useLeftItem(this.player);
+                    if (!tryStartGLCharge(this.player)) useLeftItem(this.player);
                 }
                 if (key === 'z') {
                     this.player.rightSelectIdx = (this.player.rightSelectIdx + 1) % 5;
@@ -20044,7 +20331,13 @@ class Game {
                 }
             }
         });
-        window.addEventListener('keyup', e => this.input.keys[e.key.toLowerCase()] = false);
+        window.addEventListener('keyup', e => {
+            let key = e.key.toLowerCase();
+            this.input.keys[key] = false;
+            if (key === 'e' && this.state === 'playing' && this.player && !this.player.dead) {
+                releaseGLCharge(this.player);
+            }
+        });
         window.addEventListener('mousemove', e => {
             const isTouchPlaying = window.touchController && window.touchController.enabled && this && this.state === 'playing' && !this.isPaused;
             if (isTouchPlaying) {
@@ -20108,6 +20401,8 @@ class Game {
         this.pauseMenuOptionIndex = 0;
         
         if (this.isPaused) {
+            cancelGLCharge(this.player);
+            cancelGLCharge(this.player2);
             this.switchPauseTab('system');
         } else {
             this.switchPauseTab('system');
@@ -20343,9 +20638,11 @@ class Game {
                 // D-pad Up / Down -> Scroll Left Selector
                 if (this.dpadCooldown <= 0) {
                     if (gp.buttons[12].pressed) { // Dpad Up
+                        cancelGLCharge(playerInstance);
                         playerInstance.leftSelectIdx = (playerInstance.leftSelectIdx - 1 + 4) % 4;
                         this.dpadCooldown = 0.18;
                     } else if (gp.buttons[13].pressed) { // Dpad Down
+                        cancelGLCharge(playerInstance);
                         playerInstance.leftSelectIdx = (playerInstance.leftSelectIdx + 1) % 4;
                         this.dpadCooldown = 0.18;
                     }
@@ -20383,10 +20680,6 @@ class Game {
                         playerInstance.switchWeapon(1);
                         this.gpadButtonCooldown = 0.22;
                     }
-                    if (gp.buttons[10].pressed) { // Left Stick Press (L3) - Use Left Selector
-                        useLeftItem(playerInstance);
-                        this.gpadButtonCooldown = 0.3;
-                    }
                     if (gp.buttons[11].pressed) { // Right Stick Press (R3) - Use Right Selector
                         useRightItem(playerInstance);
                         this.gpadButtonCooldown = 0.3;
@@ -20396,6 +20689,20 @@ class Game {
                         this.gpadButtonCooldown = 0.3;
                     }
                 }
+
+                // Left Stick Press (L3) - Use Left Selector. Tracked via a
+                // real prev-frame press/release edge (not the shared
+                // gpadButtonCooldown debounce above) because GL-L2 ARC
+                // SIGHTS needs to sense a HOLD every frame and fire exactly
+                // on release; every other left item still fires once on
+                // the press edge, identical to the old cooldown-gated feel.
+                let l3Down = gp.buttons[10].pressed;
+                if (l3Down && !playerInstance._glL3WasDown) {
+                    if (!tryStartGLCharge(playerInstance)) useLeftItem(playerInstance);
+                } else if (!l3Down && playerInstance._glL3WasDown) {
+                    releaseGLCharge(playerInstance);
+                }
+                playerInstance._glL3WasDown = l3Down;
             };
 
             pollPlayer(gp1, this.player);
@@ -20452,6 +20759,23 @@ class Game {
     }
 
     handlePauseMenuNavigation(gpList) {
+        // PERF (item 11b): poll raw buttons/axes first -- bail before any
+        // DOM query (tab lookup, qSA-driven highlight refresh) on an idle
+        // frame. Includes Start (togglePause) and the right-stick scroll
+        // axis since this handler consumes both.
+        let anyInput = false;
+        for (let gp of gpList) {
+            if (gp.buttons[12].pressed || gp.buttons[13].pressed || gp.buttons[14].pressed || gp.buttons[15].pressed ||
+                gp.buttons[4].pressed || gp.buttons[5].pressed || gp.buttons[0].pressed || gp.buttons[1].pressed ||
+                gp.buttons[9].pressed ||
+                (gp.axes[0] && Math.abs(gp.axes[0]) > 0.15) || (gp.axes[1] && Math.abs(gp.axes[1]) > 0.15) ||
+                (gp.axes[3] && Math.abs(gp.axes[3]) > 0.15)) {
+                anyInput = true;
+                break;
+            }
+        }
+        if (!anyInput) return;
+
         if (document.activeElement && document.activeElement.tagName === 'BUTTON') {
             document.activeElement.blur();
         }
@@ -20615,7 +20939,32 @@ class Game {
     // Instead this collects whatever buttons/inputs are actually visible
     // right now and navigates between them spatially by on-screen position,
     // so it can't go stale as the dashboard's contents change.
+    // Focusable = the tab bar buttons, everything inside the active tab
+    // panel, and the close button at the bottom of the dashboard. Shared by
+    // handleDevMenuNavigation() (per-input-frame) and toggleDevDashboard()
+    // (once, on open) so the qSA/offsetParent scan logic lives in one place.
+    _computeDevMenuFocusable(overlay) {
+        return Array.from(overlay.querySelectorAll(
+            '.tabs-container .tab-button, .tab-content.active button, .tab-content.active input, .menu-box > button.neon-btn'
+        )).filter(el => el.offsetParent !== null);
+    }
+
     handleDevMenuNavigation(gpList) {
+        // PERF (item 11b): poll raw buttons/axes first -- on an idle frame
+        // (pad connected, dev dashboard open, nothing pressed) this returns
+        // before touching the DOM at all, instead of paying the qSA +
+        // offsetParent forced-layout scan below on every single frame.
+        let anyInput = false;
+        for (let gp of gpList) {
+            if (gp.buttons[12].pressed || gp.buttons[13].pressed || gp.buttons[14].pressed || gp.buttons[15].pressed ||
+                gp.buttons[4].pressed || gp.buttons[5].pressed || gp.buttons[0].pressed || gp.buttons[1].pressed ||
+                (gp.axes[0] && Math.abs(gp.axes[0]) > 0.15) || (gp.axes[1] && Math.abs(gp.axes[1]) > 0.15)) {
+                anyInput = true;
+                break;
+            }
+        }
+        if (!anyInput) return;
+
         if (document.activeElement && document.activeElement.tagName === 'BUTTON') {
             document.activeElement.blur();
         }
@@ -20629,11 +20978,7 @@ class Game {
         let currentTabIdx = devTabs.indexOf(activeTabName);
         if (currentTabIdx === -1) currentTabIdx = 0;
 
-        // Focusable = the tab bar buttons, everything inside the active tab
-        // panel, and the close button at the bottom of the dashboard.
-        let focusable = Array.from(overlay.querySelectorAll(
-            '.tabs-container .tab-button, .tab-content.active button, .tab-content.active input, .menu-box > button.neon-btn'
-        )).filter(el => el.offsetParent !== null);
+        let focusable = this._computeDevMenuFocusable(overlay);
 
         if (focusable.length === 0) return;
         if (!this.devMenuFocusEl || !focusable.includes(this.devMenuFocusEl)) {
@@ -20790,15 +21135,23 @@ class Game {
                 ['sld-max-marks']
             ]
         };
+        // Extraction adds a per-operation nav row (one row per mission card,
+        // mirroring the maps tab's one-row-per-map convention) so the pad
+        // can reach "SELECT OPERATION" -- these ids are rendered fresh by
+        // renderMissionList() and only visible while extractionMode is on.
+        let playRows = [
+            ['btn-mode-1p', 'btn-mode-2p'],
+            ['btn-env-day', 'btn-env-night'],
+            ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
+            ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator', 'btn-gm-now', 'btn-gm-extraction']
+        ];
+        if (this.extractionMode) {
+            for (const missionId of MISSION_ORDER) playRows.push(['mission-card-' + missionId]);
+        }
+        playRows.push(['btn-start']);
+        playRows.push(['btn-exit']);
         return {
-            play: [
-                ['btn-mode-1p', 'btn-mode-2p'],
-                ['btn-env-day', 'btn-env-night'],
-                ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
-                ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator', 'btn-gm-now'],
-                ['btn-start'],
-                ['btn-exit']
-            ],
+            play: playRows,
             maps: [
                 ['btn-map-random'],
                 ['btn-map-10'],
@@ -20860,6 +21213,22 @@ class Game {
     }
 
     handleMainMenuNavigation(gpList) {
+        // PERF (item 11b): poll raw buttons/axes first -- bail before any
+        // DOM query (tab lookup, qSA-driven highlight refresh) on an idle
+        // frame. Same button/axis set this handler already consumes below
+        // (no Start button here, unlike the pause-menu variant).
+        let anyInput = false;
+        for (let gp of gpList) {
+            if (gp.buttons[12].pressed || gp.buttons[13].pressed || gp.buttons[14].pressed || gp.buttons[15].pressed ||
+                gp.buttons[4].pressed || gp.buttons[5].pressed || gp.buttons[0].pressed || gp.buttons[1].pressed ||
+                (gp.axes[0] && Math.abs(gp.axes[0]) > 0.15) || (gp.axes[1] && Math.abs(gp.axes[1]) > 0.15) ||
+                (gp.axes[3] && Math.abs(gp.axes[3]) > 0.15)) {
+                anyInput = true;
+                break;
+            }
+        }
+        if (!anyInput) return;
+
         // Strip native browser focus to prevent native click hijacking
         if (document.activeElement && document.activeElement.tagName === 'BUTTON') {
             document.activeElement.blur();
@@ -21873,10 +22242,11 @@ class Game {
             if (saved) rgb = saved;
         }
         return {
-            maxDist:  LASER_TUNING.maxDist[lvl],
-            tightDeg: LASER_TUNING.tightDeg[lvl],
-            wideDeg:  LASER_TUNING.wideDeg[lvl],
-            recover:  LASER_TUNING.recover[lvl],
+            maxDist:   LASER_TUNING.maxDist[lvl],
+            tightDeg:  LASER_TUNING.tightDeg[lvl],
+            wideDeg:   LASER_TUNING.wideDeg[lvl],
+            recover:   LASER_TUNING.recover[lvl],
+            peakAlpha: LASER_TUNING.peakAlpha[lvl],
             rgb
         };
     }
@@ -21887,6 +22257,9 @@ class Game {
         this.recalcPlayerMaxAmmo(p);   // PHASE 3: magazine meta upgrades
         p.maxHp    = 100 * (1 + (MA.firstAidTraining || 0) * 0.08);
         p.hp       = p.maxHp;
+        // UNDERBARREL LAUNCHER: Lvl1 +1 grenade (4 max), Lvl2 +3 grenades (6 max)
+        const glLvl = MA.underbarrelLauncher || 0;
+        p.maxGrenades = glLvl >= 2 ? 6 : (glLvl >= 1 ? 4 : 3);
         p.maxArmor = 50 * (1 + (MA.kevlarWeave || 0) * 0.10);
         p.armor    = p.maxArmor;
         
@@ -21923,7 +22296,7 @@ class Game {
         if (p.kitId === 'breacher') {
             p.inventory.push({ ...Weapons.shotgun });
             p.ammo.shotgun = Math.min(p.maxAmmo.shotgun, (p.ammo.shotgun || 0) + 16);
-            p.grenades = Math.min(3, (p.grenades || 0) + 2);
+            p.grenades = Math.min(p.maxGrenades || 3, (p.grenades || 0) + 2);
             p.kitBlastMult = 1.15;   // consumed via ShrapnelGrenade opts (useLeftItem)
         } else if (p.kitId === 'ghost') {
             p.energyDrinks = (p.energyDrinks || 0) + 2;
@@ -22026,8 +22399,12 @@ class Game {
             },
             // The ONE flag that drives the "no Intel this run" banner and
             // every earning gate. Sandbox is ineligible by construction;
-            // god mode / dev spawns taint an eligible run mid-flight.
-            intelEligible: !this.isTestingMode
+            // god mode / dev spawns taint an eligible run mid-flight. Also
+            // ineligible if the player started with a cash cushion (gated
+            // on the SLIDER, not the resolved startingCash above -- ACTION
+            // NOW's fixed $10,000 budget is a mode design, not a player
+            // opt-in, so NOW runs stay intel-eligible).
+            intelEligible: !this.isTestingMode && !(this.startingCash > 0)
         };
     }
 
@@ -22750,6 +23127,12 @@ class Game {
     }
 
     collectItem(it, p, idxInArray) {
+        // PHASE 5 (item 14c): identity guard -- items are now pooled, so a
+        // caller holding a stale reference (e.g. RobotDog.targetItem across
+        // frames) could otherwise collect a DIFFERENT, recycled item at the
+        // same slot, or a stale idxInArray after a swap-removal. Bulletproof
+        // against both with one comparison.
+        if (!it || this.items[idxInArray] !== it) return false;
         let pickedUp = false;
         if (it.type === 'money') {
             let amount = Math.floor(MathUtils.rand(10, 26)); 
@@ -22780,7 +23163,7 @@ class Game {
             p.cash += amount;
             pickedUp = true;
         } else if (it.type === 'grenade') {
-            if (p.grenades < 3) {
+            if (p.grenades < (p.maxGrenades || 3)) {
                 p.grenades++;
                 audio.playPickup('weapon');
                 pickedUp = true;
@@ -23298,6 +23681,13 @@ class Game {
             }
             this.devUpdateForceMutatorHighlight();
             this.devUpdatePerkHighlight();
+            // PERF (item 11b): handleDevMenuNavigation() now bails before
+            // any DOM work on idle frames, so it no longer implicitly
+            // establishes the initial focus highlight before the first
+            // button press -- do it once here instead, on open.
+            let focusable = this._computeDevMenuFocusable(overlay);
+            this.devMenuFocusEl = focusable.length > 0 ? focusable[0] : null;
+            this.refreshDevMenuHighlight();
         } else {
             overlay.classList.add('hidden');
             this._safeUnpause();
@@ -24498,6 +24888,7 @@ class Game {
             setHtml('shop-stat-weight-' + suffix, p.weight);
             setHtml('shop-stat-speed-multi-' + suffix, Math.round(p.speedPenalty * 100) + '%');
             setHtml('shop-stat-grenades-' + suffix, p.grenades);
+            setHtml('shop-stat-maxgrenades-' + suffix, p.maxGrenades || 3);
             setHtml('shop-stat-mines-' + suffix, p.mines);
             setHtml('shop-stat-barriers-' + suffix, (p.barriersCount || 0) + (p.barrierUpgraded ? ' (MK.II)' : ''));
             // FPV OPERATOR MODE: drones are unlimited (launch-cooldown gated,
@@ -24557,7 +24948,7 @@ class Game {
 
             let grenadeBtn = document.getElementById('btn-buy-grenade-' + suffix);
             if (grenadeBtn) {
-                if (p.grenades >= 3) { grenadeBtn.classList.add('maxed'); grenadeBtn.innerText = "GRENADE (MAX)"; grenadeBtn.disabled = true; }
+                if (p.grenades >= (p.maxGrenades || 3)) { grenadeBtn.classList.add('maxed'); grenadeBtn.innerText = "GRENADE (MAX)"; grenadeBtn.disabled = true; }
                 else { grenadeBtn.classList.remove('maxed'); grenadeBtn.innerText = "Buy Grenade ($40)"; grenadeBtn.disabled = false; }
             }
 
@@ -24826,7 +25217,7 @@ class Game {
             p.cash -= 30; p.armor = Math.min(100, p.armor + 50);
         } else if (type === 'speed' && p.cash >= 60 && p.speedUpgrades < 4) {
             p.cash -= 60; p.speedUpgrades++;
-        } else if (type === 'grenade' && p.cash >= 40 && p.grenades < 3) {
+        } else if (type === 'grenade' && p.cash >= 40 && p.grenades < (p.maxGrenades || 3)) {
             p.cash -= 40; p.grenades++;
         } else if (type === 'mine' && p.cash >= 45 && p.mines < 3) {
             p.cash -= 45; p.mines++;
@@ -25038,51 +25429,46 @@ class Game {
         // as literal '<div class=...>' text on screen. `asHtml` opts a
         // caller into innerHTML; everything else keeps the safe text path.
         const setHtmlCached = (id, val, asHtml) => {
-            let strVal = String(val);
-            if (this.hudState[id] !== strVal) {
+            if (this.hudState[id] !== val) {
                 const el = document.getElementById(id);
-                if (el) { if (asHtml) el.innerHTML = strVal; else el.innerText = strVal; }
-                this.hudState[id] = strVal;
+                if (el) { let strVal = String(val); if (asHtml) el.innerHTML = strVal; else el.innerText = strVal; }
+                this.hudState[id] = val;
             }
         };
 
         const setStyleWidthCached = (id, val) => {
-            let strVal = String(val);
             let key = id + '_width';
-            if (this.hudState[key] !== strVal) {
+            if (this.hudState[key] !== val) {
                 const el = document.getElementById(id);
-                if (el) el.style.width = strVal;
-                this.hudState[key] = strVal;
+                if (el) el.style.width = String(val);
+                this.hudState[key] = val;
             }
         };
 
         const setStyleBgColorCached = (id, val) => {
-            let strVal = String(val);
             let key = id + '_bgColor';
-            if (this.hudState[key] !== strVal) {
+            if (this.hudState[key] !== val) {
                 const el = document.getElementById(id);
-                if (el) el.style.backgroundColor = strVal;
-                this.hudState[key] = strVal;
+                if (el) el.style.backgroundColor = String(val);
+                this.hudState[key] = val;
             }
         };
 
         const setStyleBoxShadowCached = (id, val) => {
-            let strVal = String(val);
             let key = id + '_boxShadow';
-            if (this.hudState[key] !== strVal) {
+            if (this.hudState[key] !== val) {
                 const el = document.getElementById(id);
-                if (el) el.style.boxShadow = strVal;
-                this.hudState[key] = strVal;
+                if (el) el.style.boxShadow = String(val);
+                this.hudState[key] = val;
             }
         };
 
         const setStyleVisibilityCached = (id, val) => {
-            let strVal = String(val);
             let key = id + '_visibility';
-            if (this.hudState[key] !== strVal) {
+            if (this.hudState[key] !== val) {
                 const el = document.getElementById(id);
-                if (el) el.style.visibility = strVal;
-                this.hudState[key] = strVal;
+                if (el) el.style.visibility = String(val);
+                this.hudState[key] = val;
             }
         };
 
@@ -25712,6 +26098,7 @@ class Game {
             document.getElementById('btn-mode-1p').classList.add('active-mode');
             document.getElementById('btn-mode-2p').classList.remove('active-mode');
         }
+        this.renderKitSelector();
     }
 
     setTestingMode(enabled) {
@@ -25791,6 +26178,7 @@ class Game {
                 ? (feeDue > 0 ? ('ENTRY: ' + feeDue + ' INTEL') : ('FIRST INSERTION FREE — RETRIES ' + m.entryCost))
                 : 'NO ENTRY FEE';
             html += '<div class="mission-card' + (selected ? ' selected' : '') + (unlocked ? '' : ' locked') + '"'
+                 + ' id="mission-card-' + id + '"'
                  + (unlocked ? ' onclick="game.selectMission(\'' + id + '\')"' : '') + '>'
                  + '<div class="mission-card-name">' + (unlocked ? '' : '🔒 ') + m.name
                  + (completions > 0 ? ' <span class="mission-completions">×' + completions + '</span>' : '') + '</div>'
@@ -26467,6 +26855,10 @@ class Game {
         toggleClass('ui-layer', 'hidden', true);
         toggleClass('start-screen', 'hidden', false);
         this.switchTab('play');
+        if (this.extractionMode) this.renderMissionList();
+        this.mainMenuRowIndex = 0;
+        this.mainMenuOptionIndex = 0;
+        this.refreshMainMenuHighlight();
         
         if (typeof musicEngine !== 'undefined') {
             musicEngine.setTrack(this.saveData.musicTrack || 'off');
@@ -26760,7 +27152,7 @@ class Game {
                 // dotAlpha cap 0.5 / lineWidth 1) now that the UI crosshair is
                 // hidden during gameplay and this laser is the single source
                 // of truth for where the gun is actually pointed.
-                let startAlpha = 0.62;
+                let startAlpha = lt.peakAlpha;
                 let opacityMult = p.isSprinting ? AIM_WEIGHT.LOW_READY_LASER_ALPHA_MULT : 1.0;
                 let laserRGB = lt.rgb; // PHASE 3: prism array custom colors (defaults preserved)
 
@@ -26875,6 +27267,33 @@ class Game {
                     this.ctx.beginPath();
                     this.ctx.arc(hitPt.x - cam.x, hitPt.y - cam.y - pz, dotHalfWidth, 0, Math.PI * 2);
                     this.ctx.fill();
+                    this.ctx.restore();
+                }
+
+                // PHASE 5 (UNDERBARREL LAUNCHER Lvl2 ARC SIGHTS): while
+                // charging, walk a perpendicular tick out along the aim ray
+                // to glChargeDist, plus a faint landing circle (blast
+                // radius x0.5). Plain lines/arc only -- no gradients, no
+                // per-frame allocation.
+                if (p.glCharging) {
+                    let markX = lStartX + Math.cos(laserAngle) * p.glChargeDist;
+                    let markY = lStartY + Math.sin(laserAngle) * p.glChargeDist;
+                    let perpAngle = laserAngle + Math.PI / 2;
+                    let tickX = Math.cos(perpAngle) * 9;
+                    let tickY = Math.sin(perpAngle) * 9;
+                    let mscx = markX - cam.x, mscy = markY - cam.y - pz;
+                    this.ctx.save();
+                    this.ctx.strokeStyle = `rgba(${laserRGB}, 0.8)`;
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(mscx - tickX, mscy - tickY);
+                    this.ctx.lineTo(mscx + tickX, mscy + tickY);
+                    this.ctx.stroke();
+                    this.ctx.strokeStyle = `rgba(${laserRGB}, 0.35)`;
+                    this.ctx.lineWidth = 1.5;
+                    this.ctx.beginPath();
+                    this.ctx.arc(mscx, mscy, 90 * (p.kitBlastMult || 1), 0, Math.PI * 2);
+                    this.ctx.stroke();
                     this.ctx.restore();
                 }
             }
@@ -27887,7 +28306,10 @@ class TouchController {
         };
         
         this.hudTouchState = {
-            left: { touchId: null, startY: 0, lastSelectIdx: 0 },
+            // PHASE 5: glHoldActive/suppressClick support ARC SIGHTS hold-
+            // to-charge on the grenade-launcher slot (see the left-HUD
+            // pointerdown/pointermove/pointerup wiring below).
+            left: { touchId: null, startY: 0, lastSelectIdx: 0, glHoldActive: false, suppressClick: false },
             right: { touchId: null, startY: 0, lastSelectIdx: 0 },
             bottom: { touchId: null, startX: 0, lastWeaponIdx: 0 }
         };
@@ -28253,6 +28675,10 @@ class TouchController {
                 // Left HUD slots
                 const leftSlot = e.target.closest('#hud-left-p1 .hud-item-slot');
                 if (leftSlot) {
+                    if (this.hudTouchState.left.suppressClick) {
+                        this.hudTouchState.left.suppressClick = false;
+                        return;
+                    }
                     const track = document.getElementById('left-track-p1');
                     if (track) {
                         const idx = Array.from(track.children).indexOf(leftSlot);
@@ -28297,6 +28723,19 @@ class TouchController {
                     this.hudTouchState.left.touchId = e.pointerId;
                     this.hudTouchState.left.startY = e.clientY;
                     this.hudTouchState.left.lastSelectIdx = game.player.leftSelectIdx;
+
+                    // PHASE 5 (ARC SIGHTS): touching directly on the already-
+                    // selected grenade-launcher slot starts a GL-L2 charge.
+                    // Every other left item (and GL at L0/L1) is untouched --
+                    // it still fires from the plain click handler above.
+                    const slotEl = e.target.closest('.hud-item-slot');
+                    if (slotEl) {
+                        const track = document.getElementById('left-track-p1');
+                        const idx = track ? Array.from(track.children).indexOf(slotEl) : -1;
+                        if (idx !== -1 && idx === game.player.leftSelectIdx) {
+                            this.hudTouchState.left.glHoldActive = tryStartGLCharge(game.player);
+                        }
+                    }
                 });
                 leftContainer.addEventListener('pointermove', (e) => {
                     if (!game || !game.player) return;
@@ -28307,6 +28746,12 @@ class TouchController {
                         let newIdx = (this.hudTouchState.left.lastSelectIdx - indexShift) % 4;
                         if (newIdx < 0) newIdx += 4;
                         if (game.player.leftSelectIdx !== newIdx) {
+                            // Swiping away from the charging slot cancels cleanly
+                            // (weapon-swap-away) rather than firing.
+                            if (this.hudTouchState.left.glHoldActive) {
+                                cancelGLCharge(game.player);
+                                this.hudTouchState.left.glHoldActive = false;
+                            }
                             game.player.leftSelectIdx = newIdx;
                             if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('money');
                         }
@@ -28315,6 +28760,18 @@ class TouchController {
                 const endLeftTouch = (e) => {
                     if (this.hudTouchState.left.touchId === e.pointerId) {
                         this.hudTouchState.left.touchId = null;
+                        if (this.hudTouchState.left.glHoldActive) {
+                            this.hudTouchState.left.glHoldActive = false;
+                            if (e.type === 'pointercancel') {
+                                // Aborted gesture -- cancel cleanly, no launch.
+                                cancelGLCharge(game.player);
+                            } else {
+                                releaseGLCharge(game.player);
+                                // The upcoming synthetic click on this same tap
+                                // must not ALSO fire the item.
+                                this.hudTouchState.left.suppressClick = true;
+                            }
+                        }
                     }
                 };
                 leftContainer.addEventListener('pointerup', endLeftTouch);
