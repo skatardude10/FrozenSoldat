@@ -17774,7 +17774,19 @@ const ARMORY_UPGRADES = [
       desc: 'Start: +2 energy drinks. Passive: your weapon noise -35% (stacks with Cold Barrel). Requisition: 20% cash back on ammunition.' },
     { key: 'kitTechnician', name: 'KIT: TECHNICIAN', maxLevel: 1,
       costPerLevel: [450],
-      desc: 'Start: 1 auto turret + 1 barrier. Passive: +30% uplink hack speed. Requisition: 20% cash back on gadgets.' }
+      desc: 'Start: 1 auto turret + 1 barrier. Passive: +30% uplink hack speed. Requisition: 20% cash back on gadgets.' },
+    { key: 'kitMedic', name: 'KIT: MEDIC', maxLevel: 1,
+      costPerLevel: [350],
+      desc: 'Start: 2 medpacks + 1 energy drink. Passive: +25 Max HP. Requisition: 20% cash back on medical supplies & armor.' },
+    { key: 'kitPathfinder', name: 'KIT: PATHFINDER', maxLevel: 1,
+      costPerLevel: [450],
+      desc: 'Start: M1A semi-auto rifle + 24 rounds. Passive: +15% movement speed (accel). Requisition: 20% cash back on ammo.' },
+    { key: 'kitVanguard', name: 'KIT: VANGUARD', maxLevel: 1,
+      costPerLevel: [400],
+      desc: 'Start: SMG + 120 rounds + 1 trip mine. Passive: +50 Max Armor. Requisition: 20% cash back on ordnance.' },
+    { key: 'kitHeavy', name: 'KIT: HEAVY', maxLevel: 1,
+      costPerLevel: [450],
+      desc: 'Start: LMG + 150 rounds + 1 grenade. Passive: +75 Max Armor, +40 Max Stamina, -30% speed (accel). Requisition: 20% cash back on LMG ammo & armor.' }
 ];
 
 // GL_ARC: Underbarrel Launcher Lvl2 ARC SIGHTS tuning (replaces the old
@@ -17876,14 +17888,26 @@ const OPERATOR_KITS = {
     ghost: { name: 'GHOST', armoryKey: 'kitGhost',
         desc: 'Start: +2 energy drinks. Passive: your weapon noise -35% (stacks with Cold Barrel). Requisition: 20% cash back on ammunition.' },
     technician: { name: 'TECHNICIAN', armoryKey: 'kitTechnician',
-        desc: 'Start: 1 auto turret + 1 barrier. Passive: +30% uplink hack speed. Requisition: 20% cash back on gadgets.' }
+        desc: 'Start: 1 auto turret + 1 barrier. Passive: +30% uplink hack speed. Requisition: 20% cash back on gadgets.' },
+    medic: { name: 'MEDIC', armoryKey: 'kitMedic',
+        desc: 'Start: 2 medpacks + 1 energy drink. Passive: +25 Max HP. Requisition: 20% cash back on medical supplies & armor.' },
+    pathfinder: { name: 'PATHFINDER', armoryKey: 'kitPathfinder',
+        desc: 'Start: M1A semi-auto rifle + 24 rounds. Passive: +15% movement speed. Requisition: 20% cash back on ammunition.' },
+    vanguard: { name: 'VANGUARD', armoryKey: 'kitVanguard',
+        desc: 'Start: SMG + 120 rounds + 1 trip mine. Passive: +50 Max Armor. Requisition: 20% cash back on ordnance.' },
+    heavy: { name: 'HEAVY', armoryKey: 'kitHeavy',
+        desc: 'Start: LMG + 150 rounds + 1 grenade. Passive: +75 Max Armor, +40 Max Stamina, -30% speed. Requisition: 20% cash back on LMG ammo & armor.' }
 };
-const KIT_ORDER = ['standard', 'breacher', 'ghost', 'technician'];
+const KIT_ORDER = ['standard', 'breacher', 'ghost', 'technician', 'medic', 'pathfinder', 'vanguard', 'heavy'];
 // Shop-bias categories, matched against buyItem's type string.
 const KIT_SHOP_REBATE = {
     breacher:   { pct: 0.20, match: (t) => t === 'grenade' || t === 'mine' },
     ghost:      { pct: 0.20, match: (t) => typeof t === 'string' && t.indexOf('ammo_') === 0 },
-    technician: { pct: 0.20, match: (t) => ['barrier', 'barrier_upgrade', 'turret', 'turret_mk2', 'drone', 'drone_upgrade', 'fiber_optic', 'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack'].indexOf(t) >= 0 }
+    technician: { pct: 0.20, match: (t) => ['barrier', 'barrier_upgrade', 'turret', 'turret_mk2', 'drone', 'drone_upgrade', 'fiber_optic', 'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack'].indexOf(t) >= 0 },
+    medic:      { pct: 0.20, match: (t) => t === 'medpack' || t === 'armor' },
+    pathfinder: { pct: 0.20, match: (t) => typeof t === 'string' && t.indexOf('ammo_') === 0 },
+    vanguard:   { pct: 0.20, match: (t) => t === 'grenade' || t === 'mine' },
+    heavy:      { pct: 0.20, match: (t) => typeof t === 'string' && (t.indexOf('ammo_lmg_') === 0 || t === 'armor') }
 };
 
 // ==== PHASE 1: OBJECTIVE FRAMEWORK ====
@@ -22305,6 +22329,30 @@ class Game {
             p.turretsCount = (p.turretsCount || 0) + 1;
             p.barriersCount = (p.barriersCount || 0) + 1;
             p.kitHackMult = 1.3;     // consumed at HACK_TERMINAL's channel tick
+        } else if (p.kitId === 'medic') {
+            p.medpacks = Math.min(3, (p.medpacks || 0) + 1); // Starts with 2 medpacks total
+            p.energyDrinks = (p.energyDrinks || 0) + 1;
+            p.maxHp += 25;
+            p.hp = p.maxHp;
+        } else if (p.kitId === 'pathfinder') {
+            p.inventory.push({ ...Weapons.m1a });
+            p.ammo.m1a = Math.min(p.maxAmmo.m1a, (p.ammo.m1a || 0) + 24);
+            p.accel *= 1.15;
+        } else if (p.kitId === 'vanguard') {
+            p.inventory.push({ ...Weapons.smg });
+            p.ammo.smg = Math.min(p.maxAmmo.smg, (p.ammo.smg || 0) + 120);
+            p.mines = Math.min(3, (p.mines || 0) + 1); // Starts with 1 trip mine
+            p.maxArmor += 50;
+            p.armor = p.maxArmor;
+        } else if (p.kitId === 'heavy') {
+            p.inventory.push({ ...Weapons.lmg });
+            p.ammo.lmg = Math.min(p.maxAmmo.lmg, (p.ammo.lmg || 0) + 150);
+            p.grenades = Math.min(p.maxGrenades || 3, (p.grenades || 0) + 1);
+            p.maxArmor += 75;
+            p.armor = p.maxArmor;
+            p.maxStamina = 160;
+            p.stamina = p.maxStamina;
+            p.accel *= 0.70;
         }
     }
 
@@ -25694,7 +25742,7 @@ class Game {
             // pre-mission config). Additive only, per migration discipline.
             { to: 5, up: (sd) => {
                 if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
-                for (const k of ['kitBreacher', 'kitGhost', 'kitTechnician']) {
+                for (const k of ['kitBreacher', 'kitGhost', 'kitTechnician', 'kitMedic', 'kitPathfinder', 'kitVanguard', 'kitHeavy']) {
                     if (typeof sd.metaUpgrades[k] !== 'number') sd.metaUpgrades[k] = 0;
                 }
                 if (typeof sd.kitP1 !== 'string' || !OPERATOR_KITS[sd.kitP1]) sd.kitP1 = 'standard';
