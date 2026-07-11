@@ -15,13 +15,22 @@
 </div>
 
 ## The Rundown
-Frozen Soldat strips away the fluff. You are dropped into a hostile, procedurally generated operational zone. The focus here is entirely on **game feel and tactics**. 
+
+Frozen Soldat is a single-file game inspired by two of my favorite games: <a href="https://store.steampowered.com/app/638490/Soldat/">Soldat</a> + <a href="https://store.steampowered.com/app/98200/Frozen_Synapse/">Frozen Synapse</a>.
+
+You are dropped into a hostile, procedurally generated operational zone. The focus here is entirely on **game feel and tactics**. 
 
 Weapons have physical kickback that affects your movement. Sustained fire causes thermal spread and laser divergence. Bullets penetrate walls or ricochet based on caliber and angle. Enemies don't just swarm you—they flank, suppress, communicate, and react to your noise. 
 
 Survive, earn Intel, upgrade your kit, and extract.
 
-![Frozen Soldat Gameplay](screenshot2.png) 
+<div align="center">
+
+  <a href="https://skatardude10.github.io/FrozenSoldat/LATEST_MASTER.html">
+    <img src="screenshot2.png" alt="Frozen Soldat Splash" />
+  </a>
+
+</div> 
 
 ## Core Features
 
