@@ -287,7 +287,48 @@
     }
     button:disabled { border-color: #334; color: #445; cursor: not-allowed; }
     button.maxed { border-color: var(--red) !important; color: var(--red) !important; background: transparent !important; box-shadow: none !important; cursor: not-allowed; }
-    
+
+    /* PHASE D: prestige-ready button pulse */
+    @keyframes prestige-pulse {
+        0%,100% { box-shadow: 0 0 10px currentColor, inset 0 0 6px rgba(255,255,255,0.05); transform: scale(1); }
+        50%     { box-shadow: 0 0 26px currentColor, inset 0 0 14px rgba(255,255,255,0.12); transform: scale(1.015); }
+    }
+    button.prestige-ready { animation: prestige-pulse 1.4s ease-in-out infinite; }
+    /* PHASE D: celebration overlay (DOM/CSS, layered over the menu) */
+    .prestige-fx-layer {
+        position: absolute; inset: 0; z-index: 99999; pointer-events: none; overflow: hidden;
+    }
+    .prestige-fx-banner {
+        position: absolute; top: 34%; left: 0; right: 0; text-align: center;
+        font-family: 'Courier New', monospace; font-weight: bold; font-size: 46px; letter-spacing: 6px;
+        animation: prestige-banner 3.0s ease-out forwards;
+    }
+    @keyframes prestige-banner {
+        0%   { opacity: 0; transform: translateY(20px) scale(0.7); }
+        12%  { opacity: 1; transform: translateY(0) scale(1.08); }
+        22%  { transform: scale(1.0); }
+        78%  { opacity: 1; }
+        100% { opacity: 0; transform: translateY(-14px) scale(1.02); }
+    }
+    .prestige-fx-dot {
+        position: absolute; top: 50%; left: 50%; border-radius: 50%;
+        animation: prestige-dot 1.6s ease-out forwards;
+    }
+    @keyframes prestige-dot {
+        0%   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.2); }
+    }
+    .prestige-fx-text {
+        position: absolute; font-family: 'Courier New', monospace; font-weight: bold;
+        font-size: 20px; letter-spacing: 2px; text-shadow: 0 0 8px currentColor;
+        animation: prestige-text 2.4s ease-out forwards;
+    }
+    @keyframes prestige-text {
+        0%   { opacity: 0; transform: translateY(0) scale(0.6); }
+        20%  { opacity: 1; transform: translateY(-18px) scale(1.1); }
+        100% { opacity: 0; transform: translateY(-70px) scale(0.9); }
+    }
+
     button.focused-btn, input.focused-btn {
         border-color: var(--neon-blue) !important;
         box-shadow: 0 0 15px rgba(0, 229, 255, 0.6) !important;
@@ -764,6 +805,8 @@
 
 <div id="start-screen" class="menu-overlay">
     <div class="menu-box">
+        <!-- PHASE D: prestige rank badge (top-right), injected by applyPrestigeCosmetics() -->
+        <div id="prestige-badge" style="position:absolute; top:10px; right:12px; z-index:5; pointer-events:none;"></div>
         <h1>FROZEN SOLDAT</h1>
         
         <div class="tabs-container">
@@ -1123,52 +1166,61 @@
                 <!-- Populated dynamically by renderArmoryTab() -->
             </div>
             <button class="neon-btn" onclick="game.resetArmoryUpgrades()" style="width: 100%; border-color: var(--red); color: var(--red); margin-top: 15px; font-weight: bold; letter-spacing: 2px;">RESET ALL UPGRADES & REFUND INTEL</button>
+            <!-- PHASE D: prestige button, populated by renderArmoryTab() -->
+            <div id="prestige-slot" style="margin-top: 12px;"></div>
         </div>
         
         <!-- Tab content: GUIDE -->
         <div id="tab-guide" class="tab-content" style="max-height: 400px; overflow-y: auto; touch-action: pan-y; padding-right: 15px;">
             <div style="text-align: left; line-height: 1.6;">
-                <h2 style="color: var(--neon-blue); letter-spacing: 2px; margin-bottom: 5px;">FROZEN SOLDAT: OPERATIVE'S MANUAL</h2>
-                <p style="font-size: 11px; color: #a9c2c7; margin-top: 0; margin-bottom: 15px;">Master the combat loop, tactical assets, and meta-progression to survive the perimeter.</p>
+                <h2 style="color: var(--neon-blue); letter-spacing: 2px; margin-bottom: 5px;">FROZEN SOLDAT: FIELD MANUAL</h2>
+                <p style="font-size: 11px; color: #a9c2c7; margin-top: 0; margin-bottom: 15px;">Quick-reference. Drop in, survive the perimeter, extract with Intel, come back stronger.</p>
 
-                <h3 style="color: #39ff14; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(57, 255, 20, 0.3); padding-bottom: 3px;">1. SURVIVAL & ECONOMY</h3>
+                <h3 style="color: #39ff14; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(57, 255, 20, 0.3); padding-bottom: 3px;">1. THE CORE LOOP</h3>
                 <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li><b>The Loop:</b> Defend against waves of enemies. Between waves, use the Armory Shop to spend Cash on health, armor, ammo, and tactical gear.</li>
-                    <li><b>Elites & Mutators:</b> Elites spawn randomly or via Wave Mutators (Blackout, Juggernaut, Swarm, Adrenaline). Elites have 2.2x HP but drop cash, ammo, health, and Perk Cases.</li>
+                    <li><b>Survive waves → earn Cash → spend it between waves → repeat.</b> Cash is per-run; it dies when you do.</li>
+                    <li><b>Intel</b> is the permanent currency. Clear waves and kill Elites to bank it, then spend it in the <b>Armory</b> on the menu for upgrades that stick across every future run.</li>
+                    <li><b>Elites</b> (2.2x HP) drop cash, ammo, health, and sometimes a blue <b>Perk Case</b> — grab it to pause and pick a run-defining perk (Vampiric, Explosive, Smart Munitions…).</li>
+                    <li><b>Wave Mutators</b> (Blackout, Swarm, Juggernaut, Adrenaline) shake up individual waves. Roll with them or exploit them.</li>
                 </ul>
 
-                <h3 style="color: #ffb700; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 183, 0, 0.3); padding-bottom: 3px;">2. TACTICAL ASSETS (DRONES & ROBOTS)</h3>
+                <h3 style="color: #00e5ff; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(0, 229, 255, 0.3); padding-bottom: 3px;">2. GAME MODES</h3>
                 <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li><b>FPV Drone:</b> Deploy from your Right HUD. Once flying, your character is locked. Upgrade to the <b>FPV Drone Bomber</b> in the shop to drop up to 3 lethal bombs from above before detonating the drone itself!</li>
-                    <li><b>Hunter Swarm (Mini Drones):</b> Buy Swarm Packs in the shop. They passively orbit you and automatically break off to hunt and dive-bomb nearby enemies.</li>
-                    <li><b>Spot Robot (Dog):</b> A ground companion that shoots at enemies. You can issue Waypoint commands (tap the screen or use the gamepad interact button) to send Spot to scout locations. Upgrade to MK.II for 1.5x speed and 3x DPS.</li>
+                    <li><b>Normal Wave Ops:</b> The main event. Build a loadout wave by wave, fight bosses, extract.</li>
+                    <li><b>Action Now:</b> Instant horde mode. Fixed loadout, free perks, cash to burn, minimal prep — pure combat.</li>
+                    <li><b>Extraction:</b> Big open maps with objectives (uplinks, hostages) and a Heat Director that escalates as you make noise. Get loud, get hunted. Extract before you're overrun.</li>
+                    <li><b>FPV Operator:</b> Asymmetric bunker defense. You're locked in base — fight only through drones, turrets, and Spot robots watching the feed.</li>
+                    <li><b>Chaos Draft:</b> Roguelite. No shop — after each wave you draft 1 of 3 random cards. Landmark waves (5/10/15/20) spawn mutated bosses. Also home to the <b>Black Market</b> (below).</li>
                 </ul>
 
-                <h3 style="color: #d500f9; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(213, 0, 249, 0.3); padding-bottom: 3px;">3. PERKS & OVERCLOCKS</h3>
+                <h3 style="color: #ffb700; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 183, 0, 0.3); padding-bottom: 3px;">3. TACTICAL ASSETS</h3>
                 <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li><b>Perk Cases:</b> Elites have a 10% chance to drop a blue Perk Case. Pick it up to pause the game and select a game-changing run modifier (e.g., Smart Munitions, Vampiric Rounds, Explosive Rounds).</li>
-                    <li><b>Overclocks:</b> Found at the bottom of the inter-wave Shop. Spend cash to permanently upgrade your weapons for the current run (Hollow Point rounds, Extended Mags, Fire Rate boosts).</li>
-                    <li><b>Corrupted Overclocks:</b> One-time purchases with real drawbacks — Overpressure (+damage / +spread &amp; kick), Glass Nerves (+fire rate / +damage taken), Cold Barrel (quiet shots / -damage).</li>
-                    <li><b>Shotgun Slugs:</b> Specialty ammo that swaps the pellet cone for one heavy accurate round. Mutually exclusive with buckshot.</li>
-                    <li><b>Escalation Protocols:</b> Opt-in extraction modifiers (menu) that raise danger for bonus Intel on everything you earn.</li>
-                    <li><b>Operator Kits (Phase 4):</b> Unlock BREACHER / GHOST / TECHNICIAN in the Armory, then pick one per player on the main menu — each grants a starting loadout, a passive, and cash back on a shop category.</li>
-                    <li><b>Mission Modifiers:</b> Some ops run under field conditions — CRYO (iced ground, everyone slides), BLACKOUT (forced night), SCRAMBLER (objective markers only resolve close-in). Badges show on the mission card.</li>
-                    <li><b>Patrols:</b> Below HUNTED heat, extraction squads walk patrol beats instead of converging on you. Stay quiet and unseen and they stay dumb; get spotted, shot at, or let the grid hit HUNTED and it's weapons-free.</li>
-                    <li><b>ARC SIGHTS:</b> Underbarrel Launcher level 2 — hold to walk out a range marker, release to lob a grenade dead onto it, clean over cover.</li>
-                    <li><b>Loadout Presets:</b> Three slots under the mission ladder snapshot your mission + protocols + kits + difficulty for one-tap redeploys.</li>
+                    <li><b>FPV Drone:</b> Fly it yourself — your operative is locked while piloting. Upgrade to <b>Bomber</b> to drop 3 bombs before you detonate on-target.</li>
+                    <li><b>Spot Robot:</b> Ground companion that shoots on its own. Tap the screen / hit interact to send it to a waypoint. MK.II = faster, hits way harder.</li>
+                    <li><b>Hunter Swarm:</b> Mini-drones that orbit you and peel off to dive-bomb whatever's close.</li>
+                    <li><b>Auto Turret &amp; Barrier:</b> Drop static defense. Turret MK.II and Barrier MK.II add serious durability and firepower.</li>
+                    <li><i>Most advanced assets must be unlocked in the Armory first — see below.</i></li>
                 </ul>
 
-                <h3 style="color: #ff2a5f; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 42, 95, 0.3); padding-bottom: 3px;">4. PERSISTENT UPGRADES (INTEL)</h3>
+                <h3 style="color: #d500f9; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(213, 0, 249, 0.3); padding-bottom: 3px;">4. OVERCLOCKS &amp; PERKS</h3>
                 <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li>You earn <b>Intel</b> by completing waves and eliminating Elites.</li>
-                    <li>On the Main Menu, tab over to <b>ARMORY</b>. Spend Intel here to permanently increase your base stats across all future runs (Kevlar Weave for Armor, Cardio for Stamina, Offshore Accounts to retain cash on death).</li>
+                    <li><b>Clean Overclocks:</b> Straight upgrades bought with cash for the current run — Hollow Point, Exo-Servos, Extended Mags, Fire Rate, Max HP.</li>
+                    <li><b>Corrupted Overclocks:</b> Power with a price. Overpressure (+dmg / +kick &amp; spread), Glass Nerves (+fire rate / +damage taken), Cold Barrel (silent / -dmg). High risk, high reward.</li>
+                    <li><b>Operator Kits:</b> Unlock in the Armory, pick one per player on the menu — each gives a starting loadout, a passive, and cash-back on a shop category.</li>
+                    <li><b>Escalation Protocols:</b> Opt-in extraction risk toggles that crank danger for bonus Intel.</li>
                 </ul>
 
-                <h3 style="color: #ff0055; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 0, 85, 0.3); padding-bottom: 3px;">5. CLASSIFIED: DEVELOPER MENU</h3>
+                <h3 style="color: #ff2a5f; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 42, 95, 0.3); padding-bottom: 3px;">5. ARMORY, BLACK MARKET &amp; PRESTIGE</h3>
                 <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li><b>Activation:</b> On the main menu, rapidly click the "FROZEN SOLDAT" title text <b>10 times</b>. A notification will appear.</li>
-                    <li><b>Usage:</b> During gameplay, press the <b>Tilde (~)</b> or <b>F1</b> key to pause the game and open the Developer Command Center.</li>
-                    <li><b>Features:</b> Toggle God Mode, spawn specific weapons/enemies/perk cases, inject infinite cash, or force wave Mutators.</li>
+                    <li><b>Armory (menu):</b> Spend Intel to permanently boost base stats (Kevlar, Cardio, First Aid…) AND to <b>unlock shop capabilities</b> — FPV drones, Spot, Swarms, MK.II gear, and the Overclock markets. Locked gear shows "UNLOCK IN ARMORY" in the shop until you own it.</li>
+                    <li><b>Chaos Draft Black Market:</b> Blow surplus cash between draft cards — Reroll the hand, Take Two, launder cash into Intel, sign a push-your-luck <b>Blood Wager</b>, or yank the Contraband Slots.</li>
+                    <li><b>Prestige:</b> Max out <i>every</i> Armory upgrade and the Prestige button unlocks. Prestiging wipes your Intel and upgrades back to zero, bumps your Prestige level, and rewards a fresh menu color theme + a rank badge. The ultimate flex.</li>
+                </ul>
+
+                <h3 style="color: #ff0055; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 0, 85, 0.3); padding-bottom: 3px;">6. CLASSIFIED: DEV TERMINAL</h3>
+                <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
+                    <li><b>Unlock:</b> Rapidly click the "FROZEN SOLDAT" title on the main menu <b>10 times</b>.</li>
+                    <li><b>Open:</b> In a match, press <b>~</b> or <b>F1</b> for the Developer Command Center — god mode, spawners, infinite cash, forced mutators.</li>
                 </ul>
             </div>
         </div>
@@ -1594,6 +1646,23 @@
         ">
             <!-- Dynamic cards go here -->
         </div>
+
+        <!-- PHASE A: Black Market gold sinks. Populated by _renderBlackMarket().
+             Sits below the 3 draft cards; gamepad reaches it via Down from the
+             card row (see handleChaosDraftMenuNavigation). -->
+        <div id="black-market-panel" style="
+            border-top: 1px solid rgba(255, 183, 0, 0.3);
+            margin-top: 4px; padding-top: 14px; width: 100%;
+        ">
+            <div style="font-size: 11px; font-weight: bold; letter-spacing: 2px; color: #ffb700; text-shadow: 0 0 6px rgba(255,183,0,0.5); margin-bottom: 4px; text-align: center;">◈ BLACK MARKET ◈</div>
+            <div style="font-size: 10px; color: #a9c2c7; margin-bottom: 12px; text-align: center; letter-spacing: 1px;">SPEND SURPLUS CASH — <span id="black-market-cash" style="color:#39ff14; font-weight:bold;">$0</span> AVAILABLE</div>
+            <div id="black-market-modules" style="
+                display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 10px; width: 100%;
+            ">
+                <!-- Dynamic market modules go here -->
+            </div>
+        </div>
     </div>
 </div>
 
@@ -1685,6 +1754,11 @@
                 <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(0,229,255,0.15); padding-top: 10px; margin-top: 4px;">
                     <span style="font-size: 11px; color: #e0f7fa;">Open Armory Mid-Round</span>
                     <button class="neon-btn" onclick="game.devOpenShopMidRound()" style="margin: 0; font-size: 10px; padding: 4px 10px; border-color: var(--green); color: var(--green);">OPEN SHOP</button>
+                </div>
+                <!-- PHASE D: prestige reset -->
+                <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,42,95,0.15); padding-top: 10px; margin-top: 4px;">
+                    <span style="font-size: 11px; color: #e0f7fa;">Prestige Level (<span id="dev-prestige-lvl">0</span>)</span>
+                    <button class="neon-btn" onclick="game.devResetPrestige()" style="margin: 0; font-size: 10px; padding: 4px 10px; border-color: var(--red); color: var(--red);">RESET TO 0</button>
                 </div>
             </div>
         </div>
@@ -7881,6 +7955,11 @@ class Entity {
         // gate above relies on), so this counts player chip damage only.
         if (this.maxStamina !== undefined && typeof game !== 'undefined' && game && game.runLedger && amt > 0) {
             game.runLedger.recordDamageTaken(amt);
+            // PHASE A: Blood Wager fails the instant the player takes HP damage.
+            // Penalty (Max Armor -80% for the run) applies once, immediately.
+            if (game.chaosDraftState && game.chaosDraftState.activeWager && !game.chaosDraftState.activeWager.failed) {
+                game.failBloodWager(this);
+            }
             // PHASE 1: objectives that care about player damage (uplink
             // channel interrupts) subscribe via this single hook -- exactly
             // the damage choke point Phase 0 established.
@@ -17855,7 +17934,34 @@ const ARMORY_UPGRADES = [
       desc: 'Start: SMG + 120 rounds + 1 trip mine. Passive: +50 Max Armor. Requisition: 20% cash back on ordnance.' },
     { key: 'kitHeavy', name: 'KIT: HEAVY', maxLevel: 1,
       costPerLevel: [450],
-      desc: 'Start: LMG + 150 rounds + 1 grenade. Passive: +75 Max Armor, +40 Max Stamina, -30% speed (accel). Requisition: 20% cash back on LMG ammo & armor.' }
+      desc: 'Start: LMG + 150 rounds + 1 grenade. Passive: +75 Max Armor, +40 Max Stamina, -30% speed (accel). Requisition: 20% cash back on LMG ammo & armor.' },
+    // ---- PHASE B: in-run shop capability unlocks. Owning a level here makes
+    // the corresponding buy-menu item(s) purchasable during a run. Global to
+    // the machine, so co-op players share the same unlocked storefront. Base
+    // Turret and base Barrier stay available by default -- only their MK.II
+    // upgrades gate. Read by openShopInterface's gating + buyItem/buyOverclock
+    // guardrails; NOT enforced in FPV Operator mode (its toys are core kit).
+    { key: 'unlockFpvDrone', name: 'REQUISITION: FPV DRONES', maxLevel: 3,
+      costPerLevel: [15, 25, 50],
+      desc: 'Lvl1: FPV Drone in the Shop. Lvl2: Bomber upgrade. Lvl3: Fiber Optic Spool.' },
+    { key: 'unlockSpotRobot', name: 'REQUISITION: SPOT ROBOT', maxLevel: 2,
+      costPerLevel: [20, 50],
+      desc: 'Lvl1: Spot Robot in the Shop. Lvl2: Spot MK.II upgrade.' },
+    { key: 'unlockSwarm', name: 'REQUISITION: DRONE SWARM', maxLevel: 2,
+      costPerLevel: [20, 40],
+      desc: 'Lvl1: single Swarm Drones in the Shop. Lvl2: 4x Swarm Packs.' },
+    { key: 'unlockTurretMk2', name: 'REQUISITION: TURRET MK.II', maxLevel: 1,
+      costPerLevel: [25],
+      desc: 'Adds Auto Turret MK.II to the Shop. (Base Turret always available.)' },
+    { key: 'unlockBarrierMk2', name: 'REQUISITION: BARRIER MK.II', maxLevel: 1,
+      costPerLevel: [20],
+      desc: 'Adds Barrier MK.II upgrade to the Shop. (Base Barrier always available.)' },
+    { key: 'unlockOverclocks', name: 'REQUISITION: OVERCLOCKS', maxLevel: 2,
+      costPerLevel: [30, 40],
+      desc: 'Lvl1: standard Weapon Overclocks in the Shop. Lvl2: Extended Mags.' },
+    { key: 'unlockCorrupted', name: 'REQUISITION: CORRUPTED MARKET', maxLevel: 1,
+      costPerLevel: [50],
+      desc: 'Unlocks the illicit Corrupted Overclocks market in the Shop.' }
 ];
 
 // GL_ARC: Underbarrel Launcher Lvl2 ARC SIGHTS tuning (replaces the old
@@ -17902,6 +18008,23 @@ const PLAYER_COLORS = [
     { name: 'CRIMSON',hex: '#ff2a5f' },
     { name: 'YELLOW', hex: '#ffee00' },
     { name: 'BLUE',   hex: '#4a9eff' }
+];
+
+// PHASE D: Prestige reward palette. Index = prestige level - 1 (levels 1-10).
+// `bg` overrides the --dark-bg CSS var for the whole menu; `accent` tints the
+// rank badge. Level 0 uses the stock #010a15 (no override). Ten distinct,
+// deliberately moody tones so each prestige visibly re-skins the menu.
+const PRESTIGE_THEMES = [
+    { name: 'DEEP CRIMSON',  bg: '#12030a', accent: '#ff2a5f' },
+    { name: 'ABYSSAL BLUE',  bg: '#020a1a', accent: '#4a9eff' },
+    { name: 'TOXIC GREEN',   bg: '#04140a', accent: '#39ff14' },
+    { name: 'HAZARD ORANGE', bg: '#170a02', accent: '#ff7a00' },
+    { name: 'VOID VIOLET',   bg: '#0d0316', accent: '#d500f9' },
+    { name: 'GOLD BULLION',  bg: '#141002', accent: '#ffd700' },
+    { name: 'ARCTIC CYAN',   bg: '#02121a', accent: '#00e5ff' },
+    { name: 'BLOOD RUST',    bg: '#100604', accent: '#c0392b' },
+    { name: 'PLASMA PINK',   bg: '#160212', accent: '#ff4fd8' },
+    { name: 'OBSIDIAN GOLD', bg: '#0a0a0c', accent: '#ffe08a' }
 ];
 
 // Corrupted Overclocks: one-time in-run shop purchases (cash), each a
@@ -22676,6 +22799,18 @@ class Game {
             p1: { hollowPoint: 0, exoServos: 0, extMags: {}, fireRate: 0, maxHpOC: 0, corrupted: {} },
             p2: { hollowPoint: 0, exoServos: 0, extMags: {}, fireRate: 0, maxHpOC: 0, corrupted: {} }
         };
+        // PHASE A (Chaos Draft Black Market): run-scoped gold-sink state.
+        // Shared pool in co-op (both players draw from the same escalating
+        // reroll/slot costs -- deliberately more chaotic per the design).
+        // activeWager is the Blood Wager contract (null when none live).
+        // Reset every run so costs/contracts never leak across runs.
+        this.chaosDraftState = {
+            rerollCost: 500,
+            slotCost: 250,
+            picksRemaining: 1,
+            takeTwoBought: false,
+            activeWager: null   // { wavesRemaining, failed }
+        };
         this.intelEarnedThisRun = 0;
         this.isDevShopActive = false;
         this.winFlashIntensity = 0;
@@ -23694,7 +23829,22 @@ class Game {
         // live -- this explicit flag does. Cleared only when the whole draft
         // sequence closes (above).
         this._chaosDraftActive = true;
+        this._chaosDraftPlayer = p;
 
+        // PHASE A: per-player pick budget resets each turn. Take Two (bought
+        // from the Black Market) bumps picksRemaining to 2; the card click
+        // handler only advances the queue when it reaches 0.
+        this.chaosDraftState.picksRemaining = 1;
+        this.chaosDraftState.takeTwoBought = false;
+
+        this._renderChaosDraftForPlayer(p);
+    }
+
+    // PHASE A: renders (or re-renders, e.g. after a Reroll) the draft cards
+    // and Black Market for the player whose turn it currently is. Split out
+    // of _advanceChaosDraftQueue so Reroll can redraw WITHOUT advancing the
+    // queue or touching pick state.
+    _renderChaosDraftForPlayer(p) {
         // Update label
         const indicator = document.getElementById('chaos-draft-player-indicator');
         if (indicator) {
@@ -23706,6 +23856,7 @@ class Game {
         }
 
         this.chaosDraftSelectionIndex = 0;
+        this.chaosDraftRowIndex = 0; // 0 = card row, 1 = black market row
 
         const choices = this.generateChaosDraftChoices(p);
         const container = document.getElementById('chaos-draft-choices-container');
@@ -23725,6 +23876,7 @@ class Game {
                 cardEl.style.textAlign = 'center';
                 cardEl.style.transition = 'transform 0.15s ease';
                 cardEl.onmouseenter = () => {
+                    this.chaosDraftRowIndex = 0;
                     this.chaosDraftSelectionIndex = idx;
                     this.refreshChaosDraftHighlight();
                 };
@@ -23738,18 +23890,7 @@ class Game {
                     <button class="neon-btn" style="width: 100%; border-color: ${card.color}; color: ${card.color}; box-shadow: 0 0 8px ${card.color}30; margin: 0;">CHOOSE</button>
                 `;
 
-                cardEl.onclick = () => {
-                    card.apply(p);
-                    // play pickup sound
-                    if (audio) audio.playPickup('weapon');
-                    
-                    // Show confirmation floating text
-                    this.floatingTexts.push(this.spawnFloatingText(
-                        p.x, p.y - 25, `CHOSE: ${card.title}`, card.color, 2.0
-                    ));
-                    
-                    this._advanceChaosDraftQueue();
-                };
+                cardEl.onclick = () => this._pickChaosDraftCard(p, card);
 
                 container.appendChild(cardEl);
             });
@@ -23757,70 +23898,361 @@ class Game {
             this.refreshChaosDraftHighlight();
         }
 
+        this._renderBlackMarket(p);
         toggleClass('chaos-draft-screen', 'hidden', false);
+    }
+
+    // PHASE A: card selection with Take Two support. Applies the card, then
+    // either re-draws a fresh hand (a second pick is still owed) or advances
+    // the queue (budget spent).
+    _pickChaosDraftCard(p, card) {
+        card.apply(p);
+        if (audio) audio.playPickup('weapon');
+        this.floatingTexts.push(this.spawnFloatingText(
+            p.x, p.y - 25, `CHOSE: ${card.title}`, card.color, 2.0
+        ));
+
+        this.chaosDraftState.picksRemaining--;
+        if (this.chaosDraftState.picksRemaining > 0) {
+            // Take Two second pick: fresh hand, same player, no queue advance.
+            this.floatingTexts.push(this.spawnFloatingText(
+                p.x, p.y - 45, `TAKE TWO — PICK ANOTHER`, '#ffb700', 2.0, 0, -70, 180, true
+            ));
+            this._renderChaosDraftForPlayer(p);
+        } else {
+            this._advanceChaosDraftQueue();
+        }
     }
 
     refreshChaosDraftHighlight() {
         const container = document.getElementById('chaos-draft-choices-container');
-        if (!container) return;
-        const cards = container.children;
-        for (let i = 0; i < cards.length; i++) {
-            const cardEl = cards[i];
-            const btn = cardEl.querySelector('button');
-            if (i === this.chaosDraftSelectionIndex) {
-                cardEl.style.transform = 'scale(1.05)';
-                cardEl.style.boxShadow = `0 0 25px ${btn ? btn.style.borderColor : 'var(--neon-blue)'}`;
-                if (btn) {
-                    btn.style.backgroundColor = btn.style.borderColor;
-                    btn.style.color = '#000';
-                }
-            } else {
-                cardEl.style.transform = 'scale(1)';
-                cardEl.style.boxShadow = `0 0 15px ${btn ? btn.style.borderColor : 'var(--neon-blue)'}40`;
-                if (btn) {
-                    btn.style.backgroundColor = 'transparent';
-                    btn.style.color = btn.style.borderColor;
+        const onCards = (this.chaosDraftRowIndex || 0) === 0;
+        if (container) {
+            const cards = container.children;
+            for (let i = 0; i < cards.length; i++) {
+                const cardEl = cards[i];
+                const btn = cardEl.querySelector('button');
+                if (onCards && i === this.chaosDraftSelectionIndex) {
+                    cardEl.style.transform = 'scale(1.05)';
+                    cardEl.style.boxShadow = `0 0 25px ${btn ? btn.style.borderColor : 'var(--neon-blue)'}`;
+                    if (btn) {
+                        btn.style.backgroundColor = btn.style.borderColor;
+                        btn.style.color = '#000';
+                    }
+                } else {
+                    cardEl.style.transform = 'scale(1)';
+                    cardEl.style.boxShadow = `0 0 15px ${btn ? btn.style.borderColor : 'var(--neon-blue)'}40`;
+                    if (btn) {
+                        btn.style.backgroundColor = 'transparent';
+                        btn.style.color = btn.style.borderColor;
+                    }
                 }
             }
         }
+        // Black market module highlight (row 1)
+        const modWrap = document.getElementById('black-market-modules');
+        if (modWrap) {
+            const mods = modWrap.children;
+            for (let i = 0; i < mods.length; i++) {
+                mods[i].classList.toggle('focused-btn', !onCards && i === this.chaosDraftMarketIndex);
+            }
+        }
+    }
+
+    // PHASE A: renders the Black Market gold-sink modules for player p.
+    // Costs read from this.chaosDraftState (shared pool). Each module is a
+    // clickable div carrying its own handler; disabled (unaffordable/spent)
+    // modules render dimmed and ignore clicks.
+    _renderBlackMarket(p) {
+        const wrap = document.getElementById('black-market-modules');
+        if (!wrap) return;
+        const cs = this.chaosDraftState;
+        const cashEl = document.getElementById('black-market-cash');
+        if (cashEl) cashEl.textContent = '$' + p.cash;
+
+        // Build the module list as data so nav + render share one source.
+        this._blackMarketModules = [
+            { key: 'reroll',   name: 'REROLL DRAFT', cost: cs.rerollCost, color: '#00e5ff',
+              desc: 'Discard this hand, draw 3 new cards. Cost rises each use.',
+              enabled: p.cash >= cs.rerollCost },
+            { key: 'takeTwo',  name: 'TAKE TWO', cost: 5000, color: '#ffb700',
+              desc: 'Select a SECOND card from your next hand.',
+              enabled: p.cash >= 5000 && !cs.takeTwoBought && cs.picksRemaining === 1 },
+            { key: 'intel',    name: 'SECURE INTEL', cost: 1500, color: '#39ff14',
+              desc: 'Launder cash into +3 permanent Meta-Intel.',
+              enabled: p.cash >= 1500 },
+            { key: 'wager',    name: 'BLOOD WAGER', cost: 1000, color: '#ff2a5f',
+              desc: 'Sign: clear 2 waves w/o HP damage → random Armory upgrade. Fail → Max Armor −80% for the run.',
+              enabled: p.cash >= 1000 && !cs.activeWager },
+            { key: 'slot',     name: 'CONTRABAND SLOTS', cost: cs.slotCost, color: '#d500f9',
+              desc: 'Pull the arm. Junk, supplies, jackpots… or worse. Cost rises each pull.',
+              enabled: p.cash >= cs.slotCost }
+        ];
+
+        wrap.innerHTML = '';
+        this._blackMarketModules.forEach((mod, idx) => {
+            const el = document.createElement('div');
+            el.className = 'mission-card';
+            el.style.cssText = 'padding:10px 8px; text-align:center; cursor:' + (mod.enabled ? 'pointer' : 'default')
+                + '; opacity:' + (mod.enabled ? '1' : '0.4') + '; border-color:' + mod.color
+                + '; display:flex; flex-direction:column; gap:4px; min-height:96px; justify-content:space-between;';
+            el.title = mod.desc;
+            el.innerHTML =
+                '<div style="font-size:11px; font-weight:bold; letter-spacing:1px; color:' + mod.color + ';">' + mod.name + '</div>'
+              + '<div style="font-size:9px; color:#a9c2c7; line-height:1.35; flex-grow:1;">' + mod.desc + '</div>'
+              + '<div style="font-size:11px; font-weight:bold; color:' + (mod.enabled ? '#39ff14' : '#5a6a75') + ';">$' + mod.cost + '</div>';
+            el.onmouseenter = () => { this.chaosDraftRowIndex = 1; this.chaosDraftMarketIndex = idx; this.refreshChaosDraftHighlight(); };
+            el.onclick = () => this._buyBlackMarket(p, mod.key);
+            wrap.appendChild(el);
+        });
+        if (this.chaosDraftMarketIndex === undefined) this.chaosDraftMarketIndex = 0;
+        this.refreshChaosDraftHighlight();
+    }
+
+    // PHASE A: single dispatch for all Black Market purchases. Validates
+    // affordability again here (never trust the UI), charges cash, applies
+    // the effect, then re-renders the market so costs/afford-states update.
+    _buyBlackMarket(p, key) {
+        const cs = this.chaosDraftState;
+        const fail = () => { if (audio) audio.playBakedSound && audio.playBakedSound('empty_click', audio.sfxGain, 0.5); };
+
+        if (key === 'reroll') {
+            if (p.cash < cs.rerollCost) return fail();
+            p.cash -= cs.rerollCost;
+            cs.rerollCost = Math.round(cs.rerollCost * 1.75); // escalate
+            if (audio) audio.playPickup('money');
+            this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 25, 'REROLL', '#00e5ff', 1.5, 0, -80, 200, true));
+            // Redraw WITHOUT advancing queue or resetting pick budget.
+            this._renderChaosDraftForPlayer(p);
+            return;
+        }
+
+        if (key === 'takeTwo') {
+            if (p.cash < 5000 || cs.takeTwoBought || cs.picksRemaining !== 1) return fail();
+            p.cash -= 5000;
+            cs.takeTwoBought = true;
+            cs.picksRemaining = 2;
+            if (audio) audio.playPickup('money');
+            this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 25, 'TAKE TWO ARMED', '#ffb700', 2.0, 0, -80, 200, true));
+            this._renderBlackMarket(p);
+            return;
+        }
+
+        if (key === 'intel') {
+            if (p.cash < 1500) return fail();
+            p.cash -= 1500;
+            const awarded = this.runLedger ? this.runLedger.addIntel(3, 'laundered') : 0;
+            if (this.runLedger) this.intelEarnedThisRun = this.runLedger.intelEarned;
+            this.intelPickupJuice(p.x, p.y, awarded);
+            if (audio) audio.playPickup('money');
+            this._renderBlackMarket(p);
+            return;
+        }
+
+        if (key === 'wager') {
+            if (p.cash < 1000 || cs.activeWager) return fail();
+            p.cash -= 1000;
+            cs.activeWager = { wavesRemaining: 2, failed: false };
+            if (audio) audio.playPickup('weapon');
+            this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 25, 'BLOOD WAGER SIGNED', '#ff2a5f', 2.5, 0, -80, 200, true));
+            this._renderBlackMarket(p);
+            return;
+        }
+
+        if (key === 'slot') {
+            if (p.cash < cs.slotCost) return fail();
+            p.cash -= cs.slotCost;
+            cs.slotCost += 100; // escalate
+            this._rollContrabandSlot(p);
+            this._renderBlackMarket(p);
+            return;
+        }
+    }
+
+    // PHASE A: Contraband Slot Machine outcome roller. Weighted volatile
+    // outcomes; all effects are applied to inventory/stats directly (never
+    // spawned on the paused ground, which would cull weirdly).
+    _rollContrabandSlot(p) {
+        const roll = Math.random();
+        const pop = (txt, color) => this.floatingTexts.push(
+            this.spawnFloatingText(p.x, p.y - 30, txt, color, 2.4, 0, -80, 200, true));
+        if (audio) audio.playPickup('money');
+
+        if (roll < 0.22) {
+            // Junk
+            pop('JUNK — DUST', '#808f9c');
+            for (let i = 0; i < 10; i++) {
+                let a = Math.random() * Math.PI * 2, s = MathUtils.rand(80, 240);
+                this.addParticle(p.x, p.y, Math.cos(a) * s, Math.sin(a) * s, '#5a6a75', 0.6, 3);
+            }
+        } else if (roll < 0.52) {
+            // Supplies -- inject directly into inventory
+            const pick = Math.floor(Math.random() * 3);
+            if (pick === 0) { p.medpacks = Math.min(3, (p.medpacks || 0) + 1); pop('SUPPLY: +1 MEDPACK', '#39ff14'); }
+            else if (pick === 1) { p.grenades = Math.min(p.maxGrenades || 3, (p.grenades || 0) + 1); pop('SUPPLY: +1 GRENADE', '#39ff14'); }
+            else { p.energyDrinks = Math.min(6, (p.energyDrinks || 0) + 1); pop('SUPPLY: +1 ENERGY DRINK', '#39ff14'); }
+        } else if (roll < 0.72) {
+            // Cash refund-ish
+            const amt = 400 + Math.floor(Math.random() * 600);
+            p.cash += amt; pop('PAYOUT +$' + amt, '#ffb700');
+        } else if (roll < 0.90) {
+            // Jackpot: clean stat spike
+            const jack = Math.floor(Math.random() * 2);
+            if (jack === 0) {
+                p.maxHp += 20; p.hp = p.maxHp; pop('JACKPOT: +20 MAX HP', '#00e5ff');
+            } else {
+                const oc = this.runOverclocks[p.isPlayer2 ? 'p2' : 'p1'];
+                if (oc) { oc.hollowPoint = (oc.hollowPoint || 0) + 1; pop('JACKPOT: +1 HOLLOW POINT', '#00e5ff'); }
+                else { p.cash += 1500; pop('JACKPOT +$1500', '#ffb700'); }
+            }
+        } else {
+            // The Joker: harsh mutator next wave + a slug of Intel
+            const MUTATORS = ['blackout', 'swarm', 'juggernaut', 'adrenaline'];
+            this.forcedMutator = MUTATORS[Math.floor(Math.random() * MUTATORS.length)];
+            const awarded = this.runLedger ? this.runLedger.addIntel(8, 'joker') : 0;
+            if (this.runLedger) this.intelEarnedThisRun = this.runLedger.intelEarned;
+            this.intelPickupJuice(p.x, p.y, awarded);
+            pop('★ THE JOKER ★ CHAOS INBOUND', '#d500f9');
+        }
+    }
+
+    // PHASE A: Blood Wager failure -- Max Armor slashed 80% for the run,
+    // current armor clamped to the new ceiling. Fires once (guarded by the
+    // caller's !failed check).
+    failBloodWager(p) {
+        const w = this.chaosDraftState.activeWager;
+        if (!w || w.failed) return;
+        w.failed = true;
+        this.chaosDraftState.activeWager = null;
+        // Apply to BOTH players in co-op (shared contract, shared pain).
+        const victims = [this.player, this.player2].filter(x => x && !x.dead);
+        victims.forEach(v => {
+            v.maxArmor = Math.max(1, Math.round(v.maxArmor * 0.20));
+            if (v.armor > v.maxArmor) v.armor = v.maxArmor;
+        });
+        const tgt = p || this.player;
+        if (tgt) {
+            this.floatingTexts.push(this.spawnFloatingText(
+                tgt.x, tgt.y - 40, 'WAGER FAILED: ARMOR SHREDDED', '#ff2a5f', 3.5, 0, -40, 220, true));
+        }
+        if (audio) audio.playPickup('weapon');
+    }
+
+    // PHASE A: called once per wave clear (from the chaos-draft replenish
+    // branch). Ticks the active wager; on success awards a random Armory
+    // upgrade level and clears the contract.
+    resolveBloodWagerOnWaveClear() {
+        const cs = this.chaosDraftState;
+        if (!cs || !cs.activeWager || cs.activeWager.failed) return;
+        cs.activeWager.wavesRemaining--;
+        if (cs.activeWager.wavesRemaining <= 0) {
+            cs.activeWager = null;
+            this._grantRandomArmoryUpgrade();
+        } else {
+            const p = this.player;
+            if (p) this.floatingTexts.push(this.spawnFloatingText(
+                p.x, p.y - 40, 'WAGER: ' + cs.activeWager.wavesRemaining + ' CLEAN WAVE LEFT', '#ff2a5f', 2.5, 0, -50, 200, true));
+        }
+    }
+
+    // PHASE A: Blood Wager success reward. Bumps a random not-yet-maxed
+    // Armory upgrade by one level (persistent). Fallback when EVERYTHING is
+    // maxed: a large Intel + cash windfall so the reward never no-ops.
+    _grantRandomArmoryUpgrade() {
+        const MA = this.saveData.metaUpgrades || (this.saveData.metaUpgrades = {});
+        const upgradable = ARMORY_UPGRADES.filter(u => (MA[u.key] || 0) < u.maxLevel);
+        const p = this.player;
+        if (upgradable.length > 0) {
+            const pick = upgradable[Math.floor(Math.random() * upgradable.length)];
+            MA[pick.key] = (MA[pick.key] || 0) + 1;
+            this.saveGameData();
+            if (this.renderArmoryTab) this.renderArmoryTab();
+            if (this.renderKitSelector) this.renderKitSelector();
+            if (p) this.floatingTexts.push(this.spawnFloatingText(
+                p.x, p.y - 40, 'WAGER WON: ' + pick.name + ' +1', '#39ff14', 4.0, 0, -40, 240, true));
+            if (p) for (let i = 0; i < 16; i++) {
+                let a = Math.random() * Math.PI * 2, s = MathUtils.rand(120, 360);
+                this.addParticle(p.x, p.y, Math.cos(a) * s, Math.sin(a) * s, '#39ff14', 0.7, MathUtils.rand(2, 4));
+            }
+        } else {
+            // Everything maxed -- fallback windfall.
+            const awarded = this.runLedger ? this.runLedger.addIntel(30, 'wager_maxed') : 0;
+            if (this.runLedger) this.intelEarnedThisRun = this.runLedger.intelEarned;
+            if (p) { p.cash += 20000; this.intelPickupJuice(p.x, p.y, awarded); }
+            if (p) this.floatingTexts.push(this.spawnFloatingText(
+                p.x, p.y - 40, 'WAGER WON: WINDFALL +$20000', '#ffb700', 4.0, 0, -40, 240, true));
+        }
+        if (audio) audio.playPickup('money');
     }
 
     handleChaosDraftMenuNavigation(gpList) {
         if (!this._chaosDraftActive) return;
         if (this.chaosDraftSelectionIndex === undefined) this.chaosDraftSelectionIndex = 0;
-        
+        if (this.chaosDraftRowIndex === undefined) this.chaosDraftRowIndex = 0;
+        if (this.chaosDraftMarketIndex === undefined) this.chaosDraftMarketIndex = 0;
+
+        const marketCount = (this._blackMarketModules && this._blackMarketModules.length) || 5;
+
         for (let gp of gpList) {
-            let dLeft = gp.buttons[14].pressed || (gp.axes[0] && gp.axes[0] < -0.5);
+            let dLeft  = gp.buttons[14].pressed || (gp.axes[0] && gp.axes[0] < -0.5);
             let dRight = gp.buttons[15].pressed || (gp.axes[0] && gp.axes[0] > 0.5);
-            let btnA = gp.buttons[0].pressed;
-            
+            let dUp    = gp.buttons[12].pressed || (gp.axes[1] && gp.axes[1] < -0.5);
+            let dDown  = gp.buttons[13].pressed || (gp.axes[1] && gp.axes[1] > 0.5);
+            let btnA   = gp.buttons[0].pressed;
+
             if (this.dpadCooldown <= 0) {
-                if (dLeft) {
-                    this.chaosDraftSelectionIndex = (this.chaosDraftSelectionIndex - 1 + 3) % 3;
+                // Row switching: Down from cards -> market, Up from market -> cards.
+                if (dDown && this.chaosDraftRowIndex === 0) {
+                    this.chaosDraftRowIndex = 1;
                     this.dpadCooldown = 0.22;
                     this.refreshChaosDraftHighlight();
                     if (audio) audio.playPickup('money');
                     return;
-                } else if (dRight) {
-                    this.chaosDraftSelectionIndex = (this.chaosDraftSelectionIndex + 1) % 3;
+                } else if (dUp && this.chaosDraftRowIndex === 1) {
+                    this.chaosDraftRowIndex = 0;
                     this.dpadCooldown = 0.22;
                     this.refreshChaosDraftHighlight();
                     if (audio) audio.playPickup('money');
                     return;
                 }
-            }
-            
-            if (btnA && this.dpadCooldown <= 0) {
-                const container = document.getElementById('chaos-draft-choices-container');
-                if (container) {
-                    const cards = container.children;
-                    const selectedCard = cards[this.chaosDraftSelectionIndex];
-                    if (selectedCard) {
-                        this.dpadCooldown = 0.30;
-                        selectedCard.click();
-                        return;
+
+                if (this.chaosDraftRowIndex === 0) {
+                    // Card row: left/right cycle 3 cards
+                    if (dLeft) {
+                        this.chaosDraftSelectionIndex = (this.chaosDraftSelectionIndex - 1 + 3) % 3;
+                        this.dpadCooldown = 0.22; this.refreshChaosDraftHighlight();
+                        if (audio) audio.playPickup('money'); return;
+                    } else if (dRight) {
+                        this.chaosDraftSelectionIndex = (this.chaosDraftSelectionIndex + 1) % 3;
+                        this.dpadCooldown = 0.22; this.refreshChaosDraftHighlight();
+                        if (audio) audio.playPickup('money'); return;
+                    }
+                } else {
+                    // Market row: left/right cycle modules
+                    if (dLeft) {
+                        this.chaosDraftMarketIndex = (this.chaosDraftMarketIndex - 1 + marketCount) % marketCount;
+                        this.dpadCooldown = 0.22; this.refreshChaosDraftHighlight();
+                        if (audio) audio.playPickup('money'); return;
+                    } else if (dRight) {
+                        this.chaosDraftMarketIndex = (this.chaosDraftMarketIndex + 1) % marketCount;
+                        this.dpadCooldown = 0.22; this.refreshChaosDraftHighlight();
+                        if (audio) audio.playPickup('money'); return;
                     }
                 }
+            }
+
+            if (btnA && this.dpadCooldown <= 0) {
+                this.dpadCooldown = 0.30;
+                if (this.chaosDraftRowIndex === 0) {
+                    const container = document.getElementById('chaos-draft-choices-container');
+                    const selectedCard = container && container.children[this.chaosDraftSelectionIndex];
+                    if (selectedCard) selectedCard.click();
+                } else {
+                    const modWrap = document.getElementById('black-market-modules');
+                    const mod = modWrap && modWrap.children[this.chaosDraftMarketIndex];
+                    if (mod) mod.click();
+                }
+                return;
             }
         }
     }
@@ -24113,6 +24545,20 @@ class Game {
         const suffix = player.isPlayer2 ? 'p2' : 'p1';
         const oc = this.runOverclocks[suffix];
         if (!oc) return;
+        // PHASE B: capability gate (never trust the UI). Standard OCs need
+        // unlockOverclocks L1; Extended Mags L2; Corrupted needs unlockCorrupted.
+        // Operator mode exempt. Silent no-op on fail.
+        if (!this.operatorMode) {
+            const MA = this.saveData.metaUpgrades || {};
+            const isCorrupted = (type === 'overpressure' || type === 'glassNerves' || type === 'coldBarrel');
+            if (isCorrupted) {
+                if ((MA.unlockCorrupted || 0) < 1) return;
+            } else if (type === 'extMags') {
+                if ((MA.unlockOverclocks || 0) < 2) return;
+            } else {
+                if ((MA.unlockOverclocks || 0) < 1) return;
+            }
+        }
         
         if (type === 'hollowPoint') {
             let cost = Math.round(150 * Math.pow(1.5, oc.hollowPoint));
@@ -25513,6 +25959,25 @@ class Game {
         }
     }
 
+    // PHASE B: in-run shop gating helper. If the player hasn't unlocked a
+    // capability in the Armory, force the button into a locked state ("...
+    // (UNLOCK IN ARMORY)", greyed + disabled) and return true so the caller
+    // SKIPS its normal owned/maxed/afford logic. Never gates in FPV Operator
+    // mode (its drones/turrets/dogs are core kit, not meta-unlocks) -- returns
+    // false there so the operator whitelist stays authoritative.
+    _armoryGate(btn, unlockKey, minLevel, lockedLabel) {
+        if (!btn) return true; // no button -> nothing further for caller to do
+        if (this.operatorMode) return false; // operator toys aren't meta-gated
+        const lvl = (this.saveData.metaUpgrades && this.saveData.metaUpgrades[unlockKey]) || 0;
+        if (lvl < minLevel) {
+            btn.classList.add('maxed');       // reuses the red/locked visual
+            btn.innerText = lockedLabel;
+            btn.disabled = true;
+            return true;                      // caller should stop here
+        }
+        return false;                         // unlocked -> caller proceeds
+    }
+
     openShopInterface() {
         // PHASE 0: wave-clear Intel routes through the RunLedger (the single
         // write path). Rates live on RunConfig.rewardRules, not inline here.
@@ -25561,6 +26026,11 @@ class Game {
                     });
                 }
             });
+
+            // PHASE A: resolve any active Blood Wager for the wave just cleared
+            // (this branch runs once per chaos-draft wave completion, before the
+            // boss/draft decision below).
+            this.resolveBloodWagerOnWaveClear();
 
             // Check if upcoming wave is a boss wave (multiple of 5)
             let nextWave = this.wave + 1;
@@ -25698,13 +26168,13 @@ class Game {
             }
 
             let barUpgradeBtn = document.getElementById('btn-buy-barrier-upgrade-' + suffix);
-            if (barUpgradeBtn) {
+            if (barUpgradeBtn && !this._armoryGate(barUpgradeBtn, 'unlockBarrierMk2', 1, "Barrier MK.II (UNLOCK IN ARMORY)")) {
                 if (p.barrierUpgraded) { barUpgradeBtn.classList.add('maxed'); barUpgradeBtn.innerText = "BARRIER MK.II UPGRADED"; barUpgradeBtn.disabled = true; }
                 else { barUpgradeBtn.classList.remove('maxed'); barUpgradeBtn.innerText = "Barrier MK.II Upgrade ($400)"; barUpgradeBtn.disabled = false; }
             }
 
             let droneBtn = document.getElementById('btn-buy-drone-' + suffix);
-            if (droneBtn) {
+            if (droneBtn && !this._armoryGate(droneBtn, 'unlockFpvDrone', 1, "FPV Drone (UNLOCK IN ARMORY)")) {
                 if (p.dronesCount >= 3) {
                     droneBtn.classList.add('maxed');
                     droneBtn.innerText = "DRONES (MAX)";
@@ -25717,7 +26187,7 @@ class Game {
             }
 
             let droneUpgradeBtn = document.getElementById('btn-buy-drone-upgrade-' + suffix);
-            if (droneUpgradeBtn) {
+            if (droneUpgradeBtn && !this._armoryGate(droneUpgradeBtn, 'unlockFpvDrone', 2, "Bomber (UNLOCK IN ARMORY)")) {
                 let ownsDrone = (p.dronesCount > 0 || (p.activeDrone && !p.activeDrone.dead));
                 if (!ownsDrone) {
                     droneUpgradeBtn.classList.remove('maxed');
@@ -25735,7 +26205,7 @@ class Game {
             }
 
             let fiberOpticBtn = document.getElementById('btn-buy-fiber-optic-' + suffix);
-            if (fiberOpticBtn) {
+            if (fiberOpticBtn && !this._armoryGate(fiberOpticBtn, 'unlockFpvDrone', 3, "Fiber Optic (UNLOCK IN ARMORY)")) {
                 if (p.fiberOpticOwned) {
                     fiberOpticBtn.classList.add('maxed');
                     fiberOpticBtn.innerText = "FIBER OPTIC (OWNED)";
@@ -25754,20 +26224,20 @@ class Game {
             }
 
             let turretMk2Btn = document.getElementById('btn-buy-turret-mk2-' + suffix);
-            if (turretMk2Btn) {
+            if (turretMk2Btn && !this._armoryGate(turretMk2Btn, 'unlockTurretMk2', 1, "Turret MK.II (UNLOCK IN ARMORY)")) {
                 if ((p.turretsCount || 0) >= 1) { turretMk2Btn.classList.add('maxed'); turretMk2Btn.innerText = "TURRET MK.II (MAX)"; turretMk2Btn.disabled = true; }
                 else { turretMk2Btn.classList.remove('maxed'); turretMk2Btn.innerText = "Auto Turret MK.II ($1200)"; turretMk2Btn.disabled = false; }
             }
 
             let dogBtn = document.getElementById('btn-buy-dog-' + suffix);
-            if (dogBtn) {
+            if (dogBtn && !this._armoryGate(dogBtn, 'unlockSpotRobot', 1, "Spot Robot (UNLOCK IN ARMORY)")) {
                 let activeDog = (p.dogsCount >= 1 || (this.dogs && this.dogs.some(d => d.owner === p && !d.dead)));
                 if (activeDog) { dogBtn.classList.add('maxed'); dogBtn.innerText = "ROBOT (OWNED/FIELD)"; dogBtn.disabled = true; }
                 else { dogBtn.classList.remove('maxed'); dogBtn.innerText = "Spot Robot ($500)"; dogBtn.disabled = false; }
             }
 
             let dogUpgradeBtn = document.getElementById('btn-buy-dog-upgrade-' + suffix);
-            if (dogUpgradeBtn) {
+            if (dogUpgradeBtn && !this._armoryGate(dogUpgradeBtn, 'unlockSpotRobot', 2, "Spot MK.II (UNLOCK IN ARMORY)")) {
                 let hasDog = (p.dogsCount >= 1 || (this.dogs && this.dogs.some(d => d.owner === p && !d.dead)));
                 if (!hasDog) {
                     dogUpgradeBtn.classList.remove('maxed');
@@ -25785,7 +26255,7 @@ class Game {
             }
 
             let swarmDroneBtn = document.getElementById('btn-buy-swarm-drone-' + suffix);
-            if (swarmDroneBtn) {
+            if (swarmDroneBtn && !this._armoryGate(swarmDroneBtn, 'unlockSwarm', 1, "Swarm Drone (UNLOCK IN ARMORY)")) {
                 if (p.hunterSwarmCount >= 15) {
                     swarmDroneBtn.classList.add('maxed');
                     swarmDroneBtn.innerText = "SWARM DRONE (MAX)";
@@ -25798,7 +26268,7 @@ class Game {
             }
 
             let swarmPackBtn = document.getElementById('btn-buy-swarm-pack-' + suffix);
-            if (swarmPackBtn) {
+            if (swarmPackBtn && !this._armoryGate(swarmPackBtn, 'unlockSwarm', 2, "Swarm Pack (UNLOCK IN ARMORY)")) {
                 if (p.hunterSwarmCount > 11) {
                     swarmPackBtn.classList.add('maxed');
                     swarmPackBtn.innerText = "SWARM PACK (MAX)";
@@ -25831,16 +26301,37 @@ class Game {
 
             let oc = this.runOverclocks[suffix];
             if (oc) {
+                // PHASE B: overclock capability gates. Operator mode is exempt
+                // (its shop is whitelist-driven and never shows these anyway).
+                const MA = this.saveData.metaUpgrades || {};
+                const ocUnlocked   = this.operatorMode || (MA.unlockOverclocks || 0) >= 1;
+                const magsUnlocked = this.operatorMode || (MA.unlockOverclocks || 0) >= 2;
+                const corrUnlocked = this.operatorMode || (MA.unlockCorrupted || 0) >= 1;
+                // Standard overclocks share one unlock (lvl1). When locked,
+                // every standard-OC button reads the same prompt and disables.
+                const lockStd = (btn, baseLabel) => {
+                    if (!btn) return true;
+                    if (!ocUnlocked) {
+                        btn.classList.add('maxed');
+                        btn.innerText = baseLabel + ' (UNLOCK IN ARMORY)';
+                        btn.disabled = true;
+                        return true;
+                    }
+                    return false;
+                };
+
                 let costHollow = Math.round(150 * Math.pow(1.5, oc.hollowPoint));
                 let btnHollow = document.getElementById('btn-buy-oc-hollow-' + suffix);
-                if (btnHollow) {
+                if (btnHollow && !lockStd(btnHollow, 'Hollow Point')) {
+                    btnHollow.classList.remove('maxed');
                     btnHollow.innerText = `Hollow Point Lvl.${oc.hollowPoint + 1} ($${costHollow})`;
                     btnHollow.disabled = p.cash < costHollow;
                 }
 
                 let costServos = Math.round(100 * Math.pow(1.5, oc.exoServos));
                 let btnServos = document.getElementById('btn-buy-oc-servos-' + suffix);
-                if (btnServos) {
+                if (btnServos && !lockStd(btnServos, 'Exo-Servos')) {
+                    btnServos.classList.remove('maxed');
                     btnServos.innerText = `Exo-Servos Lvl.${oc.exoServos + 1} ($${costServos})`;
                     btnServos.disabled = p.cash < costServos;
                 }
@@ -25851,7 +26342,9 @@ class Game {
                 }
                 let costMags = Math.round(200 * Math.pow(1.5, totalMagsLvl));
                 let btnMags = document.getElementById('btn-buy-oc-mags-' + suffix);
-                if (btnMags) {
+                // Extended Mags needs the deeper unlock (lvl2).
+                if (btnMags && !this._armoryGate(btnMags, 'unlockOverclocks', 2, "Extended Mags (UNLOCK IN ARMORY)")) {
+                    btnMags.classList.remove('maxed');
                     btnMags.innerText = `Extended Mags ($${costMags})`;
                     let hasEligibleWeapon = p.inventory.some(w => w.name !== 'Pistol');
                     btnMags.disabled = p.cash < costMags || !hasEligibleWeapon;
@@ -25860,7 +26353,7 @@ class Game {
                 // Fire Rate OC button
                 let costFireRate = Math.round(200 * Math.pow(1.5, oc.fireRate || 0));
                 let btnFireRate = document.getElementById('btn-buy-oc-firerate-' + suffix);
-                if (btnFireRate) {
+                if (btnFireRate && !lockStd(btnFireRate, 'Fire Rate')) {
                     let lvl = oc.fireRate || 0;
                     // Phase 4: next purchase is ROF for lvl<2, handling after.
                     btnFireRate.innerText = lvl < 2
@@ -25873,7 +26366,8 @@ class Game {
                 // Max HP OC button
                 let costMaxHpOC = Math.round(175 * Math.pow(1.5, oc.maxHpOC || 0));
                 let btnMaxHpOC = document.getElementById('btn-buy-oc-maxhp-' + suffix);
-                if (btnMaxHpOC) {
+                if (btnMaxHpOC && !lockStd(btnMaxHpOC, 'Max HP')) {
+                    btnMaxHpOC.classList.remove('maxed');
                     let lvl = oc.maxHpOC || 0;
                     btnMaxHpOC.innerText = `Max HP Lvl.${lvl + 1} ($${costMaxHpOC})`;
                     btnMaxHpOC.disabled = p.cash < costMaxHpOC;
@@ -25882,13 +26376,20 @@ class Game {
                 // PHASE 3: Corrupted Overclock buttons -- one-time buys; an
                 // owned corruption reads OWNED and locks. Title tooltips
                 // carry the full trade text.
+                // PHASE B: whole market gated behind unlockCorrupted.
                 const CORRUPTED_BTN_IDS = { overpressure: 'overpressure', glassNerves: 'glassnerves', coldBarrel: 'coldbarrel' };
                 for (const cKey in CORRUPTED_BTN_IDS) {
                     const btn = document.getElementById('btn-buy-oc-' + CORRUPTED_BTN_IDS[cKey] + '-' + suffix);
                     if (!btn) continue;
                     const spec = CORRUPTED_OVERCLOCKS[cKey];
-                    const owned = !!(oc.corrupted && oc.corrupted[cKey]);
                     btn.title = spec.desc;
+                    if (!corrUnlocked) {
+                        btn.innerText = spec.name + ' (UNLOCK IN ARMORY)';
+                        btn.disabled = true;
+                        btn.classList.add('maxed');
+                        continue;
+                    }
+                    const owned = !!(oc.corrupted && oc.corrupted[cKey]);
                     if (owned) {
                         btn.innerText = spec.name + ' (OWNED)';
                         btn.disabled = true;
@@ -25921,6 +26422,20 @@ class Game {
             return;
         }
         let p = buyer || this.player;
+        // PHASE B: server-side capability gate (never trust the UI -- a stale
+        // menu, gamepad race, or touch double-fire must not buy a locked item).
+        // Operator mode exempt: its toys aren't meta-gated. Silent no-op on fail.
+        if (!this.operatorMode) {
+            const MA = this.saveData.metaUpgrades || {};
+            const GATE = {
+                drone: ['unlockFpvDrone', 1], drone_upgrade: ['unlockFpvDrone', 2], fiber_optic: ['unlockFpvDrone', 3],
+                dog: ['unlockSpotRobot', 1], dog_upgrade: ['unlockSpotRobot', 2],
+                swarm_drone: ['unlockSwarm', 1], swarm_pack: ['unlockSwarm', 2],
+                turret_mk2: ['unlockTurretMk2', 1], barrier_upgrade: ['unlockBarrierMk2', 1]
+            };
+            const g = GATE[type];
+            if (g && (MA[g[0]] || 0) < g[1]) return;
+        }
         // PHASE 4 (kit shop bias): snapshot cash so the single exit below
         // can rebate a slice of whatever the big if/else chain charged --
         // zero price literals touched, works for every current and future
@@ -26425,6 +26940,24 @@ class Game {
                 if (typeof sd.metaUpgrades.operatorPaint !== 'number') sd.metaUpgrades.operatorPaint = 0;
                 if (typeof sd.playerColorP1 !== 'string') sd.playerColorP1 = '';
                 if (typeof sd.playerColorP2 !== 'string') sd.playerColorP2 = '';
+            }},
+            // v7 (PHASE B): in-run shop capability unlocks. Additive only --
+            // existing profiles initialize every new key to 0 (locked), so a
+            // returning player deliberately unlocks their advanced toys via the
+            // Armory. Per migration discipline: new keys only, never edit above.
+            { to: 7, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                for (const k of ['unlockFpvDrone', 'unlockSpotRobot', 'unlockSwarm',
+                                 'unlockTurretMk2', 'unlockBarrierMk2', 'unlockOverclocks', 'unlockCorrupted']) {
+                    if (typeof sd.metaUpgrades[k] !== 'number') sd.metaUpgrades[k] = 0;
+                }
+            }},
+            // v8 (PHASE D): prestige loop. A single persistent counter, defaulted
+            // to 0. Everything the prestige reward derives (menu theme color, rank
+            // badge) is computed from this one number at menu-load, so nothing
+            // else needs to persist. Additive only.
+            { to: 8, up: (sd) => {
+                if (typeof sd.prestigeLevel !== 'number' || sd.prestigeLevel < 0) sd.prestigeLevel = 0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -26454,6 +26987,16 @@ class Game {
         if (MA.kevlarWeave     === undefined) MA.kevlarWeave     = 0;
         if (MA.firstAidTraining=== undefined) MA.firstAidTraining= 0;
         if (MA.cardioConditioning===undefined)MA.cardioConditioning=0;
+        // PHASE B: shop-capability unlock keys (belt-and-suspenders alongside
+        // the v7 migration, matching how the keys above are also re-defaulted).
+        for (const k of ['unlockFpvDrone', 'unlockSpotRobot', 'unlockSwarm',
+                         'unlockTurretMk2', 'unlockBarrierMk2', 'unlockOverclocks', 'unlockCorrupted']) {
+            if (MA[k] === undefined) MA[k] = 0;
+        }
+        // PHASE D: prestige counter default (mirrors the v8 migration).
+        if (typeof this.saveData.prestigeLevel !== 'number' || this.saveData.prestigeLevel < 0) {
+            this.saveData.prestigeLevel = 0;
+        }
         
         if (this.saveData.difficultyMode) {
             this.setDifficulty(this.saveData.difficultyMode);
@@ -26494,6 +27037,7 @@ class Game {
         if (this.saveData.p2GamepadChoice === undefined) this.saveData.p2GamepadChoice = 'auto';
         this.refreshGamepadAssignmentUI();
         this.renderKitSelector(); // PHASE 4: kit chips reflect the loaded save
+        this.applyPrestigeCosmetics(); // PHASE D: theme + rank badge from prestigeLevel
     }
 
     saveGameData() {
@@ -26695,6 +27239,10 @@ class Game {
                     </button>${extraHTML}
                 </div>`;
         }
+        // PHASE D: prestige call-to-action lives under the grid/reset button.
+        this.renderPrestigeButton();
+        const devLbl = document.getElementById('dev-prestige-lvl');
+        if (devLbl) devLbl.textContent = this.saveData.prestigeLevel || 0;
     }
 
     // PHASE 3: prism-array beam color selection. Persisted; consumed by the
@@ -26755,6 +27303,192 @@ class Game {
         this.saveGameData();
         this.renderArmoryTab();
         this.renderKitSelector();
+        if (audio) audio.playPickup('money');
+    }
+
+    // ===== PHASE D: PRESTIGE SYSTEM =====
+
+    // True only when EVERY ARMORY_UPGRADES entry sits at its maxLevel. Single
+    // source of truth for the prestige gate (UI + action both call this).
+    isArmoryMaxed() {
+        const MA = this.saveData.metaUpgrades || {};
+        for (const upg of ARMORY_UPGRADES) {
+            if ((MA[upg.key] || 0) < upg.maxLevel) return false;
+        }
+        return true;
+    }
+
+    // Rendered by renderArmoryTab() into #prestige-slot. Locked = greyed,
+    // disabled, explains the requirement. Unlocked = glowing neon call to
+    // action showing the next level.
+    renderPrestigeButton() {
+        const slot = document.getElementById('prestige-slot');
+        if (!slot) return;
+        const lvl = this.saveData.prestigeLevel || 0;
+        const maxed = this.isArmoryMaxed();
+        const atCap = lvl >= PRESTIGE_THEMES.length;
+
+        if (!maxed || atCap) {
+            const label = atCap
+                ? `PRESTIGE MAXED — LEVEL ${lvl} (LEGEND)`
+                : 'PRESTIGE: NONE (REQUIRES ALL ARMORY ITEMS MAXED)';
+            slot.innerHTML = `<button class="neon-btn" disabled style="width:100%; letter-spacing:2px; font-weight:bold; opacity:0.5; border-color:#5a6a75; color:#5a6a75; cursor:not-allowed;">${label}</button>`;
+            return;
+        }
+
+        const next = lvl + 1;
+        const theme = PRESTIGE_THEMES[lvl] || PRESTIGE_THEMES[PRESTIGE_THEMES.length - 1];
+        slot.innerHTML =
+            `<button class="neon-btn prestige-ready" onclick="game.doPrestige()" style="width:100%; letter-spacing:2px; font-weight:bold; border-color:${theme.accent}; color:${theme.accent}; box-shadow:0 0 14px ${theme.accent}66; text-shadow:0 0 6px ${theme.accent};">`
+          + `★ PRESTIGE TO LEVEL ${next} — RESETS INTEL &amp; ALL PROGRESS ★`
+          + `</button>`
+          + `<div style="font-size:10px; color:#a9c2c7; text-align:center; margin-top:4px;">Reward: ${theme.name} menu theme + Rank ${next} badge</div>`;
+    }
+
+    // The action. Wipes intel + every metaUpgrade + equipped kits/colors to
+    // stock, bumps prestigeLevel, then celebrates and re-skins the menu.
+    doPrestige() {
+        if (!this.isArmoryMaxed()) return;                 // hard gate (never trust UI)
+        if ((this.saveData.prestigeLevel || 0) >= PRESTIGE_THEMES.length) return; // capped
+
+        this.saveData.prestigeLevel = (this.saveData.prestigeLevel || 0) + 1;
+        this.saveData.intel = 0;
+        // Wipe every armory level to 0 (keeps keys present -> no undefined holes).
+        const MA = this.saveData.metaUpgrades || (this.saveData.metaUpgrades = {});
+        for (const upg of ARMORY_UPGRADES) MA[upg.key] = 0;
+        // Equipped selections reset to stock (kits gate on ownership; colors on
+        // the paint/laser unlocks we just wiped).
+        this.saveData.kitP1 = 'standard';
+        this.saveData.kitP2 = 'standard';
+        this.saveData.playerColorP1 = '';
+        this.saveData.playerColorP2 = '';
+        this.saveData.laserColorP1 = '';
+        this.saveData.laserColorP2 = '';
+        this.saveGameData();
+
+        // Refresh all dependent menus.
+        this.renderArmoryTab();
+        this.renderKitSelector();
+        this.applyPrestigeCosmetics();
+        const devLbl = document.getElementById('dev-prestige-lvl');
+        if (devLbl) devLbl.textContent = this.saveData.prestigeLevel;
+
+        this.prestigeCelebration();
+    }
+
+    // Big menu celebration. Reuses the AUDIO engine (tadah + explosion) and
+    // the camera shake; the VISUAL is a self-contained DOM/CSS burst layered
+    // over #start-screen, because draw() early-returns in the 'start' state
+    // (the world canvas isn't rendering on the menu), so world-space particles
+    // wouldn't show. No new rendering tech -- just DOM nodes + CSS keyframes
+    // that the menu already relies on everywhere else.
+    prestigeCelebration() {
+        try { if (audio) { audio.playTadah(); audio.playExplosion(1.0); } } catch (e) {}
+        // Harmless if a background game exists; no-op on the menu.
+        if (this.camera) this.camera.screenShake = Math.max(this.camera.screenShake || 0, 40);
+
+        const host = document.getElementById('start-screen');
+        if (!host) return;
+        const lvl = this.saveData.prestigeLevel || 0;
+        const theme = PRESTIGE_THEMES[lvl - 1] || PRESTIGE_THEMES[0];
+
+        const layer = document.createElement('div');
+        layer.className = 'prestige-fx-layer';
+        // Center banner
+        const banner = document.createElement('div');
+        banner.className = 'prestige-fx-banner';
+        banner.style.color = theme.accent;
+        banner.style.textShadow = `0 0 20px ${theme.accent}, 0 0 40px ${theme.accent}`;
+        banner.innerHTML = `PRESTIGE LEVEL UP!<div style="font-size:22px; margin-top:8px; letter-spacing:4px;">RANK ${lvl} · ${theme.name}</div>`;
+        layer.appendChild(banner);
+
+        // Particle burst + scattered floating "PRESTIGE!" texts (pure DOM).
+        const COLORS = [theme.accent, '#ffffff', '#ffd700', '#00e5ff'];
+        for (let i = 0; i < 90; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'prestige-fx-dot';
+            const ang = Math.random() * Math.PI * 2;
+            const dist = 120 + Math.random() * 520;
+            dot.style.setProperty('--dx', (Math.cos(ang) * dist).toFixed(0) + 'px');
+            dot.style.setProperty('--dy', (Math.sin(ang) * dist).toFixed(0) + 'px');
+            dot.style.background = COLORS[i % COLORS.length];
+            dot.style.animationDelay = (Math.random() * 0.15).toFixed(2) + 's';
+            const sz = 4 + Math.random() * 8;
+            dot.style.width = dot.style.height = sz.toFixed(0) + 'px';
+            layer.appendChild(dot);
+        }
+        const WORDS = ['PRESTIGE!', 'LEGEND', 'ASCENDED', '★', 'MAXED', 'ELITE'];
+        for (let i = 0; i < 14; i++) {
+            const ft = document.createElement('div');
+            ft.className = 'prestige-fx-text';
+            ft.textContent = WORDS[i % WORDS.length];
+            ft.style.left = (10 + Math.random() * 80) + '%';
+            ft.style.top = (15 + Math.random() * 70) + '%';
+            ft.style.color = COLORS[i % COLORS.length];
+            ft.style.animationDelay = (Math.random() * 0.4).toFixed(2) + 's';
+            layer.appendChild(ft);
+        }
+
+        host.appendChild(layer);
+        setTimeout(() => { if (layer.parentNode) layer.parentNode.removeChild(layer); }, 3200);
+    }
+
+    // Applies the prestige-derived cosmetics: the --dark-bg override and the
+    // rank badge. Called at menu load (loadGameData tail) and after a prestige.
+    applyPrestigeCosmetics() {
+        const lvl = this.saveData.prestigeLevel || 0;
+        const root = document.documentElement;
+        if (lvl <= 0) {
+            root.style.setProperty('--dark-bg', '#010a15'); // stock
+        } else {
+            const theme = PRESTIGE_THEMES[Math.min(lvl, PRESTIGE_THEMES.length) - 1];
+            root.style.setProperty('--dark-bg', theme.bg);
+        }
+        const badge = document.getElementById('prestige-badge');
+        if (badge) badge.innerHTML = lvl > 0 ? this._buildPrestigeBadgeSVG(lvl) : '';
+        const devLbl = document.getElementById('dev-prestige-lvl');
+        if (devLbl) devLbl.textContent = lvl;
+    }
+
+    // Procedural minimalist SVG rank badge. Geometry scales with level:
+    // a chevron stack (count = level, capped) inside a shield, topped by
+    // small stars every 5 levels, tinted by the theme accent. Deterministic
+    // from level alone -- no assets.
+    _buildPrestigeBadgeSVG(level) {
+        const theme = PRESTIGE_THEMES[Math.min(level, PRESTIGE_THEMES.length) - 1];
+        const c = theme.accent;
+        const chevrons = Math.min(level, 5);         // 1-5 chevrons
+        const stars = Math.floor(level / 5);          // a star per full 5 levels (levels 5,10)
+        const W = 46, H = 54;
+
+        let chev = '';
+        for (let i = 0; i < chevrons; i++) {
+            const y = 30 + i * 6;
+            chev += `<path d="M13 ${y} L23 ${y - 5} L33 ${y}" fill="none" stroke="${c}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity="${(1 - i * 0.12).toFixed(2)}"/>`;
+        }
+        let starSvg = '';
+        for (let s = 0; s < stars; s++) {
+            const sx = 23 + (s === 0 ? 0 : (s % 2 ? 8 : -8));
+            starSvg += `<path transform="translate(${sx},15) scale(0.9)" d="M0 -5 L1.5 -1.5 L5 -1.5 L2 1 L3 4.5 L0 2.5 L-3 4.5 L-2 1 L-5 -1.5 L-1.5 -1.5 Z" fill="#ffd700" stroke="${c}" stroke-width="0.5"/>`;
+        }
+        return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 0 5px ${c}88);">`
+             + `<title>Prestige Rank ${level}</title>`
+             + `<path d="M23 2 L43 9 L43 28 C43 42 34 49 23 52 C12 49 3 42 3 28 L3 9 Z" fill="rgba(0,0,0,0.55)" stroke="${c}" stroke-width="2"/>`
+             + starSvg
+             + chev
+             + `<text x="23" y="${stars > 0 ? 49 : 47}" text-anchor="middle" font-family="Courier New, monospace" font-size="10" font-weight="bold" fill="${c}">${level}</text>`
+             + `</svg>`;
+    }
+
+    // Dev tool: hard-reset prestige to 0 (does NOT touch intel/upgrades --
+    // it's purely the prestige counter + its cosmetics, for testing the loop).
+    devResetPrestige() {
+        this.saveData.prestigeLevel = 0;
+        this.saveGameData();
+        this.applyPrestigeCosmetics();
+        this.renderArmoryTab();
+        const devLbl = document.getElementById('dev-prestige-lvl');
+        if (devLbl) devLbl.textContent = 0;
         if (audio) audio.playPickup('money');
     }
 
