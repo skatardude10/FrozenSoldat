@@ -3876,7 +3876,17 @@ class MusicEngine {
         let bpm = baseBpm;
         let targetFreq = 20000;
         let heartbeatVol = 0.0;
-        
+
+        // MENU AMBIENCE: outside an active run, the user's chosen track plays
+        // at 0.75x tempo with the high end gently rolled off -- same song,
+        // slower, mysterious. Snaps back to full speed the moment a run
+        // starts (state === 'playing'); pause keeps full speed since state
+        // stays 'playing' while isPaused.
+        if (!game || game.state !== 'playing') {
+            bpm = baseBpm * 0.75;
+            targetFreq = 9500;
+        }
+
         // Dynamic music muffling on low health
         if (hp < 35) {
             let hpFactor = (35 - hp) / 35;
@@ -10389,7 +10399,10 @@ class Player extends Entity {
         ctx.fillStyle = '#010a15';
         ctx.fill();
         ctx.lineWidth = 2.5;
-        ctx.strokeStyle = '#fff';
+        // OPERATOR PAINT SHOP: the body ring is the ONLY thing the paint
+        // recolors -- feet/gun rails stay on this.color (accent), backpack/
+        // headphones/carrier keep their drab gear palette. Defaults white.
+        ctx.strokeStyle = this.bodyColor || '#fff';
         ctx.stroke();
 
         // Tactical Backpack: outlined, not solid, to match the rest of the
@@ -17797,6 +17810,9 @@ const ARMORY_UPGRADES = [
     { key: 'laserSight', name: 'LASER SIGHT ARRAY', maxLevel: 3,
       costPerLevel: [150, 300, 500],
       desc: 'Lvl1: collimator servo (tighter beam, faster refocus). Lvl2: long-throw emitter (+range). Lvl3: prism array (precision + custom colors).' },
+    { key: 'operatorPaint', name: 'OPERATOR PAINT SHOP', maxLevel: 1,
+      costPerLevel: [35],
+      desc: 'Cosmetic: unlocks custom operator body colors for P1 and P2. Pick a paint below once owned.' },
     // PHASE 4: L2 (deferred attachment complexity from the roadmap) --
     // ricochet rounds; the bounce is an opts.restitution on the SAME
     // ShrapnelGrenade class (its wall-bounce physics were already there).
@@ -17857,6 +17873,20 @@ const LASER_COLORS = [
     { name: 'VIOLET', rgb: '213, 0, 249'  },
     { name: 'AMBER',  rgb: '255, 183, 0'  },
     { name: 'WHITE',  rgb: '235, 245, 255'}
+];
+
+// OPERATOR PAINT SHOP: selectable player BODY-RING colors (the torso "O"
+// stroke only -- consumed via Player.bodyColor in draw()). Stock is white
+// for both players; nothing else on the sprite is recolored.
+const PLAYER_COLORS = [
+    { name: 'WHITE',  hex: '#ffffff' },  // stock P1 + P2
+    { name: 'CYAN',   hex: '#00e5ff' },
+    { name: 'AMBER',  hex: '#ffb700' },
+    { name: 'GREEN',  hex: '#39ff14' },
+    { name: 'VIOLET', hex: '#d500f9' },
+    { name: 'CRIMSON',hex: '#ff2a5f' },
+    { name: 'YELLOW', hex: '#ffee00' },
+    { name: 'BLUE',   hex: '#4a9eff' }
 ];
 
 // Corrupted Overclocks: one-time in-run shop purchases (cash), each a
@@ -19632,20 +19662,37 @@ class Game {
             let packY = (0.02 + Math.random() * 0.56) * this.mapH; // uniform across Wastes/Deep Forest/into Woodland
             let packX = MathUtils.rand(laneXMin, laneXMax);
 
+            // INTENSITY PASS: from wave 2, ~20% of packs roll as SWARM RUSH
+            // packs -- 2x headcount of fast melee swarmers instead of the
+            // standard mixed squad. Cheap to kill but they force the operator
+            // to react instead of methodically hunting, without touching the
+            // mode's "no bosses, escalating pressure" identity. Extra bodies
+            // still draw down this.enemiesToSpawn so wave totals/HUD stay
+            // honest.
+            let isSwarmPack = (this.wave >= 2 && Math.random() < 0.20);
+            if (isSwarmPack) {
+                packSize = Math.min(this.enemiesToSpawn, packSize * 2 + 2);
+            }
+
             for (let i = 0; i < packSize; i++) {
                 // Small per-member jitter so a pack isn't a single point.
                 let ex = MathUtils.clamp(packX + MathUtils.rand(-180, 180), 60, this.mapW - 60);
                 let ey = MathUtils.clamp(packY + MathUtils.rand(-120, 120), 60, this.mapH - 60);
 
                 let chosenType = EnemyTypes.grunt;
-                let roll = Math.random();
-                let grenadierWeight = Math.min(0.45, (this.wave - 4) * 0.03); // ramps from wave 5+
-                if (this.wave >= 5 && roll < grenadierWeight) {
-                    chosenType = EnemyTypes.enforcer;
-                } else if (this.wave >= 3 && roll < grenadierWeight + 0.2) {
-                    chosenType = EnemyTypes.sapper;
-                } else if (this.wave >= 8 && roll < grenadierWeight + 0.32) {
-                    chosenType = EnemyTypes.sniper_grunt;
+                if (isSwarmPack) {
+                    chosenType = EnemyTypes.swarmer;
+                } else {
+                    let roll = Math.random();
+                    let grenadierWeight = Math.min(0.45, (this.wave - 4) * 0.03); // ramps from wave 5+
+                    if (this.wave >= 5 && roll < grenadierWeight) {
+                        chosenType = EnemyTypes.enforcer;
+                    } else if (this.wave >= 3 && roll < grenadierWeight + 0.2) {
+                        chosenType = EnemyTypes.sapper;
+                    } else if (this.wave >= 6 && roll < grenadierWeight + 0.32) {
+                        // was wave 8 -- sniper grunts arrive two waves earlier
+                        chosenType = EnemyTypes.sniper_grunt;
+                    }
                 }
 
                 let baseHp = Math.round(chosenType.hp * scaleHP);
@@ -19653,7 +19700,10 @@ class Game {
                     x: ex, y: ey, config: chosenType,
                     hp: baseHp,
                     speed: chosenType.speed * scaleSpeed,
-                    isElite: Math.random() < 0.04
+                    // was 0.04 -- slightly more elite spice per pack, but
+                    // never on swarmers (a 2.2x-HP 1.45x-radius swarmer flood
+                    // would betray the "cheap but urgent" identity)
+                    isElite: !isSwarmPack && Math.random() < 0.07
                 });
             }
 
@@ -22328,6 +22378,14 @@ class Game {
         p.maxGrenades = glLvl >= 2 ? 6 : (glLvl >= 1 ? 4 : 3);
         p.maxArmor = 50 * (1 + (MA.kevlarWeave || 0) * 0.10);
         p.armor    = p.maxArmor;
+
+        // OPERATOR PAINT SHOP: cosmetic body-ring color, only while owned.
+        // Sets bodyColor (the torso circle stroke ONLY) -- never this.color,
+        // which is the P1-cyan/P2-amber accent for feet, gun rails, HUD etc.
+        if ((MA.operatorPaint || 0) >= 1) {
+            const savedPaint = p.isPlayer2 ? this.saveData.playerColorP2 : this.saveData.playerColorP1;
+            if (savedPaint) p.bodyColor = savedPaint;
+        }
         
         // Reset weapon perk flags
         p.perkFlatline = false;
@@ -23136,6 +23194,10 @@ class Game {
         // Restore timeScale to its slider/default value
         const sld = document.getElementById('sld-time-scale');
         this.timeScale = sld ? parseFloat(sld.value) || 1.0 : 1.0;
+        // CHRONOS MODULE (Chaos Draft): world runs at 0.7x while any player
+        // holds the module; player dt is compensated in Game.update.
+        const chronosOn = (this.player && this.player.chronosActive) || (this.player2 && this.player2.chronosActive);
+        if (chronosOn) this.timeScale *= 0.70;
         
         // 2. Check if we should activate a mutator (either random 30% chance from wave 6, forced by dev dashboard, or forced by Chaos Draft starting at wave 2)
         let roll = false;
@@ -23165,7 +23227,7 @@ class Game {
             } else if (this.activeMutator === 'swarm') {
                 this.enemiesToSpawn = Math.round((5 + this.wave * 4) * 3.0);
             } else if (this.activeMutator === 'adrenaline') {
-                this.timeScale = 1.4;
+                this.timeScale = 1.4 * (chronosOn ? 0.70 : 1.0);
             } else if (this.activeMutator === 'juggernaut') {
                 this.enemiesToSpawn = Math.max(1, Math.round((5 + this.wave * 4) * 0.25));
                 this.allEnemiesAreElite = true;
@@ -23781,7 +23843,7 @@ class Game {
             generators.push({
                 type: 'OVERCLOCK',
                 title: 'EXO SERVOS',
-                desc: 'Reload and swap speeds improved by +15% (stacks).',
+                desc: '+5% move accel, +4% sprint speed, -6% stamina drain per rank (stacks).',
                 color: '#ff7a00',
                 apply: (player) => {
                     oc.exoServos = (oc.exoServos || 0) + 1;
@@ -23879,14 +23941,20 @@ class Game {
         });
 
         // Expanded Cards: Bad rolls / Extreme pay-offs / Synergies
-        generators.push({
+        if (!p.chronosActive) generators.push({
             type: 'CURSED OC',
             title: 'CHRONOS MODULE',
             desc: 'Slows down global time to 0.7x (enemies/bullets crawl), but your actions remain real-time!',
             color: '#ff2a5f',
             apply: (player) => {
-                this.setTimeScale(0.70);
+                // Deliberately NOT setTimeScale(): that writes to the user's
+                // time-scale settings slider (and thus saveData), permanently
+                // corrupting the global setting. Instead flag the player; the
+                // wave-start timeScale restore re-applies the world slowdown
+                // each wave, and the p1Dt/p2Dt compensation in Game.update
+                // keeps the flagged player real-time.
                 player.chronosActive = true;
+                this.timeScale *= 0.70; // immediate effect for the current transition
             }
         });
 
@@ -23916,16 +23984,44 @@ class Game {
         generators.push({
             type: 'OVERCLOCK',
             title: 'HAIR TRIGGER',
-            desc: 'Increase weapon fire rate by +5% or improve handling (stacks).',
+            desc: '+5% fire rate (first 2 ranks), then tighter spread & less kick (stacks).',
             color: '#ff7a00',
             apply: (player) => {
                 oc.fireRate = (oc.fireRate || 0) + 1;
             }
         });
 
-        // Pick 3 random distinct choices
-        let shuffled = generators.sort(() => 0.5 - Math.random());
-        return shuffled.slice(0, 3);
+        generators.push({
+            type: 'SUPPLY DROP',
+            title: 'SPECIALTY AMMO CACHE',
+            desc: 'Converts carried weapons to specialty rounds — AP (LMG/Sniper/M1A), Hollow-Point (SMG), Slugs (Shotgun) — and tops reserves up +50%.',
+            color: '#ffb700',
+            apply: (player) => {
+                // Reuses the existing shop ammoTypes mechanism (buck/slug/ap/hp)
+                // consumed in Bullet ballistics; Chaos Draft skips the shop so
+                // this is the only way to reach specialty ammo in this mode.
+                const specialty = { lmg: 'ap', sniper: 'ap', m1a: 'ap', smg: 'hp', shotgun: 'slug' };
+                if (player.inventory && player.ammoTypes) {
+                    player.inventory.forEach(w => {
+                        let wKey = w.name.toLowerCase();
+                        if (specialty[wKey] && player.ammoTypes[wKey] !== undefined) {
+                            player.ammoTypes[wKey] = specialty[wKey];
+                            if (player.ammo[wKey] !== undefined && player.maxAmmo && player.maxAmmo[wKey]) {
+                                player.ammo[wKey] = Math.min(player.maxAmmo[wKey], player.ammo[wKey] + Math.ceil(player.maxAmmo[wKey] * 0.5));
+                            }
+                        }
+                    });
+                }
+            }
+        });
+
+        // Pick 3 random distinct choices (Fisher-Yates: the old
+        // sort(() => 0.5 - Math.random()) trick is a biased shuffle)
+        for (let i = generators.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [generators[i], generators[j]] = [generators[j], generators[i]];
+        }
+        return generators.slice(0, 3);
     }
 
     handlePerkMenuNavigation(gpList) {
@@ -26273,6 +26369,14 @@ class Game {
                 if (!Array.isArray(sd.loadoutPresets) || sd.loadoutPresets.length !== 3) {
                     sd.loadoutPresets = [null, null, null];
                 }
+            }},
+            // v6: OPERATOR PAINT SHOP -- cosmetic body-color unlock + the two
+            // per-player saved color choices. Additive only.
+            { to: 6, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.operatorPaint !== 'number') sd.metaUpgrades.operatorPaint = 0;
+                if (typeof sd.playerColorP1 !== 'string') sd.playerColorP1 = '';
+                if (typeof sd.playerColorP2 !== 'string') sd.playerColorP2 = '';
             }}
         ];
         const runMigrations = (sd) => {
@@ -26516,6 +26620,21 @@ class Game {
                 extraHTML = swatchRow('laserColorP1', 'P1') + swatchRow('laserColorP2', 'P2');
             }
 
+            // OPERATOR PAINT SHOP: per-player body color swatches once owned.
+            if (upg.key === 'operatorPaint' && currentLevel >= 1) {
+                const paintRow = (pKey, label) => {
+                    const stockHex = '#ffffff'; // body ring is white for both players by default
+                    const cur = this.saveData[pKey] || '';
+                    let out = `<div style="display:flex; align-items:center; gap:4px; margin-top:4px; flex-wrap:wrap;"><span style="font-size:9px; color:#a9c2c7; width:20px;">${label}</span>`;
+                    for (const c of PLAYER_COLORS) {
+                        const sel = (cur === c.hex) || (!cur && c.hex === stockHex);
+                        out += `<div title="${c.name}" onclick="game.setPlayerColor('${pKey}','${c.hex}')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:${c.hex}; border:2px solid ${sel ? '#fff' : 'transparent'};"></div>`;
+                    }
+                    return out + '</div>';
+                };
+                extraHTML = paintRow('playerColorP1', 'P1') + paintRow('playerColorP2', 'P2');
+            }
+
             grid.innerHTML += `
                 <div class="armory-card">
                     <div class="armory-card-name">${upg.name}</div>
@@ -26532,6 +26651,18 @@ class Game {
 
     // PHASE 3: prism-array beam color selection. Persisted; consumed by the
     // laser draw block via laserTuning().
+    // OPERATOR PAINT SHOP: body color selection. Persisted; applied by
+    // _applyMetaStatsToPlayer at run setup, plus live here if mid-run.
+    setPlayerColor(pKey, hex) {
+        if ((this.saveData.metaUpgrades.operatorPaint || 0) < 1) return;
+        this.saveData[pKey] = hex;
+        const target = (pKey === 'playerColorP2') ? this.player2 : this.player;
+        if (target) target.bodyColor = hex;
+        this.saveGameData();
+        this.renderArmoryTab();
+        if (audio) audio.playPickup('money');
+    }
+
     setLaserColor(pKey, rgb) {
         if ((this.saveData.metaUpgrades.laserSight || 0) < 3) return;
         this.saveData[pKey] = rgb;
