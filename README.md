@@ -1,7 +1,7 @@
 <div align="center">
 
   <a href="https://skatardude10.github.io/FrozenSoldat/LATEST_MASTER.html">
-    <img src="screenshot.png" alt="Frozen Soldat Gameplay" />
+    <img src="screenshot.jpg" alt="Frozen Soldat Gameplay" />
   </a>
   
   ### [> DEPLOY NOW (Play in Browser) <](https://skatardude10.github.io/FrozenSoldat/LATEST_MASTER.html)
