@@ -475,6 +475,109 @@
         accent-color: var(--neon-blue);
     }
 
+    /* Chaos Draft DOM Toasts and Acquired feedback */
+    .chaos-draft-toast {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        top: 18px;
+        background: rgba(0, 0, 0, 0.95);
+        border: 2px solid;
+        border-radius: 6px;
+        padding: 10px 24px;
+        font-family: 'Outfit', sans-serif;
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        z-index: 11000;
+        pointer-events: none;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+        animation: chaosToastIn 0.3s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+        transition: opacity 0.5s ease, top 0.3s ease;
+    }
+    .chaos-draft-toast.fade-out {
+        opacity: 0;
+    }
+    @keyframes chaosToastIn {
+        0% { transform: translate(-50%, -15px); opacity: 0; }
+        100% { transform: translate(-50%, 0); opacity: 1; }
+    }
+    .chaos-draft-card-acquired {
+        transform: scale(1.05) !important;
+        box-shadow: 0 0 35px var(--neon-blue) !important;
+        border-color: var(--neon-blue) !important;
+        filter: brightness(1.2);
+        transition: all 0.3s ease-out;
+    }
+    .chaos-draft-card-dimmed {
+        opacity: 0.15 !important;
+        filter: grayscale(0.8) blur(1px);
+        pointer-events: none;
+        transition: all 0.3s ease-out;
+    }
+
+    /* Armory Upgrade dynamic stat & level desc list */
+    .armory-card-desc-main {
+        margin-bottom: 6px;
+    }
+    .armory-stat-readout {
+        font-family: 'Outfit', sans-serif;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        background: rgba(0, 229, 255, 0.05);
+        border-left: 2px solid var(--neon-blue);
+        padding: 4px 6px;
+        margin: 6px 0 8px 0;
+        border-radius: 0 4px 4px 0;
+    }
+    .stat-val {
+        color: #fff;
+    }
+    .stat-next {
+        color: var(--neon-blue);
+        font-weight: 800;
+    }
+    .armory-level-maxed {
+        color: var(--red);
+        font-weight: 800;
+        margin-left: 4px;
+        font-size: 8px;
+    }
+    .armory-level-descs-list {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin: 6px 0 8px 0;
+        background: rgba(0, 5, 12, 0.3);
+        padding: 4px;
+        border-radius: 4px;
+    }
+    .armory-level-line {
+        font-size: 8px;
+        line-height: 1.3;
+        padding: 2px 4px;
+        border-radius: 2px;
+        font-weight: 500;
+    }
+    .armory-level-done {
+        color: #39ff14;
+        background: rgba(57, 255, 20, 0.06);
+    }
+    .armory-level-next {
+        color: #00e5ff;
+        background: rgba(0, 229, 255, 0.08);
+        font-weight: 700;
+        border-left: 2px solid #00e5ff;
+        padding-left: 2px;
+        box-shadow: 0 0 6px rgba(0, 229, 255, 0.1);
+    }
+    .armory-level-future {
+        color: #5a6a75;
+        opacity: 0.6;
+    }
+
     /* Armory Tab Styles */
     .armory-card {
         background: rgba(0, 5, 12, 0.5);
@@ -17921,7 +18024,8 @@ const ARMORY_UPGRADES = [
     // ---- PHASE 3: attachments ----
     { key: 'laserSight', name: 'LASER SIGHT ARRAY', maxLevel: 3,
       costPerLevel: [150, 300, 500],
-      desc: 'Lvl1: collimator servo (tighter beam, faster refocus). Lvl2: long-throw emitter (+range). Lvl3: prism array (precision + custom colors).' },
+      desc: 'Lvl1: collimator servo (tighter beam, faster refocus). Lvl2: long-throw emitter (+range). Lvl3: prism array (precision + custom colors).',
+      levelDescs: ['Collimator Servo (tighter beam, faster refocus)', 'Long-Throw Emitter (+range)', 'Prism Array (precision + custom colors)'] },
     { key: 'operatorPaint', name: 'OPERATOR PAINT SHOP', maxLevel: 1,
       costPerLevel: [35],
       desc: 'Cosmetic: unlocks custom operator body colors for P1 and P2. Pick a paint below once owned.' },
@@ -17930,7 +18034,8 @@ const ARMORY_UPGRADES = [
     // ShrapnelGrenade class (its wall-bounce physics were already there).
     { key: 'underbarrelLauncher', name: 'UNDERBARREL LAUNCHER', maxLevel: 2,
       costPerLevel: [600, 350],
-      desc: 'Lvl1: grenades fire from an underbarrel tube — flat, fast, short-fused. +1 max grenades (4). Lvl2: ARC SIGHTS — hold [F] to walk a range marker out (2× reach); release to lob the round dead onto it, clean over cover. +3 max grenades (6).' },
+      desc: 'Lvl1: grenades fire from an underbarrel tube — flat, fast, short-fused. +1 max grenades (4). Lvl2: ARC SIGHTS — hold [F] to walk a range marker out (2× reach); release to lob the round dead onto it, clean over cover. +3 max grenades (6).',
+      levelDescs: ['Underbarrel Grenade Tube (flat, fast, short-fused)', 'ARC SIGHTS (precision distance walker)'] },
     // ---- PHASE 4: operator kit unlocks (selection lives in the menu) ----
     { key: 'kitBreacher', name: 'KIT: BREACHER', maxLevel: 1,
       costPerLevel: [350],
@@ -17961,25 +18066,32 @@ const ARMORY_UPGRADES = [
     // guardrails; NOT enforced in FPV Operator mode (its toys are core kit).
     { key: 'unlockFpvDrone', name: 'REQUISITION: FPV DRONES', maxLevel: 3,
       costPerLevel: [15, 25, 50],
-      desc: 'Lvl1: FPV Drone in the Shop. Lvl2: Bomber upgrade. Lvl3: Fiber Optic Spool.' },
+      desc: 'Lvl1: FPV Drone in the Shop. Lvl2: Bomber upgrade. Lvl3: Fiber Optic Spool.',
+      levelDescs: ['FPV Drone available in the Shop', 'Bomber upgrade available', 'Fiber Optic Spool available'] },
     { key: 'unlockSpotRobot', name: 'REQUISITION: SPOT ROBOT', maxLevel: 2,
       costPerLevel: [20, 50],
-      desc: 'Lvl1: Spot Robot in the Shop. Lvl2: Spot MK.II upgrade.' },
+      desc: 'Lvl1: Spot Robot in the Shop. Lvl2: Spot MK.II upgrade.',
+      levelDescs: ['Spot Robot available in the Shop', 'Spot MK.II upgrade available'] },
     { key: 'unlockSwarm', name: 'REQUISITION: DRONE SWARM', maxLevel: 2,
       costPerLevel: [20, 40],
-      desc: 'Lvl1: single Swarm Drones in the Shop. Lvl2: 4x Swarm Packs.' },
+      desc: 'Lvl1: single Swarm Drones in the Shop. Lvl2: 4x Swarm Packs.',
+      levelDescs: ['Single Swarm Drones in the Shop', '4× Swarm Packs available'] },
     { key: 'unlockTurretMk2', name: 'REQUISITION: TURRET MK.II', maxLevel: 1,
       costPerLevel: [25],
-      desc: 'Adds Auto Turret MK.II to the Shop. (Base Turret always available.)' },
+      desc: 'Adds Auto Turret MK.II to the Shop. (Base Turret always available.)',
+      levelDescs: ['Adds Auto Turret MK.II to the Shop'] },
     { key: 'unlockBarrierMk2', name: 'REQUISITION: BARRIER MK.II', maxLevel: 1,
       costPerLevel: [20],
-      desc: 'Adds Barrier MK.II upgrade to the Shop. (Base Barrier always available.)' },
+      desc: 'Adds Barrier MK.II upgrade to the Shop. (Base Barrier always available.)',
+      levelDescs: ['Adds Barrier MK.II upgrade to the Shop'] },
     { key: 'unlockOverclocks', name: 'REQUISITION: OVERCLOCKS', maxLevel: 2,
       costPerLevel: [30, 40],
-      desc: 'Lvl1: standard Weapon Overclocks in the Shop. Lvl2: Extended Mags.' },
+      desc: 'Lvl1: standard Weapon Overclocks in the Shop. Lvl2: Extended Mags.',
+      levelDescs: ['Weapon Overclocks in the Shop', 'Extended Mags available'] },
     { key: 'unlockCorrupted', name: 'REQUISITION: CORRUPTED MARKET', maxLevel: 1,
       costPerLevel: [50],
-      desc: 'Unlocks the illicit Corrupted Overclocks market in the Shop.' }
+      desc: 'Unlocks the illicit Corrupted Overclocks market in the Shop.',
+      levelDescs: ['Unlocks illicit Corrupted Overclocks in the Shop'] }
 ];
 
 // GL_ARC: Underbarrel Launcher Lvl2 ARC SIGHTS tuning (replaces the old
@@ -23922,26 +24034,88 @@ class Game {
         toggleClass('chaos-draft-screen', 'hidden', false);
     }
 
+    // DOM toast notification inside the Chaos Draft overlay. Canvas-based
+    // floatingTexts are invisible behind the 95% opaque overlay, so all
+    // draft/market feedback also fires through this DOM path (matching the
+    // prestige celebration pattern of DOM/CSS for menu-time FX).
+    _chaosDraftToast(message, color, durationMs = 2500) {
+        const host = document.getElementById('chaos-draft-screen');
+        if (!host) return;
+        const el = document.createElement('div');
+        el.className = 'chaos-draft-toast';
+        el.style.color = color;
+        el.style.borderColor = color;
+        el.style.textShadow = `0 0 8px ${color}, 0 0 16px ${color}66`;
+        el.textContent = message;
+        // Stack: push existing toasts down so newest is always on top.
+        const existing = host.querySelectorAll('.chaos-draft-toast');
+        existing.forEach(t => {
+            const cur = parseFloat(t.style.top) || 18;
+            t.style.top = (cur + 44) + 'px';
+        });
+        host.appendChild(el);
+        const fadeTime = 500;
+        setTimeout(() => el.classList.add('fade-out'), durationMs - fadeTime);
+        setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, durationMs);
+    }
+
     // PHASE A: card selection with Take Two support. Applies the card, then
     // either re-draws a fresh hand (a second pick is still owed) or advances
     // the queue (budget spent).
     _pickChaosDraftCard(p, card) {
+        // Guard: ignore clicks while the linger delay is running (prevents
+        // double-fire from rapid click or gamepad mashing).
+        if (this._chaosDraftAdvancing) return;
+
         card.apply(p);
         if (audio) audio.playPickup('weapon');
         this.floatingTexts.push(this.spawnFloatingText(
             p.x, p.y - 25, `CHOSE: ${card.title}`, card.color, 2.0
         ));
 
+        // DOM toast — visible above the opaque overlay.
+        this._chaosDraftToast(`ACQUIRED: ${card.title}`, card.color);
+
         this.chaosDraftState.picksRemaining--;
-        if (this.chaosDraftState.picksRemaining > 0) {
-            // Take Two second pick: fresh hand, same player, no queue advance.
-            this.floatingTexts.push(this.spawnFloatingText(
-                p.x, p.y - 45, `TAKE TWO — PICK ANOTHER`, '#ffb700', 2.0, 0, -70, 180, true
-            ));
-            this._renderChaosDraftForPlayer(p);
-        } else {
-            this._advanceChaosDraftQueue();
+
+        // Visual "ACQUIRED" state: highlight picked card, dim siblings,
+        // then delay before advancing so the player processes the pick.
+        const container = document.getElementById('chaos-draft-choices-container');
+        if (container) {
+            container.style.pointerEvents = 'none';
+            for (const child of container.children) {
+                const btn = child.querySelector('button');
+                // Check if this card matches the one chosen by checking the title
+                const titleDiv = child.querySelector('div[style*="font-size: 16px"]');
+                if (titleDiv && titleDiv.textContent === card.title) {
+                    child.classList.add('chaos-draft-card-acquired');
+                    if (btn) btn.textContent = '✓ ACQUIRED';
+                } else {
+                    child.classList.add('chaos-draft-card-dimmed');
+                }
+            }
         }
+        // Disable market clicks during linger.
+        const modWrap = document.getElementById('black-market-modules');
+        if (modWrap) modWrap.style.pointerEvents = 'none';
+
+        this._chaosDraftAdvancing = true;
+        setTimeout(() => {
+            this._chaosDraftAdvancing = false;
+            if (container) container.style.pointerEvents = '';
+            if (modWrap) modWrap.style.pointerEvents = '';
+
+            if (this.chaosDraftState.picksRemaining > 0) {
+                // Take Two second pick: fresh hand, same player, no queue advance.
+                this.floatingTexts.push(this.spawnFloatingText(
+                    p.x, p.y - 45, `TAKE TWO — PICK ANOTHER`, '#ffb700', 2.0, 0, -70, 180, true
+                ));
+                this._chaosDraftToast('PICK ANOTHER CARD', '#ffb700');
+                this._renderChaosDraftForPlayer(p);
+            } else {
+                this._advanceChaosDraftQueue();
+            }
+        }, 1500);
     }
 
     refreshChaosDraftHighlight() {
@@ -24042,6 +24216,7 @@ class Game {
             cs.rerollCost = Math.round(cs.rerollCost * 1.75); // escalate
             if (audio) audio.playPickup('money');
             this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 25, 'REROLL', '#00e5ff', 1.5, 0, -80, 200, true));
+            this._chaosDraftToast('REROLL — NEW HAND DEALT', '#00e5ff');
             // Redraw WITHOUT advancing queue or resetting pick budget.
             this._renderChaosDraftForPlayer(p);
             return;
@@ -24054,6 +24229,7 @@ class Game {
             cs.picksRemaining = 2;
             if (audio) audio.playPickup('money');
             this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 25, 'TAKE TWO ARMED', '#ffb700', 2.0, 0, -80, 200, true));
+            this._chaosDraftToast('TAKE TWO ARMED — PICK 2 CARDS', '#ffb700');
             this._renderBlackMarket(p);
             return;
         }
@@ -24065,6 +24241,7 @@ class Game {
             if (this.runLedger) this.intelEarnedThisRun = this.runLedger.intelEarned;
             this.intelPickupJuice(p.x, p.y, awarded);
             if (audio) audio.playPickup('money');
+            this._chaosDraftToast(`+3 PERMANENT METADATA SECURED`, '#39ff14');
             this._renderBlackMarket(p);
             return;
         }
@@ -24075,6 +24252,7 @@ class Game {
             cs.activeWager = { wavesRemaining: 2, failed: false };
             if (audio) audio.playPickup('weapon');
             this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 25, 'BLOOD WAGER SIGNED', '#ff2a5f', 2.5, 0, -80, 200, true));
+            this._chaosDraftToast('BLOOD WAGER SIGNED — SURVIVE 2 CLEAN WAVES', '#ff2a5f');
             this._renderBlackMarket(p);
             return;
         }
@@ -24094,8 +24272,10 @@ class Game {
     // spawned on the paused ground, which would cull weirdly).
     _rollContrabandSlot(p) {
         const roll = Math.random();
-        const pop = (txt, color) => this.floatingTexts.push(
-            this.spawnFloatingText(p.x, p.y - 30, txt, color, 2.4, 0, -80, 200, true));
+        const pop = (txt, color) => {
+            this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 30, txt, color, 2.4, 0, -80, 200, true));
+            this._chaosDraftToast(txt, color);
+        };
         if (audio) audio.playPickup('money');
 
         if (roll < 0.22) {
@@ -24206,7 +24386,7 @@ class Game {
     }
 
     handleChaosDraftMenuNavigation(gpList) {
-        if (!this._chaosDraftActive) return;
+        if (!this._chaosDraftActive || this._chaosDraftAdvancing) return;
         if (this.chaosDraftSelectionIndex === undefined) this.chaosDraftSelectionIndex = 0;
         if (this.chaosDraftRowIndex === undefined) this.chaosDraftRowIndex = 0;
         if (this.chaosDraftMarketIndex === undefined) this.chaosDraftMarketIndex = 0;
@@ -27355,6 +27535,66 @@ class Game {
         }
     }
 
+    // Helper to calculate and format dynamic stat readouts for continuous
+    // upgrades (pickup radius, cash retention, armor, health, sprint/regen,
+    // and reserve ammo capacities) to avoid player mental math.
+    _armoryStatLine(upg, level) {
+        const isMaxed = level >= upg.maxLevel;
+        const formatStat = (curr, next) => {
+            if (isMaxed) {
+                return `<div class="armory-stat-readout">Current: <span class="stat-val">${curr}</span> <span class="armory-level-maxed">(FULLY UPGRADED)</span></div>`;
+            }
+            return `<div class="armory-stat-readout">Current: <span class="stat-val">${curr}</span> &rarr; Next: <span class="stat-next">${next}</span></div>`;
+        };
+
+        switch (upg.key) {
+            case 'magneticGear': {
+                const c = 60 + level * 15;
+                const n = 60 + (level + 1) * 15;
+                return formatStat(`${c}px radius`, `${n}px radius`);
+            }
+            case 'offshoreAccount': {
+                const c = level * 20;
+                const n = (level + 1) * 20;
+                return formatStat(`${c}% cash retained`, `${n}% cash retained`);
+            }
+            case 'kevlarWeave': {
+                const c = Math.round(50 * (1 + level * 0.10));
+                const n = Math.round(50 * (1 + (level + 1) * 0.10));
+                return formatStat(`${c} Armor`, `${n} Armor`);
+            }
+            case 'firstAidTraining': {
+                const c = Math.round(100 * (1 + level * 0.08));
+                const n = Math.round(100 * (1 + (level + 1) * 0.08));
+                return formatStat(`${c} HP`, `${n} HP`);
+            }
+            case 'cardioConditioning': {
+                const cReg = Math.round(level * 12);
+                const nReg = Math.round((level + 1) * 12);
+                const cDrain = Math.round(level * 8);
+                const nDrain = Math.round((level + 1) * 8);
+                return formatStat(`Regen +${cReg}% / Drain -${cDrain}%`, `Regen +${nReg}% / Drain -${nDrain}%`);
+            }
+            case 'magSmg': {
+                const c = 360 + level * 60;
+                const n = 360 + (level + 1) * 60;
+                return formatStat(`${c} SMG rounds`, `${n} SMG rounds`);
+            }
+            case 'magM1a': {
+                const c = 60 + level * 20;
+                const n = 60 + (level + 1) * 20;
+                return formatStat(`${c} M1A rounds`, `${n} M1A rounds`);
+            }
+            case 'magShotgun': {
+                const c = 48 + level * 12;
+                const n = 48 + (level + 1) * 12;
+                return formatStat(`${c} shotgun shells`, `${n} shotgun shells`);
+            }
+            default:
+                return '';
+        }
+    }
+
     renderArmoryTab() {
         // PHASE 3: fully data-driven off ARMORY_UPGRADES -- render, buy and
         // reset all read the same table. Adding an upgrade = one entry there.
@@ -27369,6 +27609,29 @@ class Game {
             const isMaxed = currentLevel >= upg.maxLevel;
             const cost = isMaxed ? 0 : upg.costPerLevel[currentLevel];
             const canAfford = this.saveData.intel >= cost;
+
+            let descHTML = `<div class="armory-card-desc-main">${upg.desc}</div>`;
+            const statLine = this._armoryStatLine(upg, currentLevel);
+            if (statLine) {
+                descHTML += statLine;
+            } else if (upg.levelDescs && upg.levelDescs.length > 0) {
+                let levelsHTML = '<div class="armory-level-descs-list">';
+                for (let i = 0; i < upg.maxLevel; i++) {
+                    const levelText = upg.levelDescs[i] || '';
+                    let cls = 'armory-level-future';
+                    let prefix = '○ ';
+                    if (i < currentLevel) {
+                        cls = 'armory-level-done';
+                        prefix = '✓ ';
+                    } else if (i === currentLevel) {
+                        cls = 'armory-level-next';
+                        prefix = '&rarr; ';
+                    }
+                    levelsHTML += `<div class="armory-level-line ${cls}">${prefix}Lvl ${i+1}: ${levelText}</div>`;
+                }
+                levelsHTML += '</div>';
+                descHTML += levelsHTML;
+            }
 
             let pipsHTML = '';
             for (let i = 0; i < upg.maxLevel; i++) {
@@ -27416,7 +27679,7 @@ class Game {
             grid.innerHTML += `
                 <div class="armory-card">
                     <div class="armory-card-name">${upg.name}</div>
-                    <div class="armory-card-desc">${upg.desc}</div>
+                    <div class="armory-card-desc">${descHTML}</div>
                     <div class="armory-level-pips">${pipsHTML}</div>
                     <button class="${btnClass}" 
                         ${isMaxed || !canAfford ? 'disabled' : ''}
