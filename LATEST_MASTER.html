@@ -4462,49 +4462,6 @@ class MusicEngine {
         bodyOsc.stop(time + 0.15);
     }
     
-    playAmbientDrone(time, trans) {
-        if (!audio.ctx) return;
-        const osc1 = audio.ctx.createOscillator();
-        const osc2 = audio.ctx.createOscillator();
-        const filter = audio.ctx.createBiquadFilter();
-        const gain = audio.ctx.createGain();
-        
-        osc1.type = 'triangle';
-        osc2.type = 'sawtooth';
-        
-        let note1 = 36 + trans;
-        let note2 = 43 + trans;
-        
-        let freq1 = 440 * Math.pow(2, (note1 - 69) / 12);
-        let freq2 = 440 * Math.pow(2, (note2 - 69) / 12);
-        
-        osc1.frequency.setValueAtTime(freq1, time);
-        osc2.frequency.setValueAtTime(freq2, time);
-        
-        osc1.detune.setValueAtTime(-15, time);
-        osc2.detune.setValueAtTime(15, time);
-        
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(150, time);
-        filter.frequency.linearRampToValueAtTime(450, time + 2.5);
-        filter.frequency.linearRampToValueAtTime(150, time + 5.0);
-        
-        gain.gain.setValueAtTime(0.001, time);
-        gain.gain.linearRampToValueAtTime(0.08, time + 2.0);
-        gain.gain.linearRampToValueAtTime(0.001, time + 5.0);
-        
-        osc1.connect(filter);
-        osc2.connect(filter);
-        filter.connect(gain);
-        gain.connect(audio.musicGain);
-        
-        osc1.start(time);
-        osc2.start(time);
-        
-        osc1.stop(time + 5.1);
-        osc2.stop(time + 5.1);
-    }
-    
     playHeartbeat(time, volume, isFirst) {
         if (!audio.ctx) return;
         const osc = audio.ctx.createOscillator();
@@ -4627,7 +4584,19 @@ const MathUtils = {
         
         return tmax >= tmin && tmax >= 0 && tmin <= 1;
     },
-    angleDifference: (target, current) => Math.atan2(Math.sin(target - current), Math.cos(target - current))
+    // Normalize (target - current) into [-PI, PI]. Was
+    // Math.atan2(Math.sin(d), Math.cos(d)) -- three trig ops for a pure
+    // angular-delta wrap. This modulo form is numerically equivalent across
+    // the range (including the +/-PI and zero-delta boundaries) but avoids
+    // the sin/cos/atan2 cost in a utility called per-entity, per-frame from
+    // aiming, steering, and AI facing code. JS % keeps the dividend's sign,
+    // so a single wrap correction on each side is all that's needed.
+    angleDifference: (target, current) => {
+        let diff = (target - current) % (Math.PI * 2);
+        if (diff > Math.PI) diff -= Math.PI * 2;
+        else if (diff < -Math.PI) diff += Math.PI * 2;
+        return diff;
+    }
 };
 
 /**
@@ -4754,10 +4723,6 @@ const OP_TUNING = {
     CANOPY_ALPHA: 0.85,
     CANOPY_HIDDEN_ALPHA: 0.35
 };
-
-function isOp() {
-    return typeof game !== 'undefined' && game && game.operatorMode === true;
-}
 
 // ==== ACTION NOW MODE: config ====
 // The deliberate opposite number to FPV Operator's slow, paranoid burn --
@@ -11735,7 +11700,21 @@ class Enemy extends Entity {
             }
         }
 
-        this.updatePhysics(dt, walls);
+        // PERF: physics collision is inherently local, so it must run against
+        // the spatially-filtered `nearbyWalls` (getWallsNear, computed at the
+        // top of this method), NOT the full `walls` array passed in from the
+        // update loop (`this.map.walls`). This matches every other entity --
+        // Player (Player.update), all five bosses, RobotDog, Hostage, and
+        // ExplosiveBarrel all feed updatePhysics the getWallsNear() subset.
+        // Enemy was the lone holdout, and it's the most numerous entity type,
+        // so on dense maps this was O(enemies x ALL walls) per frame (measured
+        // ~42 walls/query vs ~4.5 -- see MapGen.getWallsNear's own comment).
+        // The 3x3-cell neighborhood getWallsNear returns dwarfs any entity
+        // radius, so no wall the enemy could actually touch is missed. Note
+        // the deliberate `walls`-vs-`nearbyWalls` split already present above
+        // for sniper LOS: full walls are only ever needed for long-range
+        // raycasts, never for body collision.
+        this.updatePhysics(dt, nearbyWalls);
     }
 
     // ==== FPV OPERATOR MODE: AI overlay implementation ====
@@ -15576,7 +15555,7 @@ class RobotDog extends Entity {
         // the 30-frame cadence.
         let dogIndex = this._aiStaggerId || 0;
         let targetStaleRecycle = this.target && this.target._aiStaggerId !== undefined && this.target._aiStaggerId !== this.targetGenId;
-        let shouldRescanThreats = (game.frameCounter % 30 === (dogIndex * 15) % 30) ||
+        let shouldRescanThreats = (game.frameCounter % 30 === dogIndex % 30) ||
             this._cachedActiveThreatCount === undefined || !this.target || this.target.dead || targetStaleRecycle;
 
         if (shouldRescanThreats) {
@@ -15860,7 +15839,7 @@ class RobotDog extends Entity {
                     this.lastTargetKey = targetKey;
                     
                     // Stagger path calculations every 30 frames, but update immediately on target change
-                    let shouldUpdateAI = (game.frameCounter % 30 === (dogIndex * 15) % 30) || (this.cachedMoveAngle === undefined) || targetChanged;
+                    let shouldUpdateAI = (game.frameCounter % 30 === dogIndex % 30) || (this.cachedMoveAngle === undefined) || targetChanged;
                     
                     if (shouldUpdateAI) {
                         let pathBlocked = nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, destX, destY, w));
@@ -19980,30 +19959,6 @@ class Game {
         }
     }
 
-    // Projects a ray from (cx,cy) at the given angle onto the boundary of a
-    // [0,w]x[0,h] rectangle, returning the {x,y} where it exits. Used by the
-    // operator spawn scheduler to convert a sector angle into an actual
-    // point on the map's perimeter regardless of aspect ratio (operator maps
-    // are square, but this stays correct for any w/h anyway).
-    _rayToRectBoundary(cx, cy, angle, w, h) {
-        let dx = Math.cos(angle), dy = Math.sin(angle);
-        let candidates = [];
-        if (dx !== 0) {
-            let tLeft = (0 - cx) / dx;
-            let tRight = (w - cx) / dx;
-            if (tLeft > 0) candidates.push(tLeft);
-            if (tRight > 0) candidates.push(tRight);
-        }
-        if (dy !== 0) {
-            let tTop = (0 - cy) / dy;
-            let tBottom = (h - cy) / dy;
-            if (tTop > 0) candidates.push(tTop);
-            if (tBottom > 0) candidates.push(tBottom);
-        }
-        let t = candidates.length ? Math.min(...candidates) : 0;
-        return { x: cx + dx * t, y: cy + dy * t };
-    }
-
     spawnFloatingText(x, y, text, color = '#39ff14', life = 1.0, vx = 0, vy = -60, gravity = 0, bounce = false) {
         let ft;
         if (this.inactiveFloatingTexts.length > 0) {
@@ -22226,21 +22181,6 @@ class Game {
         let visibleW = pw / pipZoom;
         let visibleH = ph / pipZoom;
         
-        // Task 1: Viewport cropping with over-scan padding (1.3x)
-        let padW = visibleW * 0.3;
-        let padH = visibleH * 0.3;
-        let paddedLeft = droneCam.x - padW / 2;
-        let paddedTop = droneCam.y - padH / 2;
-        let paddedRight = droneCam.x + visibleW + padW / 2;
-        let paddedBottom = droneCam.y + visibleH + padH / 2;
-
-        let sx = MathUtils.clamp(paddedLeft, 0, this.mapW);
-        let sy = MathUtils.clamp(paddedTop, 0, this.mapH);
-        let sRight = MathUtils.clamp(paddedRight, 0, this.mapW);
-        let sBottom = MathUtils.clamp(paddedBottom, 0, this.mapH);
-        let sWidth = sRight - sx;
-        let sHeight = sBottom - sy;
-
         this.drawPermanentMarks(this.ctx, droneCam, visibleW, visibleH);
 
         this.map.drawOperatorBiomeBands(this.ctx, droneCam, pw, ph);
@@ -28037,6 +27977,12 @@ class Game {
     setTestingMode(enabled) {
         // Back-compat shim: old dev-menu / touch bindings may still call
         // this directly. Routes into the new tri-state setter.
+        // NOTE (health audit): confirmed to have NO in-tree callers, but
+        // deliberately retained as a compatibility surface for any external/
+        // console/legacy binding that still invokes it. It is inert (a thin
+        // pass-through to setGameMode) so it carries no runtime cost. Do not
+        // "clean up" as dead code without first confirming nothing outside
+        // this file relies on it.
         this.setGameMode(enabled ? 'sandbox' : 'normal');
     }
 
@@ -29027,21 +28973,6 @@ class Game {
         let visibleW = viewportW / cam.zoom;
         let visibleH = viewportH / cam.zoom;
         
-        // Task 1: Viewport cropping with over-scan padding (1.3x)
-        let padW = visibleW * 0.3;
-        let padH = visibleH * 0.3;
-        let paddedLeft = cam.x - padW / 2;
-        let paddedTop = cam.y - padH / 2;
-        let paddedRight = cam.x + visibleW + padW / 2;
-        let paddedBottom = cam.y + visibleH + padH / 2;
-
-        let sx = MathUtils.clamp(paddedLeft, 0, this.mapW);
-        let sy = MathUtils.clamp(paddedTop, 0, this.mapH);
-        let sRight = MathUtils.clamp(paddedRight, 0, this.mapW);
-        let sBottom = MathUtils.clamp(paddedBottom, 0, this.mapH);
-        let sWidth = sRight - sx;
-        let sHeight = sBottom - sy;
-
         this.drawPermanentMarks(this.ctx, cam, visibleW, visibleH);
 
         // DUST MOTES (parallax background)
@@ -29893,32 +29824,94 @@ class Game {
         }
     }
 
+    // Chromatic-aberration flash (heavy hits / glory kills). Previously
+    // this rendered the ENTIRE viewport three times per frame (six in
+    // co-op) via three drawViewport() calls -- drawViewport is the
+    // heaviest function in the engine (permanent-mark scan, shadow-blurred
+    // walls, every entity + particle), and the effect fires during the
+    // busiest combat frames, so the triple cost spiked exactly when it hurt
+    // most. It now renders the world ONCE into a reused offscreen buffer
+    // and composites that image three times with cheap drawImage blits
+    // (center + two offset ghosts).
+    //
+    // NOTE: this also corrects a latent bug. The three old passes were
+    // meant to be translucent (0.55 center / 0.40 ghosts, per the layer
+    // comments), but drawViewport immediately calls drawPermanentMarks,
+    // which ends with a hard `globalAlpha = 1.0`, clobbering the caller's
+    // alpha before any wall/sprite drew -- so the shipped effect was
+    // actually an opaque offset smear, not a ghost. Compositing the buffer
+    // with real globalAlpha restores the intended translucent layering
+    // (an accepted, deliberate visual change).
+    //
+    // Fast path (effect inactive) is the unchanged direct render: the
+    // buffer is only ever touched while the timer is live, so normal play
+    // is untouched.
     drawViewportWithAberration(camera, player, isPlayer2) {
-        if (this.chromaticAberrationTimer > 0) {
-            let shiftVal = (this.chromaticAberrationTimer / (this.chromaticAberrationPeak || 0.5)) * 26;
-            
-            // Draw center layer with slightly reduced opacity
-            this.ctx.save();
-            this.ctx.globalAlpha = 0.55;
+        if (this.chromaticAberrationTimer <= 0) {
             this.drawViewport(camera, player, isPlayer2);
-            this.ctx.restore();
-
-            // Left ghost layer with sine vertical shift
-            this.ctx.save();
-            this.ctx.globalAlpha = 0.40;
-            this.ctx.translate(-shiftVal, Math.sin(Date.now() * 0.05) * 6);
-            this.drawViewport(camera, player, isPlayer2);
-            this.ctx.restore();
-
-            // Right ghost layer with negative sine vertical shift
-            this.ctx.save();
-            this.ctx.globalAlpha = 0.40;
-            this.ctx.translate(shiftVal, -Math.sin(Date.now() * 0.05) * 6);
-            this.drawViewport(camera, player, isPlayer2);
-            this.ctx.restore();
-        } else {
-            this.drawViewport(camera, player, isPlayer2);
+            return;
         }
+
+        const viewportW = this.isTwoPlayer ? this.width / 2 : this.width;
+        const viewportH = this.height;
+        const effZoom = camera.zoom + (camera.zoomPunch || 0);
+
+        // Lazily create / resize the reused buffer. Mirrors the wall-lineage
+        // shadow-canvas idiom (grep _shadowCanvas): allocate once; only
+        // re-size on an actual dimension change (window resize or a
+        // 1P<->2P transition), and only ever while the effect is active.
+        let buf = this._aberrationBuffer;
+        if (!buf) buf = this._aberrationBuffer = document.createElement('canvas');
+        if (buf.width !== viewportW || buf.height !== viewportH) {
+            buf.width = viewportW; buf.height = viewportH;
+        }
+        const bctx = buf.getContext('2d');
+
+        // Fill with the SAME opaque background draw() uses, so every
+        // composite INSIDE drawViewport (notably the 'screen'-blended
+        // atmospheric haze) behaves identically to rendering onto the main
+        // canvas. Then bake the zoom into the buffer transform exactly as
+        // the caller's ctx.scale() would have.
+        bctx.setTransform(1, 0, 0, 1, 0, 0);
+        bctx.fillStyle = '#01050e';
+        bctx.fillRect(0, 0, viewportW, viewportH);
+        bctx.setTransform(effZoom, 0, 0, effZoom, 0, 0);
+
+        // Redirect the ENTIRE world render into the buffer by swapping the
+        // shared ctx handle. drawViewport and every entity .draw() reference
+        // this.ctx (or receive it as a param), so this retargets the whole
+        // pass with zero changes to any draw code. Screen-shake is applied
+        // inside drawViewport, so it is baked into the buffer. try/finally
+        // guarantees the handle is restored even if a draw throws.
+        const realCtx = this.ctx;
+        this.ctx = bctx;
+        try {
+            this.drawViewport(camera, player, isPlayer2);
+        } finally {
+            this.ctx = realCtx;
+        }
+
+        // Composite the single image back in SCREEN space. The caller has
+        // already established this viewport's clip (screen-space) and its
+        // scale; we neutralise the scale with an identity transform so the
+        // three copies land at true pixel offsets, and the still-active
+        // clip confines every copy to this viewport's half (no bleed across
+        // the 2P split). Offset magnitude kept at the previous on-screen
+        // value (shiftVal * zoom) so the ghost spread is unchanged; only the
+        // layers' translucency is new.
+        const originX = (this.isTwoPlayer && isPlayer2) ? viewportW : 0;
+        const shiftVal = (this.chromaticAberrationTimer / (this.chromaticAberrationPeak || 0.5)) * 26 * effZoom;
+        const wobble = Math.sin(Date.now() * 0.05) * 6 * effZoom;
+
+        realCtx.save();
+        realCtx.setTransform(1, 0, 0, 1, 0, 0); // NB: does NOT clear the caller's clip
+        realCtx.globalAlpha = 0.55;
+        realCtx.drawImage(buf, originX, 0);                    // center
+        realCtx.globalAlpha = 0.40;
+        realCtx.drawImage(buf, originX - shiftVal, wobble);    // left ghost
+        realCtx.globalAlpha = 0.40;
+        realCtx.drawImage(buf, originX + shiftVal, -wobble);   // right ghost
+        realCtx.restore(); // restores globalAlpha AND transform
     }
 
     // "Laser-Only" aim paradigm: the UI crosshair creates a disconnect
