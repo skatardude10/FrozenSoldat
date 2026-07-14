@@ -753,6 +753,198 @@
         font-size:10px; letter-spacing:2px; padding:4px 12px; border-radius:3px;
         text-shadow:0 0 8px rgba(255,42,95,0.7); pointer-events:none; z-index:20;
     }
+
+    /* WIZARD FLOW & TACTICAL CARD STYLES */
+    .wizard-step {
+        animation: wizardFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes wizardFadeIn {
+        from { opacity: 0; transform: scale(0.995) translateY(5px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .wiz-stepper {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 5px 0 20px 0;
+        background: rgba(0, 10, 25, 0.6);
+        border: 1px solid rgba(0, 229, 255, 0.15);
+        border-radius: 4px;
+        padding: 10px 15px;
+    }
+    .wiz-step-node {
+        font-size: 10px;
+        font-weight: bold;
+        letter-spacing: 1.5px;
+        color: #5a6a75;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        padding: 4px 8px;
+        border-radius: 3px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+    .wiz-step-node:hover {
+        color: var(--neon-blue);
+        text-shadow: 0 0 6px var(--neon-blue);
+    }
+    .wiz-step-node.active {
+        color: var(--neon-blue);
+        text-shadow: 0 0 10px var(--neon-blue);
+        background: rgba(0, 229, 255, 0.08);
+        border: 1px solid rgba(0, 229, 255, 0.2);
+    }
+    .wiz-step-node.done {
+        color: var(--green);
+        text-shadow: 0 0 8px var(--green);
+    }
+    .wiz-step-line {
+        flex-grow: 1;
+        height: 1px;
+        background: rgba(255, 255, 255, 0.08);
+        margin: 0 10px;
+    }
+    .wiz-step-line.done {
+        background: rgba(57, 255, 20, 0.4);
+        box-shadow: 0 0 4px var(--green);
+    }
+
+    .wiz-section-title {
+        color: var(--neon-blue);
+        font-size: 13px;
+        text-align: left;
+        letter-spacing: 2px;
+        margin: 0 0 15px 0;
+        border-bottom: 1px solid rgba(0,229,255,0.25);
+        padding-bottom: 6px;
+        text-transform: uppercase;
+    }
+
+    .wiz-grid-3x2 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(2, auto);
+        gap: 12px;
+    }
+
+    .tactical-card {
+        background: rgba(0, 10, 20, 0.6);
+        border: 1px solid rgba(0, 229, 255, 0.15);
+        border-radius: 6px;
+        padding: 12px;
+        text-align: left;
+        cursor: pointer;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        position: relative;
+    }
+    .tactical-card:hover {
+        border-color: var(--neon-blue);
+        background-color: rgba(0, 229, 255, 0.08);
+        box-shadow: 0 0 15px rgba(0, 229, 255, 0.2);
+        transform: translateY(-2px);
+    }
+    .tactical-card.active-mode {
+        border-color: var(--green) !important;
+        background-color: rgba(57, 255, 20, 0.06) !important;
+        box-shadow: 0 0 15px rgba(57, 255, 20, 0.15) !important;
+    }
+    .tactical-card.active-mode:hover {
+        box-shadow: 0 0 20px rgba(57, 255, 20, 0.25) !important;
+    }
+    .tactical-card.focused-btn {
+        border-color: var(--neon-blue) !important;
+        box-shadow: 0 0 15px rgba(0, 229, 255, 0.5) !important;
+        background-color: rgba(0, 229, 255, 0.1) !important;
+    }
+
+    .card-icon {
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+    }
+    .wizard-svg {
+        height: 100%;
+        fill: none;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+    .card-title {
+        font-size: 11px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        color: #e0f7fa;
+    }
+    .tactical-card.active-mode .card-title {
+        color: var(--green);
+        text-shadow: 0 0 8px var(--green);
+    }
+    .card-desc {
+        font-size: 9px;
+        color: #a9c2c7;
+        line-height: 1.4;
+    }
+    .tactical-card:hover .card-desc {
+        color: #e0f7fa;
+    }
+
+    /* Step 2 Inline SVG & FF Title */
+    .card-title-inline {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 10px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        color: #e0f7fa;
+    }
+    .wizard-svg-inline {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    /* Step 3 Small layout options */
+    .card-title-small {
+        font-size: 9px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        color: #e0f7fa;
+        text-align: center;
+    }
+    .card-stats {
+        font-size: 8px;
+        color: #808f9c;
+        line-height: 1.4;
+        font-family: monospace;
+        text-align: center;
+    }
+    .tactical-card:hover .card-stats {
+        color: #a9c2c7;
+    }
+    .tactical-card.active-mode .card-stats {
+        color: rgba(57, 255, 20, 0.7);
+    }
+
+    /* Fixed Bottom Nav Layout */
+    .wiz-nav-bar {
+        margin-top: 20px;
+        padding-top: 15px;
+        border-top: 1px solid rgba(0, 229, 255, 0.15);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
 </style>
 </head>
 <body>
@@ -971,85 +1163,276 @@
         <div id="tab-play" class="tab-content active" style="max-width: 700px; margin: 0 auto;">
             <p style="margin: 5px 0 10px 0; font-size: 12px;">Tactical Top-Down Weapon Physics Simulator.</p>
             
-            <!-- CORE MISSION PARAMETERS -->
-            <div style="background: rgba(0, 229, 255, 0.03); border: 1px solid rgba(0, 229, 255, 0.1); border-radius: 4px; padding: 15px; margin-bottom: 20px;">
-                <h3 style="color: var(--neon-blue); font-size: 11px; text-align: left; letter-spacing: 2px; margin-top: 0; border-bottom: 1px solid rgba(0,229,255,0.2); padding-bottom: 5px; text-transform: uppercase;">CORE MISSION PARAMETERS</h3>
+            <!-- STEPPER BREADCRUMBS -->
+            <div class="wiz-stepper" id="wiz-stepper">
+                <div class="wiz-step-node active" onclick="game.gotoStep(1)">MODE</div>
+                <div class="wiz-step-line"></div>
+                <div class="wiz-step-node" onclick="game.gotoStep(2)">ROSTER</div>
+                <div class="wiz-step-line"></div>
+                <div class="wiz-step-node" onclick="game.gotoStep(3)">PARAMS</div>
+                <div class="wiz-step-line"></div>
+                <div class="wiz-step-node" onclick="game.gotoStep(4)">OPERATION</div>
+                <div class="wiz-step-line"></div>
+                <div class="wiz-step-node" onclick="game.gotoStep(5)">LOADOUT</div>
+            </div>
+
+            <!-- STEP 1: DEPLOYMENT TYPE (Game Mode) -->
+            <div id="wiz-step-1" class="wizard-step">
+                <h3 class="wiz-section-title">DEPLOYMENT TYPE</h3>
+                <div class="wiz-grid-3x2">
+                    <!-- Normal Wave Ops -->
+                    <div class="tactical-card active-mode" id="btn-gm-normal" onclick="game.setGameMode('normal'); game.nextStep();">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: var(--green);"><circle cx="32" cy="32" r="16" /><line x1="32" y1="8" x2="32" y2="56" /><line x1="8" y1="32" x2="56" y2="32" /><circle cx="32" cy="32" r="24" stroke-dasharray="4 4" /></svg>
+                        </div>
+                        <div class="card-title">NORMAL WAVE OPS</div>
+                        <div class="card-desc">Classic wave survival. Build up defenses, purchase gear, and outlast the scaling enemy assault waves.</div>
+                    </div>
+                    <!-- Extraction -->
+                    <div class="tactical-card" id="btn-gm-extraction" onclick="game.setGameMode('extraction'); game.nextStep();">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #d500f9;"><rect x="16" y="16" width="32" height="32" rx="4" /><line x1="24" y1="26" x2="40" y2="26" /><line x1="24" y1="32" x2="36" y2="32" /><circle cx="32" cy="40" r="2" fill="currentColor" /><path d="M10 20 A 24 24 0 0 1 10 44" stroke-dasharray="2 2" /><path d="M54 20 A 24 24 0 0 0 54 44" stroke-dasharray="2 2" /></svg>
+                        </div>
+                        <div class="card-title">EXTRACTION OPS</div>
+                        <div class="card-desc">Objective-driven insertion. Track down cyber uplinks, crack the network, and make it to the evac zone.</div>
+                    </div>
+                    <!-- Chaos Draft -->
+                    <div class="tactical-card" id="btn-gm-chaos_draft" onclick="game.setGameMode('chaos_draft'); game.nextStep();">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: var(--neon-blue);"><rect x="14" y="20" width="20" height="32" rx="3" transform="rotate(-15 24 36)" /><rect x="30" y="16" width="20" height="32" rx="3" transform="rotate(10 40 32)" /><text x="32" y="38" font-size="12" font-family="monospace" stroke="none" fill="currentColor" text-anchor="middle">?</text></svg>
+                        </div>
+                        <div class="card-title">CHAOS DRAFT</div>
+                        <div class="card-desc">Highly volatile protocol. Draft random combat perks each wave instead of using standard shop items.</div>
+                    </div>
+                    <!-- Action Now -->
+                    <div class="tactical-card" id="btn-gm-now" onclick="game.setGameMode('now'); game.nextStep();">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #ff2a5f;"><path d="M38 6 L18 34 H32 L26 58 L50 26 H32 Z" /></svg>
+                        </div>
+                        <div class="card-title">ACTION NOW</div>
+                        <div class="card-desc">Drop directly into hot territory. Start at wave 5 with a massive budget for immediate high-tier combat.</div>
+                    </div>
+                    <!-- FPV Operator -->
+                    <div class="tactical-card" id="btn-gm-operator" onclick="game.setGameMode('operator'); game.nextStep();">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #ff7a00;"><circle cx="32" cy="32" r="8" /><line x1="18" y1="18" x2="46" y2="46" /><line x1="46" y1="18" x2="18" y2="46" /><circle cx="18" cy="18" r="5" /><circle cx="46" cy="18" r="5" /><circle cx="18" cy="46" r="5" /><circle cx="46" cy="46" r="5" /></svg>
+                        </div>
+                        <div class="card-title">FPV OPERATOR</div>
+                        <div class="card-desc">Bunker defense command. Piloted combat drone support for automated defense systems. Solo only.</div>
+                    </div>
+                    <!-- Testing Sandbox -->
+                    <div class="tactical-card" id="btn-gm-sandbox" onclick="game.setGameMode('sandbox'); game.nextStep();">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #808f9c;"><circle cx="32" cy="32" r="12" /><path d="M32 8 L35 12 L40 10 L41 15 L46 16 L45 21 L49 24 L46 28 L48 32 L44 35 L45 40 L40 41 L39 46 L34 45 L32 49 L28 45 L24 46 L23 41 L18 40 L19 35 L15 32 L18 28 L16 24 L21 23 L22 18 L27 19 Z" fill="none" /><line x1="26" y1="38" x2="14" y2="50" stroke-width="3" /></svg>
+                        </div>
+                        <div class="card-title">TESTING SANDBOX</div>
+                        <div class="card-desc">Isolated parameters. Unrestricted weapons and god options enabled. No career Intel rewards.</div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- STEP 2: ROSTER (1P vs 2P) + FRIENDLY FIRE -->
+            <div id="wiz-step-2" class="wizard-step hidden">
+                <h3 class="wiz-section-title">ROSTER CONFIGURATION</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                    <!-- 1 Player -->
+                    <div class="tactical-card active-mode" id="btn-mode-1p" onclick="game.setMode(1)">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: var(--neon-blue);"><circle cx="32" cy="20" r="8" /><path d="M16 48 C 16 36, 48 36, 48 48 Z" /><line x1="32" y1="28" x2="32" y2="38" /></svg>
+                        </div>
+                        <div class="card-title">LONE WOLF</div>
+                        <div class="card-desc">Standard tactical parameters. Go it alone with standard enemy scaling and full screen tactical view.</div>
+                    </div>
+                    <!-- 2 Player -->
+                    <div class="tactical-card" id="btn-mode-2p" onclick="game.setMode(2)">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #ffb700;"><circle cx="24" cy="22" r="7" /><path d="M10 48 C 10 38, 34 38, 34 48 Z" /><circle cx="40" cy="22" r="7" /><path d="M30 48 C 30 38, 54 38, 54 48 Z" /></svg>
+                        </div>
+                        <div class="card-title">CO-OP STRIKE</div>
+                        <div class="card-desc">Joint operations. Shared resources, split-screen display, and coordinated tactical firefights.</div>
+                    </div>
+                </div>
+
+                <!-- FRIENDLY FIRE (Revealed dynamically via JS height/opacity transition when 2P active) -->
+                <div id="ff-select-wrap" style="overflow: hidden; max-height: 0px; opacity: 0; transition: all 0.3s ease;">
+                    <h4 style="color: #ffb700; font-size: 11px; text-align: left; letter-spacing: 2px; margin: 10px 0 6px 0; border-bottom: 1px solid rgba(255,183,0,0.2); padding-bottom: 4px; text-transform: uppercase;">COMBAT RELATIONSHIP (FRIENDLY FIRE)</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <!-- Off -->
+                        <div class="tactical-card" id="btn-ff-off" onclick="game.setFriendlyFireMode('off')" style="padding: 10px;">
+                            <div class="card-title-inline">
+                                <svg viewBox="0 0 64 64" class="wizard-svg-inline" style="stroke: var(--green);"><path d="M16 36 C 20 30, 28 30, 32 36 L 48 36 C 44 42, 36 42, 32 36" /><path d="M22 36 L12 28 M42 36 L52 28" /></svg>
+                                CO-OP: NO FF
+                            </div>
+                            <div class="card-desc" style="font-size: 9px;">Bullets pass through ally. Relaxed fire drills.</div>
+                        </div>
+                        <!-- Standard -->
+                        <div class="tactical-card" id="btn-ff-standard" onclick="game.setFriendlyFireMode('standard')" style="padding: 10px;">
+                            <div class="card-title-inline">
+                                <svg viewBox="0 0 64 64" class="wizard-svg-inline" style="stroke: #ffea00;"><path d="M32 8 L56 50 H8 Z" /><line x1="32" y1="22" x2="32" y2="38" stroke-width="2" /><circle cx="32" cy="44" r="2" fill="currentColor" /></svg>
+                                STANDARD FF
+                            </div>
+                            <div class="card-desc" style="font-size: 9px;">Allies take reduced weapon damage. Exercise caution.</div>
+                        </div>
+                        <!-- Hardcore -->
+                        <div class="tactical-card" id="btn-ff-hardcore" onclick="game.setFriendlyFireMode('hardcore')" style="padding: 10px;">
+                            <div class="card-title-inline">
+                                <svg viewBox="0 0 64 64" class="wizard-svg-inline" style="stroke: var(--red);"><rect x="22" y="16" width="20" height="24" rx="10" /><rect x="26" y="36" width="12" height="12" rx="2" /><circle cx="28" cy="26" r="3" fill="currentColor" /><circle cx="36" cy="26" r="3" fill="currentColor" /></svg>
+                                HARDCORE FF
+                            </div>
+                            <div class="card-desc" style="font-size: 9px;">Full weapon damage is applied to allies. Watch lines of fire.</div>
+                        </div>
+                        <!-- PvP Strike -->
+                        <div class="tactical-card" id="btn-ff-pvp" onclick="game.setFriendlyFireMode('pvp')" style="padding: 10px;">
+                            <div class="card-title-inline">
+                                <svg viewBox="0 0 64 64" class="wizard-svg-inline" style="stroke: #ff2a5f;"><line x1="12" y1="52" x2="52" y2="12" stroke-width="2" /><line x1="52" y1="52" x2="12" y2="12" stroke-width="2" /></svg>
+                                PvP DEPLOYMENT
+                            </div>
+                            <div class="card-desc" style="font-size: 9px;">Direct hostile engagement. Hunt your teammate.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 3: COMBAT PARAMETERS (Difficulty & Environment) -->
+            <div id="wiz-step-3" class="wizard-step hidden">
+                <h3 class="wiz-section-title">COMBAT PARAMETERS</h3>
+                <h4 style="color: var(--neon-blue); font-size: 11px; text-align: left; letter-spacing: 2px; margin: 0 0 6px 0; border-bottom: 1px solid rgba(0,229,255,0.2); padding-bottom: 4px; text-transform: uppercase;">DIFFICULTY RATING</h4>
                 
-                <!-- Operation Mode -->
-                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">OPERATION MODE:</label>
-                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                        <button id="btn-mode-1p" class="active-mode" onclick="game.setMode(1)" style="font-size: 11px; padding: 5px 10px; margin: 0;">1 Player (Solo Ops)</button>
-                        <button id="btn-mode-2p" onclick="game.setMode(2)" style="font-size: 11px; padding: 5px 10px; margin: 0;">2 Player (Co-op Strike)</button>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px;">
+                    <!-- Easy -->
+                    <div class="tactical-card" id="btn-diff-easy" onclick="game.setDifficulty('easy')">
+                        <div class="card-icon" style="height: 36px;">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: var(--green); height: 100%;"><path d="M16 16 L32 8 L48 16 V36 C48 48, 32 56, 32 56 C 32 56, 16 48, 16 36 Z" /><path d="M24 28 L36 34" stroke-dasharray="2 2" /></svg>
+                        </div>
+                        <div class="card-title-small">EASY</div>
+                        <div class="card-stats">
+                            DMG: -25%<br>
+                            VEL: -10%<br>
+                            CASH: +50%<br>
+                            INTEL: -15%
+                        </div>
+                    </div>
+                    <!-- Medium -->
+                    <div class="tactical-card" id="btn-diff-medium" onclick="game.setDifficulty('medium')">
+                        <div class="card-icon" style="height: 36px;">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #ffea00; height: 100%;"><circle cx="32" cy="32" r="16" /><line x1="32" y1="12" x2="32" y2="52" /><line x1="12" y1="32" x2="52" y2="32" /></svg>
+                        </div>
+                        <div class="card-title-small">MEDIUM</div>
+                        <div class="card-stats">
+                            DMG: -10%<br>
+                            VEL: -5%<br>
+                            CASH: +20%<br>
+                            INTEL: 100%
+                        </div>
+                    </div>
+                    <!-- Hard -->
+                    <div class="tactical-card active-mode" id="btn-diff-hard" onclick="game.setDifficulty('hard')">
+                        <div class="card-icon" style="height: 36px;">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #ff7a00; height: 100%;"><rect x="22" y="16" width="20" height="24" rx="10" /><rect x="26" y="36" width="12" height="12" rx="2" /><circle cx="28" cy="26" r="3" fill="currentColor" /><circle cx="36" cy="26" r="3" fill="currentColor" /></svg>
+                        </div>
+                        <div class="card-title-small">HARD</div>
+                        <div class="card-stats">
+                            DMG: 100%<br>
+                            VEL: 100%<br>
+                            CASH: 100%<br>
+                            INTEL: +10%
+                        </div>
+                    </div>
+                    <!-- Legendary -->
+                    <div class="tactical-card" id="btn-diff-legendary" onclick="game.setDifficulty('legendary')">
+                        <div class="card-icon" style="height: 36px;">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: var(--red); height: 100%;"><rect x="20" y="16" width="24" height="24" rx="12" stroke-width="2" /><rect x="26" y="38" width="12" height="12" rx="2" stroke-width="2" /><path d="M12 28 L20 22 M52 28 L44 22" stroke-width="2" /><circle cx="27" cy="26" r="4" fill="currentColor" /><circle cx="37" cy="26" r="4" fill="currentColor" /></svg>
+                        </div>
+                        <div class="card-title-small">LEGENDARY</div>
+                        <div class="card-stats">
+                            DMG: +30%<br>
+                            VEL: +15%<br>
+                            CASH: 100%<br>
+                            INTEL: +20%
+                        </div>
                     </div>
                 </div>
 
-                <!-- Environment -->
-                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">ENVIRONMENT:</label>
-                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                        <button id="btn-env-day" class="active-mode" onclick="game.setNightMode(false)" style="font-size: 11px; padding: 5px 10px; margin: 0;">DAY</button>
-                        <button id="btn-env-night" onclick="game.setNightMode(true)" style="font-size: 11px; padding: 5px 10px; margin: 0;">NIGHT</button>
+                <h4 style="color: var(--neon-blue); font-size: 11px; text-align: left; letter-spacing: 2px; margin: 10px 0 6px 0; border-bottom: 1px solid rgba(0,229,255,0.2); padding-bottom: 4px; text-transform: uppercase;">ENVIRONMENT</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <!-- Day -->
+                    <div class="tactical-card active-mode" id="btn-env-day" onclick="game.setNightMode(false)">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #ffea00;"><circle cx="32" cy="22" r="8" /><line x1="32" y1="8" x2="32" y2="12" /><line x1="32" y1="32" x2="32" y2="36" /><line x1="18" y1="22" x2="22" y2="22" /><line x1="42" y1="22" x2="46" y2="22" /><path d="M12 48 H52 L44 40 H20 Z" /></svg>
+                        </div>
+                        <div class="card-title">DAYLIGHT OPERATIONS</div>
+                        <div class="card-desc">Standard ambient lighting. High tactical clarity and visibility across all vectors.</div>
+                    </div>
+                    <!-- Night -->
+                    <div class="tactical-card" id="btn-env-night" onclick="game.setNightMode(true)">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #39ff14;"><circle cx="16" cy="32" r="6" /><path d="M22 32 L52 16 V48 Z" stroke-dasharray="3 3" /><line x1="22" y1="32" x2="52" y2="32" /></svg>
+                        </div>
+                        <div class="card-title">BLACKOUT OPERATIONS</div>
+                        <div class="card-desc">Pitch black battlefield. Requires flashlights or NVGs. Restricts sight ranges.</div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Difficulty Rating -->
-                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
-                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">DIFFICULTY RATING:</label>
-                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                        <button id="btn-diff-easy" onclick="game.setDifficulty('easy')" style="font-size: 11px; padding: 5px 10px; margin: 0;" title="-25% enemy damage, -10% enemy bullet speed, +50% cash">Easy</button>
-                        <button id="btn-diff-medium" onclick="game.setDifficulty('medium')" style="font-size: 11px; padding: 5px 10px; margin: 0;" title="-10% enemy damage, -5% enemy bullet speed, +20% cash">Medium</button>
-                        <button id="btn-diff-hard" class="active-mode" onclick="game.setDifficulty('hard')" style="font-size: 11px; padding: 5px 10px; margin: 0;" title="Baseline">Hard</button>
-                        <button id="btn-diff-legendary" onclick="game.setDifficulty('legendary')" style="font-size: 11px; padding: 5px 10px; margin: 0;" title="+30% enemy damage, +15% enemy bullet speed">Legendary</button>
-                    </div>
-                </div>
-
-                <!-- Game Mode -->
-                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0;">
-                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">GAME MODE:</label>
-                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1; flex-wrap: wrap;">
-                        <button id="btn-gm-normal" class="active-mode" onclick="game.setGameMode('normal')" style="font-size: 11px; padding: 5px 10px; margin: 0;">NORMAL WAVE OPS</button>
-                        <button id="btn-gm-sandbox" onclick="game.setGameMode('sandbox')" style="font-size: 11px; padding: 5px 10px; margin: 0;">TESTING SANDBOX</button>
-                        <button id="btn-gm-operator" onclick="game.setGameMode('operator')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff7a00; color: #ff7a00;">FPV OPERATOR</button>
-                        <button id="btn-gm-now" onclick="game.setGameMode('now')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #ff2a5f; color: #ff2a5f; box-shadow: 0 0 8px rgba(255, 42, 95, 0.4);">ACTION NOW</button>
-                        <button id="btn-gm-extraction" onclick="game.setGameMode('extraction')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #d500f9; color: #d500f9; box-shadow: 0 0 8px rgba(213, 0, 249, 0.35);">EXTRACTION</button>
-                        <button id="btn-gm-chaos_draft" onclick="game.setGameMode('chaos_draft')" style="font-size: 11px; padding: 5px 10px; margin: 0; border-color: #00e5ff; color: #00e5ff; box-shadow: 0 0 8px rgba(0, 229, 255, 0.35);">CHAOS DRAFT</button>
-                    </div>
-                </div>
-
-                <!-- PHASE 4: operator kit selection (unlocks live in ARMORY) -->
-                <div id="kit-select-wrap" style="display: flex; align-items: flex-start; margin: 6px 0;">
-                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">OPERATOR KIT:</label>
-                    <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
-                        <div id="kit-select-list" style="display: flex; flex-direction: column; gap: 4px;"></div>
-                        <!-- Always-visible description of the currently selected/focused kit.
-                             Fixes touch/mouse users having no way to read the title-attr tooltip. -->
-                        <div id="kit-desc-panel" style="font-size:10px; color:#a9c2c7; line-height:1.4; min-height:14px; border-left:2px solid rgba(0,229,255,0.4); padding-left:8px; margin-top:2px;"></div>
-                    </div>
-                </div>
-
-                <!-- PHASE 2: mission select (extraction ops only) -->
-                <div id="mission-select-wrap" class="hidden" style="margin: 8px 0 2px 0;">
+            <!-- STEP 4: OPERATION DETAILS (Extraction Only, conditionally visible) -->
+            <div id="wiz-step-4" class="wizard-step hidden">
+                <h3 class="wiz-section-title">OPERATION DETAILS</h3>
+                <div id="mission-select-wrap">
                     <label style="font-weight: bold; color: #39ff14; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin-bottom:6px;">SELECT OPERATION:</label>
                     <div id="mission-list"></div>
-                    <!-- PHASE 3: opt-in risk/reward toggles -->
-                    <label style="font-weight: bold; color: #d500f9; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin: 8px 0 4px 0;">ESCALATION PROTOCOLS <span id="escalation-bonus-lbl" style="color:#a9c2c7; font-weight:normal;"></span></label>
+                    <!-- Escalation Protocols -->
+                    <label style="font-weight: bold; color: #d500f9; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin: 12px 0 4px 0;">ESCALATION PROTOCOLS <span id="escalation-bonus-lbl" style="color:#a9c2c7; font-weight:normal;"></span></label>
                     <div id="escalation-list" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
-                    <!-- Always-visible description of the selected/focused protocol (touch/mouse/controller). -->
                     <div id="escalation-desc-panel" style="font-size:10px; color:#a9c2c7; line-height:1.4; min-height:14px; border-left:2px solid rgba(213,0,249,0.4); padding-left:8px; margin-top:4px;"></div>
-                    <!-- PHASE 4: loadout presets (mission + protocols + kits + difficulty) -->
-                    <label style="font-weight: bold; color: #00e5ff; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin: 8px 0 4px 0;">LOADOUT PRESETS <span style="color:#a9c2c7; font-weight:normal;">— TAP TO APPLY, 💾 TO SAVE CURRENT</span></label>
-                    <div id="preset-list" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
                     <div id="mission-fee-warning" class="hidden" style="color: var(--red); font-size: 11px; letter-spacing: 1px; margin-top: 6px; text-align:left;"></div>
                 </div>
             </div>
 
-            <!-- HERO ACTIONS -->
-            <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 10px;">
-                <!-- Start Button -->
-                <button id="btn-start" style="width: 100%;">INITIALIZE PERIMETER SYSTEM</button>
-                <!-- Exit Button -->
-                <button id="btn-exit" style="background: transparent; border-color: rgba(255,42,95,0.3); color: var(--red); font-size: 12px; width: 50%;">EXIT TO DESKTOP</button>
+            <!-- STEP 5: THE ARMORY (Operator Kits) -->
+            <div id="wiz-step-5" class="wizard-step hidden">
+                <h3 class="wiz-section-title">OPERATOR KIT SELECTOR</h3>
+
+                <!-- LOADOUT PRESETS (Temporarily commented out to revisit later)
+                <div id="preset-select-wrap" style="margin-bottom: 15px; background: rgba(0, 229, 255, 0.03); border: 1px solid rgba(0, 229, 255, 0.1); border-radius: 4px; padding: 10px;">
+                    <label style="font-weight: bold; color: #00e5ff; letter-spacing: 1px; font-size: 11px; display:block; text-align:left; margin-bottom: 6px;">LOADOUT PRESETS <span style="color:#a9c2c7; font-weight:normal;">— TAP TO APPLY & REVIEW, 💾 TO SAVE CURRENT</span></label>
+                    <div id="preset-list" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+                </div>
+                -->
+
+                <div id="kit-select-wrap" style="display: flex; flex-direction: column; gap: 15px;">
+                    <!-- Player 1 Kit Selection -->
+                    <div class="kit-row-container" style="display: flex; gap: 15px; align-items: stretch; min-height: 80px;">
+                        <div class="kit-selector-col" style="flex: 0 0 420px; text-align: left;">
+                            <div style="font-size:11px; color:#00e5ff; font-weight:bold; margin-bottom: 4px; letter-spacing: 1px;">PLAYER 1 KIT</div>
+                            <div id="kit-select-list-p1" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+                        </div>
+                        <div id="kit-desc-panel-p1" class="kit-desc-box" style="flex: 1; font-size:11px; color:#a9c2c7; line-height:1.4; border-left:2px solid rgba(0,229,255,0.4); padding-left:8px; background: rgba(0, 229, 255, 0.02); padding: 6px 10px; text-align: left; display: flex; align-items: center;">
+                            <div style="font-size: 10px; opacity: 0.6;">Select a kit to view description.</div>
+                        </div>
+                    </div>
+
+                    <!-- Player 2 Kit Selection (Only visible if 2P mode) -->
+                    <div id="kit-row-p2-container" class="kit-row-container" style="display: flex; gap: 15px; align-items: stretch; min-height: 80px;">
+                        <div class="kit-selector-col" style="flex: 0 0 420px; text-align: left;">
+                            <div style="font-size:11px; color:#ffb700; font-weight:bold; margin-bottom: 4px; letter-spacing: 1px;">PLAYER 2 KIT</div>
+                            <div id="kit-select-list-p2" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+                        </div>
+                        <div id="kit-desc-panel-p2" class="kit-desc-box" style="flex: 1; font-size:11px; color:#a9c2c7; line-height:1.4; border-left:2px solid rgba(255,183,0,0.4); padding-left:8px; background: rgba(255, 183, 0, 0.02); padding: 6px 10px; text-align: left; display: flex; align-items: center;">
+                            <div style="font-size: 10px; opacity: 0.6;">Select a kit to view description.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FIXED BOTTOM NAV BAR -->
+            <div class="wiz-nav-bar">
+                <div style="display: flex; gap: 10px; width: 100%;">
+                    <button id="btn-wiz-back" onclick="game.prevStep()" style="flex: 1; display: none;">[ ← BACK ]</button>
+                    <button id="btn-wiz-next" onclick="game.nextStep()" style="flex: 1;">[ NEXT → ]</button>
+                    <button id="btn-start" style="flex: 2; display: none; margin: 4px;">INITIALIZE PERIMETER SYSTEM</button>
+                </div>
+                <button id="btn-exit" style="background: transparent; border-color: rgba(255,42,95,0.3); color: var(--red); font-size: 11px; width: 45%; margin-top: 8px;">EXIT TO DESKTOP</button>
             </div>
         </div>
         
@@ -20743,6 +21126,12 @@ class Game {
             this.input.mx = e.clientX; this.input.my = e.clientY;
             this.crosshair.style.left = e.clientX + 'px';
             this.crosshair.style.top = e.clientY + 'px';
+
+            // Clear gamepad highlight on mouse move so it doesn't clash with mouse hover
+            const focused = document.querySelectorAll('#start-screen .focused-btn');
+            if (focused.length > 0) {
+                focused.forEach(el => el.classList.remove('focused-btn'));
+            }
         });
         window.addEventListener('mousedown', e => { 
             if(e.button===0) {
@@ -21552,28 +21941,7 @@ class Game {
                 ['btn-save-export-copy', 'btn-save-import-paste']
             ]
         };
-        // Extraction adds a per-operation nav row (one row per mission card,
-        // mirroring the maps tab's one-row-per-map convention) so the pad
-        // can reach "SELECT OPERATION" -- these ids are rendered fresh by
-        // renderMissionList() and only visible while extractionMode is on.
-        let playRows = [
-            ['btn-mode-1p', 'btn-mode-2p'],
-            ['btn-env-day', 'btn-env-night'],
-            ['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary'],
-            ['btn-gm-normal', 'btn-gm-sandbox', 'btn-gm-operator', 'btn-gm-now', 'btn-gm-extraction', 'btn-gm-chaos_draft']
-        ];
-        // Operator kit chips as a horizontal nav row (P1 ids only -- see
-        // renderKitSelector). Only owned chips carry an onclick, but every id
-        // exists in the DOM so the pad can traverse them; A on a locked chip
-        // just re-shows its (UNLOCK IN ARMORY) description, harmless.
-        playRows.push(KIT_ORDER.map(id => 'kit-chip-' + id));
-        if (this.extractionMode) {
-            for (const missionId of MISSION_ORDER) playRows.push(['mission-card-' + missionId]);
-            // Escalation protocol toggles (only rendered in extraction mode).
-            playRows.push(ESCALATION_ORDER.map(id => 'esc-chip-' + id));
-        }
-        playRows.push(['btn-start']);
-        playRows.push(['btn-exit']);
+        let playRows = this._getWizardStepRows();
         return {
             play: playRows,
             maps: [
@@ -21726,6 +22094,9 @@ class Game {
                     this.mainMenuOptionIndex = 0;
                     this.gpadButtonCooldown = 0.25;
                     this.refreshMainMenuHighlight();
+                } else if (this.wizardStep > 1) {
+                    this.prevStep();
+                    this.gpadButtonCooldown = 0.25;
                 }
                 return;
             }
@@ -21741,14 +22112,16 @@ class Game {
 
             if (this.dpadCooldown <= 0) {
                 if (dUp) {
-                    this.mainMenuRowIndex = (this.mainMenuRowIndex - 1 + rows.length) % rows.length;
-                    this.mainMenuOptionIndex = 0;
+                    let targetRowIdx = (this.mainMenuRowIndex - 1 + rows.length) % rows.length;
+                    this.mainMenuOptionIndex = Math.min(this.mainMenuOptionIndex, rows[targetRowIdx].length - 1);
+                    this.mainMenuRowIndex = targetRowIdx;
                     this.dpadCooldown = 0.18;
                     this.refreshMainMenuHighlight();
                     return;
                 } else if (dDown) {
-                    this.mainMenuRowIndex = (this.mainMenuRowIndex + 1) % rows.length;
-                    this.mainMenuOptionIndex = 0;
+                    let targetRowIdx = (this.mainMenuRowIndex + 1) % rows.length;
+                    this.mainMenuOptionIndex = Math.min(this.mainMenuOptionIndex, rows[targetRowIdx].length - 1);
+                    this.mainMenuRowIndex = targetRowIdx;
                     this.dpadCooldown = 0.18;
                     this.refreshMainMenuHighlight();
                     return;
@@ -21848,7 +22221,7 @@ class Game {
     }
 
     refreshMainMenuHighlight() {
-        let allBtns = document.querySelectorAll('#start-screen button, #start-screen input, #start-screen .mission-card');
+        let allBtns = document.querySelectorAll('#start-screen button, #start-screen input, #start-screen .mission-card, #start-screen .tactical-card');
         allBtns.forEach(btn => btn.classList.remove('focused-btn'));
 
         let activeTabElement = document.querySelector('.tab-content.active');
@@ -21885,7 +22258,8 @@ class Game {
             // Surface the focused kit/protocol description for controller users
             // (same panel touch/mouse populate), so a pad player can read what
             // each chip does without a hover cursor.
-            if (targetElement.id.startsWith('kit-chip-')) this.showKitDesc(targetElement);
+            if (targetElement.id.startsWith('kit-p1-chip-')) this.showKitDesc(targetElement, 1);
+            else if (targetElement.id.startsWith('kit-p2-chip-')) this.showKitDesc(targetElement, 2);
             else if (targetElement.id.startsWith('esc-chip-')) this.showEscDesc(targetElement);
         }
     }
@@ -27307,6 +27681,11 @@ class Game {
         this.refreshGamepadAssignmentUI();
         this.renderKitSelector(); // PHASE 4: kit chips reflect the loaded save
         this.applyPrestigeCosmetics(); // PHASE D: theme + rank badge from prestigeLevel
+        
+        // Initialize wizard step state
+        this.wizardStep = 1;
+        this._renderWizardStep();
+        this.renderPresetList();
     }
 
     saveGameData() {
@@ -28093,14 +28472,271 @@ class Game {
 
     setMode(mode) {
         this.isTwoPlayer = (mode === 2);
-        if (mode === 2) {
-            document.getElementById('btn-mode-2p').classList.add('active-mode');
-            document.getElementById('btn-mode-1p').classList.remove('active-mode');
-        } else {
-            document.getElementById('btn-mode-1p').classList.add('active-mode');
-            document.getElementById('btn-mode-2p').classList.remove('active-mode');
-        }
+        let btn1p = document.getElementById('btn-mode-1p');
+        let btn2p = document.getElementById('btn-mode-2p');
+        if (btn1p) btn1p.classList.toggle('active-mode', mode !== 2);
+        if (btn2p) btn2p.classList.toggle('active-mode', mode === 2);
+        
         this.renderKitSelector();
+        this._updateFriendlyFireReveal();
+        
+        // Refresh gamepad nav highlights since row configurations changed
+        this.mainMenuRowIndex = 0;
+        this.mainMenuOptionIndex = 0;
+        this.refreshMainMenuHighlight();
+    }
+
+    getWizardSteps() {
+        let steps = [1];
+        if (this.gameMode !== 'operator') {
+            steps.push(2);
+        }
+        steps.push(3);
+        if (this.gameMode === 'extraction') {
+            steps.push(4);
+        }
+        if (this.gameMode !== 'operator') {
+            steps.push(5);
+        }
+        return steps;
+    }
+
+    nextStep() {
+        let steps = this.getWizardSteps();
+        let idx = steps.indexOf(this.wizardStep);
+        if (idx !== -1 && idx < steps.length - 1) {
+            this.wizardStep = steps[idx + 1];
+            this._renderWizardStep();
+            if (audio) audio.playPickup('money');
+        }
+    }
+
+    prevStep() {
+        let steps = this.getWizardSteps();
+        let idx = steps.indexOf(this.wizardStep);
+        if (idx > 0) {
+            this.wizardStep = steps[idx - 1];
+            this._renderWizardStep();
+            if (audio) audio.playPickup('money');
+        }
+    }
+
+    gotoStep(step) {
+        let steps = this.getWizardSteps();
+        if (steps.includes(step)) {
+            this.wizardStep = step;
+            this._renderWizardStep();
+            if (audio) audio.playPickup('money');
+        }
+    }
+
+    _renderWizardStep() {
+        if (this.wizardStep === undefined) this.wizardStep = 1;
+        let steps = this.getWizardSteps();
+        
+        // Hide all steps
+        for (let i = 1; i <= 5; i++) {
+            let el = document.getElementById('wiz-step-' + i);
+            if (el) el.classList.add('hidden');
+        }
+        
+        // Show current step
+        let curEl = document.getElementById('wiz-step-' + this.wizardStep);
+        if (curEl) curEl.classList.remove('hidden');
+        
+        // Update bottom buttons visibility
+        let btnBack = document.getElementById('btn-wiz-back');
+        let btnNext = document.getElementById('btn-wiz-next');
+        let btnStart = document.getElementById('btn-start');
+        
+        if (btnBack) btnBack.style.display = (this.wizardStep === 1) ? 'none' : 'block';
+        
+        let isLast = (this.wizardStep === steps[steps.length - 1]);
+        if (btnNext) btnNext.style.display = isLast ? 'none' : 'block';
+        if (btnStart) btnStart.style.display = isLast ? 'block' : 'none';
+        
+        // Update stepper nodes dynamically
+        let stepperLabels = {
+            1: 'MODE',
+            2: 'ROSTER',
+            3: 'PARAMS',
+            4: 'OPERATION',
+            5: 'LOADOUT'
+        };
+        
+        const stepper = document.getElementById('wiz-stepper');
+        if (stepper) {
+            let html = '';
+            for (let i = 0; i < steps.length; i++) {
+                let stepId = steps[i];
+                let label = stepperLabels[stepId];
+                let activeClass = (stepId === this.wizardStep) ? ' active' : '';
+                let doneClass = (steps.indexOf(stepId) < steps.indexOf(this.wizardStep)) ? ' done' : '';
+                
+                // Calculate dynamic value to show under the node
+                let subValue = '';
+                if (stepId === 1) {
+                    // Only show if user progressed past step 1
+                    if (this.wizardStep > 1) {
+                        const modeNames = {
+                            normal: 'Standard',
+                            extraction: 'Extraction',
+                            chaos_draft: 'Chaos',
+                            now: 'Action',
+                            operator: 'FPV',
+                            sandbox: 'Testing'
+                        };
+                        subValue = modeNames[this.gameMode] || '';
+                    }
+                } else if (stepId === 2) {
+                    // Only show if user progressed past step 2
+                    if (this.wizardStep > 2) {
+                        if (!this.isTwoPlayer) {
+                            subValue = '1P';
+                        } else {
+                            const ffNames = {
+                                off: 'NoFF',
+                                standard: 'RegFF',
+                                hardcore: 'HardFF',
+                                pvp: 'PvP'
+                            };
+                            let ffStr = ffNames[this.friendlyFireMode] || 'NoFF';
+                            subValue = `2P - ${ffStr}`;
+                        }
+                    }
+                } else if (stepId === 3) {
+                    // Only show if user progressed past step 3
+                    if (this.wizardStep > 3) {
+                        let diff = (this.difficultyMode || 'medium');
+                        diff = diff.charAt(0).toUpperCase() + diff.slice(1);
+                        let env = this.nightMode ? 'Night' : 'Day';
+                        subValue = `${diff} · ${env}`;
+                    }
+                } else if (stepId === 4) {
+                    // Only show if user progressed past step 4 (and mode is extraction)
+                    if (this.wizardStep > 4 && this.gameMode === 'extraction') {
+                        const opNames = {
+                            op_first_contact: 'Contact',
+                            op_deep_incursion: 'Incursion',
+                            op_overrun_protocol: 'Overrun',
+                            op_asset_recovery: 'Recovery',
+                            op_whiteout: 'Whiteout'
+                        };
+                        subValue = opNames[this.selectedMissionId] || '';
+                    }
+                } else if (stepId === 5) {
+                    // Only show if user is on step 5 (since it's the last step and they select loadout)
+                    if (this.wizardStep >= 5) {
+                        let p1Kit = OPERATOR_KITS[this.saveData.kitP1] ? OPERATOR_KITS[this.saveData.kitP1].name : 'Standard';
+                        if (!this.isTwoPlayer) {
+                            subValue = p1Kit;
+                        } else {
+                            let p2Kit = OPERATOR_KITS[this.saveData.kitP2] ? OPERATOR_KITS[this.saveData.kitP2].name : 'Standard';
+                            subValue = `${p1Kit} - ${p2Kit}`;
+                        }
+                    }
+                }
+
+                html += `<div class="wiz-step-node${activeClass}${doneClass}" onclick="game.gotoStep(${stepId})">`
+                      + `<div>${label}</div>`
+                      + `<div class="wiz-step-subval" style="font-size: 8px; margin-top: 3px; font-style: italic; opacity: 0.65; text-transform: uppercase; font-weight: normal; color: #a9c2c7; letter-spacing: 0.5px; height: 10px; line-height: 10px;">${subValue}</div>`
+                      + `</div>`;
+                if (i < steps.length - 1) {
+                    let lineDoneClass = doneClass ? ' done' : '';
+                    html += `<div class="wiz-step-line${lineDoneClass}"></div>`;
+                }
+            }
+            stepper.innerHTML = html;
+        }
+        
+        // Update Friendly Fire reveal if on Step 2
+        if (this.wizardStep === 2) {
+            this._updateFriendlyFireReveal();
+        }
+        
+        // Reset gamepad nav index
+        this.mainMenuRowIndex = 0;
+        this.mainMenuOptionIndex = 0;
+        this.refreshMainMenuHighlight();
+    }
+
+    _updateFriendlyFireReveal() {
+        const wrap = document.getElementById('ff-select-wrap');
+        if (!wrap) return;
+        if (this.isTwoPlayer) {
+            wrap.style.maxHeight = '300px';
+            wrap.style.opacity = '1';
+            wrap.style.marginTop = '15px';
+            wrap.style.pointerEvents = 'auto';
+        } else {
+            wrap.style.maxHeight = '0px';
+            wrap.style.opacity = '0';
+            wrap.style.marginTop = '0px';
+            wrap.style.pointerEvents = 'none';
+        }
+    }
+
+    _getWizardStepRows() {
+        let rows = [];
+        if (this.wizardStep === undefined) this.wizardStep = 1;
+        
+        switch (this.wizardStep) {
+            case 1:
+                rows.push(['btn-gm-normal', 'btn-gm-extraction', 'btn-gm-chaos_draft']);
+                rows.push(['btn-gm-now', 'btn-gm-operator', 'btn-gm-sandbox']);
+                break;
+            case 2:
+                rows.push(['btn-mode-1p', 'btn-mode-2p']);
+                if (this.isTwoPlayer) {
+                    // Split Friendly Fire into a 2x2 grid instead of a single 4-item row
+                    rows.push(['btn-ff-off', 'btn-ff-standard']);
+                    rows.push(['btn-ff-hardcore', 'btn-ff-pvp']);
+                }
+                break;
+            case 3:
+                rows.push(['btn-diff-easy', 'btn-diff-medium', 'btn-diff-hard', 'btn-diff-legendary']);
+                rows.push(['btn-env-day', 'btn-env-night']);
+                break;
+            case 4:
+                if (this.extractionMode) {
+                    for (const missionId of MISSION_ORDER) {
+                        rows.push(['mission-card-' + missionId]);
+                    }
+                    rows.push(ESCALATION_ORDER.map(id => 'esc-chip-' + id));
+                }
+                break;
+            case 5:
+                // Loadout presets are commented out to potentially revisit later
+                /*
+                if (this.gameMode === 'extraction') {
+                    rows.push(['preset-chip-0', 'preset-save-0', 'preset-chip-1', 'preset-save-1', 'preset-chip-2', 'preset-save-2']);
+                }
+                */
+                // Split kits into 2 rows of 4 for Player 1 cardinal navigation
+                rows.push(['kit-p1-chip-standard', 'kit-p1-chip-breacher', 'kit-p1-chip-ghost', 'kit-p1-chip-technician']);
+                rows.push(['kit-p1-chip-medic', 'kit-p1-chip-pathfinder', 'kit-p1-chip-vanguard', 'kit-p1-chip-heavy']);
+                
+                if (this.isTwoPlayer) {
+                    // Split kits into 2 rows of 4 for Player 2 cardinal navigation
+                    rows.push(['kit-p2-chip-standard', 'kit-p2-chip-breacher', 'kit-p2-chip-ghost', 'kit-p2-chip-technician']);
+                    rows.push(['kit-p2-chip-medic', 'kit-p2-chip-pathfinder', 'kit-p2-chip-vanguard', 'kit-p2-chip-heavy']);
+                }
+                break;
+        }
+        
+        // Navigation buttons row
+        let steps = this.getWizardSteps();
+        let isLast = (this.wizardStep === steps[steps.length - 1]);
+        if (this.wizardStep === 1) {
+            rows.push(['btn-wiz-next']);
+        } else if (isLast) {
+            rows.push(['btn-wiz-back', 'btn-start']);
+        } else {
+            rows.push(['btn-wiz-back', 'btn-wiz-next']);
+        }
+        
+        rows.push(['btn-exit']);
+        return rows;
     }
 
     setTestingMode(enabled) {
@@ -28266,53 +28902,91 @@ class Game {
     }
 
     renderKitSelector() {
-        const wrap = document.getElementById('kit-select-list');
-        if (!wrap) return;
-        // pIdx marks the P1 row so ONLY its chips get the stable, gamepad-
-        // navigable ids (kit-chip-<id>). getMainMenuTabRows() references those
-        // exact ids; P2 kit selection stays mouse/touch, matching how the pad
-        // menu nav is P1-centric everywhere else.
-        const row = (pKey, label, color, pIdx) => {
+        const wrapP1 = document.getElementById('kit-select-list-p1');
+        const wrapP2 = document.getElementById('kit-select-list-p2');
+        const p2Cont = document.getElementById('kit-row-p2-container');
+        
+        if (p2Cont) {
+            p2Cont.style.display = this.isTwoPlayer ? 'flex' : 'none';
+        }
+        
+        if (!wrapP1) return;
+        
+        const renderRow = (pKey, pIdx) => {
             const cur = OPERATOR_KITS[this.saveData[pKey]] ? this.saveData[pKey] : 'standard';
-            let out = '<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">'
-                    + '<span style="font-size:10px; color:' + color + '; width:20px; text-align:left;">' + label + '</span>';
+            let out = '';
             for (const id of KIT_ORDER) {
                 const k = OPERATOR_KITS[id];
                 const owned = this._kitOwned(id);
                 const sel = (cur === id);
                 const descTxt = (k.desc + (owned ? '' : ' (UNLOCK IN ARMORY)')).replace(/"/g, '&quot;');
+                const color = pIdx === 2 ? '#ffb700' : '#00e5ff';
+                const borderColor = sel ? color : (pIdx === 2 ? 'rgba(255,183,0,0.3)' : 'rgba(0,229,255,0.3)');
+                
                 out += '<div class="mission-card' + (sel ? ' selected' : '') + (owned ? '' : ' locked') + '"'
-                     + (pIdx === 1 ? ' id="kit-chip-' + id + '"' : '')
+                     + ' id="kit-p' + pIdx + '-chip-' + id + '"'
                      + ' data-kitname="' + (k.name).replace(/"/g, '&quot;') + '"'
                      + ' data-kitdesc="' + descTxt + '"'
                      + ' title="' + descTxt + '"'
-                     + ' style="padding:4px 8px; cursor:' + (owned ? 'pointer' : 'default') + '; font-size:10px;'
-                     + ' border-color:' + (sel ? '#00e5ff' : 'rgba(0,229,255,0.3)') + ';"'
-                     + ' onmouseenter="game.showKitDesc(this)"'
-                     + (owned ? ' onclick="game.setKit(\'' + pKey + '\',\'' + id + '\'); game.showKitDesc(this)"' : ' onclick="game.showKitDesc(this)"') + '>'
+                     + ' style="padding:4px 4px; cursor:' + (owned ? 'pointer' : 'default') + '; font-size:10px; width:100px; text-align:center; box-sizing:border-box;'
+                     + ' border-color:' + borderColor + ';"'
+                     + ' onmouseenter="game.showKitDesc(this, ' + pIdx + ')"'
+                     + (owned ? ' onclick="game.setKit(\'' + pKey + '\',\'' + id + '\'); game.showKitDesc(this, ' + pIdx + ')"' : ' onclick="game.showKitDesc(this, ' + pIdx + ')"') + '>'
                      + (owned ? (sel ? '☑ ' : '☐ ') : '🔒 ') + k.name + '</div>';
             }
-            return out + '</div>';
+            return out;
         };
-        let html = row('kitP1', 'P1', '#00e5ff', 1);
-        if (this.isTwoPlayer) html += row('kitP2', 'P2', '#ffb700', 2);
-        wrap.innerHTML = html;
-        // Seed the description panel with the currently-selected P1 kit so the
-        // panel is never blank on first render (touch/mouse users see it too).
-        const curId = OPERATOR_KITS[this.saveData.kitP1] ? this.saveData.kitP1 : 'standard';
-        const seed = wrap.querySelector('#kit-chip-' + curId) || wrap.querySelector('.mission-card');
-        if (seed) this.showKitDesc(seed);
+        
+        wrapP1.innerHTML = renderRow('kitP1', 1);
+        if (wrapP2 && this.isTwoPlayer) {
+            wrapP2.innerHTML = renderRow('kitP2', 2);
+        }
+        
+        // Seed P1 description panel
+        const curIdP1 = OPERATOR_KITS[this.saveData.kitP1] ? this.saveData.kitP1 : 'standard';
+        const seedP1 = document.getElementById('kit-p1-chip-' + curIdP1);
+        if (seedP1) this.showKitDesc(seedP1, 1);
+        
+        // Seed P2 description panel
+        if (this.isTwoPlayer) {
+            const curIdP2 = OPERATOR_KITS[this.saveData.kitP2] ? this.saveData.kitP2 : 'standard';
+            const seedP2 = document.getElementById('kit-p2-chip-' + curIdP2);
+            if (seedP2) this.showKitDesc(seedP2, 2);
+        }
     }
 
-    // Writes the given kit chip's name+desc into the always-visible panel.
-    // Shared by hover, tap/click, and controller-focus so every input method
-    // surfaces the same info (the old title= tooltip was mouse-hover only).
-    showKitDesc(el) {
-        const panel = document.getElementById('kit-desc-panel');
-        if (!panel || !el) return;
+    showKitDesc(el, pIdx) {
+        if (!el) return;
+        if (!pIdx) {
+            pIdx = el.id.startsWith('kit-p2-chip-') ? 2 : 1;
+        }
+        const panelId = pIdx === 2 ? 'kit-desc-panel-p2' : 'kit-desc-panel-p1';
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+        
+        const kitId = el.id.replace('kit-p1-chip-', '').replace('kit-p2-chip-', '');
         const nm = el.getAttribute('data-kitname') || '';
         const ds = el.getAttribute('data-kitdesc') || '';
-        panel.innerHTML = nm ? ('<span style="color:#00e5ff; font-weight:bold;">' + nm + '</span> — ' + ds) : ds;
+        const color = pIdx === 2 ? '#ffb700' : '#00e5ff';
+        
+        const KIT_SVGS = {
+            standard: `<svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: currentColor; width:22px; height:22px; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;"><rect x="16" y="16" width="32" height="32" rx="4" /><line x1="16" y1="32" x2="48" y2="32" /><line x1="32" y1="16" x2="32" y2="48" /></svg>`,
+            breacher: `<svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: currentColor; width:22px; height:22px; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;"><circle cx="32" cy="32" r="12" /><line x1="20" y1="20" x2="12" y2="12" /><line x1="44" y1="20" x2="52" y2="12" /><line x1="20" y1="44" x2="12" y2="52" /><line x1="44" y1="44" x2="52" y2="52" /><line x1="32" y1="12" x2="32" y2="4" /><line x1="12" y1="32" x2="4" y2="32" /><line x1="32" y1="52" x2="32" y2="60" /><line x1="52" y1="32" x2="60" y2="32" /></svg>`,
+            ghost: `<svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: currentColor; width:22px; height:22px; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;"><path d="M16 48 C16 24 48 24 48 48 Z" /><circle cx="26" cy="36" r="2" fill="currentColor" /><circle cx="38" cy="36" r="2" fill="currentColor" /><path d="M22 48 L26 44 L30 48 L34 44 L38 48 L42 44 L46 48" /></svg>`,
+            technician: `<svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: currentColor; width:22px; height:22px; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;"><rect x="22" y="24" width="20" height="16" rx="2" /><line x1="24" y1="40" x2="16" y2="52" /><line x1="40" y1="40" x2="48" y2="52" /><line x1="32" y1="24" x2="32" y2="12" /><circle cx="32" cy="12" r="3" fill="currentColor" /></svg>`,
+            medic: `<svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: currentColor; width:22px; height:22px; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;"><rect x="26" y="12" width="12" height="40" rx="2" /><rect x="12" y="26" width="40" height="12" rx="2" /></svg>`,
+            pathfinder: `<svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: currentColor; width:22px; height:22px; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;"><circle cx="32" cy="32" r="20" /><line x1="32" y1="12" x2="32" y2="52" /><line x1="12" y1="32" x2="52" y2="32" /><polygon points="32,20 36,32 32,44 28,32" /></svg>`,
+            vanguard: `<svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: currentColor; width:22px; height:22px; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;"><path d="M16 12 L48 12 L44 40 L32 52 L20 40 Z" /></svg>`,
+            heavy: `<svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: currentColor; width:22px; height:22px; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;"><rect x="18" y="22" width="28" height="24" rx="6" /><circle cx="26" cy="30" r="3" fill="currentColor" /><circle cx="38" cy="30" r="3" fill="currentColor" /><line x1="26" y1="40" x2="38" y2="40" stroke-width="2" /></svg>`
+        };
+        const svgIcon = KIT_SVGS[kitId] || '';
+        
+        panel.innerHTML = `<div style="display: flex; gap: 10px; align-items: center; width: 100%;">
+            <div style="flex-shrink: 0; color: ${color};">${svgIcon}</div>
+            <div style="flex-grow: 1;">
+                <span style="color:${color}; font-weight:bold; font-size:11px; letter-spacing:1px;">${nm}</span> — <span style="font-size:10px;">${ds}</span>
+            </div>
+        </div>`;
     }
 
     setKit(pKey, id) {
@@ -28337,10 +29011,10 @@ class Game {
         for (let i = 0; i < 3; i++) {
             const ps = slots[i];
             html += '<div style="display:flex; align-items:stretch;">'
-                 + '<div class="mission-card' + (ps ? '' : ' locked') + '" style="padding:5px 8px; font-size:10px; cursor:' + (ps ? 'pointer' : 'default') + '; border-right:none;"'
+                 + '<div class="mission-card' + (ps ? '' : ' locked') + '" id="preset-chip-' + i + '" style="padding:5px 8px; font-size:10px; cursor:' + (ps ? 'pointer' : 'default') + '; border-right:none;"'
                  + (ps ? ' title="' + ps.name + '" onclick="game.applyPreset(' + i + ')"' : '')
                  + '>' + (ps ? ps.name : 'SLOT ' + (i + 1) + ' — EMPTY') + '</div>'
-                 + '<div class="mission-card" style="padding:5px 6px; font-size:10px; cursor:pointer;" title="Save current mission/protocols/kits/difficulty to slot ' + (i + 1) + '"'
+                 + '<div class="mission-card" id="preset-save-' + i + '" style="padding:5px 6px; font-size:10px; cursor:pointer;" title="Save current mission/protocols/kits/difficulty to slot ' + (i + 1) + '"'
                  + ' onclick="game.savePreset(' + i + ')">💾</div>'
                  + '</div>';
         }
@@ -28371,6 +29045,10 @@ class Game {
     applyPreset(i) {
         const ps = (this.saveData.loadoutPresets || [])[i];
         if (!ps) return;
+        
+        // Force game mode to extraction since presets are extraction-only
+        this.setGameMode('extraction');
+        
         // Mission: only if still unlocked (selectMission hard-blocks anyway).
         if (MISSIONS[ps.missionId] && this.isMissionUnlocked(MISSIONS[ps.missionId])) {
             this.selectedMissionId = ps.missionId;
@@ -28386,6 +29064,9 @@ class Game {
         this.renderMissionList();   // re-renders escalations + presets too
         this.renderKitSelector();
         if (audio) audio.playPickup('money');
+        
+        // Refresh the current wizard step to reflect preset selections (no yank back to step 1)
+        this._renderWizardStep();
     }
 
     setGameMode(mode) {
