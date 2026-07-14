@@ -1296,7 +1296,7 @@
             <div id="armory-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; max-height:280px; overflow-y:auto; padding-right:8px;">
                 <!-- Populated dynamically by renderArmoryTab() -->
             </div>
-            <button class="neon-btn" onclick="game.resetArmoryUpgrades()" style="width: 100%; border-color: var(--red); color: var(--red); margin-top: 15px; font-weight: bold; letter-spacing: 2px;">RESET ALL UPGRADES & REFUND INTEL</button>
+            <button id="btn-armory-reset" class="neon-btn" onclick="game.resetArmoryUpgrades()" style="width: 100%; border-color: var(--red); color: var(--red); margin-top: 15px; font-weight: bold; letter-spacing: 2px;">RESET ALL UPGRADES & REFUND INTEL</button>
             <!-- PHASE D: prestige button, populated by renderArmoryTab() -->
             <div id="prestige-slot" style="margin-top: 12px;"></div>
         </div>
@@ -17934,10 +17934,10 @@ const EXTRACTION_TUNING = {
 // swarmer contact damage. Cash multipliers are softened to a small
 // onboarding assist rather than the difficulty axis itself.
 const DIFFICULTY_TUNING = {
-    easy:      { cash: 1.5, enemyDmg: 0.75, enemyBulletSpeed: 0.90, blurb: 'Easy (-25% enemy dmg)' },
-    medium:    { cash: 1.2, enemyDmg: 0.90, enemyBulletSpeed: 0.95, blurb: 'Medium (-10% enemy dmg)' },
-    hard:      { cash: 1.0, enemyDmg: 1.00, enemyBulletSpeed: 1.00, blurb: 'Hard (baseline)' },
-    legendary: { cash: 1.0, enemyDmg: 1.30, enemyBulletSpeed: 1.15, blurb: 'Legendary (+30% dmg, +15% velocity)' }
+    easy:      { cash: 1.5, enemyDmg: 0.75, enemyBulletSpeed: 0.90, intel: 0.85, blurb: 'Easy (-25% enemy dmg, -15% intel)' },
+    medium:    { cash: 1.2, enemyDmg: 0.90, enemyBulletSpeed: 0.95, intel: 1.00, blurb: 'Medium (-10% enemy dmg)' },
+    hard:      { cash: 1.0, enemyDmg: 1.00, enemyBulletSpeed: 1.00, intel: 1.10, blurb: 'Hard (baseline, +10% intel)' },
+    legendary: { cash: 1.0, enemyDmg: 1.30, enemyBulletSpeed: 1.15, intel: 1.20, blurb: 'Legendary (+30% dmg, +15% velocity, +20% intel)' }
 };
 
 // ==== PHASE 2: MISSION REGISTRY ====
@@ -18210,8 +18210,10 @@ const CORRUPTED_OVERCLOCKS = {
 
 // Escalation Protocols: opt-in pre-mission risk toggles (extraction only).
 // Each raises real danger and pays a flat bonus multiplier on ALL mission
-// intel -- applied by pre-scaling RunConfig.rewardRules at snapshot time so
-// the ledger (single write path) never needs to know they exist.
+// intel -- folded into RunConfig.intelMult at snapshot time and applied
+// at the single write path (RunLedger.addIntel) so every intel source
+// (wave clear, elites, chips, carried/extracted, Black-Market) scales
+// uniformly. Difficulty and night-mode bonuses are also folded in.
 const ESCALATION_PROTOCOLS = {
     bloodhound: { name: 'BLOODHOUND', bonus: 0.30,
         desc: 'Heat floor climbs 50% faster; every noise runs 25% hotter. +30% intel.' },
@@ -18784,7 +18786,8 @@ class RunLedger {
     // the DECISION to award lives only here. Returns the amount actually
     // awarded (0 on ineligible/tainted runs) so callers can render honestly.
     addIntel(amount, source) {
-        amount = Math.max(0, Math.round(amount || 0));
+        const mult = (this.config && this.config.intelMult) || 1.0;
+        amount = Math.max(0, Math.round((amount || 0) * mult));
         if (amount === 0) return 0;
         if (!this.eligible || this.tainted) {
             this.intelDenied += amount;
@@ -21600,7 +21603,11 @@ class Game {
                 ...(settingsSubtabRows[this.activeSettingsSubtab || 'controls'])
             ],
             leaderboard: [],
-            armory: [],
+            armory: [
+                ...ARMORY_UPGRADES.map(u => ['armory-btn-' + u.key]),
+                ['btn-armory-reset'],
+                ['btn-prestige']
+            ],
             guide: []
         };
     }
@@ -21677,7 +21684,7 @@ class Game {
             // Scroll active tab container with Right Stick Y
             if (Math.abs(gp.axes[3]) > 0.15) {
                 let activeTabEl = document.querySelector('.tab-content.active');
-                if (activeTabEl && (activeTabEl.id === 'tab-guide' || activeTabEl.id === 'tab-settings')) {
+                if (activeTabEl && (activeTabEl.id === 'tab-guide' || activeTabEl.id === 'tab-settings' || activeTabEl.id === 'tab-armory')) {
                     // Scroll speed multiplier
                     activeTabEl.scrollTop += gp.axes[3] * 15; 
                 }
@@ -22771,18 +22778,13 @@ class Game {
     // end-of-run pipeline read ONLY the config + ledger.
     buildRunConfig() {
         // PHASE 3: Escalation Protocols -- resolved ONCE at snapshot time.
-        // Reward rules are pre-scaled here so the ledger (single write
-        // path) and every award site stay escalation-blind.
+        // All intel bonuses (escalation + difficulty + night mode) are
+        // collapsed into a single intelMult applied at the single write
+        // path (RunLedger.addIntel) so every source scales uniformly.
         const escActive = this.extractionMode
             ? ESCALATION_ORDER.filter(id => this.saveData.escalations && this.saveData.escalations[id])
             : [];
         const escBonus = escActive.reduce((s, id) => s + ESCALATION_PROTOCOLS[id].bonus, 0);
-        const escaleRewards = (rr) => {
-            if (escBonus <= 0) return rr;
-            const out = {};
-            for (const k in rr) out[k] = Math.round(rr[k] * (1 + escBonus));
-            return out;
-        };
         const missionHeat = this.extractionMode
             ? Object.assign({ floorMult: 1.0, startHeat: 0 }, this._selectedMission().heat)
             : null;
@@ -22847,13 +22849,18 @@ class Game {
                 ? JSON.parse(JSON.stringify(this._selectedMission().objectives))
                 : [],
             rewardRules: this.extractionMode
-                ? escaleRewards(Object.assign({ intelPerWave: 2, intelPerElite: 3, intelPerChip: 5, completionIntel: 0 }, this._selectedMission().rewardRules))
+                ? Object.assign({ intelPerWave: 2, intelPerElite: 3, intelPerChip: 5, completionIntel: 0 }, this._selectedMission().rewardRules)
                 : { intelPerWave: 2, intelPerElite: 3, intelPerChip: 5 },
             missionHeat: missionHeat,
             // PHASE 3: active protocol ids + total bonus (debrief display)
             // and BLOODHOUND's noise amplifier (consumed in registerNoise).
+            // intelMult: single resolved multiplier for difficulty + night
+            // + escalation, applied at RunLedger.addIntel (single write path).
             escalations: escActive,
             escalationBonus: escBonus,
+            intelMult: ((DIFFICULTY_TUNING[this.difficultyMode] || DIFFICULTY_TUNING.hard).intel || 1.0)
+                     * ((!!this.nightMode || missionMods.includes('blackout')) ? 1.15 : 1.0)
+                     * (1 + escBonus),
             noiseMult: escActive.includes('bloodhound') ? 1.25 : 1.0,
             entryCost: this.extractionMode ? (this._selectedMission().entryCost || 0) : 0,
             unlockRequirements: this.extractionMode ? (this._selectedMission().unlock || null) : null,
@@ -27743,7 +27750,7 @@ class Game {
                     <div class="armory-card-name">${upg.name}</div>
                     <div class="armory-card-desc">${descHTML}</div>
                     <div class="armory-level-pips">${pipsHTML}</div>
-                    <button class="${btnClass}" 
+                    <button id="armory-btn-${upg.key}" class="${btnClass}" 
                         ${isMaxed || !canAfford ? 'disabled' : ''}
                         onclick="game.buyArmoryUpgrade('${upg.key}')">
                         ${btnText}
@@ -27843,14 +27850,14 @@ class Game {
             const label = atCap
                 ? `PRESTIGE MAXED — LEVEL ${lvl} (LEGEND)`
                 : 'PRESTIGE: NONE (REQUIRES ALL ARMORY ITEMS MAXED)';
-            slot.innerHTML = `<button class="neon-btn" disabled style="width:100%; letter-spacing:2px; font-weight:bold; opacity:0.5; border-color:#5a6a75; color:#5a6a75; cursor:not-allowed;">${label}</button>`;
+            slot.innerHTML = `<button id="btn-prestige" class="neon-btn" disabled style="width:100%; letter-spacing:2px; font-weight:bold; opacity:0.5; border-color:#5a6a75; color:#5a6a75; cursor:not-allowed;">${label}</button>`;
             return;
         }
 
         const next = lvl + 1;
         const theme = PRESTIGE_THEMES[lvl] || PRESTIGE_THEMES[PRESTIGE_THEMES.length - 1];
         slot.innerHTML =
-            `<button class="neon-btn prestige-ready" onclick="game.doPrestige()" style="width:100%; letter-spacing:2px; font-weight:bold; border-color:${theme.accent}; color:${theme.accent}; box-shadow:0 0 14px ${theme.accent}66; text-shadow:0 0 6px ${theme.accent};">`
+            `<button id="btn-prestige" class="neon-btn prestige-ready" onclick="game.doPrestige()" style="width:100%; letter-spacing:2px; font-weight:bold; border-color:${theme.accent}; color:${theme.accent}; box-shadow:0 0 14px ${theme.accent}66; text-shadow:0 0 6px ${theme.accent};">`
           + `★ PRESTIGE TO LEVEL ${next} — RESETS INTEL &amp; ALL PROGRESS ★`
           + `</button>`
           + `<div style="font-size:10px; color:#a9c2c7; text-align:center; margin-top:4px;">Reward: ${theme.name} menu theme + Rank ${next} badge</div>`;
