@@ -9082,6 +9082,34 @@ const DIVE_CONFIG = {
     STAMINA_COST: 12           // flat stamina cost per dive
 };
 
+// Top-down characters are a torso circle (r=12) drawn ON TOP of the gun/arm
+// group, which used to swallow the first ~12px of the arms and receiver. We
+// push the whole arm+gun assembly forward along the aim axis by this many
+// px so the hands/arms/full barrel clear the body (leaving ~2px of arm root
+// inside the circle so they still read as "attached at the shoulders").
+// SINGLE SOURCE OF TRUTH: the same value shifts the VISUAL (draw) and the
+// MECHANICAL spawn points (muzzle flash / casing / bullet origin) so they
+// can never drift apart. Enemies scale it by their own r/12 (their gun art
+// is already r-scaled); the player's gun art is authored in absolute px for
+// its fixed r=12, so it uses the raw value.
+const GUN_MOUNT_OFFSET = 10;
+
+// Per-weapon PLAYER gun silhouette + grip, drawn in the gun group's local
+// space (x = forward along aim, gun sits centered on y=6). Keeps the shared
+// white-barrel + weapon.color-receiver blocks for readability; varies length/
+// bulk, adds a thin butt-stock where it makes sense, and places the hands:
+//   grip = rear (trigger) hand X;  fore = front (support) hand X, or null to
+//   hold pistol-style with both hands together at the grip. Enemies are NOT
+//   affected (their draw path is untouched). Fallback = SMG.
+const PLAYER_GUN_GEOM = {
+    Pistol:  { barrelLen: 11, barrelH: 4, recX: 5, recLen: 6,  recH: 6, stock: 0, grip: 4, fore: null },
+    SMG:     { barrelLen: 17, barrelH: 4, recX: 5, recLen: 8,  recH: 6, stock: 6, grip: 5, fore: 13 },
+    Shotgun: { barrelLen: 27, barrelH: 5, recX: 7, recLen: 12, recH: 7, stock: 0, grip: 6, fore: 21 },
+    M1A:     { barrelLen: 31, barrelH: 3, recX: 6, recLen: 9,  recH: 6, stock: 5, grip: 6, fore: 22, foreY: 7 },
+    Sniper:  { barrelLen: 30, barrelH: 4, recX: 7, recLen: 13, recH: 6, stock: 4, grip: 6, fore: 24 },
+    LMG:     { barrelLen: 23, barrelH: 5, recX: 5, recLen: 14, recH: 8, stock: 3, grip: 6, fore: 17, mag: { x: 4, w: 9, h: 8 } }
+};
+
 class Player extends Entity {
     constructor(x, y, isPlayer2 = false) {
         super(x, y, 12);
@@ -9415,8 +9443,26 @@ class Player extends Entity {
         // BEFORE the low-ready calc below, which anchors off it.
         this.updateMoveFacing(dt, targetAngle);
 
+        // Muzzle-into-wall guard: if the player aims so close to a wall that
+        // the barrel tip would clip through it, drop into the SAME low-ready
+        // pose as sprinting -- the gun swings off-axis so it stops no-clipping
+        // through geometry and bullets fire along that offset instead of
+        // straight through the wall. Tested along moveFacingAngle (raw aim
+        // intent), NOT the low-ready-adjusted this.angle, so the pose holds
+        // steady instead of flickering once it engages. Skipped while
+        // sprinting (already low-ready) -- so it's at most one wall raycast
+        // per player per frame, the same cost the laser sight already pays.
+        this.muzzleBlocked = false;
+        if (!this.isSprinting && game && game.map && game.map.walls) {
+            const reach = 22 + GUN_MOUNT_OFFSET + 2;
+            const mfa = this.moveFacingAngle;
+            const hit = game.getLaserEndPoint(this.x, this.y, mfa, reach, game.map.walls);
+            const distAlong = (hit.x - this.x) * Math.cos(mfa) + (hit.y - this.y) * Math.sin(mfa);
+            if (distAlong < reach - 0.5) this.muzzleBlocked = true;
+        }
+
         let chaseTargetAngle = targetAngle;
-        if (this.isSprinting) {
+        if (this.isSprinting || this.muzzleBlocked) {
             // Anchored to moveFacingAngle, NOT this.aimChaseAngle. This
             // matters more than it looks: aimChaseAngle is the value
             // updateAimWeight() is about to move -- if the target were
@@ -10708,8 +10754,8 @@ class Player extends Entity {
         }
 
         let ejectAngle = this.angle - Math.PI*0.6;
-        let caseX = this.x + Math.cos(this.angle)*4 - Math.sin(this.angle)*6;
-        let caseY = this.y + Math.sin(this.angle)*4 + Math.cos(this.angle)*6;
+        let caseX = this.x + Math.cos(this.angle)*(4 + GUN_MOUNT_OFFSET) - Math.sin(this.angle)*6;
+        let caseY = this.y + Math.sin(this.angle)*(4 + GUN_MOUNT_OFFSET) + Math.cos(this.angle)*6;
         this.weapon.name === 'Sniper' ? game.spawnCasing(caseX, caseY, ejectAngle, '#e10') : game.spawnCasing(caseX, caseY, ejectAngle);
         
         // Weapon kickback (physical push on the player, separate from the
@@ -10750,8 +10796,8 @@ class Player extends Entity {
         );
 
         let aimCoords = game.getWorldAimCoords(this);
-        let barrelX = this.x + Math.cos(this.angle)*22 - Math.sin(this.angle)*7;
-        let barrelY = this.y + Math.sin(this.angle)*22 + Math.cos(this.angle)*7;
+        let barrelX = this.x + Math.cos(this.angle)*(22 + GUN_MOUNT_OFFSET) - Math.sin(this.angle)*7;
+        let barrelY = this.y + Math.sin(this.angle)*(22 + GUN_MOUNT_OFFSET) + Math.cos(this.angle)*7;
         this.muzzleFlashTimer = 0.04;
         this.muzzleFlashX = barrelX;
         this.muzzleFlashY = barrelY;
@@ -10922,42 +10968,69 @@ class Player extends Entity {
         // Nothing in this block needed to be recalculated for Phase 6.
         ctx.save();
         ctx.rotate(this.angle - this.moveFacingAngle);
+        // Push the arm/gun assembly out of the torso circle (see
+        // GUN_MOUNT_OFFSET). The torso/head is drawn AFTER this restore()
+        // at (0,0), so it stays centered on the player -- only the arms,
+        // hands, barrel and receiver below move forward.
+        ctx.translate(GUN_MOUNT_OFFSET, 0);
 
+        // Per-weapon silhouette + grip (see PLAYER_GUN_GEOM). Gun centered on
+        // y=6, x forward along the aim axis.
+        const G = PLAYER_GUN_GEOM[this.weapon.name] || PLAYER_GUN_GEOM.SMG;
+        const baseY = 6;
+        const foreY = (G.foreY !== undefined) ? G.foreY : 5;
+
+        // Arms (drawn first, under the gun). Rear/trigger arm bends at the
+        // elbow so it hangs out from the body instead of being a stiff stub;
+        // front arm reaches to the foregrip -- or, for a pistol, converges
+        // next to the grip so both hands sit together.
         ctx.strokeStyle = this.color;
         ctx.lineWidth = 3;
-        
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(0, 6);
-        ctx.lineTo(8, 6);
+        ctx.moveTo(-2, 9);
+        ctx.lineTo(G.grip - 3, 14);   // elbow kicked further out/down so the bend reads
+        ctx.lineTo(G.grip, 7);        // trigger hand at the grip
+        ctx.stroke();
+        ctx.beginPath();
+        if (G.fore !== null) { ctx.moveTo(0, -6); ctx.lineTo(G.fore, foreY - 3); }
+        else { ctx.moveTo(0, -4); ctx.lineTo(G.grip + 2, 5); }
         ctx.stroke();
 
-        ctx.beginPath();
-        ctx.moveTo(0, -6);
-        ctx.lineTo(13, 2);
-        ctx.stroke();
+        // LMG drum/ammo drawn UNDER the gun (before the barrel so the gun
+        // sits on top and it peeks out the bottom). Drab tone in the LMG's
+        // own colorway.
+        if (G.mag) {
+            ctx.fillStyle = '#7d6f1a';
+            ctx.fillRect(G.mag.x, baseY + 1, G.mag.w, G.mag.h);
+        }
 
-        let barrelLen = this.weapon.name === 'Sniper' ? 28 : 18;
+        // Thin butt-stock connecting the receiver back toward the shoulder
+        // (SMG/M1A/Sniper/LMG). Neutral gray so it reads as a stock, not a
+        // third color block.
+        if (G.stock > 0) {
+            ctx.fillStyle = '#8a8f98';
+            ctx.fillRect(G.recX - G.stock, baseY - 1, G.stock, 2);
+        }
+
+        // White barrel, then the colored receiver block riding on its back.
         ctx.fillStyle = '#fff';
-        ctx.fillRect(5, 4, barrelLen, 4);
+        ctx.fillRect(G.recX, baseY - G.barrelH / 2, G.barrelLen, G.barrelH);
         ctx.fillStyle = this.weapon.color;
-        ctx.fillRect(9, 3, 7, 6);
+        ctx.fillRect(G.recX + 2, baseY - G.recH / 2, G.recLen, G.recH);
 
-        // Hands: purple "C" brackets curled around the grip, drawn INSIDE
-        // the gun's own rotate group (not the body's) so they move WITH
-        // the gun exactly like the barrel does -- per request, these
-        // should track this.angle, not moveFacingAngle. Rear hand sits on
-        // the pistol grip near the receiver/shoulder end of the gun;
-        // front hand holds the forearm/foregrip further out along the
-        // barrel, its distance scaled off the same barrelLen the white
-        // barrel rect above already uses so it lands sensibly on both the
-        // short standard barrel and the Sniper's longer one.
+        // Hands: purple "C" brackets. Rear hand on the grip; front hand on the
+        // foregrip (its Y from foreY so it sits ON the barrel), or tucked
+        // beside the grip for a two-handed pistol hold.
         ctx.strokeStyle = '#a855f7';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(3.5, 7, 3.1, -0.3, 2.6);
+        ctx.arc(G.grip, 7, 3.1, -0.3, 2.6);
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(5 + barrelLen * 0.55, 5, 2.7, -0.3, 2.6);
+        if (G.fore !== null) ctx.arc(G.fore, foreY, 2.7, -0.3, 2.6);
+        else ctx.arc(G.grip + 3, 7, 2.7, -0.3, 2.6);
         ctx.stroke();
 
         ctx.restore();
@@ -12340,7 +12413,9 @@ class Enemy extends Entity {
         else if (this.weaponType === 'sniper') barrelLen = 34;
 
         let gunY = Math.round(this.r * 0.5);
-        let lx = (5 + barrelLen) * scale;
+        // + GUN_MOUNT_OFFSET keeps the muzzle in sync with the forward-
+        // pushed gun art in draw() (scaled by r, like the rest of the gun).
+        let lx = (5 + barrelLen + GUN_MOUNT_OFFSET) * scale;
         let ly = gunY;
 
         let spreadAngle = this.angle;
@@ -12516,6 +12591,12 @@ class Enemy extends Entity {
 
         if (this.type !== 'swarmer' && this.weaponType !== 'melee') {
             let scale = this.r / 12;
+            // Push the arm/gun assembly out of the body circle (see
+            // GUN_MOUNT_OFFSET), scaled by r like the rest of the enemy gun
+            // art. Wrapped in its own save/restore so ONLY the arms + gun
+            // move -- the torso circle after this block stays centered.
+            ctx.save();
+            ctx.translate(GUN_MOUNT_OFFSET * scale, 0);
             let barrelLen = 16;
             let bh = 3;
             let receiverLen = 7;
@@ -12576,6 +12657,7 @@ class Enemy extends Entity {
             // Draw gun receiver (thick part)
             ctx.fillStyle = weaponColor;
             ctx.fillRect(9 * scale, y_receiver, receiverLen * scale, rh * scale);
+            ctx.restore(); // end the forward-pushed gun group
         }
 
         ctx.beginPath();
@@ -28712,14 +28794,18 @@ class Game {
                     rows.push(['preset-chip-0', 'preset-save-0', 'preset-chip-1', 'preset-save-1', 'preset-chip-2', 'preset-save-2']);
                 }
                 */
-                // Split kits into 2 rows of 4 for Player 1 cardinal navigation
-                rows.push(['kit-p1-chip-standard', 'kit-p1-chip-breacher', 'kit-p1-chip-ghost', 'kit-p1-chip-technician']);
-                rows.push(['kit-p1-chip-medic', 'kit-p1-chip-pathfinder', 'kit-p1-chip-vanguard', 'kit-p1-chip-heavy']);
-                
+                // Kit rows are generated FROM KIT_ORDER (chunks of 4) rather
+                // than hardcoded, so the pad grid stays in sync with the
+                // registry -- same discipline as the mission/escalation rows
+                // above. renderKitSelector() emits kit-p{1,2}-chip-<id> for
+                // exactly these ids. A ninth kit becomes reachable for free.
+                for (let i = 0; i < KIT_ORDER.length; i += 4) {
+                    rows.push(KIT_ORDER.slice(i, i + 4).map(id => 'kit-p1-chip-' + id));
+                }
                 if (this.isTwoPlayer) {
-                    // Split kits into 2 rows of 4 for Player 2 cardinal navigation
-                    rows.push(['kit-p2-chip-standard', 'kit-p2-chip-breacher', 'kit-p2-chip-ghost', 'kit-p2-chip-technician']);
-                    rows.push(['kit-p2-chip-medic', 'kit-p2-chip-pathfinder', 'kit-p2-chip-vanguard', 'kit-p2-chip-heavy']);
+                    for (let i = 0; i < KIT_ORDER.length; i += 4) {
+                        rows.push(KIT_ORDER.slice(i, i + 4).map(id => 'kit-p2-chip-' + id));
+                    }
                 }
                 break;
         }
@@ -29614,9 +29700,14 @@ class Game {
         toggleClass('start-screen', 'hidden', false);
         this.switchTab('play');
         if (this.extractionMode) this.renderMissionList();
-        this.mainMenuRowIndex = 0;
-        this.mainMenuOptionIndex = 0;
-        this.refreshMainMenuHighlight();
+        // Rewind the setup wizard to step 1 (MODE). switchTab('play') only
+        // toggles the tab's .active class -- it does NOT re-render the
+        // wizard, so without this the player returns to HQ still parked on
+        // whatever step they launched from (e.g. LOADOUT). _renderWizardStep
+        // re-hides the later steps and resets the gamepad nav indices +
+        // highlight, so the manual reset/refresh below is folded into it.
+        this.wizardStep = 1;
+        this._renderWizardStep();
         
         if (typeof musicEngine !== 'undefined') {
             musicEngine.setTrack(this.saveData.musicTrack || 'off');
