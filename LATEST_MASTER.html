@@ -1088,6 +1088,16 @@
                     </div>
                 </div>
 
+                <!-- Start At Wave (testing aid: OFF = each mode's normal opening wave; any number overrides it and disqualifies the run from Intel + leaderboard) -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">START AT WAVE:</label>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-grow: 1;">
+                        <input type="range" id="sld-start-wave" min="0" max="50" step="1" value="0" style="flex-grow: 1; cursor: pointer; height: 4px; margin: 0;" oninput="game.setStartWave(parseInt(this.value, 10))">
+                        <span id="lbl-start-wave" style="font-weight: bold; color: var(--text-color); font-size: 11px; min-width: 35px; text-align: right;">OFF</span>
+                    </div>
+                </div>
+                <div id="lbl-start-wave-warn" style="display:none; color: var(--red); font-size: 9px; letter-spacing: 1px; margin: -2px 0 8px; text-align: left;">&#9888; CUSTOM START WAVE &mdash; INTEL &amp; LEADERBOARD DISABLED THIS RUN</div>
+
                 <!-- Touch Interface -->
                 <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0;">
                     <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">TOUCH INTERFACE:</label>
@@ -14236,7 +14246,11 @@ class Bullet {
                             if (this.shooter.perkCombatScanner) game.applyScannerMark(ent);
                             if (this.shooter.perkSuppression && !(ent instanceof Boss)) ent.suppressedTimer = 1.5;
                         }
-                        if (this.shooter.perkExplosiveRounds) {
+                        // Explosive Rounds (AoE blast) and Shrapnel Rounds
+                        // (fragment spray) are independent triggers that both
+                        // route through explode(); the effect each produces is
+                        // gated inside explode() by its own perk flag.
+                        if (this.shooter.perkExplosiveRounds || this.shooter.perkShrapnelRounds) {
                             this.explode(game);
                         }
                     }
@@ -14433,7 +14447,7 @@ class Bullet {
                     }
 
                     if (this.bounces >= this.maxBounces) {
-                        if (this.isPlayerBullet && this.shooter && this.shooter.perkExplosiveRounds) {
+                        if (this.isPlayerBullet && this.shooter && (this.shooter.perkExplosiveRounds || this.shooter.perkShrapnelRounds)) {
                             this.explode(game);
                         }
                         this.active = false;
@@ -14470,7 +14484,7 @@ class Bullet {
                             this.hasExploded = false; // allow the next bounce to detonate again (see explode()'s one-shot guard)
                         }
                     } else {
-                        if (this.isPlayerBullet && this.shooter && this.shooter.perkExplosiveRounds) {
+                        if (this.isPlayerBullet && this.shooter && (this.shooter.perkExplosiveRounds || this.shooter.perkShrapnelRounds)) {
                             this.explode(game);
                         }
                         this.active = false;
@@ -14523,54 +14537,62 @@ class Bullet {
         if (this.hasExploded) return;
         this.hasExploded = true;
 
-        if (audio.playMiniExplosion) audio.playMiniExplosion(this.x, this.y);
-        game.applyExplosionShake(this.x, this.y, 8, 80);
-        game.spawnShockwave(this.x, this.y, 60, 0.2);
+        // AoE blast is Explosive Rounds' effect, and ONLY its effect. A
+        // Shrapnel-only shot still routes through explode() (that's where its
+        // fragments spawn, further below) but must skip the blast entirely --
+        // no shockwave, splash damage, wall/barrel damage, or aggro cost.
+        // With both perks a shot gets the blast AND the fragments.
+        if (this.shooter && this.shooter.perkExplosiveRounds) {
+            if (audio.playMiniExplosion) audio.playMiniExplosion(this.x, this.y);
+            game.applyExplosionShake(this.x, this.y, 8, 80);
+            game.spawnShockwave(this.x, this.y, 60, 0.2);
 
-        for (let i = 0; i < 8; i++) {
-            let angle = Math.random() * Math.PI * 2;
-            let spd = MathUtils.rand(30, 80);
-            let p = game.spawnParticle(this.x, this.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#ff6600', 0.35, 2);
-            if (p) game.particles.push(p);
-        }
-
-        let blastRadius = 60;
-        let damage = this.dmg * 0.75;
-
-        let targets = game.getBulletBlastEntities(this.shooter);
-
-        for (let ent of targets) {
-            if (ent.dead) continue;
-            let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
-            if (dist < blastRadius) {
-                let splashDmg = damage * (1.0 - dist / blastRadius);
-                // Same fix as MiniDrone/FPVDrone detonate(): this can re-hit
-                // the same enemy the bullet just struck directly (Explosive
-                // Rounds calls explode() right after the direct hit above),
-                // at near-zero distance -- unstable position-delta angle, can
-                // point back toward the bullet instead of continuing outward.
-                // Use the bullet's own travel direction for anything that
-                // close, matching the direct-hit knockback a few lines up.
-                let pushDir;
-                let travelSpeed = Math.hypot(this.vx, this.vy);
-                let contactRange = ent.r + (this.r || 3) + 2;
-                if (dist < contactRange && travelSpeed > 5) {
-                    pushDir = Math.atan2(this.vy, this.vx);
-                } else {
-                    pushDir = Math.atan2(ent.y - this.y, ent.x - this.x);
-                }
-                ent.takeDamage(splashDmg, pushDir, 200);
-                if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+            for (let i = 0; i < 8; i++) {
+                let angle = Math.random() * Math.PI * 2;
+                let spd = MathUtils.rand(30, 80);
+                let p = game.spawnParticle(this.x, this.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#ff6600', 0.35, 2);
+                if (p) game.particles.push(p);
             }
-        }
-        game.map.damageWallsNear(this.x, this.y, blastRadius, damage * 1.3);
-        game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
 
-        // TACTICAL PERKS (Phase 3): chaos aggro cost. Perk-driven player
-        // explosions enrage nearby enemies (see Game.enrageEnemiesNear) --
-        // the crowd damage stays, but the crowd answers faster.
-        if (this.isPlayerBullet && this.shooter && (this.shooter.perkExplosiveRounds || this.isFragment)) {
-            game.enrageEnemiesNear(this.x, this.y, 220);
+            let blastRadius = 60;
+            let damage = this.dmg * 0.75;
+
+            let targets = game.getBulletBlastEntities(this.shooter);
+
+            for (let ent of targets) {
+                if (ent.dead) continue;
+                let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
+                if (dist < blastRadius) {
+                    let splashDmg = damage * (1.0 - dist / blastRadius);
+                    // Same fix as MiniDrone/FPVDrone detonate(): this can re-hit
+                    // the same enemy the bullet just struck directly (Explosive
+                    // Rounds calls explode() right after the direct hit above),
+                    // at near-zero distance -- unstable position-delta angle, can
+                    // point back toward the bullet instead of continuing outward.
+                    // Use the bullet's own travel direction for anything that
+                    // close, matching the direct-hit knockback a few lines up.
+                    let pushDir;
+                    let travelSpeed = Math.hypot(this.vx, this.vy);
+                    let contactRange = ent.r + (this.r || 3) + 2;
+                    if (dist < contactRange && travelSpeed > 5) {
+                        pushDir = Math.atan2(this.vy, this.vx);
+                    } else {
+                        pushDir = Math.atan2(ent.y - this.y, ent.x - this.x);
+                    }
+                    ent.takeDamage(splashDmg, pushDir, 200);
+                    if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                }
+            }
+            game.map.damageWallsNear(this.x, this.y, blastRadius, damage * 1.3);
+            game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
+
+            // TACTICAL PERKS (Phase 3): chaos aggro cost. Perk-driven player
+            // explosions enrage nearby enemies (see Game.enrageEnemiesNear) --
+            // the crowd damage stays, but the crowd answers faster. Only the
+            // blast pays this; a Shrapnel-only spray does not.
+            if (this.isPlayerBullet) {
+                game.enrageEnemiesNear(this.x, this.y, 220);
+            }
         }
 
         // Shrapnel Rounds perk: fling a few low-damage fragments outward,
@@ -21533,6 +21555,7 @@ class Game {
                 ['btn-cash-down', 'btn-cash-up'],
                 ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore', 'btn-ff-pvp'],
                 ['sld-time-scale'],
+                ['sld-start-wave'],
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off']
             ],
             settings: [
@@ -21689,7 +21712,7 @@ class Game {
             }
 
             if (this.dpadCooldown <= 0) {
-                if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol' || currentRow[0] === 'sld-sfx-vol' || currentRow[0] === 'sld-time-scale' || currentRow[0] === 'sld-max-marks')) {
+                if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol' || currentRow[0] === 'sld-sfx-vol' || currentRow[0] === 'sld-time-scale' || currentRow[0] === 'sld-max-marks' || currentRow[0] === 'sld-start-wave')) {
                     let slider = document.getElementById(currentRow[0]);
                     if (slider) {
                         if (currentRow[0] === 'sld-time-scale') {
@@ -21703,6 +21726,18 @@ class Game {
                                 let newVal = Math.min(1.5, curVal + 0.1);
                                 this.setTimeScale(newVal);
                                 this.dpadCooldown = 0.18;
+                                return;
+                            }
+                        } else if (currentRow[0] === 'sld-start-wave') {
+                            let curVal = parseInt(slider.value, 10);
+                            if (!Number.isFinite(curVal)) curVal = 0;
+                            if (dLeft) {
+                                this.setStartWave(Math.max(0, curVal - 1));
+                                this.dpadCooldown = 0.12;
+                                return;
+                            } else if (dRight) {
+                                this.setStartWave(Math.min(50, curVal + 1));
+                                this.dpadCooldown = 0.12;
                                 return;
                             }
                         } else if (currentRow[0] === 'sld-max-marks') {
@@ -22746,7 +22781,19 @@ class Game {
             difficulty: this.difficultyMode,
             friendlyFireMode: this.friendlyFireMode,
             startingCash: this.nowMode ? NOW_MODE.STARTING_CASH : this.startingCash,
-            startWave: this.nowMode ? NOW_MODE.START_WAVE : 1,
+            // START AT WAVE slider. 0 == OFF: each mode opens on its natural
+            // wave (ACTION NOW -> 5 via NOW_MODE.START_WAVE, everything else ->
+            // 1) exactly as before the slider existed. A value >= 1 overrides
+            // that opening wave for EVERY wave-based mode -- normal, chaos
+            // draft, ACTION NOW, operator, and sandbox all seed this.wave from
+            // it and scale their spawn/difficulty formulas off it. Extraction is
+            // the sole exception: its wave counter is parked at 1 by design
+            // (heat, not waves, is the difficulty axis), so the slider is inert
+            // there. Resolved-at-snapshot like everything else in this config.
+            startWave: this.extractionMode ? 1
+                : (this.debugStartWave >= 1) ? Math.min(50, this.debugStartWave)
+                : this.nowMode ? NOW_MODE.START_WAVE
+                : 1,
             modifiers: {
                 nightMode: !!this.nightMode || missionMods.includes('blackout'),
                 forcedMutator: this.forcedMutator || null
@@ -22829,6 +22876,17 @@ class Game {
         this.runLedger = new RunLedger(this.runConfig, this);
         if (this._entryFeePaidThisRun) this.runLedger.entryFeePaid = this._entryFeePaidThisRun;
         this.runLedger.startWave = this.runConfig.startWave;
+        // A hand-picked START AT WAVE (slider not OFF) is a testing convenience,
+        // not an earned climb, so disqualify the run exactly like a dev-tool
+        // taint: taint() alone routes Intel to intelDenied (see
+        // RunLedger.addIntel) AND excludes the run from saveHighScore (see
+        // endRun). Keyed off the slider being ACTIVE (debugStartWave >= 1), not
+        // the resolved wave, so overriding ACTION NOW down to 1 still taints.
+        // Extraction is exempt because the slider is inert there (see
+        // buildRunConfig) -- an inert setting shouldn't penalize the run.
+        if (!this.extractionMode && this.debugStartWave >= 1) {
+            this.runLedger.taint('debug-start-wave');
+        }
         this._clearDebriefTimers();
         toggleClass('debrief-screen', 'hidden', true);
 
@@ -23159,7 +23217,10 @@ class Game {
             if (this.player2) this.player2.cash = this.startingCash;
         }
         
-        this.wave = this.nowMode ? NOW_MODE.START_WAVE : 1;
+        // runConfig.startWave already encodes the right opening wave per mode
+        // (ACTION NOW -> 5, extraction/operator/sandbox -> 1, standard -> the
+        // START AT WAVE slider), resolved once at snapshot in buildRunConfig.
+        this.wave = this.runConfig.startWave;
         this.waveStarted = false;
         this.isPaused = false;
         
@@ -27098,6 +27159,20 @@ class Game {
             // else needs to persist. Additive only.
             { to: 8, up: (sd) => {
                 if (typeof sd.prestigeLevel !== 'number' || sd.prestigeLevel < 0) sd.prestigeLevel = 0;
+            }},
+            // v9: START AT WAVE testing slider (game options). A single persisted
+            // integer defaulting to 1 (= no override). Additive only.
+            { to: 9, up: (sd) => {
+                if (typeof sd.debugStartWave !== 'number' || sd.debugStartWave < 1) sd.debugStartWave = 1;
+            }},
+            // v10: START AT WAVE gained an explicit OFF state (0). Under v9's
+            // semantics the minimum value 1 MEANT "disabled"; the slider now
+            // reserves 0 for that and treats 1 as a real override (start on wave
+            // 1). Re-seat any legacy <= 1 to 0 so existing profiles keep meaning
+            // "off" instead of silently overriding+tainting every run. Genuine
+            // overrides (> 1) are preserved untouched. Additive only.
+            { to: 10, up: (sd) => {
+                if (typeof sd.debugStartWave !== 'number' || sd.debugStartWave <= 1) sd.debugStartWave = 0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -27137,6 +27212,10 @@ class Game {
         if (typeof this.saveData.prestigeLevel !== 'number' || this.saveData.prestigeLevel < 0) {
             this.saveData.prestigeLevel = 0;
         }
+        // START AT WAVE slider default (mirrors the v9/v10 migrations). 0 = OFF.
+        if (typeof this.saveData.debugStartWave !== 'number' || this.saveData.debugStartWave < 0) {
+            this.saveData.debugStartWave = 0;
+        }
         
         if (this.saveData.difficultyMode) {
             this.setDifficulty(this.saveData.difficultyMode);
@@ -27159,6 +27238,12 @@ class Game {
             this.startingCash = 0;
         }
         this.adjustStartingCash(0);
+
+        if (this.saveData.debugStartWave !== undefined) {
+            this.setStartWave(this.saveData.debugStartWave);
+        } else {
+            this.setStartWave(0);   // 0 == OFF (no override)
+        }
 
         if (this.saveData.friendlyFireMode !== undefined) {
             this.setFriendlyFireMode(this.saveData.friendlyFireMode);
@@ -28395,6 +28480,33 @@ class Game {
         const label = document.getElementById('lbl-time-scale');
         if (slider) slider.value = this.timeScale;
         if (label) label.innerText = this.timeScale.toFixed(1) + 'x';
+        this.saveGameData();
+    }
+
+    // Testing aid: begin a run at an arbitrary wave, reusing the exact
+    // mechanism ACTION NOW uses to open at wave 5 (see NOW_MODE.START_WAVE) --
+    // this.wave is seeded from runConfig.startWave and every mode's enemy-count /
+    // difficulty formula keys off it (normal: 5+wave*4; operator: OP_TUNING
+    // curve), so wave N spawns a wave-N-appropriate fight with no separate
+    // curve. Value 0 == OFF: each mode falls back to its natural opening wave
+    // (ACTION NOW -> 5, everything else -> 1), i.e. byte-for-byte the behavior
+    // from before this slider existed. Any value >= 1 is an explicit override
+    // applied to normal / chaos draft / ACTION NOW / operator / sandbox
+    // (extraction is exempt -- heat, not waves, is its axis) and DISQUALIFIES
+    // the run from Intel + the leaderboard (enforced in startNewGame via a
+    // ledger taint), since a hand-picked start is a sandbox convenience, not an
+    // earned climb. The warning banner makes that tradeoff explicit before READY.
+    setStartWave(value) {
+        let v = parseInt(value, 10);
+        if (!Number.isFinite(v) || v < 1) v = 0;      // 0 == OFF (disabled)
+        else if (v > 50) v = 50;
+        this.debugStartWave = v;
+        const slider = document.getElementById('sld-start-wave');
+        const label = document.getElementById('lbl-start-wave');
+        const warn = document.getElementById('lbl-start-wave-warn');
+        if (slider) slider.value = v;
+        if (label) label.innerText = (v === 0) ? 'OFF' : String(v);
+        if (warn) warn.style.display = (v >= 1) ? 'block' : 'none';
         this.saveGameData();
     }
 
