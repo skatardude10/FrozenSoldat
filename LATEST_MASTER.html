@@ -13812,6 +13812,19 @@ class SniperWalkerBoss extends Boss {
 const RICOCHET_DOT = 0.45;
 const RICOCHET_DOT_RUBBER = 0.90;
 
+// SHRAPNEL ROUNDS -- terminal-wall-hit tuning. A direct enemy hit always
+// sprays fragments (that's the core of the perk); a bullet that instead
+// dies against a wall throws a burst only SOME of the time, so raking cover
+// is a rewarding-but-not-spammy bonus rather than free extra DPS on every
+// missed shot. Ricochets never proc (a glance isn't an impact). The offset
+// backs the fragment origin off the wall face so the spray erupts into the
+// room instead of spawning embedded in the geometry (where it'd die on the
+// next physics step and read as nothing -- the whole reason wall shrapnel
+// looked broken before this). Tune WALL_SHRAPNEL_CHANCE in 0.20-0.30 to taste.
+const WALL_SHRAPNEL_CHANCE = 0.3;
+const WALL_SHRAPNEL_OFFSET = 8;      // px pushed back along the wall's outward normal
+const WALL_SHRAPNEL_CONE = Math.PI * 0.65;  // spray arc centered on that normal (PI = outward hemisphere)
+
 class Bullet {
     constructor(x, y, angle, weaponInfo, isPlayerBullet, isAP = false, isHP = false, isNeutral = false) {
         this.init(x, y, angle, weaponInfo, isPlayerBullet, isAP, isHP, isNeutral);
@@ -14448,7 +14461,7 @@ class Bullet {
 
                     if (this.bounces >= this.maxBounces) {
                         if (this.isPlayerBullet && this.shooter && (this.shooter.perkExplosiveRounds || this.shooter.perkShrapnelRounds)) {
-                            this.explode(game);
+                            this.explode(game, { surface: 'wall', nx, ny });
                         }
                         this.active = false;
                         break;
@@ -14480,12 +14493,12 @@ class Bullet {
                         audio.playRicochet(this.x, this.y);
                         game.addParticle(this.x, this.y, nx*120, ny*120, '#00e5ff', 0.12, 2.5);
                         if (comboExplosiveRubber) {
-                            this.explode(game);
+                            this.explode(game, { noShrapnel: true });
                             this.hasExploded = false; // allow the next bounce to detonate again (see explode()'s one-shot guard)
                         }
                     } else {
                         if (this.isPlayerBullet && this.shooter && (this.shooter.perkExplosiveRounds || this.shooter.perkShrapnelRounds)) {
-                            this.explode(game);
+                            this.explode(game, { surface: 'wall', nx, ny });
                         }
                         this.active = false;
                         game.addParticle(this.x, this.y, -this.vx*0.12, -this.vy*0.12, '#ffffff', 0.15, 2);
@@ -14533,7 +14546,14 @@ class Bullet {
         ctx.restore();
     }
 
-    explode(game) {
+    // impact (optional) describes the terminal event so the Shrapnel Rounds
+    // burst can react to it: omit for a direct enemy/barrel hit (always sprays,
+    // 360deg from the point); pass { surface:'wall', nx, ny } for a bullet
+    // dying against a wall (probabilistic proc, origin backed off the face,
+    // spray biased into the room); pass { noShrapnel:true } for the
+    // explosive+rubber ricochet detonation (AoE only -- a bounce is not an
+    // impact and must never throw fragments). The AoE blast is unaffected.
+    explode(game, impact) {
         if (this.hasExploded) return;
         this.hasExploded = true;
 
@@ -14604,16 +14624,33 @@ class Bullet {
         // detonation can't spawn further fragments -- without that guard,
         // stacking both perks together could chain-spawn bullets
         // exponentially instead of a bounded handful per original shot.
-        if (this.isPlayerBullet && this.shooter && this.shooter.perkShrapnelRounds && !this.isFragment) {
-            let fragCount = 3 + Math.floor(Math.random() * 2); // 3-4
-            for (let i = 0; i < fragCount; i++) {
-                let a = Math.random() * Math.PI * 2;
-                let spd = MathUtils.rand(900, 1400);
-                let frag = game.spawnBullet(this.x, this.y, a,
-                    { name: 'Pistol', dmg: this.dmg * 0.25, speed: spd, drag: 0.15, color: '#ffb700' },
-                    this.shooter, false, false, false);
-                frag.isFragment = true;
-                game.bullets.push(frag);
+        if (this.isPlayerBullet && this.shooter && this.shooter.perkShrapnelRounds && !this.isFragment && !(impact && impact.noShrapnel)) {
+            // Direct hits always burst; a bullet dying on a wall bursts only
+            // WALL_SHRAPNEL_CHANCE of the time, and when it does the fragments
+            // are spawned just off the wall face and sprayed into the outward
+            // hemisphere (centered on the wall normal) so they erupt into the
+            // room instead of embedding in the geometry they just struck.
+            const onWall = !!(impact && impact.surface === 'wall');
+            if (!onWall || Math.random() < WALL_SHRAPNEL_CHANCE) {
+                let ox = this.x, oy = this.y, biasAngle = null;
+                if (onWall) {
+                    const nx = impact.nx || 0, ny = impact.ny || 0;
+                    ox = this.x + nx * WALL_SHRAPNEL_OFFSET;
+                    oy = this.y + ny * WALL_SHRAPNEL_OFFSET;
+                    if (nx !== 0 || ny !== 0) biasAngle = Math.atan2(ny, nx);
+                }
+                let fragCount = 3 + Math.floor(Math.random() * 2); // 3-4
+                for (let i = 0; i < fragCount; i++) {
+                    let a = (biasAngle === null)
+                        ? Math.random() * Math.PI * 2
+                        : biasAngle + (Math.random() - 0.5) * WALL_SHRAPNEL_CONE;
+                    let spd = MathUtils.rand(900, 1400);
+                    let frag = game.spawnBullet(ox, oy, a,
+                        { name: 'Pistol', dmg: this.dmg * 0.25, speed: spd, drag: 0.15, color: '#ffb700' },
+                        this.shooter, false, false, false);
+                    frag.isFragment = true;
+                    game.bullets.push(frag);
+                }
             }
         }
     }
