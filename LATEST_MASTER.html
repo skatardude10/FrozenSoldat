@@ -18196,7 +18196,9 @@ class Item {
         let scy = this.y - cam.y;
         ctx.save();
         ctx.translate(scx, scy);
-        ctx.rotate(this.t * 2.2);
+        // JULY follow-up: no spin -- a rotating icon is unreadable against
+        // the (static) HUD carousel it's supposed to match. The bob/pulse
+        // effects keep drops eye-catching; the silhouette stays legible.
         
         // JULY item 4: consumable + gun drops render the SAME icons the HUD
         // carousels use (cached Path2D -- see strokeWorldIcon), in matching
@@ -18206,11 +18208,11 @@ class Item {
             ctx.fillStyle = '#39ff14'; ctx.fillRect(-3, -6, 6, 12);
             ctx.shadowBlur = 8; ctx.shadowColor = '#39ff14';
         } else if (this.type === 'grenade') {
-            strokeWorldIcon(ctx, 'grenade', ITEM_ICON_COLORS.grenade, 0.85);
+            strokeWorldIcon(ctx, 'grenade', ITEM_ICON_COLORS.grenade, 1.0);
         } else if (this.type === 'medpack') {
-            strokeWorldIcon(ctx, 'medpack', ITEM_ICON_COLORS.medpack, 0.85);
+            strokeWorldIcon(ctx, 'medpack', ITEM_ICON_COLORS.medpack, 1.0);
         } else if (this.type === 'redbull') {
-            strokeWorldIcon(ctx, 'boost', ITEM_ICON_COLORS.boost, 0.85);
+            strokeWorldIcon(ctx, 'boost', ITEM_ICON_COLORS.boost, 1.0);
         } else if (this.type === 'perk_case') {
             // Secure briefcase visual — cyan box with lock icon
             ctx.fillStyle = '#00e5ff';
@@ -18251,7 +18253,7 @@ class Item {
             let col = Weapons[this.type].color;
             // The bottom weapon carousel's silhouette, in that weapon's own
             // signature color -- the exact icon the pickup will occupy.
-            if (!strokeWorldIcon(ctx, this.type, col, 1.1)) {
+            if (!strokeWorldIcon(ctx, this.type, col, 1.65)) {
                 // Unknown key safety net: the old colored crate.
                 ctx.fillStyle = col; ctx.fillRect(-8, -4, 16, 8);
                 ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(-8,-4,16,8);
