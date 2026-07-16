@@ -442,6 +442,15 @@
         from { opacity: 0; transform: translateY(4px); }
         to { opacity: 1; transform: translateY(0); }
     }
+    /* JULY item 10: attention pulse on the Armory tab until the one-time
+       orientation briefing has been dismissed. */
+    #tab-btn-armory.armory-attn {
+        animation: armoryAttnPulse 1.5s ease-in-out infinite;
+    }
+    @keyframes armoryAttnPulse {
+        0%, 100% { box-shadow: 0 0 4px rgba(57, 255, 20, 0.2); color: inherit; }
+        50%      { box-shadow: 0 0 16px rgba(57, 255, 20, 0.75); color: var(--green); }
+    }
     button.active-mode {
         border-color: var(--green) !important;
         color: var(--green) !important;
@@ -1112,7 +1121,7 @@
             <button class="tab-button" onclick="game.switchTab('gameoptions')">Game Options</button>
             <button class="tab-button" onclick="game.switchTab('settings')">Settings</button>
             <button class="tab-button" onclick="game.switchTab('leaderboard')">Leaderboard</button>
-            <button class="tab-button" onclick="game.switchTab('armory')">Armory</button>
+            <button id="tab-btn-armory" class="tab-button" onclick="game.switchTab('armory')">Armory</button>
             <button class="tab-button" onclick="game.switchTab('guide')">Guide</button>
         </div>
 
@@ -1231,6 +1240,11 @@
                         <div class="card-desc">Isolated parameters. Unrestricted weapons and god options enabled. No career Intel rewards.</div>
                     </div>
                 </div>
+
+                <!-- JULY item 9: frictionless one-click deploy -- skips the
+                     whole wizard with sensible defaults (1P Wave Ops, saved
+                     difficulty/night prefs, random map). -->
+                <button id="btn-quick-play" class="neon-btn" onclick="game.quickPlay()" style="width: 100%; margin-top: 14px; padding: 12px; font-size: 13px; letter-spacing: 2px; border-color: var(--green); color: var(--green); box-shadow: 0 0 18px rgba(57, 255, 20, 0.15);">&#9654; PLAY NOW &mdash; INSTANT DEPLOY</button>
 
             </div>
 
@@ -1502,6 +1516,7 @@
                 <button id="btn-settings-subtab-controls" class="tab-button active" onclick="game.switchSettingsTab('controls')">Controls</button>
                 <button id="btn-settings-subtab-audio" class="tab-button" onclick="game.switchSettingsTab('audio')">Audio</button>
                 <button id="btn-settings-subtab-performance" class="tab-button" onclick="game.switchSettingsTab('performance')">Performance</button>
+                <button id="btn-settings-subtab-data" class="tab-button" onclick="game.switchSettingsTab('data')">Data</button>
             </div>
 
             <!-- Settings sub-tab: CONTROLS -->
@@ -1630,9 +1645,12 @@
                     <input type="range" id="sld-max-marks" min="0" max="300000" step="1000" value="30000" style="width: 100%; cursor: pointer;" oninput="game.setMaxPermanentMarks(this.value)">
                     <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 30,000 &nbsp;|&nbsp; Range: 0 – 300,000</div>
                 </div>
+            </div>
 
-                <!-- SAVE DATA: export/import for cross-device sync -->
-                <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold; margin-top: 18px;">SAVE DATA (CROSS-DEVICE SYNC)</p>
+            <!-- Settings sub-tab: DATA (JULY item 3 -- save export/import moved
+                 out of Performance, where it never belonged, into its own home) -->
+            <div id="tab-settings-data" class="settings-subtab-content">
+                <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold;">SAVE DATA (CROSS-DEVICE SYNC)</p>
                 <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left;">
                     <div style="font-size: 10px; color: #a9c2c7; margin-bottom: 12px; line-height: 1.5;">
                         Your progress, unlocks, colors, and settings live only in this browser on this device. Export a save file, sync it across your devices (e.g. via Tailscale), and Import it anywhere to carry everything over. Import fully replaces the current save on this device.
@@ -1671,6 +1689,21 @@
         
         <!-- Tab content: ARMORY -->
         <div id="tab-armory" class="tab-content">
+            <!-- JULY item 10: one-time orientation briefing for new players.
+                 Inline (NOT a modal) so it slots into the armory gamepad
+                 rows like any other button. Dismiss persists via
+                 saveData.hasSeenArmoryTutorial. -->
+            <div id="armory-tutorial" class="hidden" style="border: 1px solid var(--green); background: rgba(57, 255, 20, 0.06); border-radius: 4px; padding: 12px 14px; margin-bottom: 12px; text-align: left; box-shadow: 0 0 14px rgba(57, 255, 20, 0.12);">
+                <div style="color: var(--green); font-weight: bold; letter-spacing: 2px; font-size: 12px; margin-bottom: 6px;">&#9432; FIRST BRIEFING: HOW PROGRESSION WORKS</div>
+                <div style="font-size: 11px; color: #cfe8d2; line-height: 1.55;">
+                    Every run you survive earns <b style="color: var(--neon-blue);">INTEL</b> &mdash; from clearing waves, killing <b>Elites</b> and <b>Bosses</b>, grabbing intel chips, and extracting. Intel is banked here <b>permanently</b>, even when you die.<br>
+                    Spend it below on upgrades that persist across <b>every future run</b>: more health, bigger mags, laser sights, grenade launchers, Operator Kits and more. Die, upgrade, drop back in stronger. Full details live in the <b>Guide</b> tab.
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 10px;">
+                    <button id="btn-armory-tut-ok" class="neon-btn" onclick="game.dismissArmoryTutorial(false)" style="margin: 0; font-size: 10px; padding: 6px 14px; border-color: var(--green); color: var(--green);">GOT IT</button>
+                    <button id="btn-armory-tut-guide" class="neon-btn" onclick="game.dismissArmoryTutorial(true)" style="margin: 0; font-size: 10px; padding: 6px 14px;">OPEN GUIDE</button>
+                </div>
+            </div>
             <p style="color:var(--neon-blue); letter-spacing:1px; font-weight:bold; margin-bottom: 5px;">
                 GLOBAL FIELD UPGRADES — INTEL BANK: <span id="lbl-intel-balance">0</span>
             </p>
@@ -1845,6 +1878,9 @@
             <div id="operator-shop-timer-wrap" class="hidden" style="text-align:center; margin-top:8px; font-size:11px; color:#39ff14; letter-spacing:1px;">
                 DEPLOYMENT IN <span id="operator-shop-timer">60</span>s
             </div>
+            <!-- JULY item 11: mid-match evac -- convert remaining cash to
+                 intel and extract via a real objective next wave. -->
+            <button id="btn-call-evac-p1" onclick="game.requestEvac(1)" style="width:100%; border-color:#ffb700; color:#ffb700; margin-top: 10px;">&#9742; CALL EVAC &mdash; EXTRACT NEXT WAVE ($100 &rarr; 1 INTEL)</button>
             <button id="btn-ready-p1" onclick="game.setReady(1)" style="width:100%; border-color:var(--green); color:var(--green); margin-top: 10px;">READY (P1)</button>
         </div>
         
@@ -1944,6 +1980,7 @@
                     </div>
                 </div>
             </div>
+            <button id="btn-call-evac-p2" onclick="game.requestEvac(2)" style="width:100%; border-color:#ffb700; color:#ffb700; margin-top: 10px;">&#9742; CALL EVAC &mdash; EXTRACT NEXT WAVE ($100 &rarr; 1 INTEL)</button>
             <button id="btn-ready-p2" onclick="game.setReady(2)" style="width:100%; border-color:#ffb700; color:#ffb700; margin-top: 10px;">READY (P2)</button>
         </div>
         
@@ -2490,6 +2527,78 @@ const SVGIcons = {
     hunter_swarm: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="17" cy="14" r="1.5"/></svg>`
 };
 
+// ==== JULY item 4: world-space loot icons ==================================
+// Floor loot now draws the SAME silhouettes the HUD carousels use, so a
+// player who's learned the UI instantly recognizes ground drops (and vice
+// versa). The SVGIcons strings above stay the single source of truth: this
+// parses each icon's primitive elements (path/rect/circle/line -- the only
+// element types the set uses) into ONE cached Path2D per icon, built lazily
+// on first use and never re-parsed. Item.draw strokes the cached path in
+// the item's signature color -- zero per-frame string parsing.
+const ITEM_ICON_COLORS = {
+    // Left-carousel consumables (mirrored onto the HUD icons themselves so
+    // world <-> UI colors always agree).
+    medpack:      '#39ff14',
+    boost:        '#00b0ff',
+    grenade:      '#ff3d00',
+    mine:         '#ffb700',
+    // Right-carousel placeables (UI-only tint for consistency; these have
+    // no world drop form).
+    drone:        '#ff7a00',
+    barrier:      '#4a9eff',
+    turret:       '#ffee00',
+    dog:          '#39ff14',
+    hunter_swarm: '#d500f9'
+};
+const _worldIconCache = {};
+function getWorldIconPath(key) {
+    if (_worldIconCache[key] !== undefined) return _worldIconCache[key];
+    const svg = SVGIcons[key];
+    if (!svg) { _worldIconCache[key] = null; return null; }
+    const p = new Path2D();
+    // <path d="...">
+    let m, re = /<path d="([^"]+)"/g;
+    while ((m = re.exec(svg)) !== null) p.addPath(new Path2D(m[1]));
+    // <rect x y width height [rx]>
+    re = /<rect x="([-\d.]+)" y="([-\d.]+)" width="([-\d.]+)" height="([-\d.]+)"(?: rx="([-\d.]+)")?/g;
+    while ((m = re.exec(svg)) !== null) {
+        const x = +m[1], y = +m[2], w = +m[3], h = +m[4];
+        p.rect(x, y, w, h); // rx rounding dropped -- imperceptible at loot scale
+    }
+    // <circle cx cy r>
+    re = /<circle cx="([-\d.]+)" cy="([-\d.]+)" r="([-\d.]+)"/g;
+    while ((m = re.exec(svg)) !== null) {
+        p.moveTo(+m[1] + +m[3], +m[2]);
+        p.arc(+m[1], +m[2], +m[3], 0, Math.PI * 2);
+    }
+    // <line x1 y1 x2 y2>
+    re = /<line x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)"/g;
+    while ((m = re.exec(svg)) !== null) {
+        p.moveTo(+m[1], +m[2]);
+        p.lineTo(+m[3], +m[4]);
+    }
+    _worldIconCache[key] = p;
+    return p;
+}
+// Strokes a cached 24x24 icon centered on the current origin (caller has
+// already translated/rotated). Shared by every Item.draw icon branch.
+function strokeWorldIcon(ctx, key, color, scale) {
+    const path = getWorldIconPath(key);
+    if (!path) return false;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.scale(scale, scale);
+    ctx.translate(-12, -12);
+    ctx.lineWidth = 2.2;
+    ctx.stroke(path);
+    ctx.restore();
+    return true;
+}
+
 function useLeftItem(player) {
     if (player.leftSelectIdx === 0) {
         player.useMedPack();
@@ -2766,11 +2875,15 @@ function renderHUDSelectors(player, suffix) {
         let leftTrack = document.getElementById('left-track-' + suffix);
         if (leftTrack) {
             leftTrack.innerHTML = '';
+            // JULY item 4: each consumable icon now carries the SAME
+            // signature color its world-drop icon uses (ITEM_ICON_COLORS)
+            // -- the visual link between "thing on the floor" and "slot in
+            // my HUD" is the whole point of this pass.
             let items = [
-                { name: 'Medpack', count: player.medpacks, max: 3, icon: SVGIcons.medpack },
-                { name: 'Energy Drink', count: player.energyDrinks, max: 6, icon: SVGIcons.boost },
-                { name: 'Grenade', count: player.grenades, max: player.maxGrenades || 3, icon: SVGIcons.grenade },
-                { name: 'Trip Mine', count: player.mines, max: 3, icon: SVGIcons.mine }
+                { name: 'Medpack', count: player.medpacks, max: 3, icon: SVGIcons.medpack, color: ITEM_ICON_COLORS.medpack },
+                { name: 'Energy Drink', count: player.energyDrinks, max: 6, icon: SVGIcons.boost, color: ITEM_ICON_COLORS.boost },
+                { name: 'Grenade', count: player.grenades, max: player.maxGrenades || 3, icon: SVGIcons.grenade, color: ITEM_ICON_COLORS.grenade },
+                { name: 'Trip Mine', count: player.mines, max: 3, icon: SVGIcons.mine, color: ITEM_ICON_COLORS.mine }
             ];
             items.forEach((item, idx) => {
                 let slot = document.createElement('div');
@@ -2779,7 +2892,7 @@ function renderHUDSelectors(player, suffix) {
                 if (item.count === 0) countColor = '#ff2a5f';
                 else if (item.count >= item.max) countColor = '#39ff14';
                 slot.innerHTML = `
-                    <div class="item-icon-wrapper">${item.icon}</div>
+                    <div class="item-icon-wrapper" style="color: ${item.color}">${item.icon}</div>
                     <div class="item-count" style="color: ${countColor}">${item.count}</div>
                     <div class="item-label-overlay">${item.name.toUpperCase()} [E / L3]</div>
                 `;
@@ -2845,7 +2958,7 @@ function renderHUDSelectors(player, suffix) {
                 let slot = document.createElement('div');
                 slot.className = 'hud-item-slot' + (idx === player.rightSelectIdx ? (suffix === 'p2' ? ' active active-p2' : ' active') : '');
                 slot.innerHTML = `
-                    <div class="item-icon-wrapper" style="color: ${idx === 0 ? droneColor : (idx === 3 ? dogColor : (idx === 4 ? (player.isPlayer2 ? '#ffb700' : '#39ff14') : 'currentColor'))}">${item.icon}</div>
+                    <div class="item-icon-wrapper" style="color: ${idx === 0 ? droneColor : (idx === 1 ? ITEM_ICON_COLORS.barrier : (idx === 2 ? ITEM_ICON_COLORS.turret : (idx === 3 ? dogColor : (player.hunterSwarmCount > 0 ? ITEM_ICON_COLORS.hunter_swarm : '#808f9c'))))}">${item.icon}</div>
                     <div class="item-count" style="color: ${item.countColor}">${item.countText}</div>
                     <div class="item-label-overlay">${item.name.toUpperCase()} [C / R3]</div>
                 `;
@@ -8408,6 +8521,11 @@ class Entity {
                         if (dot < 0) {
                             this.vx -= nx * dot;
                             this.vy -= ny * dot;
+                            // JULY item 12: short contact latch -- after a
+                            // wall eats a velocity component, what's left is
+                            // a slide vector, not movement intent. Player
+                            // body-align reads this (see updateMoveFacing).
+                            this._wallContactT = 0.15;
                         }
                     } else {
                         let wallCx = wall.x + wall.w / 2;
@@ -9095,6 +9213,12 @@ const DIVE_CONFIG = {
 // is already r-scaled); the player's gun art is authored in absolute px for
 // its fixed r=12, so it uses the raw value.
 const GUN_MOUNT_OFFSET = 10;
+// JULY item 6: max distance the arm/gun assembly is allowed to compress
+// back toward the chest when the muzzle would clip a wall. 18px pulls the
+// barrel tip from 32px (22 + GUN_MOUNT_OFFSET) down to 14px -- just clear
+// of the r=12 torso circle, reading as a raised/compressed hold rather
+// than the gun vanishing into the body.
+const GUN_RETRACT_MAX = 18;
 
 // Per-weapon PLAYER gun silhouette + grip, drawn in the gun group's local
 // space (x = forward along aim, gun sits centered on y=6). Keeps the shared
@@ -9454,17 +9578,37 @@ class Player extends Entity {
         // steady instead of flickering once it engages. Skipped while
         // sprinting (already low-ready) -- so it's at most one wall raycast
         // per player per frame, the same cost the laser sight already pays.
+        // JULY item 6 (gun-wall collision overhaul): wall contact no longer
+        // yanks the aim 40 degrees off-axis (that WAS the old "player flips
+        // sideways at a wall" complaint) -- instead the arm/gun assembly
+        // smoothly RETRACTS toward the chest, compressed high-ready style,
+        // by exactly the depth the muzzle would otherwise clip into the
+        // wall. One raycast per player per frame, same cost as before. The
+        // ray runs along LAST frame's actual gun angle (this.angle -- the
+        // same one-frame staleness the isSprinting read above already
+        // accepts) because the retraction is a pure visual/spawn-point
+        // offset now: it no longer feeds back into the angle, so there's
+        // nothing left to flicker. gunRetractPx is the SINGLE value the
+        // draw pass, fire()'s barrel/casing spawn points, and the laser
+        // start all consume -- they can never drift apart.
         this.muzzleBlocked = false;
+        let retractTarget = 0;
         if (!this.isSprinting && game && game.map && game.map.walls) {
             const reach = 22 + GUN_MOUNT_OFFSET + 2;
-            const mfa = this.moveFacingAngle;
-            const hit = game.getLaserEndPoint(this.x, this.y, mfa, reach, game.map.walls);
-            const distAlong = (hit.x - this.x) * Math.cos(mfa) + (hit.y - this.y) * Math.sin(mfa);
-            if (distAlong < reach - 0.5) this.muzzleBlocked = true;
+            const ga = this.angle;
+            const hit = game.getLaserEndPoint(this.x, this.y, ga, reach, game.map.walls);
+            const distAlong = (hit.x - this.x) * Math.cos(ga) + (hit.y - this.y) * Math.sin(ga);
+            if (distAlong < reach - 0.5) {
+                this.muzzleBlocked = true;
+                retractTarget = Math.min(GUN_RETRACT_MAX, reach - distAlong);
+            }
         }
+        if (this.gunRetractPx === undefined) this.gunRetractPx = 0;
+        this.gunRetractPx += (retractTarget - this.gunRetractPx) * Math.min(1, dt * 14);
+        if (this.gunRetractPx < 0.05) this.gunRetractPx = 0;
 
         let chaseTargetAngle = targetAngle;
-        if (this.isSprinting || this.muzzleBlocked) {
+        if (this.isSprinting) {
             // Anchored to moveFacingAngle, NOT this.aimChaseAngle. This
             // matters more than it looks: aimChaseAngle is the value
             // updateAimWeight() is about to move -- if the target were
@@ -10364,7 +10508,27 @@ class Player extends Entity {
         // channel's feel stays byte-identical.
         if (!this.isDiving) {
             let travelSpeed = Math.hypot(this.vx, this.vy);
-            if (travelSpeed > AIM_WEIGHT.BODY_ALIGN_MIN_SPEED && engagement < 1) {
+            // JULY item 12 (level-2 "flipped at a wall" charter): while the
+            // player is PINNED against geometry, collision resolution turns
+            // their velocity into a wall-slide vector -- pure artifact, not
+            // movement intent. Feeding that into body-align slowly cranked
+            // the torso up to the full cone margin sideways, which (a) read
+            // as "my character flipped ~90 degrees" and (b) in the
+            // player-relative control scheme actually REMAPPED WASD to the
+            // slid facing, i.e. genuine temporary control loss. Detection
+            // is the physics resolver's own contact latch (updatePhysics
+            // sets _wallContactT the moment it cancels an into-wall
+            // velocity component): while fresh, body-align holds. Brushing
+            // a wall during a deliberate run merely pauses re-centering for
+            // 0.15s -- imperceptible -- while a genuine pin can no longer
+            // crank the torso sideways at all. The aim channel above keeps
+            // full authority throughout.
+            // (The other half of this charter -- the 40-degree low-ready
+            // aim yank on muzzle contact -- was removed outright by the
+            // item-6 gun-retraction overhaul.)
+            if (this._wallContactT > 0) this._wallContactT -= dt;
+            let wallPinned = (this._wallContactT || 0) > 0;
+            if (!wallPinned && travelSpeed > AIM_WEIGHT.BODY_ALIGN_MIN_SPEED && engagement < 1) {
                 let moveAngle = Math.atan2(this.vy, this.vx);
                 let alignDiff = MathUtils.angleDifference(moveAngle, this.moveFacingAngle);
                 let alignCap = (AIM_WEIGHT.BODY_ALIGN_RATE_DEG_PER_SEC * Math.PI / 180) * dt;
@@ -10755,9 +10919,13 @@ class Player extends Entity {
             if (hOc) handlingLvl = Math.min(5, Math.max(0, (hOc.fireRate || 0) - 2));
         }
 
+        // JULY item 6: casing/barrel spawn points compress with the gun
+        // (this.gunRetractPx) so rounds and brass are born at the RETRACTED
+        // muzzle -- never inside the wall the player is hugging.
+        let _gunRe = this.gunRetractPx || 0;
         let ejectAngle = this.angle - Math.PI*0.6;
-        let caseX = this.x + Math.cos(this.angle)*(4 + GUN_MOUNT_OFFSET) - Math.sin(this.angle)*6;
-        let caseY = this.y + Math.sin(this.angle)*(4 + GUN_MOUNT_OFFSET) + Math.cos(this.angle)*6;
+        let caseX = this.x + Math.cos(this.angle)*(4 + GUN_MOUNT_OFFSET - _gunRe) - Math.sin(this.angle)*6;
+        let caseY = this.y + Math.sin(this.angle)*(4 + GUN_MOUNT_OFFSET - _gunRe) + Math.cos(this.angle)*6;
         this.weapon.name === 'Sniper' ? game.spawnCasing(caseX, caseY, ejectAngle, '#e10') : game.spawnCasing(caseX, caseY, ejectAngle);
         
         // Weapon kickback (physical push on the player, separate from the
@@ -10798,8 +10966,8 @@ class Player extends Entity {
         );
 
         let aimCoords = game.getWorldAimCoords(this);
-        let barrelX = this.x + Math.cos(this.angle)*(22 + GUN_MOUNT_OFFSET) - Math.sin(this.angle)*7;
-        let barrelY = this.y + Math.sin(this.angle)*(22 + GUN_MOUNT_OFFSET) + Math.cos(this.angle)*7;
+        let barrelX = this.x + Math.cos(this.angle)*(22 + GUN_MOUNT_OFFSET - _gunRe) - Math.sin(this.angle)*7;
+        let barrelY = this.y + Math.sin(this.angle)*(22 + GUN_MOUNT_OFFSET - _gunRe) + Math.cos(this.angle)*7;
         this.muzzleFlashTimer = 0.04;
         this.muzzleFlashX = barrelX;
         this.muzzleFlashY = barrelY;
@@ -10855,6 +11023,33 @@ class Player extends Entity {
 
         if (['SMG', 'Shotgun', 'Sniper', 'M1A', 'LMG'].includes(this.weapon.name)) {
             game.spawnBarrelFX(barrelX, barrelY, this.angle, this.z || 0);
+        }
+
+        // JULY item 1 (auto-switch to sidearm on empty): the shot that just
+        // left the barrel was this weapon's LAST round -- fall back to the
+        // infinite-ammo pistol immediately instead of letting the player
+        // dead-click into the empty-mag path next trigger pull. Runs at the
+        // very END of fire() so the final round's recoil/casing/FX all came
+        // from the weapon that actually fired it. Same pending-fire hygiene
+        // as switchWeapon() (a deferred open-bolt round from the dry weapon
+        // must not resurrect on the pistol). No double-fire risk: the pistol
+        // is semi-auto and semiAutoTriggerReleased is NOT re-armed here, so
+        // a held trigger stays dead until a fresh pull -- deliberate, so an
+        // auto-weapon mag-dump doesn't bleed straight into pistol fire.
+        if (weaponKey !== 'pistol' && this.ammo[weaponKey] <= 0) {
+            let pistolIdx = this.inventory.findIndex(w => w.name === 'Pistol');
+            if (pistolIdx !== -1 && pistolIdx !== this.weaponIdx) {
+                this.weaponIdx = pistolIdx;
+                this.pendingFireTimer = 0;
+                this.pendingFireWeaponKey = null;
+                this.boltCycled = false;
+                this.semiAutoTriggerReleased = false;
+                if (audio && audio.playWeaponSwitch) audio.playWeaponSwitch(this.x, this.y);
+                if (game && game.spawnFloatingText) {
+                    let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'DRY \u2014 SIDEARM!', '#ffb700', 1.2);
+                    if (ft) game.floatingTexts.push(ft);
+                }
+            }
         }
     }
 
@@ -10974,7 +11169,10 @@ class Player extends Entity {
         // GUN_MOUNT_OFFSET). The torso/head is drawn AFTER this restore()
         // at (0,0), so it stays centered on the player -- only the arms,
         // hands, barrel and receiver below move forward.
-        ctx.translate(GUN_MOUNT_OFFSET, 0);
+        // JULY item 6: the whole arm/gun group compresses toward the chest
+        // by gunRetractPx while the muzzle would otherwise clip a wall --
+        // the same value fire() uses for its spawn points.
+        ctx.translate(GUN_MOUNT_OFFSET - (this.gunRetractPx || 0), 0);
 
         // Per-weapon silhouette + grip (see PLAYER_GUN_GEOM). Gun centered on
         // y=6, x forward along the aim axis.
@@ -11290,6 +11488,12 @@ class Enemy extends Entity {
         }
         this.willShootDrone = Math.random() < baseProb;
         
+        // JULY item 8 (Final Kill events): pooled reuse MUST clear these or
+        // a recycled runner/bounty would resurrect with last wave's role.
+        this.finalKillRole = null;
+        this._fleePoint = null;
+        this._bountyIntel = false;
+
         // Cached variables for AI Throttling
         this.aiTimer = 0;
         this.cachedTarget = null;
@@ -11766,6 +11970,18 @@ class Enemy extends Entity {
                 }
             }
 
+            // JULY item 8 (FINAL KILL - RUNNER): the tagged last enemy stops
+            // fighting and sprints for its extraction point at the map edge
+            // to "radio in" -- the exact movement-only override pattern the
+            // patrol beat above uses (combat ranging stays honest, only the
+            // steering target changes). fireHoldTimer is continuously
+            // re-armed so a fleeing runner never turns to shoot.
+            if (this.finalKillRole === 'runner' && this._fleePoint) {
+                moveTargetX = this._fleePoint.x;
+                moveTargetY = this._fleePoint.y;
+                this.fireHoldTimer = Math.max(this.fireHoldTimer || 0, 1.0);
+            }
+
             // Pathfinding move angle -- uses moveTargetX/Y (which is either
             // the real combat target or, in operator mode while sneaking,
             // the cover-route waypoint -- see moveTargetX/Y assignment
@@ -11901,7 +12117,30 @@ class Enemy extends Entity {
             distToP2 = Math.sqrt(dx*dx + dy*dy);
         }
         let distToClosestPlayer = Math.min(distToP1, distToP2);
-        
+
+        // JULY item 13 (LoS pop-in fix): cachedVisibleToPlayers refreshes on
+        // the 30-frame AI stagger -- fine at range, but an enemy rounding a
+        // corner at close quarters could stay INVISIBLE for up to half a
+        // second and then pop in on top of the player. Fast path: while an
+        // enemy is flagged hidden AND within 340px of a living player, run
+        // one cheap wall raycast per frame against the closest player (the
+        // distances above are already computed for hearing -- this adds
+        // only the raycast). Cost is bounded by "hidden enemies currently
+        // near a player" -- a handful at worst, zero in the common case --
+        // and the full stagger stays untouched for everything at range.
+        // On the flip at knife range, opacity snaps to a visible floor so
+        // the reveal is instant instead of a 0.17s fade from black.
+        if (!this.cachedVisibleToPlayers && distToClosestPlayer < 340 && game) {
+            const cp = (distToP1 <= distToP2) ? game.player : game.player2;
+            if (cp && !cp.dead) {
+                const nw = game.map.getWallsNear(this.x, this.y);
+                if (!nw.some(w => MathUtils.lineIntersectAABB(this.x, this.y, cp.x, cp.y, w))) {
+                    this.cachedVisibleToPlayers = true;
+                    if (distToClosestPlayer < 220) this.opacity = Math.max(this.opacity, 0.45);
+                }
+            }
+        }
+
         let p1Vel = 0;
         if (game && game.player) {
             let vx = game.player.vx;
@@ -17959,18 +18198,19 @@ class Item {
         ctx.translate(scx, scy);
         ctx.rotate(this.t * 2.2);
         
+        // JULY item 4: consumable + gun drops render the SAME icons the HUD
+        // carousels use (cached Path2D -- see strokeWorldIcon), in matching
+        // colors, so ground loot is instantly identifiable. Money, perk
+        // cases, and intel keep their bespoke, already-iconic visuals.
         if (this.type === 'money') {
             ctx.fillStyle = '#39ff14'; ctx.fillRect(-3, -6, 6, 12);
             ctx.shadowBlur = 8; ctx.shadowColor = '#39ff14';
         } else if (this.type === 'grenade') {
-            ctx.fillStyle = '#ff3d00'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI*2); ctx.fill();
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+            strokeWorldIcon(ctx, 'grenade', ITEM_ICON_COLORS.grenade, 0.85);
         } else if (this.type === 'medpack') {
-            ctx.fillStyle = '#39ff14'; ctx.fillRect(-5, -5, 10, 10);
-            ctx.fillStyle = '#fff'; ctx.fillRect(-1, -4, 2, 8); ctx.fillRect(-4, -1, 8, 2);
+            strokeWorldIcon(ctx, 'medpack', ITEM_ICON_COLORS.medpack, 0.85);
         } else if (this.type === 'redbull') {
-            ctx.fillStyle = '#0055ff'; ctx.fillRect(-3, -6, 6, 12);
-            ctx.fillStyle = '#ff0000'; ctx.fillRect(-1, -6, 2, 12);
+            strokeWorldIcon(ctx, 'boost', ITEM_ICON_COLORS.boost, 0.85);
         } else if (this.type === 'perk_case') {
             // Secure briefcase visual — cyan box with lock icon
             ctx.fillStyle = '#00e5ff';
@@ -18009,9 +18249,14 @@ class Item {
             ctx.fill();
         } else {
             let col = Weapons[this.type].color;
-            ctx.fillStyle = col; ctx.fillRect(-8, -4, 16, 8);
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(-8,-4,16,8);
-            ctx.shadowBlur = 8; ctx.shadowColor = col;
+            // The bottom weapon carousel's silhouette, in that weapon's own
+            // signature color -- the exact icon the pickup will occupy.
+            if (!strokeWorldIcon(ctx, this.type, col, 1.1)) {
+                // Unknown key safety net: the old colored crate.
+                ctx.fillStyle = col; ctx.fillRect(-8, -4, 16, 8);
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(-8,-4,16,8);
+                ctx.shadowBlur = 8; ctx.shadowColor = col;
+            }
         }
         ctx.restore();
         ctx.shadowBlur = 0;
@@ -18504,6 +18749,12 @@ const ARMORY_UPGRADES = [
     { key: 'magneticGear', name: 'MAGNETIC GEAR', maxLevel: 5,
       costPerLevel: [50, 100, 200, 350, 500],
       desc: 'Increases item pickup radius. +15px/level.' },
+    // JULY item 8: the Magnetic Gear capstone -- the moment a wave clears,
+    // every dollar still on the ground sweeps itself into your account.
+    // Kills the "stall on the last enemy to vacuum the map" anti-pattern.
+    { key: 'greedyHands', name: 'GREEDY HANDS', maxLevel: 1,
+      costPerLevel: [800],
+      desc: 'Magnetic Gear capstone: the instant a wave is cleared, ALL cash left on the ground is auto-collected. Never leave a dollar behind — never stall on the last hostile again.' },
     { key: 'offshoreAccount', name: 'OFFSHORE ACCOUNT', maxLevel: 5,
       costPerLevel: [75, 150, 250, 400, 600],
       desc: 'Retain 20% more cash per level when downed.' },
@@ -18762,6 +19013,38 @@ const KIT_SHOP_REBATE = {
 // draws world visuals + screen-edge markers. Objectives activate
 // SEQUENTIALLY (first incomplete entry is the active stage).
 const ObjectiveTypes = {
+    // JULY item 11: mid-match evac variant for OPERATOR mode -- the player
+    // is bunkered, so "reach the zone" is meaningless; instead the bunker
+    // IS the zone and the dustoff is a straight hold-out countdown under
+    // whatever the wave keeps throwing. Completion rides the same run-end
+    // arbiter as every other evac.
+    EVAC_HOLDOUT: (params) => ({
+        type: 'EVAC_HOLDOUT',
+        duration: params.duration || 45,
+        t: 0,
+        complete: false,
+        active: false,
+        init(game) {},
+        onTick(dt, game) {
+            if (!this.active || this.complete) return;
+            this.t += dt;
+            if (this.t >= this.duration) {
+                this.complete = true;
+                game.requestRunEnd(RUN_OUTCOMES.EXTRACTION, 'evac_holdout');
+            }
+        },
+        isComplete() { return this.complete; },
+        hudLine() {
+            const cls = this.complete ? 'obj-done' : (this.active ? 'obj-active' : 'obj-locked');
+            const status = this.complete ? 'COMPLETE'
+                : !this.active ? 'OFFLINE'
+                : ('DUSTOFF IN ' + Math.ceil(this.duration - this.t) + 's \u2014 HOLD THE BUNKER');
+            return '<div class="obj-line ' + cls + '">\u25c6 EVAC: ' + status + '</div>';
+        },
+        markers() { return []; },
+        draw(ctx, cam, game) {}
+    }),
+
     // Hack N uplink terminals (stand in radius to channel; taking damage
     // sets the channel back). Each crack loads CARRIED intel onto the
     // hacker and pops a small supply drop. Complete at `required` cracks.
@@ -19309,6 +19592,7 @@ class Game {
         this._sepBuckets = new Map();
         this._sepTouched = [];
         this.permanentMarks = [];
+        this.casingMarks = [];   // JULY item 2: dedicated capped casing FIFO
         // Cap on blood/casing/debris/scorch marks kept on the ground at
         // once (see _pushPermanentMark). Was a hardcoded 3000, which at
         // higher wave counts was trimming visible gore before it should
@@ -19457,7 +19741,7 @@ class Game {
             'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
             'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap', 'ammo_shotgun_slug',
             'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC',
-            'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel', 'ready'
+            'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel', 'call_evac', 'ready'
         ];
         this.shopSelectedIndex = 0;
         this.dpadCooldown = 0;
@@ -19972,6 +20256,44 @@ class Game {
 
     // Evac channel complete: bank ALL carried intel through the ledger
     // (single write path preserved), then end through the unified debrief.
+    // ==== JULY item 11: MID-MATCH EVAC (wave modes) ======================
+    // The shop's CALL EVAC button arms this; the NEXT wave spawns a real
+    // extraction objective through the existing ObjectiveTypes pipeline --
+    // HUD line, screen-edge arrows, evac ring, channel bar, and the run-end
+    // arbiter all work unmodified because that pipeline was already
+    // mode-agnostic. Ground modes get a REACH_ZONE; operator mode (you're
+    // bunkered -- there is nowhere to run TO) gets a hold-the-bunker
+    // countdown instead. Cash converts at $100 = 1 intel on completion,
+    // scaled by the run's intelMult -- see completeExtraction().
+    requestEvac(playerNum) {
+        if (this.evacCalled) return;
+        if (this.extractionMode || this.isTestingMode) return; // extraction has its own evac; sandbox earns nothing
+        this.evacCalled = true;
+        audio.playTadah();
+        this.floatingTexts.push(this.spawnFloatingText(
+            this.mapW / 2, this.mapH / 2 - 60,
+            'EVAC CALLED \u2014 DUSTOFF ARRIVES NEXT WAVE', '#ffb700', 3.0, 0, 0, 120, false));
+        this._refreshEvacButtons();
+    }
+
+    _refreshEvacButtons() {
+        for (const sfx of ['p1', 'p2']) {
+            const btn = document.getElementById('btn-call-evac-' + sfx);
+            if (!btn) continue;
+            // Hidden where the mechanic can't pay out: extraction never
+            // opens this shop, sandbox intel is denied by design.
+            const unsupported = this.extractionMode || this.isTestingMode;
+            btn.style.display = unsupported ? 'none' : '';
+            if (this.evacCalled) {
+                btn.disabled = true;
+                btn.innerHTML = '&#9742; EVAC INBOUND \u2014 REACH THE ZONE NEXT WAVE';
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = '&#9742; CALL EVAC \u2014 EXTRACT NEXT WAVE ($100 &rarr; 1 INTEL)';
+            }
+        }
+    }
+
     completeExtraction() {
         let total = 0;
         for (const p of [this.player, this.player2]) {
@@ -19985,6 +20307,22 @@ class Game {
         if (this.runLedger) {
             this.runLedger.carriedIntelBanked = banked;
             if (banked < total) this.runLedger.carriedIntelLost += (total - banked); // tainted run: honest accounting
+            this.intelEarnedThisRun = this.runLedger.intelEarned;
+        }
+        // JULY item 11 (CALL EVAC): a mid-match evac from a WAVE mode cashes
+        // out the war chest -- every remaining dollar converts at $100 = 1
+        // intel, THROUGH the ledger (so difficulty/night intelMult scales it
+        // exactly like every other intel source, and sandbox/dev-tainted
+        // runs get it denied honestly). Extraction mode never takes this
+        // branch: its economy is carried intel, not cash conversion.
+        if (this.evacCalled && !this.extractionMode && this.runLedger) {
+            let totalCash = 0;
+            for (const p of [this.player, this.player2]) {
+                if (p) { totalCash += Math.max(0, Math.floor(p.cash || 0)); p.cash = 0; }
+            }
+            const rawIntel = Math.floor(totalCash / 100);
+            const converted = rawIntel > 0 ? this.runLedger.addIntel(rawIntel, 'evac_cash') : 0;
+            this.runLedger.cashConverted = { cash: totalCash, intel: converted };
             this.intelEarnedThisRun = this.runLedger.intelEarned;
         }
         this.endRun(RUN_OUTCOMES.EXTRACTION);
@@ -20794,6 +21132,32 @@ class Game {
         });
     }
     
+    // JULY item 9: one-click standard deploy. Reuses the exact bake-then-
+    // start flow btn-start runs; the only "configuration" is forcing the
+    // frictionless defaults (1P Normal Wave Ops, random map) -- saved
+    // difficulty / night / cash prefs are left exactly as the player set
+    // them, so PLAY NOW respects their standing preferences.
+    async quickPlay() {
+        const btn = document.getElementById('btn-quick-play');
+        if (btn && btn.disabled) return;
+        this.setGameMode('normal');
+        this.setMode(1);
+        this.setMap(-1);
+        let originalText = '';
+        if (btn) {
+            originalText = btn.innerText;
+            btn.innerText = 'BAKING PERIMETER AUDIO...';
+            btn.disabled = true;
+        }
+        audio.resume();
+        await audio.bakeSounds();
+        if (btn) {
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+        this.startNewGame();
+    }
+
     initDOM() {
         document.getElementById('btn-start').onclick = async () => {
             const btn = document.getElementById('btn-start');
@@ -21435,31 +21799,42 @@ class Game {
                 if (this.dpadCooldown <= 0) {
                     let nextIdx = curIdx;
                     let totalItems = this.shopItemIDs.length;
+                    // JULY item 11: the list now ends in TWO full-width rows
+                    // (CALL EVAC, then READY) below the 2-column grid --
+                    // the vertical wrap threads grid -> evac -> ready -> grid,
+                    // and horizontal moves stay grid-only.
+                    const gridCount = totalItems - 2;      // first N-2 = 2-col grid
+                    const evacIdx = totalItems - 2;
+                    const readyIdx = totalItems - 1;
                     if (dUp) {
-                        if (curIdx === totalItems - 1) {
-                            nextIdx = totalItems - 2;
+                        if (curIdx === readyIdx) {
+                            nextIdx = evacIdx;
+                        } else if (curIdx === evacIdx) {
+                            nextIdx = gridCount - 1;
                         } else if (curIdx <= 1) {
-                            nextIdx = totalItems - 1;
+                            nextIdx = readyIdx;
                         } else {
                             nextIdx = curIdx - 2;
                         }
                         this.dpadCooldown = 0.18;
                     } else if (dDown) {
-                        if (curIdx === totalItems - 1) {
+                        if (curIdx === readyIdx) {
                             nextIdx = 0;
-                        } else if (curIdx >= totalItems - 2) {
-                            nextIdx = totalItems - 1;
+                        } else if (curIdx === evacIdx) {
+                            nextIdx = readyIdx;
+                        } else if (curIdx >= gridCount - 2) {
+                            nextIdx = evacIdx;
                         } else {
                             nextIdx = curIdx + 2;
                         }
                         this.dpadCooldown = 0.18;
                     } else if (dLeft) {
-                        if (curIdx !== totalItems - 1 && curIdx % 2 === 1) {
+                        if (curIdx < gridCount && curIdx % 2 === 1) {
                             nextIdx = curIdx - 1;
                             this.dpadCooldown = 0.18;
                         }
                     } else if (dRight) {
-                        if (curIdx !== totalItems - 1 && curIdx !== totalItems - 2 && curIdx % 2 === 0) {
+                        if (curIdx % 2 === 0 && curIdx + 1 < gridCount) {
                             nextIdx = curIdx + 1;
                             this.dpadCooldown = 0.18;
                         }
@@ -21477,6 +21852,8 @@ class Game {
                     let chosenID = this.shopItemIDs[curIdx];
                     if (chosenID === 'ready') {
                         this.setReady(isP2 ? 2 : 1);
+                    } else if (chosenID === 'call_evac') {
+                        this.requestEvac(isP2 ? 2 : 1); // JULY item 11
                     } else {
                         this.buyItem(chosenID, buyer);
                     }
@@ -21624,6 +22001,7 @@ class Game {
             oc_fireRate: 'btn-buy-oc-firerate',
             oc_maxHpOC: 'btn-buy-oc-maxhp',
             oc_overpressure: 'btn-buy-oc-overpressure', oc_glassNerves: 'btn-buy-oc-glassnerves', oc_coldBarrel: 'btn-buy-oc-coldbarrel',
+            call_evac: 'btn-call-evac', // JULY item 11
             ready: 'btn-ready'
         };
 
@@ -22020,7 +22398,10 @@ class Game {
                 ['sld-sfx-vol']
             ],
             performance: [
-                ['sld-max-marks'],
+                ['sld-max-marks']
+            ],
+            // JULY item 3: save export/import moved to its own Data sub-tab.
+            data: [
                 ['btn-save-export-file', 'btn-save-import-file'],
                 ['btn-save-export-copy', 'btn-save-import-paste']
             ]
@@ -22051,11 +22432,16 @@ class Game {
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off']
             ],
             settings: [
-                ['btn-settings-subtab-controls', 'btn-settings-subtab-audio', 'btn-settings-subtab-performance'],
+                ['btn-settings-subtab-controls', 'btn-settings-subtab-audio', 'btn-settings-subtab-performance', 'btn-settings-subtab-data'],
                 ...(settingsSubtabRows[this.activeSettingsSubtab || 'controls'])
             ],
             leaderboard: [],
             armory: [
+                // JULY item 10: briefing buttons occupy the top row until
+                // dismissed -- conditional so a dismissed briefing leaves
+                // zero dead rows in the nav grid.
+                ...(!(this.saveData && this.saveData.hasSeenArmoryTutorial)
+                    ? [['btn-armory-tut-ok', 'btn-armory-tut-guide']] : []),
                 ...ARMORY_UPGRADES.map(u => ['armory-btn-' + u.key]),
                 ['btn-armory-reset'],
                 ['btn-prestige']
@@ -23444,6 +23830,13 @@ class Game {
             activeWager: null   // { wavesRemaining, failed }
         };
         this.intelEarnedThisRun = 0;
+        // JULY item 8: final-kill event state is run-scoped -- a runner that
+        // escaped in a PREVIOUS run must not reinforce this run's wave 1.
+        this._finalKill = null;
+        this._nextWaveReinforced = false;
+        // JULY item 11: mid-match evac is run-scoped too.
+        this.evacCalled = false;
+        this._evacObjectiveSpawned = false;
         this.isDevShopActive = false;
         this.winFlashIntensity = 0;
         this.roundWinDelay = 0;
@@ -23456,6 +23849,7 @@ class Game {
         this.mapW = this.map.width;
         this.mapH = this.map.height;
         this.permanentMarks = [];
+        this.casingMarks = [];   // JULY item 2: dedicated capped casing FIFO
         
         this.friendlyFire = true;
         this.p1Ready = false;
@@ -23597,6 +23991,7 @@ class Game {
         this.heartbeatIntensity = 0;
         this.barriers = [];
         this.permanentMarks = [];
+        this.casingMarks = [];   // JULY item 2: dedicated capped casing FIFO
         this.explosiveBarrels = [];
         this.pendingBarrelChains = []; // queued chain-reaction fuses (see ExplosiveBarrel.explode)
         this.pendingActions = []; // generalized game-time deferred actions (see queueGameTimeAction)
@@ -23813,6 +24208,39 @@ class Game {
         
         this.enemiesToSpawn = 5 + this.wave * 4;
         this.rollBossWave(); // may reduce enemiesToSpawn to an escort-sized fraction and set this.isBossWave/pendingBoss
+
+        // JULY item 8: fresh final-kill slate each wave; a RUNNER that made
+        // it out last wave radioed for help -- this wave arrives reinforced
+        // (+30%) and with half the prep window.
+        this._finalKill = null;
+        if (this._nextWaveReinforced) {
+            this._nextWaveReinforced = false;
+            this.enemiesToSpawn = Math.ceil(this.enemiesToSpawn * 1.3);
+            this.prepTimer = Math.max(2.0, this.prepTimer * 0.5);
+            this.floatingTexts.push(this.spawnFloatingText(
+                this.mapW / 2, this.mapH / 2 - 90,
+                'THE RUNNER TALKED \u2014 REINFORCED ASSAULT INCOMING', '#ff2a5f', 3.0, 0, 0, 120, false));
+        }
+
+        // JULY item 11: the wave after CALL EVAC delivers the dustoff --
+        // pushed through the standard objectives pipeline, so activation
+        // (_refreshObjectiveStages), the HUD line, edge arrows, ring draw,
+        // and the run-end arbiter all engage with zero special-casing.
+        // The objective persists across shop interludes if this wave gets
+        // cleared before anyone reaches the zone.
+        if (this.evacCalled && !this._evacObjectiveSpawned) {
+            this._evacObjectiveSpawned = true;
+            const factory = this.operatorMode ? ObjectiveTypes.EVAC_HOLDOUT : ObjectiveTypes.REACH_ZONE;
+            const o = factory(this.operatorMode ? { duration: 45 } : { radius: 130, channel: 6.0 });
+            o.init(this);
+            this.objectives.push(o);
+            this._refreshObjectiveStages();
+            toggleClass('hud-objectives', 'hidden', false);
+            this.floatingTexts.push(this.spawnFloatingText(
+                this.mapW / 2, this.mapH / 2 - 60,
+                this.operatorMode ? 'DUSTOFF EN ROUTE \u2014 HOLD THE BUNKER!' : 'DUSTOFF INBOUND \u2014 REACH THE EVAC ZONE!',
+                '#39ff14', 3.2, 0, 0, 120, false));
+        }
 
         // FPV OPERATOR MODE: own escalation curve entirely -- overwrite
         // whatever the stock formula above produced. No boss waves (already
@@ -26089,6 +26517,10 @@ class Game {
             if (e.chaosDraftModifier === 'enraged' && e.hp < e.maxHp * 0.5) {
                 enemyDt *= 1.5;
             }
+            // JULY item 8: a fleeing RUNNER surges -- same uniform dt-scaling
+            // lever the Enraged trait already uses (tongs zone, but this IS
+            // its sanctioned use: whole-entity speedup with no desync).
+            if (e.finalKillRole === 'runner') enemyDt *= 1.35;
             e.update(enemyDt, this.player, this.map.walls, this.gameTime, this.enemies);
         }
 
@@ -26384,6 +26816,14 @@ class Game {
 
                 this.items.push(this.spawnItem(e.x, e.y, 'money'));
 
+                // JULY item 8 (BOUNTY): the escalated final enemy pays out
+                // its guaranteed intel chip -- banked through the ledger on
+                // pickup like every other chip (mode-agnostic).
+                if (e._bountyIntel) {
+                    e._bountyIntel = false;
+                    this.items.push(this.spawnItem(e.x + MathUtils.rand(-10, 10), e.y + MathUtils.rand(-10, 10), 'intel'));
+                }
+
                 // PHASE 1 (extraction): elites drop an intel chip -- banked
                 // immediately on pickup through the ledger (Phase 0 chip
                 // semantics), a steady trickle on top of the carried
@@ -26428,6 +26868,12 @@ class Game {
         // events; flush here too so headless harness runs (no draw loop)
         // still see fresh _visibleEdges.
         if (this.map && this.map.flushLineageEdges) this.map.flushLineageEdges();
+
+        // JULY item 8: Final-Kill events (runner escape / martyr mortars /
+        // bounty escalation). Runs right after the enemy cleanup so
+        // enemies.length is current for both the 1v1 transition detection
+        // and the runner's own removal.
+        this._updateFinalKillEvent(dt);
 
         let bothDead = this.player.dead && (!this.isTwoPlayer || !this.player2 || this.player2.dead);
         if (bothDead) {
@@ -26498,9 +26944,191 @@ class Game {
         }
     }
     
+    // ==== JULY item 8: FINAL-KILL EVENTS =================================
+    // When a wave collapses to its last enemy, sometimes (45%) that enemy
+    // becomes a live tactical problem instead of a mop-up chore -- the
+    // answer to "players stall on the last hostile to farm the map".
+    // Three roles, weighted by the player's ACTUAL situation at the moment
+    // the 1v1 begins (plus the distance to the enemy, per the design
+    // brief):
+    //   RUNNER -- flees to the map edge to radio for help; if it escapes,
+    //             the next wave arrives reinforced (+30%) and fast (half
+    //             prep). Biased when players are cash-poor (nothing worth
+    //             stalling for; the leak IS the threat now) and when the
+    //             enemy is already far away.
+    //   MARTYR -- calls a mortar barrage on the players' heads until it
+    //             dies. Biased when players are tanky (high HP+armor) --
+    //             indirect fire is the pressure armor can't facetank.
+    //   BOUNTY -- escalates to a full Elite with a guaranteed intel chip.
+    //             Biased at close range: a stand-up fight you're already in.
+    // Standard wave modes only (no boss waves, no extraction/operator --
+    // extraction has no waves, operator enemies can't meaningfully flee a
+    // bunker siege). State lives in this._finalKill, cleared each wave in
+    // startNextWave(); enemy-side flags are pool-reset in Enemy.init().
+    _updateFinalKillEvent(dt) {
+        if (this.extractionMode || this.operatorMode || this.isBossWave) { this._finalKill = null; return; }
+        const oneLeft = (this.enemies.length === 1 && this.enemiesToSpawn === 0 && !this.enemies[0].dead && !(this.enemies[0] instanceof Boss));
+        if (!oneLeft) {
+            if (this._finalKill && this.enemies.length === 0) this._finalKill = null; // wave over
+            return;
+        }
+        const e = this.enemies[0];
+
+        // --- 1v1 transition: decide (once per wave) ---
+        if (!this._finalKill) {
+            this._finalKill = { rolled: true, role: null, enemy: null, mortarDelay: 0, mortarTimer: 0 };
+            if (this.wave >= 3 && Math.random() < 0.45) {
+                const alive = [this.player, this.isTwoPlayer ? this.player2 : null].filter(p => p && !p.dead);
+                if (!alive.length) return;
+                let nearest = alive[0], nd = Infinity;
+                let cash = 0, vit = 0;
+                for (const p of alive) {
+                    cash += p.cash;
+                    vit += (p.hp / p.maxHp + (p.maxArmor > 0 ? p.armor / p.maxArmor : 0)) / 2;
+                    const d = Math.hypot(p.x - e.x, p.y - e.y);
+                    if (d < nd) { nd = d; nearest = p; }
+                }
+                cash /= alive.length; vit /= alive.length;
+                let wRunner = (cash < 200 ? 3 : 1) + (nd > 900 ? 2 : 0);
+                let wMartyr = (vit > 0.7 ? 3 : 1) + (nd < 500 ? 1 : 0);
+                let wBounty = 2 + (nd < 500 ? 1 : 0);
+                let roll = Math.random() * (wRunner + wMartyr + wBounty);
+                const role = roll < wRunner ? 'runner' : (roll < wRunner + wMartyr ? 'martyr' : 'bounty');
+                this._finalKill.role = role;
+                this._finalKill.enemy = e;
+                e.finalKillRole = role;
+
+                if (role === 'runner') {
+                    // Nearest map edge, biased away from the players.
+                    const edges = [
+                        { x: 50, y: e.y }, { x: this.mapW - 50, y: e.y },
+                        { x: e.x, y: 50 }, { x: e.x, y: this.mapH - 50 }
+                    ];
+                    let best = edges[0], bd = Infinity;
+                    for (const pt of edges) {
+                        const dEdge = Math.hypot(pt.x - e.x, pt.y - e.y);
+                        const dPlayer = Math.hypot(pt.x - nearest.x, pt.y - nearest.y);
+                        const score = dEdge - dPlayer * 0.5; // close edge, far from players
+                        if (score < bd) { bd = score; best = pt; }
+                    }
+                    e._fleePoint = best;
+                    e.cachedMoveAngle = undefined; // force immediate AI recompute
+                    this.floatingTexts.push(this.spawnFloatingText(
+                        this.mapW / 2, this.mapH / 2 - 90,
+                        'LAST HOSTILE FLEEING \u2014 STOP THE RUNNER!', '#ff2a5f', 3.0, 0, 0, 120, false));
+                } else if (role === 'martyr') {
+                    // Distance-scaled fuse: a far martyr gives you time to
+                    // close; a close one is already a knife fight.
+                    this._finalKill.mortarDelay = MathUtils.clamp(3.5 + nd / 300, 3.5, 8.0);
+                    this.floatingTexts.push(this.spawnFloatingText(
+                        this.mapW / 2, this.mapH / 2 - 90,
+                        'MARTYR PROTOCOL \u2014 MORTAR STRIKE INBOUND!', '#ff7a00', 3.0, 0, 0, 120, false));
+                } else { // bounty
+                    e.isElite = true;
+                    e.maxHp = Math.round(e.maxHp * 2.2);
+                    e.hp = e.maxHp;
+                    e._bountyIntel = true;
+                    this.floatingTexts.push(this.spawnFloatingText(
+                        this.mapW / 2, this.mapH / 2 - 90,
+                        'BOUNTY TARGET \u2014 ELITE ESCALATION, INTEL GUARANTEED', '#ffcc00', 3.0, 0, 0, 120, false));
+                }
+                audio.playPickup('weapon');
+            }
+            return;
+        }
+
+        // --- ongoing role behavior ---
+        const fk = this._finalKill;
+        if (!fk.role || fk.enemy !== e) return;
+
+        if (fk.role === 'runner' && e._fleePoint) {
+            if (Math.hypot(e.x - e._fleePoint.x, e.y - e._fleePoint.y) < 90 ||
+                e.x < 40 || e.x > this.mapW - 40 || e.y < 40 || e.y > this.mapH - 40) {
+                // Escaped: no kill credit, no drops -- straight out of the
+                // sim (deliberately NOT the death path). Next wave pays for
+                // the leak.
+                e.target = null; e.waypoint = null; e.cachedTarget = null; e.opAI = null;
+                e.finalKillRole = null; e._fleePoint = null;
+                const idx = this.enemies.indexOf(e);
+                if (idx !== -1) {
+                    this.inactiveEnemies.push(e);
+                    this.enemies[idx] = this.enemies[this.enemies.length - 1];
+                    this.enemies.pop();
+                }
+                this._nextWaveReinforced = true;
+                this._finalKill = null;
+                this.floatingTexts.push(this.spawnFloatingText(
+                    this.mapW / 2, this.mapH / 2 - 90,
+                    'RUNNER ESCAPED \u2014 REINFORCEMENTS INBOUND NEXT WAVE', '#ff2a5f', 3.2, 0, 0, 120, false));
+                audio.playExplosion(0.25, this.mapW / 2, this.mapH / 2);
+            }
+        } else if (fk.role === 'martyr') {
+            if (fk.mortarDelay > 0) {
+                fk.mortarDelay -= dt;
+                if (fk.mortarDelay <= 0) {
+                    this.floatingTexts.push(this.spawnFloatingText(
+                        this.mapW / 2, this.mapH / 2 - 90,
+                        'MORTARS FIRING \u2014 KILL THE SPOTTER!', '#ff7a00', 2.2, 0, 0, 120, false));
+                }
+            } else {
+                fk.mortarTimer -= dt;
+                if (fk.mortarTimer <= 0) {
+                    fk.mortarTimer = 2.6;
+                    // Lead the target's current velocity a touch so standing
+                    // still is safe-ish and sprinting into the ring is not.
+                    const alive = [this.player, this.isTwoPlayer ? this.player2 : null].filter(p => p && !p.dead);
+                    if (alive.length) {
+                        const t = alive[Math.floor(Math.random() * alive.length)];
+                        const mx = t.x + (t.vx || 0) * 0.5 + (Math.random() - 0.5) * 90;
+                        const my = t.y + (t.vy || 0) * 0.5 + (Math.random() - 0.5) * 90;
+                        this.grenades.push(new MortarMarker(
+                            MathUtils.clamp(mx, 40, this.mapW - 40),
+                            MathUtils.clamp(my, 40, this.mapH - 40), 1.6, 80));
+                    }
+                }
+            }
+        }
+        // bounty: fully handled by the elite flags at trigger time + the
+        // guaranteed-chip drop in the enemy cleanup loop.
+    }
+
     triggerRoundWinEffects() {
         this.applyDeadPlayerHardcorePenalties();
-        
+
+        // JULY item 8 (GREEDY HANDS): with the armory capstone owned, every
+        // money drop still on the floor is swept into the closest player's
+        // account the instant the wave clears. Values roll the same
+        // 10-26 x cashMultiplier band collectItem uses, so the sweep is
+        // worth exactly what walking the map would have been.
+        if (this.saveData && this.saveData.metaUpgrades && this.saveData.metaUpgrades.greedyHands > 0 && this.items && this.items.length) {
+            const takers = [this.player, this.isTwoPlayer ? this.player2 : null].filter(p => p && !p.dead);
+            if (takers.length) {
+                const hauls = new Map();
+                for (let i = this.items.length - 1; i >= 0; i--) {
+                    const it = this.items[i];
+                    if (it.type !== 'money') continue;
+                    let best = takers[0], bd = Infinity;
+                    for (const p of takers) {
+                        const d = (p.x - it.x) * (p.x - it.x) + (p.y - it.y) * (p.y - it.y);
+                        if (d < bd) { bd = d; best = p; }
+                    }
+                    const amount = Math.round(Math.floor(MathUtils.rand(10, 26)) * this.cashMultiplier);
+                    best.cash += amount;
+                    hauls.set(best, (hauls.get(best) || 0) + amount);
+                    this.items[i] = this.items[this.items.length - 1];
+                    this.items.pop();
+                    if (!this.inactiveItems) this.inactiveItems = [];
+                    this.inactiveItems.push(it);
+                }
+                for (const [p, total] of hauls) {
+                    this.floatingTexts.push(this.spawnFloatingText(
+                        p.x, p.y - p.r - 26, 'GREEDY HANDS +$' + total, '#ffea00', 2.2,
+                        (Math.random() - 0.5) * 60, -90, 220, true));
+                }
+                if (hauls.size) audio.playPickup('money');
+            }
+        }
+
         audio.playTadah();
         
         this.winFlashIntensity = 1.0;
@@ -26707,6 +27335,10 @@ class Game {
         }
         if (this.player) this.player.flashOpacity = 0;
         if (this.player2) this.player2.flashOpacity = 0;
+
+        // JULY item 11: evac button reflects current run state (called /
+        // available / unsupported) every time the shop opens.
+        this._refreshEvacButtons();
 
         if (this.chaosDraftMode) {
             // Apply automatic wave completion replenishment
@@ -27675,6 +28307,15 @@ class Game {
             // overrides (> 1) are preserved untouched. Additive only.
             { to: 10, up: (sd) => {
                 if (typeof sd.debugStartWave !== 'number' || sd.debugStartWave <= 1) sd.debugStartWave = 0;
+            }},
+            // v11 (JULY batch): GREEDY HANDS armory upgrade (item 8), the
+            // one-time Armory orientation flag (item 10), and the touch
+            // pull-to-fire hint retirement flag (item 5). Additive only.
+            { to: 11, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.greedyHands !== 'number') sd.metaUpgrades.greedyHands = 0;
+                if (typeof sd.hasSeenArmoryTutorial !== 'boolean') sd.hasSeenArmoryTutorial = false;
+                if (typeof sd.touchFireHintDone !== 'boolean') sd.touchFireHintDone = false;
             }}
         ];
         const runMigrations = (sd) => {
@@ -27710,6 +28351,10 @@ class Game {
                          'unlockTurretMk2', 'unlockBarrierMk2', 'unlockOverclocks', 'unlockCorrupted']) {
             if (MA[k] === undefined) MA[k] = 0;
         }
+        // JULY batch: v11 key defaults (mirrors the v11 migration).
+        if (MA.greedyHands === undefined) MA.greedyHands = 0;
+        if (typeof this.saveData.hasSeenArmoryTutorial !== 'boolean') this.saveData.hasSeenArmoryTutorial = false;
+        if (typeof this.saveData.touchFireHintDone !== 'boolean') this.saveData.touchFireHintDone = false;
         // PHASE D: prestige counter default (mirrors the v8 migration).
         if (typeof this.saveData.prestigeLevel !== 'number' || this.saveData.prestigeLevel < 0) {
             this.saveData.prestigeLevel = 0;
@@ -27765,6 +28410,13 @@ class Game {
         this.refreshGamepadAssignmentUI();
         this.renderKitSelector(); // PHASE 4: kit chips reflect the loaded save
         this.applyPrestigeCosmetics(); // PHASE D: theme + rank badge from prestigeLevel
+        // JULY item 10: pulse the Armory tab until the one-time orientation
+        // briefing has been dismissed -- new players get pulled toward the
+        // meta-progression loop instead of never discovering it.
+        {
+            const tabBtn = document.getElementById('tab-btn-armory');
+            if (tabBtn) tabBtn.classList.toggle('armory-attn', !this.saveData.hasSeenArmoryTutorial);
+        }
         
         // Initialize wizard step state
         this.wizardStep = 1;
@@ -28030,7 +28682,23 @@ class Game {
         }
         if (tabName === 'armory') {
             this.renderArmoryTab();
+            // JULY item 10: first visit gets the orientation briefing.
+            toggleClass('armory-tutorial', 'hidden', !!(this.saveData && this.saveData.hasSeenArmoryTutorial));
         }
+    }
+
+    // JULY item 10: retire the one-time Armory briefing (optionally hopping
+    // straight to the Guide tab), persist the flag, kill the tab pulse.
+    dismissArmoryTutorial(openGuide) {
+        if (this.saveData) {
+            this.saveData.hasSeenArmoryTutorial = true;
+            this.saveGameData();
+        }
+        toggleClass('armory-tutorial', 'hidden', true);
+        const tabBtn = document.getElementById('tab-btn-armory');
+        if (tabBtn) tabBtn.classList.remove('armory-attn');
+        if (openGuide) this.switchTab('guide');
+        this.refreshMainMenuHighlight();
     }
 
     // Switches between the Controls / Audio / Performance panels nested
@@ -28768,6 +29436,7 @@ class Game {
             case 1:
                 rows.push(['btn-gm-normal', 'btn-gm-extraction', 'btn-gm-chaos_draft']);
                 rows.push(['btn-gm-now', 'btn-gm-operator', 'btn-gm-sandbox']);
+                rows.push(['btn-quick-play']); // JULY item 9
                 break;
             case 2:
                 rows.push(['btn-mode-1p', 'btn-mode-2p']);
@@ -29518,6 +30187,11 @@ class Game {
         // accuracy once the counters are live.
         if (L.carriedIntelBanked > 0) rows.push(['INTEL EXTRACTED', '+' + L.carriedIntelBanked]);
         if (L.carriedIntelLost > 0)   rows.push(['INTEL LOST IN FIELD', L.carriedIntelLost]);
+        // JULY item 11: mid-match evac cash-out gets its own boom row --
+        // it rides the same staggered reveal + intel count-up payoff.
+        if (L.cashConverted && L.cashConverted.cash > 0) {
+            rows.push(['CASH CONVERTED', '$' + L.cashConverted.cash + ' \u2192 +' + L.cashConverted.intel + ' INTEL']);
+        }
         if (L.entryFeePaid > 0)       rows.push(['ENTRY FEE PAID', '-' + L.entryFeePaid]);
         // PHASE 3: escalation report -- which protocols ran, what they paid.
         if (L.config && L.config.escalations && L.config.escalations.length > 0) {
@@ -29800,6 +30474,21 @@ class Game {
     //     unrelated blood/casing mark happened to trigger a trim. Routing
     //     every mark through here means the cap always applies.
     _pushPermanentMark(mark) {
+        // JULY item 2 (casing clutter cap): shell casings get their OWN
+        // small FIFO instead of sharing the 30,000-mark pool -- sustained
+        // auto fire was carpeting the ground in brass dense enough to bury
+        // ground loot. 400 keeps the "spent brass everywhere" flavor of a
+        // firefight's immediate area while old casings quietly age out.
+        // Blood/scorch/debris keep the big user-tunable pool untouched.
+        if (mark.type === 'casing') {
+            if (!this.casingMarks) this.casingMarks = [];
+            this.casingMarks.push(mark);
+            const CCAP = Math.min(400, this.maxPermanentMarks);
+            if (this.casingMarks.length > CCAP + 50) {
+                this.casingMarks.splice(0, this.casingMarks.length - CCAP);
+            }
+            return;
+        }
         this.permanentMarks.push(mark);
         const CAP = this.maxPermanentMarks;
         const TRIM_CHUNK = 500;
@@ -29809,6 +30498,23 @@ class Game {
     }
 
     drawPermanentMarks(ctx, cam, viewW, viewH) {
+        // JULY item 2: casings live in their own capped array now (see
+        // _pushPermanentMark) -- drawn first in the same ground pass, a
+        // touch dimmer than before (0.5 vs 0.65) so brass reads as texture
+        // under loot rather than competing with it.
+        if (this.casingMarks && this.casingMarks.length) {
+            ctx.globalAlpha = 0.5;
+            for (let m of this.casingMarks) {
+                if (m.x < cam.x - 8 || m.x > cam.x + viewW + 8 || m.y < cam.y - 8 || m.y > cam.y + viewH + 8) continue;
+                ctx.fillStyle = m.c;
+                ctx.save();
+                ctx.translate(m.x - cam.x, m.y - cam.y);
+                ctx.rotate(m.a);
+                ctx.fillRect(-2, -0.75, 4, 1.5);
+                ctx.restore();
+            }
+            ctx.globalAlpha = 1;
+        }
         for (let m of this.permanentMarks) {
             let margin = 30 + (m.r || 0);
             if (m.x < cam.x - margin || m.x > cam.x + viewW + margin || m.y < cam.y - margin || m.y > cam.y + viewH + margin) continue;
@@ -29939,8 +30645,11 @@ class Game {
                 if (p.dead) continue;
                 let aimCoords = this.getWorldAimCoords(p);
                 let lAngle = p.angle;
-                let lStartX = p.x + Math.cos(lAngle)*20 - Math.sin(lAngle)*6;
-                let lStartY = p.y + Math.sin(lAngle)*20 + Math.cos(lAngle)*6;
+                // JULY item 6: emitter rides the retracting gun (min 6px so
+                // the beam origin never sits behind the player's center).
+                let _lRe = Math.min(14, p.gunRetractPx || 0);
+                let lStartX = p.x + Math.cos(lAngle)*(20 - _lRe) - Math.sin(lAngle)*6;
+                let lStartY = p.y + Math.sin(lAngle)*(20 - _lRe) + Math.cos(lAngle)*6;
                 // Aim Weight: the laser is physically mounted to the gun, so it
                 // must track the character's actual (weighted) facing -- NOT
                 // the raw mouse/touch/gamepad-crosshair target the player is
@@ -30605,6 +31314,48 @@ class Game {
         }
         this.ctx.fillStyle = vignette;
         this.ctx.fillRect(x, y, w, h);
+
+        // JULY item 7: stamina / weight coaching text. Per-viewport (co-op
+        // safe), drawn high in the frame (30% down) so it never blocks the
+        // combat sightline. Exhaustion shows whenever the lock is active --
+        // stamina discipline is a core mechanic and the state self-clears
+        // at 20% regen. The overweight warning is deliberately NOT a nag:
+        // edge-triggered when speedPenalty crosses into severe (<= 0.80,
+        // vs the 0.75 floor), shows for 5 seconds, at most 3 times per run
+        // -- a player who chooses to haul everything is then left alone.
+        if (this.state === 'playing' && p && !p.dead) {
+            const nowMs = Date.now();
+            const pulse = 0.45 + 0.35 * Math.sin(nowMs / 180);
+            this.ctx.save();
+            this.ctx.textAlign = 'center';
+            this.ctx.font = 'bold 13px "Courier New", Courier, monospace';
+            if (p.isExhausted) {
+                this.ctx.globalAlpha = pulse;
+                this.ctx.fillStyle = '#ffee00';
+                this.ctx.shadowBlur = 10;
+                this.ctx.shadowColor = '#ffee00';
+                let exLine = 'EXHAUSTED \u2014 STAMINA DEPLETED';
+                if (p.energyDrinks > 0) exLine += '  [E: ENERGY DRINK]';
+                this.ctx.fillText(exLine, x + w / 2, y + h * 0.30);
+            }
+            if (p.speedPenalty <= 0.80) {
+                if (!p._weightWarnLatched && (p._weightWarnCount || 0) < 3) {
+                    p._weightWarnLatched = true;
+                    p._weightWarnCount = (p._weightWarnCount || 0) + 1;
+                    p._weightWarnUntil = nowMs + 5000;
+                }
+            } else {
+                p._weightWarnLatched = false;
+            }
+            if (p._weightWarnUntil && nowMs < p._weightWarnUntil) {
+                this.ctx.globalAlpha = pulse;
+                this.ctx.fillStyle = '#ff2a5f';
+                this.ctx.shadowBlur = 10;
+                this.ctx.shadowColor = '#ff2a5f';
+                this.ctx.fillText('OVERBURDENED \u2014 DROP GEAR OR BUY EXO-SERVOS', x + w / 2, y + h * 0.30 + (p.isExhausted ? 18 : 0));
+            }
+            this.ctx.restore();
+        }
 
         // 2. IODL: TEAMMATE DIRECTION INDICATOR
         // Disabled in 'hardcore' (full friendly fire) and 'pvp' (the other player is a
@@ -32026,6 +32777,29 @@ class TouchController {
         } else if (this.rightStick.active) {
             game.input.mouseDown = false;
         }
+
+        // JULY item 5: fire-threshold visual feedback + hint retirement.
+        // The class toggle and the shot counter both run ONLY on the
+        // false->true / true->false crossings of the fire state -- zero DOM
+        // work on steady-state frames -- and releasing the stick entirely
+        // also lands here, so the ring can never stick lit.
+        {
+            const firingNow = this.rightStick.active && this.rightStick.dist > 0.98;
+            if (firingNow !== !!this._fireRingActive) {
+                this._fireRingActive = firingNow;
+                const stickEl = document.getElementById('touch-joystick-right');
+                if (stickEl) stickEl.classList.toggle('firing', firingNow);
+                if (firingNow && game && game.saveData && !game.saveData.touchFireHintDone) {
+                    this._fireHintShots = (this._fireHintShots || 0) + 1;
+                    if (this._fireHintShots >= 3) {
+                        game.saveData.touchFireHintDone = true;
+                        game.saveGameData();
+                        const hintEl = document.getElementById('touch-fire-hint');
+                        if (hintEl) hintEl.classList.add('done');
+                    }
+                }
+            }
+        }
         
         // Crosshair position reflects the player's actual (weighted) aim
         // angle, not the raw stick target -- same principle as the aiming
@@ -32052,6 +32826,12 @@ class TouchController {
         const el = document.getElementById('touch-overlay');
         if (el && el.classList.contains('hidden')) {
             el.classList.remove('hidden');
+        }
+        // JULY item 5: a player who already learned the pull-to-fire gesture
+        // (persisted flag) never sees the hint again.
+        const hintEl = document.getElementById('touch-fire-hint');
+        if (hintEl && typeof game !== 'undefined' && game && game.saveData && game.saveData.touchFireHintDone) {
+            hintEl.classList.add('done');
         }
     }
     
@@ -32226,6 +33006,48 @@ game = new Game();
     height: 64px;
 }
 
+/* JULY item 5: fire-threshold teaching aids for the aim stick. The ring
+   marks the ~98% radius where firing actually engages; the hint pulses
+   until the player has fired a few shots (then never again -- persisted
+   via saveData.touchFireHintDone). All class toggles happen on state
+   CHANGES only, never per-frame. */
+#touch-fire-ring {
+    position: absolute;
+    inset: 2px;
+    border-radius: 50%;
+    border: 2px dashed rgba(255, 42, 95, 0.35);
+    pointer-events: none;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+#touch-joystick-right.firing #touch-fire-ring {
+    border-color: rgba(255, 42, 95, 0.95);
+    border-style: solid;
+    box-shadow: 0 0 18px rgba(255, 42, 95, 0.55), inset 0 0 14px rgba(255, 42, 95, 0.25);
+}
+#touch-joystick-right.firing .touch-joystick-knob {
+    border-color: #ff2a5f;
+    box-shadow: 0 0 16px rgba(255, 42, 95, 0.8);
+}
+#touch-fire-hint {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: "Courier New", Courier, monospace;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-align: center;
+    color: rgba(255, 42, 95, 0.85);
+    text-shadow: 0 0 8px rgba(255, 42, 95, 0.5);
+    pointer-events: none;
+    animation: touch-fire-hint-pulse 1.6s ease-in-out infinite;
+}
+#touch-fire-hint.done { display: none; }
+@keyframes touch-fire-hint-pulse {
+    0%, 100% { opacity: 0.25; }
+    50%      { opacity: 0.9; }
+}
+
 .touch-joystick-knob {
     width: 48px;
     height: 48px;
@@ -32349,6 +33171,8 @@ game = new Game();
     </div>
     
     <div id="touch-joystick-right" class="touch-joystick">
+        <div id="touch-fire-ring"></div>
+        <div id="touch-fire-hint">PULL TO EDGE<br>TO FIRE</div>
         <div id="touch-joystick-right-knob" class="touch-joystick-knob"></div>
     </div>
     
