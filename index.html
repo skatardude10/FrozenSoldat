@@ -11708,6 +11708,33 @@ class Player extends Entity {
             this.activeDrone.stopAudio();
             this.activeDrone.isPiloted = false;
         }
+        // DEATH FX: the player's corpse rides the exact enemy pipeline --
+        // spawnCorpseDebris + spawnBlood particles that settle into
+        // permanentMarks (see handlePermanentParticles), so the paint stays
+        // on the map for the rest of the run and a surviving co-op partner
+        // can see where their teammate went down. Palette is the operator's
+        // own: bodyColor (Armory paint torso ring, defaults white) for the
+        // main debris mass, this.color (the P1-cyan/P2-amber arm/gear
+        // accent) for a smaller share, plus standard blood. Direction comes
+        // from lastHitAngle (stashed by Entity.takeDamage), same as enemies;
+        // lastOverkill drives the same overkill spray physics.
+        if (typeof game !== 'undefined' && game) {
+            const ang = (this.lastHitAngle !== undefined && this.lastHitAngle !== null)
+                ? this.lastHitAngle : Math.random() * Math.PI * 2;
+            game.spawnBlood(this.x, this.y, Math.cos(ang) * 300, Math.sin(ang) * 300);
+            game.spawnCorpseDebris(this.x, this.y, ang, this.bodyColor || '#fff', this.r, this.lastOverkill || 0, this.maxHp || 100);
+            game.spawnCorpseDebris(this.x, this.y, ang, this.color, this.r * 0.75, this.lastOverkill || 0, this.maxHp || 100);
+            game.spawnDeathBurst(this.x, this.y);
+            if (game.isTwoPlayer) {
+                // Partner-facing down-marker at the body -- the big
+                // ELIMINATED banner only fires on a full squad wipe (see
+                // the bothDead branch in update()), so a solo death in
+                // co-op still reads loudly at the spot it happened.
+                game.floatingTexts.push(game.spawnFloatingText(
+                    this.x, this.y - 24,
+                    (this.isPlayer2 ? 'P2' : 'P1') + ' ELIMINATED', '#ff2a5f', 2.8, 0, -14, 0, false));
+            }
+        }
     }
 }
 class Enemy extends Entity {
@@ -16136,6 +16163,14 @@ class FPVDrone {
         }
 
         if (this.pilot) {
+            // PIP LINGER: keep the feed alive 1s past detonation so the
+            // pilot sees their own fireball. wasPiloted decides whether the
+            // linger renders at goggles size (operator heads-down) or as
+            // the corner PiP. Every FPVDrone death path funnels through
+            // detonate() (battery expiry, enemy fire, manual trigger), so
+            // this single stash covers all of them. The draw() feed
+            // resolver consumes it; Game.update() expires it.
+            this.pilot._pipLinger = { drone: this, until: game.gameTime + 1.0, wasPiloted: this.isPiloted };
             this.pilot.activeDrone = null;
         }
         game.spawnScorchMark(this.x, this.y, 55);
@@ -20602,6 +20637,16 @@ class Game {
         this.floatingTexts.push(this.spawnFloatingText(
             this.mapW / 2, this.mapH / 2 - 60,
             'EVAC CALLED \u2014 DUSTOFF ARRIVES NEXT WAVE', '#ffb700', 3.0, 0, 0, 120, false));
+        // EVAC STAKE FIX: on stake runs (see completeExtraction) the payout
+        // terms are non-obvious, so restate them in the notification stream
+        // at the moment of commitment, not just in shop fine print.
+        const evacStake = ((this.runConfig && this.runConfig.startingCash) || 0);
+        if (evacStake > 0 && this.runLedger && this.runLedger.eligible) {
+            this.floatingTexts.push(this.spawnFloatingText(
+                this.mapW / 2, this.mapH / 2 - 20,
+                'INSERTION BUDGET ($' + evacStake.toLocaleString() + '/OPERATOR) WITHHELD \u2014 ONLY EARNED CASH CONVERTS',
+                '#ffb700', 3.4, 0, 0, 120, false));
+        }
         this._refreshEvacButtons();
     }
 
@@ -20664,8 +20709,18 @@ class Game {
                     : '&#9742; EVAC INBOUND' + sub('Next wave: reach the green zone once the fight starts and HOLD it to extract');
             } else {
                 btn.disabled = false;
+                // EVAC STAKE FIX: on stake runs (ACTION NOW's fixed budget)
+                // the terms change, so the button must say so BEFORE the
+                // player commits -- a silent 0-Intel debrief reads as a bug.
+                // Gated on ledger eligibility so ineligible slider-cash runs
+                // keep their pre-existing text (the "no Intel this run"
+                // banner already covers those).
+                const stake = ((this.runConfig && this.runConfig.startingCash) || 0);
+                const stakeLive = stake > 0 && this.runLedger && this.runLedger.eligible;
                 const payout = this.isTestingMode
                     ? 'SANDBOX: no Intel payout \u2014 mechanic test only'
+                    : stakeLive
+                    ? 'Converts cash earned ABOVE your $' + stake.toLocaleString() + ' insertion budget \u2014 issued funds don\u2019t convert. And only if you survive the dustoff; fail, and the extract team regroups for a wave.'
                     : 'Converts ALL remaining cash to Intel for the Armory \u2014 but only if you survive the dustoff. Fail, and the extract team regroups for a wave.';
                 btn.innerHTML = (this.operatorMode
                     ? '&#9742; REQUEST EVAC \u2014 HOLD OUT NEXT WAVE ($100 &rarr; 1 INTEL)'
@@ -20700,9 +20755,25 @@ class Game {
             for (const p of [this.player, this.player2]) {
                 if (p) { totalCash += Math.max(0, Math.floor(p.cash || 0)); p.cash = 0; }
             }
-            const rawIntel = Math.floor(totalCash / 100);
+            // EVAC STAKE FIX: mode-granted starting cash is HOUSE MONEY --
+            // it was never earned, so it never converts. Only net profit
+            // above the run's snapshotted startingCash stake cashes out
+            // (remaining - stake === earned - spent, so no spend/earn
+            // sequence can beat it). This closes the ACTION NOW exploit
+            // ("insert with the fixed $10k, extract immediately, bank 100
+            // free Intel") at the PAYOUT instead of gating the evac button:
+            // the choice to leave early stays real, the free Intel is gone.
+            // Isolated by construction -- normal-mode slider cash already
+            // flips intelEligible off (the ledger denies it), extraction
+            // mode never takes this branch, sandbox is ineligible -- so the
+            // stake only bites where the hole was (NOW's fixed budget).
+            const stake = ((this.runConfig && this.runConfig.startingCash) || 0)
+                        * ((this.runConfig && this.runConfig.isTwoPlayer) ? 2 : 1);
+            const convertible = Math.max(0, totalCash - stake);
+            const rawIntel = Math.floor(convertible / 100);
             const converted = rawIntel > 0 ? this.runLedger.addIntel(rawIntel, 'evac_cash') : 0;
-            this.runLedger.cashConverted = { cash: totalCash, intel: converted };
+            this.runLedger.cashConverted = { cash: convertible, intel: converted,
+                stakeWithheld: Math.min(totalCash, stake) };
             this.intelEarnedThisRun = this.runLedger.intelEarned;
         }
         this.endRun(RUN_OUTCOMES.EXTRACTION);
@@ -21447,6 +21518,18 @@ class Game {
                 return;
             }
         }
+    }
+
+    // DEATH FX: one-shot expanding spiked ring at a player death site.
+    // Deliberately NOT a pooled particle -- at most 2 of these exist per
+    // run (one per player death), so a tiny run-scoped array (reset in
+    // startNewGame, pruned in its own draw pass) is cheaper bookkeeping
+    // than threading a new particle type through the pools. Lifetime runs
+    // on gameTime, so the death slow-mo stretches the burst with the
+    // world -- exactly the drama it exists for.
+    spawnDeathBurst(x, y) {
+        if (!this._deathBursts) this._deathBursts = [];
+        this._deathBursts.push({ x, y, t0: this.gameTime, dur: 0.7 });
     }
 
     spawnCorpseDebris(x, y, impactAngle, enemyColor, enemyRadius, overkill = 0, hpReference = 100) {
@@ -23432,6 +23515,7 @@ class Game {
                 playerInstance._opLaunchCooldown = playerInstance._opLaunchCooldown || 0;
                 if (playerInstance._opLaunchCooldown <= 0) {
                     playerInstance.activeDrone = new FPVDrone(playerInstance.x, playerInstance.y, playerInstance);
+                    playerInstance._pipLinger = null; // PIP LINGER: new live feed supersedes any lingering dead one
                     audio.playPickup('money');
                     playerInstance.activeDrone.isPiloted = false;
                     playerInstance._opLaunchCooldown = OP_TUNING.LAUNCH_COOLDOWN;
@@ -23439,6 +23523,7 @@ class Game {
             } else if (playerInstance.dronesCount > 0) {
                 playerInstance.dronesCount--;
                 playerInstance.activeDrone = new FPVDrone(playerInstance.x, playerInstance.y, playerInstance);
+                playerInstance._pipLinger = null; // PIP LINGER: instant redeploy cuts straight to the new feed (a live drone always outranks a linger anyway, but clearing here also prevents a stale linger resurfacing if this new drone is later RECALLED by walk-over, which nulls activeDrone without a detonation)
                 audio.playPickup('money');
                 playerInstance.activeDrone.isPiloted = false;
             }
@@ -23454,7 +23539,13 @@ class Game {
     }
 
     drawPiPViewport(px, py, pw, ph, droneInstance) {
-        if (!droneInstance || droneInstance.dead) return;
+        // PIP LINGER: dead drones ARE allowed through -- this is how the
+        // 1s post-detonation linger feed renders (see the call sites in
+        // draw()). Safe: the camera reads x/y/vx/vy which persist on the
+        // dead instance, droneInstance.draw() self-skips when dead (so the
+        // viewport shows pure aftermath), and .pilot stays attached. Call
+        // sites own the live/linger gating; this function just renders.
+        if (!droneInstance) return;
 
         this.ctx.save();
 
@@ -23641,15 +23732,66 @@ class Game {
         this.ctx.restore();
     }
 
+    // PIP LINGER: fade-to-static overlay for a lingering (post-detonation)
+    // drone feed. t01 ramps 0 -> 1 over the linger's final 0.5s. Uses ONE
+    // pre-baked 96x96 noise tile (built lazily, cached on the Game class
+    // like the vignette caches) drawn tiled with a random per-frame offset:
+    // animated static with zero per-frame canvas allocation and a handful
+    // of drawImage calls even at goggles size. Distinct from the in-feed
+    // signal-distance static (random fillRects inside drawPiPViewport) --
+    // that one is live-feed telemetry; this one is the feed dying.
+    _drawPipStaticFade(px, py, pw, ph, t01) {
+        if (!(t01 > 0)) return;
+        if (!Game._pipStaticTile) {
+            const T = 96;
+            const c = document.createElement('canvas');
+            c.width = T; c.height = T;
+            const cx = c.getContext('2d');
+            const img = cx.createImageData(T, T);
+            for (let i = 0; i < img.data.length; i += 4) {
+                const shade = 40 + ((Math.random() * 200) | 0);
+                img.data[i] = shade; img.data[i + 1] = shade; img.data[i + 2] = shade;
+                img.data[i + 3] = 255;
+            }
+            cx.putImageData(img, 0, 0);
+            Game._pipStaticTile = c;
+        }
+        const T = 96;
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(px + 1, py + 1, pw - 2, ph - 2);
+        this.ctx.clip();
+        this.ctx.globalAlpha = MathUtils.clamp(t01, 0, 1) * 0.9;
+        const ox = (Math.random() * T) | 0, oy = (Math.random() * T) | 0;
+        for (let y = py - oy; y < py + ph; y += T) {
+            for (let x = px - ox; x < px + pw; x += T) {
+                this.ctx.drawImage(Game._pipStaticTile, x, y);
+            }
+        }
+        if (t01 > 0.25) {
+            this.ctx.globalAlpha = MathUtils.clamp((t01 - 0.25) / 0.5, 0, 1);
+            this.ctx.fillStyle = '#ff2a5f';
+            this.ctx.font = 'bold 13px "Courier New", Courier, monospace';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('SIGNAL LOST', px + pw / 2, py + ph / 2);
+        }
+        this.ctx.restore();
+    }
+
     // FPV OPERATOR MODE: goggles vignette overlay drawn on top of the
     // large piloting view (see the drawPiPViewport call sites above). Pure
     // decoration -- rounded dark-edge vignette, corner scanline flicker,
     // and telemetry text (battery/tether/bombs). No world-render logic
     // lives here, so it can't desync from whatever drawPiPViewport already
     // drew underneath it.
-    drawOperatorGogglesFrame(px, py, pw, ph) {
-        let drone = null;
-        if (this.player && this.player.activeDrone && this.player.activeDrone.isPiloted &&
+    drawOperatorGogglesFrame(px, py, pw, ph, droneOverride = null) {
+        // PIP LINGER: droneOverride lets the caller pin the frame to a
+        // specific (possibly dead) drone during the post-detonation linger,
+        // when activeDrone is already null and the resolution below would
+        // come up empty (its telemetry reads would then null-crash). Live
+        // callers can keep omitting it.
+        let drone = droneOverride;
+        if (!drone && this.player && this.player.activeDrone && this.player.activeDrone.isPiloted &&
             px < this.width / 2) drone = this.player.activeDrone;
         if (!drone && this.player2 && this.player2.activeDrone && this.player2.activeDrone.isPiloted) drone = this.player2.activeDrone;
         if (!drone && this.player && this.player.activeDrone) drone = this.player.activeDrone;
@@ -24229,6 +24371,14 @@ class Game {
         // vengeance wave (runner escaped -> next wave at legendary
         // pressure) are run-scoped -- clear or they leak across runs.
         this._announcements = [];
+        // DEATH FX / DEATH LINGER: all run-scoped -- a stale linger timer
+        // would instantly end the next run's first death, and old bursts
+        // would replay at last run's death sites. (_pipLinger lives on the
+        // Player objects, which are recreated fresh right above, so it
+        // needs no reset here.)
+        this._deathLinger = null;
+        this._deathBursts = [];
+        this._preDeathTimeScale = undefined;
         this._vengeanceWave = false;
         this._preVengeanceMults = null;
         // JULY item 11: mid-match evac is run-scoped too.
@@ -26935,6 +27085,12 @@ class Game {
         if (this.player && this.player.activeDrone && !this.player.activeDrone.dead) {
             this.player.activeDrone.update(dt, this);
         }
+        // PIP LINGER: release expired linger stashes so the dead drone
+        // object isn't retained past its 1s feed (two null-checks per
+        // frame -- no measurable cost). Live-drone gating happens at the
+        // draw site; this is purely reference hygiene.
+        if (this.player && this.player._pipLinger && this.gameTime >= this.player._pipLinger.until) this.player._pipLinger = null;
+        if (this.player2 && this.player2._pipLinger && this.gameTime >= this.player2._pipLinger.until) this.player2._pipLinger = null;
         if (this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead) {
             this.player2.activeDrone.update(dt, this);
         }
@@ -27346,9 +27502,45 @@ class Game {
 
         let bothDead = this.player.dead && (!this.isTwoPlayer || !this.player2 || this.player2.dead);
         if (bothDead) {
-            // PHASE 0: all run-ending states funnel through endRun() -> the
-            // unified debrief. The bespoke death-screen is gone.
-            this.endRun(RUN_OUTCOMES.DEATH);
+            // DEATH LINGER + DEATH FX: hold in 'playing' for 2 wall-clock
+            // seconds before the debrief so the kill lands -- gibs settle,
+            // blood paints, the ELIMINATED banner drops, all under a
+            // glory-kill-style slow-mo. The update+draw loop keeps running
+            // untouched, and the camera naturally stays put because a dead
+            // player stops moving.
+            if (this._deathLinger == null) {
+                this._deathLinger = 2.0;
+                // A glory-kill slow-mo could be mid-flight; retire it
+                // cleanly first (its loop()-side restore would otherwise
+                // stomp our timeScale mid-sequence), inheriting its saved
+                // base as the true pre-slow-mo value.
+                if (this.gloryKillTimer > 0) {
+                    this.gloryKillTimer = 0;
+                    this.gloryKillTarget = null;
+                    this.timeScale = this.baseTimeScale;
+                }
+                this._preDeathTimeScale = this.timeScale;
+                this.timeScale = Math.min(this.timeScale, 0.30); // never SPEED UP a slider set slower than the death slow-mo
+                this.announce(this.isTwoPlayer ? 'SQUAD ELIMINATED' : 'YOU WERE ELIMINATED', '#ff2a5f', 3.2,
+                    'K.I.A. \u2014 WAVE ' + this.wave);
+                if (this.camera) this.camera.punchZoom(0.1);
+                if (this.camera2) this.camera2.punchZoom(0.1);
+                this.triggerChromaticAberration(0.5);
+            }
+            // dt here is pre-scaled by timeScale (see loop()), so divide it
+            // back out: the linger runs on the WALL clock and lasts 2 real
+            // seconds whatever the slider or slow-mo says.
+            this._deathLinger -= (this.timeScale > 0 ? dt / this.timeScale : dt);
+            if (this._deathLinger <= 0) {
+                // Hand the pre-death timeScale back before leaving --
+                // startNewGame re-asserts the slider anyway (the Adrenaline
+                // precedent), this just removes any window where debrief-era
+                // code could observe the death slow-mo.
+                if (this._preDeathTimeScale !== undefined) { this.timeScale = this._preDeathTimeScale; this._preDeathTimeScale = undefined; }
+                // PHASE 0: all run-ending states funnel through endRun() -> the
+                // unified debrief. The bespoke death-screen is gone.
+                this.endRun(RUN_OUTCOMES.DEATH);
+            }
         } else if (this.enemies.length === 0 && this.enemiesToSpawn === 0 && this.roundWinDelay === 0) {
             this.roundWinDelay = 1.5;
             this.triggerRoundWinEffects();
@@ -30672,6 +30864,13 @@ class Game {
         if (L.cashConverted && L.cashConverted.cash > 0) {
             rows.push(['CASH CONVERTED', '$' + L.cashConverted.cash + ' \u2192 +' + L.cashConverted.intel + ' INTEL']);
         }
+        // EVAC STAKE FIX: mode-issued starting cash never converts (see
+        // completeExtraction) -- show the withheld stake so a lean payout
+        // reads as policy, not as a bug. Renders even when nothing
+        // converted (the exploit case: extract-on-arrival earns 0).
+        if (L.cashConverted && L.cashConverted.stakeWithheld > 0) {
+            rows.push(['INSERTION BUDGET WITHHELD', '-$' + L.cashConverted.stakeWithheld + ' (issued funds don\u2019t convert)']);
+        }
         if (L.entryFeePaid > 0)       rows.push(['ENTRY FEE PAID', '-' + L.entryFeePaid]);
         // PHASE 3: escalation report -- which protocols ran, what they paid.
         if (L.config && L.config.escalations && L.config.escalations.length > 0) {
@@ -31551,6 +31750,37 @@ class Game {
             this.ctx.globalCompositeOperation = prevComp;
         }
 
+        // === DEATH BURST DRAW (world space) === DEATH FX: expanding red
+        // spiked ring marking a player death. Same coordinate math as the
+        // shockwave block above (x - cam.x under the active world
+        // transform). Pruned in place -- the array holds at most one entry
+        // per player per run, so this loop is effectively free.
+        if (this._deathBursts && this._deathBursts.length) {
+            for (let i = this._deathBursts.length - 1; i >= 0; i--) {
+                const b = this._deathBursts[i];
+                const t = (this.gameTime - b.t0) / b.dur;
+                if (t >= 1) { this._deathBursts.splice(i, 1); continue; }
+                const spikes = 12;
+                const rOuter = 18 + t * 78;
+                const rInner = rOuter * 0.62;
+                const bx = b.x - cam.x, by = b.y - cam.y;
+                this.ctx.save();
+                this.ctx.globalAlpha = (1 - t) * 0.9;
+                this.ctx.strokeStyle = '#ff2a5f';
+                this.ctx.lineWidth = 3 * (1 - t * 0.5);
+                this.ctx.beginPath();
+                for (let s = 0; s <= spikes * 2; s++) {
+                    const a = (s / (spikes * 2)) * Math.PI * 2 + t * 0.8; // slow spin as it grows
+                    const rr = (s % 2 === 0) ? rOuter : rInner;
+                    const px2 = bx + Math.cos(a) * rr, py2 = by + Math.sin(a) * rr;
+                    if (s === 0) this.ctx.moveTo(px2, py2); else this.ctx.lineTo(px2, py2);
+                }
+                this.ctx.closePath();
+                this.ctx.stroke();
+                this.ctx.restore();
+            }
+        }
+
         if (this.nightMode) {
             if (!this.nightCanvas) {
                 this.nightCanvas = document.createElement('canvas');
@@ -32291,8 +32521,27 @@ class Game {
             let p1PilotingGoggles = this.operatorMode && this.player.activeDrone && !this.player.activeDrone.dead && this.player.activeDrone.isPiloted;
             let p2PilotingGoggles = this.operatorMode && this.isTwoPlayer && this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead && this.player2.activeDrone.isPiloted;
 
-            if (p1PilotingGoggles || p2PilotingGoggles) {
-                if (p1PilotingGoggles) {
+            // PIP LINGER: per-player feed resolution. A dead drone's feed
+            // persists 1s past detonation (camera frozen at the blast site;
+            // drawPiPViewport renders the world minus the drone's own
+            // sprite, i.e. pure aftermath), fading to static over the final
+            // 0.5s. Priority per player -- exactly ONE feed each:
+            //   live goggles > goggles linger > live corner PiP > corner linger.
+            // A LIVE drone always outranks a linger, so an instant redeploy
+            // cuts straight to the new feed (handleDroneInput also clears
+            // the stash on launch). Update() expires the stash; here we
+            // only read it.
+            const pipLinger = (p) => (p && p._pipLinger && this.gameTime < p._pipLinger.until && !(p.activeDrone && !p.activeDrone.dead)) ? p._pipLinger : null;
+            const lingerFade = (L) => MathUtils.clamp(1 - (L.until - this.gameTime) / 0.5, 0, 1); // 0 clean -> 1 full static over the last 0.5s
+            let p1Linger = pipLinger(this.player);
+            let p2Linger = this.isTwoPlayer ? pipLinger(this.player2) : null;
+            // Goggles-size linger only where the goggles view just died:
+            // operator mode, heads-down at detonation.
+            let p1GogglesLinger = (this.operatorMode && p1Linger && p1Linger.wasPiloted) ? p1Linger : null;
+            let p2GogglesLinger = (this.operatorMode && p2Linger && p2Linger.wasPiloted) ? p2Linger : null;
+
+            if (p1PilotingGoggles || p2PilotingGoggles || p1GogglesLinger || p2GogglesLinger) {
+                if (p1PilotingGoggles || p1GogglesLinger) {
                     // Near-fullscreen while piloting solo -- the previous
                     // 0.86w x (0.65 of that)h sizing left visible margins
                     // around the frame where the real body-cam viewport
@@ -32304,17 +32553,21 @@ class Game {
                     let gh = this.isTwoPlayer ? Math.round(this.height * 0.86) : Math.round(this.height * 0.86);
                     let gx = this.isTwoPlayer ? Math.round(this.width * 0.01) : Math.round((this.width - gw) / 2);
                     let gy = Math.round((this.height - gh) / 2);
-                    this.drawPiPViewport(gx, gy, gw, gh, this.player.activeDrone);
-                    this.drawOperatorGogglesFrame(gx, gy, gw, gh);
+                    let feed = p1PilotingGoggles ? this.player.activeDrone : p1Linger.drone;
+                    this.drawPiPViewport(gx, gy, gw, gh, feed);
+                    if (!p1PilotingGoggles) this._drawPipStaticFade(gx, gy, gw, gh, lingerFade(p1Linger));
+                    this.drawOperatorGogglesFrame(gx, gy, gw, gh, feed);
                     this.drawOperatorBaseCam(this.player, gx + 10, gy + gh - 122, 150, 110);
                 }
-                if (p2PilotingGoggles) {
+                if (p2PilotingGoggles || p2GogglesLinger) {
                     let gw = Math.round(this.width * 0.48);
                     let gh = Math.round(this.height * 0.86);
                     let gx = Math.round(this.width * 0.51);
                     let gy = Math.round((this.height - gh) / 2);
-                    this.drawPiPViewport(gx, gy, gw, gh, this.player2.activeDrone);
-                    this.drawOperatorGogglesFrame(gx, gy, gw, gh);
+                    let feed = p2PilotingGoggles ? this.player2.activeDrone : p2Linger.drone;
+                    this.drawPiPViewport(gx, gy, gw, gh, feed);
+                    if (!p2PilotingGoggles) this._drawPipStaticFade(gx, gy, gw, gh, lingerFade(p2Linger));
+                    this.drawOperatorGogglesFrame(gx, gy, gw, gh, feed);
                     this.drawOperatorBaseCam(this.player2, gx + 10, gy + gh - 122, 150, 110);
                 }
             }
@@ -32325,13 +32578,22 @@ class Game {
             }
             let ph = Math.round(pw * 0.75);
 
-            if (this.player.activeDrone && !this.player.activeDrone.dead && !p1PilotingGoggles) {
+            // Corner PiP slot: live drone feed, else corner linger (a
+            // goggles linger already owns this player's feed, so skip).
+            let p1CornerFeed = (this.player.activeDrone && !this.player.activeDrone.dead && !p1PilotingGoggles) ? this.player.activeDrone
+                             : (p1Linger && !p1GogglesLinger) ? p1Linger.drone : null;
+            if (p1CornerFeed) {
                 let pipX = this.isTwoPlayer ? (this.width / 2 - pw - 20) : (this.width - pw - 20);
-                this.drawPiPViewport(pipX, 60, pw, ph, this.player.activeDrone);
+                this.drawPiPViewport(pipX, 60, pw, ph, p1CornerFeed);
+                if (p1CornerFeed !== this.player.activeDrone) this._drawPipStaticFade(pipX, 60, pw, ph, lingerFade(p1Linger));
             }
-            if (this.isTwoPlayer && this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead && !p2PilotingGoggles) {
+            let p2CornerFeed = (this.isTwoPlayer && this.player2) ?
+                               ((this.player2.activeDrone && !this.player2.activeDrone.dead && !p2PilotingGoggles) ? this.player2.activeDrone
+                             : (p2Linger && !p2GogglesLinger) ? p2Linger.drone : null) : null;
+            if (p2CornerFeed) {
                 let pipX = this.width - pw - 20;
-                this.drawPiPViewport(pipX, 60, pw, ph, this.player2.activeDrone);
+                this.drawPiPViewport(pipX, 60, pw, ph, p2CornerFeed);
+                if (p2CornerFeed !== this.player2.activeDrone) this._drawPipStaticFade(pipX, 60, pw, ph, lingerFade(p2Linger));
             }
         }
 
@@ -32348,7 +32610,12 @@ class Game {
                 let screenY = 60;
                 
                 // Check if drone feed is active for this player, so we don't overlap but stack below it
-                let isDroneActiveForOwner = dog.owner && dog.owner.activeDrone && !dog.owner.activeDrone.dead;
+                // PIP LINGER: a lingering (just-detonated) drone feed still
+                // owns the corner slot for its 1s, so the dog cam keeps
+                // stacking below it instead of sliding up and stamping over
+                // the explosion view.
+                let isDroneActiveForOwner = dog.owner && ((dog.owner.activeDrone && !dog.owner.activeDrone.dead)
+                    || (dog.owner._pipLinger && this.gameTime < dog.owner._pipLinger.until));
                 if (isDroneActiveForOwner) {
                     let pw = Math.max(240, Math.min(480, Math.round(this.width * 0.3)));
                     if (this.isTwoPlayer) {
