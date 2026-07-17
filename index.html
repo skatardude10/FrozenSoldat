@@ -56,10 +56,13 @@
     /* NEW STREAMLINED HUD STYLES */
     .hud-top-bar {
         position: absolute; top: 6px; height: 42px;
-        background: rgba(0, 5, 12, 0.3); border: var(--ui-border);
+        background: rgba(0, 5, 12, 0.45); border: var(--ui-border);
         border-radius: 4px; backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
-        box-shadow: 0 0 15px rgba(0, 229, 255, 0.15);
+        /* JULY HUD pass: inset top hairline ties the bar into the cyan
+           scanline language; slightly stronger backing so it doesn't
+           float on raw black. Footprint unchanged (still 42px tall). */
+        box-shadow: 0 0 15px rgba(0, 229, 255, 0.15), inset 0 1px 0 rgba(0, 229, 255, 0.22);
         display: flex; align-items: center; justify-content: space-between;
         padding: 0 16px; font-weight: bold; font-size: 11px; letter-spacing: 1px;
         text-transform: uppercase; pointer-events: none;
@@ -72,18 +75,28 @@
     .hud-top-group { display: flex; align-items: center; gap: 10px; }
     .hud-top-section { display: flex; align-items: center; gap: 6px; }
     .hud-label { color: #a9c2c7; font-size: 9px; }
-    .hud-value { color: #fff; font-size: 12px; }
+    .hud-value { color: #fff; font-size: 12px; text-shadow: 0 0 6px rgba(255,255,255,0.3); }
     .text-green { color: var(--green) !important; }
     .text-red { color: var(--red) !important; }
     
-    .hud-bars-group { display: flex; flex-direction: column; gap: 2px; align-items: center; justify-content: center; }
+    .hud-bars-group { display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center; }
     .hud-bar-wrapper { display: flex; align-items: center; gap: 4px; }
-    .bar-label { font-size: 8px; color: #a9c2c7; min-width: 38px; text-align: right; line-height: 1; }
+    .bar-label { font-size: 8px; color: #c3d9de; min-width: 38px; text-align: right; line-height: 1; }
     .hud-bar-container {
-        width: 80px; height: 4px; background: rgba(255,255,255,0.08);
-        border: 1px solid #00e5ff33; position: relative; border-radius: 1px; overflow: hidden;
+        /* JULY HUD pass: the vitals were 80x4px slivers -- the single most
+           important readout in the game at a glance-cost that didn't match.
+           96x6 with a slightly firmer border still fits 3 rows + gaps
+           inside the same 42px bar, so small screens are unaffected. */
+        width: 96px; height: 6px; background: rgba(255,255,255,0.08);
+        border: 1px solid #00e5ff44; position: relative; border-radius: 1px; overflow: hidden;
     }
     .hud-bar { height: 100%; transition: width 0.05s ease-out; }
+    /* Sheen strip -- same visual language as .boss-hud-bar-sheen, so the
+       vitals read as siblings of the boss bar rather than flat fills. */
+    .hud-bar-container::after {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 45%;
+        background: rgba(255,255,255,0.10); pointer-events: none;
+    }
     #health-bar, #health-bar-p2 { background: var(--red); box-shadow: 0 0 8px var(--red); }
     #armor-bar, #armor-bar-p2 { background: var(--neon-blue); box-shadow: 0 0 8px var(--neon-blue); }
     #stamina-bar, #stamina-bar-p2 { background: #ffb700; box-shadow: 0 0 8px #ffb700; }
@@ -7652,6 +7665,207 @@ class MapGen {
         }
         ctx.stroke();
 
+        // ===== JULY visual pass: floor variation + void treatment =====
+        // 1) MAJOR GRID LINES -- every 5th line (300px) is simply
+        //    re-stroked with the SAME strokeStyle the minor pass just used,
+        //    so overdraw doubles its perceived opacity. Graph-paper
+        //    hierarchy with zero new color language -- works identically
+        //    across all biomes AND the splitTheme gradient.
+        let majorS = gridS * 5;
+        ctx.beginPath();
+        for (let x = Math.floor(cam.x / majorS) * majorS; x < cam.x + visibleW; x += majorS) {
+            ctx.moveTo(x - cam.x, 0); ctx.lineTo(x - cam.x, visibleH);
+        }
+        for (let y = Math.floor(cam.y / majorS) * majorS; y < cam.y + visibleH; y += majorS) {
+            ctx.moveTo(0, y - cam.y); ctx.lineTo(visibleW, y - cam.y);
+        }
+        ctx.stroke();
+
+        // 2) FLOOR PANELS -- a handful of large darker rectangles inside
+        //    the arena, every edge snapped to the 60px grid so they read
+        //    as painted floor zones / panel seams belonging to the same
+        //    floor plan, never as offset noise. Generated once per map
+        //    build; plain culled rects, no blur, negligible cost.
+        if (!this._floorPanels) {
+            this._floorPanels = [];
+            let count = MathUtils.clamp(Math.round((this.width * this.height) / 450000), 8, 30);
+            for (let i = 0; i < count; i++) {
+                let pw2 = (3 + Math.floor(Math.random() * 8)) * gridS;
+                let ph2 = (3 + Math.floor(Math.random() * 8)) * gridS;
+                let px2 = Math.floor(Math.random() * Math.max(1, (this.width - pw2) / gridS)) * gridS;
+                let py2 = Math.floor(Math.random() * Math.max(1, (this.height - ph2) / gridS)) * gridS;
+                this._floorPanels.push({ x: px2, y: py2, w: pw2, h: ph2 });
+            }
+        }
+        ctx.save();
+        ctx.lineWidth = 1;
+        for (let fp of this._floorPanels) {
+            if (fp.x + fp.w < cam.x || fp.x > cam.x + visibleW ||
+                fp.y + fp.h < cam.y || fp.y > cam.y + visibleH) continue;
+            let dxp = fp.x - cam.x, dyp = fp.y - cam.y;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+            ctx.fillRect(dxp, dyp, fp.w, fp.h);
+            // Recessed bevel (light source top-left, matching the arena
+            // slab shadow below): dark inner shadow along the top edge,
+            // faint catch-light along the bottom -- reads as a panel set
+            // INTO the floor. Two rects, no blur.
+            let bev = ctx.createLinearGradient(0, dyp, 0, dyp + 9);
+            bev.addColorStop(0, 'rgba(0,0,0,0.30)'); bev.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = bev;
+            ctx.fillRect(dxp, dyp, fp.w, 9);
+            ctx.fillStyle = `rgba(${this.biome.rgb}, 0.05)`;
+            ctx.fillRect(dxp, dyp + fp.h - 1, fp.w, 1);
+            ctx.strokeStyle = `rgba(${this.biome.rgb}, 0.10)`;
+            ctx.strokeRect(dxp, dyp, fp.w, fp.h);
+        }
+        // 2b) SMALL FLOOR DETAILS -- scattered single-cell dark tiles and
+        //     short seam ticks, all snapped to the 60px grid so they read
+        //     as wear/service hatches in the same floor plan. Tiny, flat,
+        //     culled -- texture without noise.
+        if (!this._floorDetails) {
+            this._floorDetails = [];
+            let dCount = MathUtils.clamp(Math.round((this.width * this.height) / 160000), 20, 90);
+            for (let i = 0; i < dCount; i++) {
+                let cx2 = Math.floor(Math.random() * (this.width / gridS)) * gridS;
+                let cy2 = Math.floor(Math.random() * (this.height / gridS)) * gridS;
+                if (Math.random() < 0.55) {
+                    // dark tile: one grid cell
+                    this._floorDetails.push({ k: 0, x: cx2, y: cy2 });
+                } else {
+                    // seam tick: short line along a grid edge (h or v)
+                    this._floorDetails.push({ k: Math.random() < 0.5 ? 1 : 2, x: cx2, y: cy2, l: gridS * (1 + Math.floor(Math.random() * 2)) });
+                }
+            }
+        }
+        for (let d of this._floorDetails) {
+            if (d.x + gridS * 2 < cam.x || d.x > cam.x + visibleW ||
+                d.y + gridS * 2 < cam.y || d.y > cam.y + visibleH) continue;
+            let ddx = d.x - cam.x, ddy = d.y - cam.y;
+            if (d.k === 0) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.20)';
+                ctx.fillRect(ddx, ddy, gridS, gridS);
+                ctx.fillStyle = `rgba(${this.biome.rgb}, 0.06)`;
+                ctx.fillRect(ddx, ddy + gridS - 1, gridS, 1); // catch-light
+            } else {
+                ctx.fillStyle = `rgba(${this.biome.rgb}, 0.14)`;
+                if (d.k === 1) ctx.fillRect(ddx, ddy, d.l, 1);
+                else ctx.fillRect(ddx, ddy, 1, d.l);
+            }
+        }
+        ctx.restore();
+
+        // 3) THE VOID -- everything outside the arena bounds. Three cheap
+        //    layers so it reads as deep space around a lit facility
+        //    instead of dead pixels: (a) darken outside the arena rect
+        //    (mutes the grid/haze bleed -- "outside" becomes a different
+        //    space), (b) a soft glow radiating outward from the arena
+        //    boundary so the perimeter has physical presence, (c) a
+        //    sparse, gently twinkling starfield. All culled, zero
+        //    shadowBlur -- safe even on the 340-wall dense templates.
+        let ax0 = -cam.x, ay0 = -cam.y;                       // arena rect, draw coords
+        let ax1 = this.width - cam.x, ay1 = this.height - cam.y;
+        if (ax0 > 0 || ay0 > 0 || ax1 < visibleW || ay1 < visibleH) {
+            ctx.save();
+            // (a) dim -- four non-overlapping strips (no corner seams)
+            ctx.fillStyle = 'rgba(0, 2, 7, 0.55)';
+            if (ay0 > 0) ctx.fillRect(0, 0, visibleW, Math.min(ay0, visibleH));
+            if (ay1 < visibleH) { let by = Math.max(ay1, 0); ctx.fillRect(0, by, visibleW, visibleH - by); }
+            let bandY0 = Math.max(ay0, 0), bandY1 = Math.min(ay1, visibleH);
+            if (bandY1 > bandY0) {
+                if (ax0 > 0) ctx.fillRect(0, bandY0, Math.min(ax0, visibleW), bandY1 - bandY0);
+                if (ax1 < visibleW) { let bx = Math.max(ax1, 0); ctx.fillRect(bx, bandY0, visibleW - bx, bandY1 - bandY0); }
+            }
+            // (a2) SLAB SHADOW -- the 2.5D trick: the arena reads as a lit
+            //      slab floating over the void by casting a soft shadow
+            //      down-right (light source top-left, same as the panel
+            //      bevels). Just two gradient bands hugging the bottom and
+            //      right OUTSIDE edges; the top/left edges get none, which
+            //      is exactly what sells the offset.
+            const SH = 150;
+            let sEx0 = Math.max(ax0, 0), sEx1 = Math.min(ax1, visibleW);
+            if (sEx1 > sEx0 && ay1 < visibleH && ay1 + SH > 0) {
+                let g = ctx.createLinearGradient(0, ay1, 0, ay1 + SH);
+                g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = g;
+                let gy = Math.max(ay1, 0);
+                ctx.fillRect(sEx0, gy, sEx1 - sEx0, Math.min(ay1 + SH, visibleH) - gy);
+            }
+            let sEy0 = Math.max(ay0, 0), sEy1 = Math.min(ay1 + SH, visibleH);
+            if (sEy1 > sEy0 && ax1 < visibleW && ax1 + SH > 0) {
+                let g = ctx.createLinearGradient(ax1, 0, ax1 + SH, 0);
+                g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = g;
+                let gx = Math.max(ax1, 0);
+                ctx.fillRect(gx, sEy0, Math.min(ax1 + SH, visibleW) - gx, sEy1 - sEy0);
+            }
+            // (b) boundary glow -- fades outward over G px in biome color
+            const G = 280, glowA = 0.07, gRgb = this.biome.rgb;
+            let ex0 = Math.max(ax0, 0), ex1 = Math.min(ax1, visibleW);
+            if (ex1 > ex0) {
+                if (ay0 > 0 && ay0 - G < visibleH) {
+                    let g = ctx.createLinearGradient(0, ay0, 0, ay0 - G);
+                    g.addColorStop(0, `rgba(${gRgb}, ${glowA})`); g.addColorStop(1, `rgba(${gRgb}, 0)`);
+                    ctx.fillStyle = g;
+                    let gy = Math.max(ay0 - G, 0);
+                    ctx.fillRect(ex0, gy, ex1 - ex0, Math.min(ay0, visibleH) - gy);
+                }
+                if (ay1 < visibleH && ay1 + G > 0) {
+                    let g = ctx.createLinearGradient(0, ay1, 0, ay1 + G);
+                    g.addColorStop(0, `rgba(${gRgb}, ${glowA})`); g.addColorStop(1, `rgba(${gRgb}, 0)`);
+                    ctx.fillStyle = g;
+                    let gy = Math.max(ay1, 0);
+                    ctx.fillRect(ex0, gy, ex1 - ex0, Math.min(ay1 + G, visibleH) - gy);
+                }
+            }
+            let ey0 = Math.max(ay0, 0), ey1 = Math.min(ay1, visibleH);
+            if (ey1 > ey0) {
+                if (ax0 > 0 && ax0 - G < visibleW) {
+                    let g = ctx.createLinearGradient(ax0, 0, ax0 - G, 0);
+                    g.addColorStop(0, `rgba(${gRgb}, ${glowA})`); g.addColorStop(1, `rgba(${gRgb}, 0)`);
+                    ctx.fillStyle = g;
+                    let gx = Math.max(ax0 - G, 0);
+                    ctx.fillRect(gx, ey0, Math.min(ax0, visibleW) - gx, ey1 - ey0);
+                }
+                if (ax1 < visibleW && ax1 + G > 0) {
+                    let g = ctx.createLinearGradient(ax1, 0, ax1 + G, 0);
+                    g.addColorStop(0, `rgba(${gRgb}, ${glowA})`); g.addColorStop(1, `rgba(${gRgb}, 0)`);
+                    ctx.fillStyle = g;
+                    let gx = Math.max(ax1, 0);
+                    ctx.fillRect(gx, ey0, Math.min(ax1 + G, visibleW) - gx, ey1 - ey0);
+                }
+            }
+            // (c) starfield -- static world-space specks in a band around
+            //     the arena (never inside it), lazy-built once per map.
+            if (!this._voidStars) {
+                this._voidStars = [];
+                const M = 2400;
+                let attempts = 0;
+                while (this._voidStars.length < 420 && attempts++ < 4000) {
+                    let sx = -M + Math.random() * (this.width + 2 * M);
+                    let sy = -M + Math.random() * (this.height + 2 * M);
+                    if (sx > -50 && sx < this.width + 50 && sy > -50 && sy < this.height + 50) continue;
+                    this._voidStars.push({
+                        x: sx, y: sy,
+                        r: 0.7 + Math.random() * 1.2,
+                        a: 0.10 + Math.random() * 0.28,
+                        ph: Math.random() * Math.PI * 2,
+                        sp: 0.3 + Math.random() * 0.8
+                    });
+                }
+            }
+            let vt = (typeof game !== 'undefined' && game) ? game.gameTime : 0;
+            ctx.fillStyle = '#cfe6ff';
+            for (let s of this._voidStars) {
+                let dx = s.x - cam.x, dy = s.y - cam.y;
+                if (dx < -4 || dx > visibleW + 4 || dy < -4 || dy > visibleH + 4) continue;
+                ctx.globalAlpha = s.a * (0.7 + 0.3 * Math.sin(vt * s.sp + s.ph));
+                ctx.fillRect(dx - s.r / 2, dy - s.r / 2, s.r, s.r);
+            }
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+        // ===== end visual pass =====
+
         // PHASE 1 (wall-break perf): apply any carve events from this frame
         // in ONE coalesced recompute before drawing.
         this.flushLineageEdges();
@@ -8374,6 +8588,35 @@ class MapGen {
 
     // Tree canopy pass -- drawn ABOVE entities (canopy occludes what's under
     // it), alongside roofs, with the same reveal-on-approach alpha logic.
+    // JULY visual pass (follow-up): WALL-CAST SHADOWS, drawn AFTER the
+    // entity pass -- this is the layer that actually sells 2.5D. Every
+    // wall throws a soft shadow down-right (same top-left light source as
+    // the panel bevels and the arena slab shadow), and because it renders
+    // on top of players/enemies/loot, anything walking through it visibly
+    // dims. All offset rects go into ONE path filled once, so overlapping
+    // shadows stay a uniform tone instead of stacking darker. No blur,
+    // culled -- safe on the 340-wall templates.
+    drawWallShadows(ctx, cam, viewportW, viewportH) {
+        const OX = 16, OY = 16; // world-px light offset (top-left source)
+        let visibleW = viewportW / cam.zoom;
+        let visibleH = viewportH / cam.zoom;
+        let any = false;
+        ctx.save();
+        ctx.beginPath();
+        for (let wall of this.walls) {
+            let sx = wall.x + OX, sy = wall.y + OY;
+            if (sx + wall.w < cam.x || sx > cam.x + visibleW ||
+                sy + wall.h < cam.y || sy > cam.y + visibleH) continue;
+            ctx.rect(sx - cam.x, sy - cam.y, wall.w, wall.h);
+            any = true;
+        }
+        if (any) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
     drawFoliageCanopy(ctx, cam, viewportW, viewportH) {
         if (this.templateId !== 11 || !this.foliage) return;
         let visibleW = viewportW / cam.zoom, visibleH = viewportH / cam.zoom;
@@ -20963,6 +21206,17 @@ class Game {
         }
     }
 
+    // JULY item 8b: screen-space event announcements. The old final-kill
+    // callouts were world-space floating texts at map center -- invisible
+    // if the fight was happening anywhere else. announce() queues a big,
+    // glowing headline (+ optional smaller stakes line) rendered per
+    // viewport in drawScreenOverlays with a short falling settle, so
+    // every player always sees WHAT happened and WHY it matters.
+    announce(text, color = '#ff2a5f', dur = 3.4, sub = null) {
+        if (!this._announcements) this._announcements = [];
+        this._announcements.push({ text, color, dur, sub, t0: this.gameTime });
+    }
+
     spawnFloatingText(x, y, text, color = '#39ff14', life = 1.0, vx = 0, vy = -60, gravity = 0, bounce = false) {
         let ft;
         if (this.inactiveFloatingTexts.length > 0) {
@@ -23971,6 +24225,12 @@ class Game {
         // escaped in a PREVIOUS run must not reinforce this run's wave 1.
         this._finalKill = null;
         this._nextWaveReinforced = false;
+        // JULY item 8b: screen-space event announcements + the PROTOCOL 9
+        // vengeance wave (runner escaped -> next wave at legendary
+        // pressure) are run-scoped -- clear or they leak across runs.
+        this._announcements = [];
+        this._vengeanceWave = false;
+        this._preVengeanceMults = null;
         // JULY item 11: mid-match evac is run-scoped too.
         this.evacCalled = false;
         this._evacObjectiveSpawned = false;
@@ -24354,9 +24614,28 @@ class Game {
             this._nextWaveReinforced = false;
             this.enemiesToSpawn = Math.ceil(this.enemiesToSpawn * 1.3);
             this.prepTimer = Math.max(2.0, this.prepTimer * 0.5);
-            this.floatingTexts.push(this.spawnFloatingText(
-                this.mapW / 2, this.mapH / 2 - 90,
-                'THE RUNNER TALKED \u2014 REINFORCED ASSAULT INCOMING', '#ff2a5f', 3.0, 0, 0, 120, false));
+            // PROTOCOL 9 (JULY item 8b): the leak has consequences beyond
+            // headcount -- this ONE wave also fights at LEGENDARY combat
+            // pressure. Implemented by swapping the RunConfig.enemyMults
+            // snapshot (the single source every hostile bullet reads at
+            // spawn -- see Bullet init) for legendary values, keeping the
+            // ORIGINAL object to restore verbatim on wave clear, so any
+            // kit/escalation stacking baked into it survives untouched.
+            // No-op if the player is already ON legendary.
+            let vengeanceTag = '';
+            if (this.runConfig && this.runConfig.enemyMults && this.difficultyMode !== 'legendary') {
+                this._preVengeanceMults = this.runConfig.enemyMults;
+                const cur = DIFFICULTY_TUNING[this.difficultyMode] || DIFFICULTY_TUNING.hard;
+                const leg = DIFFICULTY_TUNING.legendary;
+                this.runConfig.enemyMults = {
+                    dmg: this._preVengeanceMults.dmg * (leg.enemyDmg / cur.enemyDmg),
+                    bulletSpeed: this._preVengeanceMults.bulletSpeed * (leg.enemyBulletSpeed / cur.enemyBulletSpeed)
+                };
+                vengeanceTag = 'LEGENDARY PRESSURE \u00b7 ';
+            }
+            this._vengeanceWave = true;
+            this.announce('PROTOCOL 9 \u2014 THE RUNNER TALKED', '#ff2a5f', 5.0,
+                '+30% HOSTILES \u00b7 ' + vengeanceTag + 'HALF PREP \u2014 CLEAR THE WAVE TO STAND DOWN');
         }
 
         // JULY item 11: the wave after CALL EVAC delivers the dustoff --
@@ -26985,12 +27264,33 @@ class Game {
 
                 this.items.push(this.spawnItem(e.x, e.y, 'money'));
 
+                // JULY item 8b (KILL PAYOFFS): catching a special final
+                // enemy before its threat lands is celebrated explicitly,
+                // so the risk/reward loop is legible in both directions.
+                if (e.finalKillRole === 'runner') {
+                    e.finalKillRole = null;
+                    // JACKPOT: the intel he was about to radio out, as a
+                    // cash pinata at the kill site.
+                    for (let jp = 0; jp < 10; jp++) {
+                        this.items.push(this.spawnItem(e.x + MathUtils.rand(-48, 48), e.y + MathUtils.rand(-48, 48), 'money'));
+                    }
+                    this.announce('RUNNER SILENCED \u2014 JACKPOT SECURED', '#39ff14', 4.0,
+                        'NEXT WAVE ARRIVES ON SCHEDULE \u00b7 COLLECT THE DROP');
+                    audio.playPickup('money');
+                } else if (e.finalKillRole === 'martyr') {
+                    e.finalKillRole = null;
+                    this.announce('MARTYR NEUTRALIZED \u2014 STRIKE ABORTED', '#39ff14', 3.5,
+                        'THE GUNS FALL SILENT');
+                }
+
                 // JULY item 8 (BOUNTY): the escalated final enemy pays out
                 // its guaranteed intel chip -- banked through the ledger on
                 // pickup like every other chip (mode-agnostic).
                 if (e._bountyIntel) {
                     e._bountyIntel = false;
                     this.items.push(this.spawnItem(e.x + MathUtils.rand(-10, 10), e.y + MathUtils.rand(-10, 10), 'intel'));
+                    this.announce('BOUNTY CLAIMED \u2014 INTEL SECURED', '#ffcc00', 3.5,
+                        'CHIP ON THE GROUND \u2014 GRAB IT');
                 }
 
                 // PHASE 1 (extraction): elites drop an intel chip -- banked
@@ -27182,24 +27482,21 @@ class Game {
                     }
                     e._fleePoint = best;
                     e.cachedMoveAngle = undefined; // force immediate AI recompute
-                    this.floatingTexts.push(this.spawnFloatingText(
-                        this.mapW / 2, this.mapH / 2 - 90,
-                        'LAST HOSTILE FLEEING \u2014 STOP THE RUNNER!', '#ff2a5f', 3.0, 0, 0, 120, false));
+                    this.announce('LAST HOSTILE FLEEING \u2014 STOP THE RUNNER!', '#ff2a5f', 4.2,
+                        'IF HE ESCAPES: NEXT WAVE REINFORCED AT LEGENDARY PRESSURE');
                 } else if (role === 'martyr') {
                     // Distance-scaled fuse: a far martyr gives you time to
                     // close; a close one is already a knife fight.
                     this._finalKill.mortarDelay = MathUtils.clamp(3.5 + nd / 300, 3.5, 8.0);
-                    this.floatingTexts.push(this.spawnFloatingText(
-                        this.mapW / 2, this.mapH / 2 - 90,
-                        'MARTYR PROTOCOL \u2014 MORTAR STRIKE INBOUND!', '#ff7a00', 3.0, 0, 0, 120, false));
+                    this.announce('MARTYR PROTOCOL \u2014 SPOTTING FOR MORTARS!', '#ff7a00', 4.2,
+                        'KILL HIM BEFORE THE COUNTDOWN ENDS');
                 } else { // bounty
                     e.isElite = true;
                     e.maxHp = Math.round(e.maxHp * 2.2);
                     e.hp = e.maxHp;
                     e._bountyIntel = true;
-                    this.floatingTexts.push(this.spawnFloatingText(
-                        this.mapW / 2, this.mapH / 2 - 90,
-                        'BOUNTY TARGET \u2014 ELITE ESCALATION, INTEL GUARANTEED', '#ffcc00', 3.0, 0, 0, 120, false));
+                    this.announce('BOUNTY TARGET \u2014 ELITE ESCALATION', '#ffcc00', 4.2,
+                        'GUARANTEED INTEL CHIP \u2014 WORTH THE FIGHT');
                 }
                 audio.playPickup('weapon');
             }
@@ -27226,18 +27523,17 @@ class Game {
                 }
                 this._nextWaveReinforced = true;
                 this._finalKill = null;
-                this.floatingTexts.push(this.spawnFloatingText(
-                    this.mapW / 2, this.mapH / 2 - 90,
-                    'RUNNER ESCAPED \u2014 REINFORCEMENTS INBOUND NEXT WAVE', '#ff2a5f', 3.2, 0, 0, 120, false));
+                this.announce('RUNNER ESCAPED \u2014 HE CALLED FOR BACKUP!', '#ff2a5f', 4.5,
+                    'NEXT WAVE: PROTOCOL 9 \u2014 REINFORCED \u00b7 LEGENDARY PRESSURE \u00b7 HALF PREP');
                 audio.playExplosion(0.25, this.mapW / 2, this.mapH / 2);
             }
         } else if (fk.role === 'martyr') {
             if (fk.mortarDelay > 0) {
                 fk.mortarDelay -= dt;
                 if (fk.mortarDelay <= 0) {
-                    this.floatingTexts.push(this.spawnFloatingText(
-                        this.mapW / 2, this.mapH / 2 - 90,
-                        'MORTARS FIRING \u2014 KILL THE SPOTTER!', '#ff7a00', 2.2, 0, 0, 120, false));
+                    // The live status line (drawScreenOverlays) flips to
+                    // "MORTARS FIRING" on its own; just punch the moment.
+                    audio.playExplosion(0.2, this.mapW / 2, this.mapH / 2);
                 }
             } else {
                 fk.mortarTimer -= dt;
@@ -27263,6 +27559,21 @@ class Game {
 
     triggerRoundWinEffects() {
         this.applyDeadPlayerHardcorePenalties();
+
+        // PROTOCOL 9 stand-down: the vengeance wave is cleared -- restore
+        // the exact pre-vengeance enemyMults snapshot and tell the player
+        // the pressure is back to their chosen setting.
+        if (this._vengeanceWave) {
+            this._vengeanceWave = false;
+            if (this._preVengeanceMults && this.runConfig) {
+                this.runConfig.enemyMults = this._preVengeanceMults;
+                this._preVengeanceMults = null;
+                this.announce('PROTOCOL 9 REPELLED', '#39ff14', 4.0,
+                    'ASSAULT BROKEN \u2014 PRESSURE RESTORED TO ' + (this.difficultyMode || 'hard').toUpperCase());
+            } else {
+                this.announce('PROTOCOL 9 REPELLED', '#39ff14', 4.0, 'ASSAULT BROKEN \u2014 BACK TO SCHEDULE');
+            }
+        }
 
         // JULY item 8 (GREEDY HANDS): with the armory capstone owned, every
         // money drop still on the floor is swept into the closest player's
@@ -31167,6 +31478,9 @@ class Game {
             this.player2.activeDrone.draw(this.ctx, cam);
         }
 
+        // Wall-cast shadows OVER entities (under canopy/roofs) -- see
+        // MapGen.drawWallShadows for why this sits exactly here.
+        this.map.drawWallShadows(this.ctx, cam, viewportW, viewportH);
         this.map.drawFoliageCanopy(this.ctx, cam, viewportW, viewportH);
         this.map.drawRoofs(this.ctx, cam, viewportW, viewportH);
 
@@ -31483,6 +31797,118 @@ class Game {
         }
         this.ctx.fillStyle = vignette;
         this.ctx.fillRect(x, y, w, h);
+
+        // 1b. EVENT ANNOUNCEMENTS (JULY item 8b) -- big screen-space
+        // headlines with a falling settle. Font scales with viewport width
+        // so co-op halves / phones don't overflow.
+        if (this._announcements && this._announcements.length && this.state === 'playing') {
+            for (let i = this._announcements.length - 1; i >= 0; i--) {
+                if (this.gameTime - this._announcements[i].t0 > this._announcements[i].dur) this._announcements.splice(i, 1);
+            }
+            if (this._announcements.length) {
+                this.ctx.save();
+                this.ctx.textAlign = 'center';
+                const fsA = Math.max(14, Math.min(22, w / 34));
+                let yy = y + h * 0.15;
+                for (const a of this._announcements) {
+                    const t = this.gameTime - a.t0;
+                    const alpha = Math.min(1, t / 0.18) * Math.min(1, (a.dur - t) / 0.5);
+                    const drop = Math.min(t, 1.1) * 16; // "falling" settle
+                    this.ctx.globalAlpha = MathUtils.clamp(alpha, 0, 1);
+                    this.ctx.fillStyle = a.color;
+                    this.ctx.shadowColor = a.color;
+                    this.ctx.shadowBlur = 14;
+                    this.ctx.font = 'bold ' + fsA + 'px "Courier New", Courier, monospace';
+                    this.ctx.fillText(a.text, x + w / 2, yy + drop);
+                    if (a.sub) {
+                        this.ctx.font = 'bold ' + Math.round(fsA * 0.58) + 'px "Courier New", Courier, monospace';
+                        this.ctx.globalAlpha = MathUtils.clamp(alpha * 0.85, 0, 1);
+                        this.ctx.fillText(a.sub, x + w / 2, yy + drop + fsA * 0.95);
+                        yy += fsA;
+                    }
+                    yy += fsA * 1.6;
+                }
+                this.ctx.restore();
+            }
+        }
+
+        // 1c. LAST-ENEMY LIVE STATUS + EDGE ARROW (JULY item 8b). When the
+        // wave is down to its final hostile, players always know where it
+        // is and what it's doing: a pulsing status line (with a live
+        // mortar countdown for the MARTYR) plus an off-screen chevron in
+        // the role's color -- same visual language as the teammate arrow.
+        let _lastE = null;
+        if (this.state === 'playing' && !this.extractionMode && !this.operatorMode &&
+            this.enemies.length === 1 && this.enemiesToSpawn === 0) {
+            const cand = this.enemies[0];
+            if (cand && !cand.dead && !(cand instanceof Boss)) _lastE = cand;
+        }
+        if (_lastE) {
+            const fk = this._finalKill;
+            const role = (fk && fk.enemy === _lastE) ? fk.role : null;
+            const lPulse = 0.55 + 0.35 * Math.sin(Date.now() / 160);
+            let line = null, lcol = '#ff2a5f', big = true;
+            if (role === 'runner') {
+                line = 'STOP THE RUNNER \u2014 HE\u2019S CALLING FOR BACKUP!';
+            } else if (role === 'martyr') {
+                lcol = '#ff7a00';
+                line = (fk.mortarDelay > 0)
+                    ? ('\u26a0 LAST HOSTILE: MORTARS INCOMING IN ' + Math.max(0, fk.mortarDelay).toFixed(1) + 's \u2014 KILL THE SPOTTER \u26a0')
+                    : '\u26a0 MORTARS FIRING \u2014 KILL THE SPOTTER! \u26a0';
+            } else if (role === 'bounty') {
+                lcol = '#ffcc00';
+                line = 'BOUNTY TARGET \u2014 ELITE \u00b7 GUARANTEED INTEL';
+            } else {
+                line = 'LAST HOSTILE';
+                big = false; // plain last enemy: quiet tag, arrow does the work
+            }
+            this.ctx.save();
+            this.ctx.textAlign = 'center';
+            const fsL = big ? Math.max(12, Math.min(17, w / 46)) : 11;
+            this.ctx.font = 'bold ' + fsL + 'px "Courier New", Courier, monospace';
+            this.ctx.globalAlpha = big ? lPulse : 0.55;
+            this.ctx.fillStyle = lcol;
+            this.ctx.shadowBlur = big ? 12 : 6;
+            this.ctx.shadowColor = lcol;
+            this.ctx.fillText(line, x + w / 2, y + h * 0.235);
+            this.ctx.restore();
+
+            // Edge arrow (every last enemy, role-colored)
+            const lCam = (p === this.player) ? this.camera : this.camera2;
+            if (lCam) {
+                const lVisW = w / lCam.zoom, lVisH = h / lCam.zoom;
+                const lOff = _lastE.x < lCam.x || _lastE.x > lCam.x + lVisW ||
+                             _lastE.y < lCam.y || _lastE.y > lCam.y + lVisH;
+                if (lOff && p && !p.dead) {
+                    const centerX = x + w / 2, centerY = y + h / 2;
+                    const ang = Math.atan2(_lastE.y - (lCam.y + lVisH / 2), _lastE.x - (lCam.x + lVisW / 2));
+                    const padX = 60, padY = 75;
+                    const drawX = centerX + Math.cos(ang) * ((w - padX * 2) / 2);
+                    const drawY = centerY + Math.sin(ang) * ((h - padY * 2) / 2);
+                    const dist = Math.hypot(_lastE.x - p.x, _lastE.y - p.y);
+                    const arrowLen = MathUtils.map(dist, 400, 2500, 14, 38);
+                    const arrowWidth = MathUtils.map(dist, 400, 2500, 18, 6);
+                    this.ctx.save();
+                    this.ctx.translate(drawX, drawY);
+                    this.ctx.rotate(ang);
+                    this.ctx.fillStyle = lcol;
+                    this.ctx.strokeStyle = '#fff';
+                    this.ctx.shadowBlur = 10 + 6 * lPulse;
+                    this.ctx.shadowColor = lcol;
+                    this.ctx.globalAlpha = 0.6 + 0.4 * lPulse;
+                    this.ctx.lineWidth = 1;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(arrowLen / 2, 0);
+                    this.ctx.lineTo(-arrowLen / 2, -arrowWidth);
+                    this.ctx.lineTo(-arrowLen / 4, 0);
+                    this.ctx.lineTo(-arrowLen / 2, arrowWidth);
+                    this.ctx.closePath();
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    this.ctx.restore();
+                }
+            }
+        }
 
         // JULY item 7: stamina / weight coaching text. Per-viewport (co-op
         // safe), drawn high in the frame (30% down) so it never blocks the
