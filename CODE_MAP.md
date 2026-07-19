@@ -282,9 +282,20 @@ order. Major groupings:
 - What: CSS for full-screen menu overlay
 - Does: Dark semi-transparent overlay with blur, centers content vertically/horizontally.
 
+### `.menu-backdrop-layer {`
+- What: CSS for the main-menu aurora/grid backdrop container (start-screen only)
+- Does: Full-bleed layer behind .menu-box holding two blurred multi-color aura blooms (.menu-aurora-bloom cyan/magenta/emerald/gold + .menu-aurora-bloom-2), a pulsing 44px cyber-grid (.menu-grid-pattern), and an edge vignette (.menu-grid-vignette). GPU-animated via @keyframes auroraBloom / auroraBloomReverse / gridPulse; all layers use will-change and pointer-events:none. Hidden with the start-screen during play (.hidden → display:none), so no in-match cost.
+- Refs: `#start-screen` DOM (aurora/grid divs), `@keyframes auroraBloom`
+
 ### `.menu-box {`
-- What: CSS for menu content box
-- Does: Gradient-bordered card with scanlines overlay (::before pseudo-element), glow shadow, and rounded corners.
+- What: CSS for menu content box (shared by all overlays: start, shop, pause, debrief, chaos-draft, perk, extmags, dev-dashboard)
+- Does: Gradient-bordered CRT-glass card. Dual-frequency subpixel scanlines (::before, cyan + RGB phosphor hints), diagonal glass specular glare (::after), radial inset depth shadows + outer glow, rounded corners. transform-style:preserve-3d with a cubic-bezier transform transition; #start-screen .menu-box additionally gets a subtle JS mouse-parallax tilt (mousemove handler sets perspective(1000px) rotateX/rotateY at 0.6 sensitivity while state==='start').
+- Refs: `.menu-crt-beam {`, mousemove parallax handler
+
+### `.menu-crt-beam {`
+- What: CSS for the animated cathode sweep beam (start-screen .menu-box only)
+- Does: 120px translucent cyan scanline band that glides vertically down the menu box every 9s via @keyframes crtBeamSweep (translateY). pointer-events:none; clipped by the box's overflow:hidden. Inserted as a single DOM div inside the start-screen .menu-box.
+- Refs: `@keyframes crtBeamSweep`
 
 ### `button {`
 - What: CSS base button styles
@@ -1789,7 +1800,12 @@ order. Major groupings:
 
 #### `damageWallPoint(wall, x, y, damage)`
 - What: Direct bullet damage
-- Does: Skip spatial query (caller already has wall). Apply flat point-hit to single damage cell. Call `_openHole` if cell destroyed.
+- Does: Skip spatial query (caller already has wall). Apply flat point-hit to single damage cell. Call `_openHole` if cell destroyed. Decrements `wall.hp` by the exact HP removed BEFORE any carve — the Matter Manipulator drill reads that delta to harvest rubble.
+
+#### MATTER MANIPULATOR (context-sensitive F build system): `const MATTER_MANIPULATOR = {` , `placePlayerWall(player)` , `computeWallBuildFootprint(player)` , `_wallBuildValid(player, x, y, side, cost)` , `drawWallBuildPreview(player, cam)`
+- What: Same F key does MINE (aim at a destructible wall) <-> BUILD (aim at open space). No store item; walls are earned by drilling. Fields on Player: `wallMaterial` (rubble bank), `isBuilding`, `buildTargetSide`, `buildHoldTime`.
+- Does: MINE — the Player.update F-drill block banks the exact `wall.hp` delta from `damageWallPoint` into `player.wallMaterial` (run-scoped; an already-chipped wall just yields less, so no "damaged past X" special case). BUILD — held past `ARM_DELAY` with bank >= `CELL_COST`, `buildTargetSide` grows (affordability-capped, so the preview visibly stops), and `drawWallBuildPreview` shows a green/red world-space square (same cam convention as `drawBarrier`, drawn after the player). On release `placePlayerWall` runs `computeWallBuildFootprint` + `_wallBuildValid` (affordable, in map bounds, no overlap with walls/players/enemies; deny = `playRicochet` and keep material), deducts `_destructibleHpFor(side,side,'crumbling')`, and pushes a FULL-health destructible wall with `hp===maxHp===cost` (so the lazy `_ensureDamageCells` grid can never disagree with `wall.hp` — this is what prevents an un-carvable "zombie" wall) + `_insertWallIntoGrid`. Soft cap via `MapGen._playerWalls` (`MAX_PLAYER_WALLS`) recycles the oldest so unfiltered LOS scans stay bounded. Bank auto-resets each run (Player is reconstructed in `startNewGame`) and is stripped by the Hardcore death penalty. HUD shows a `RUBBLE N` readout on the ammo line.
+- Refs: `damageWallPoint(`, `_destructibleHpFor(`, `_insertWallIntoGrid(`, `_removeWallFromGrid(`, `getWallsNear(`, `placeBarrier(` (placement-UX sibling — note barriers live in `game.barriers`, NOT `map.walls`)
 
 #### `_ensureDamageCells(wall)`
 - What: Lazy damage-cell grid builder

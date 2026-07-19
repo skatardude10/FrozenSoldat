@@ -268,29 +268,114 @@
     
     .menu-overlay {
         position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0, 4, 10, 0.95); display: flex;
+        background: rgba(0, 4, 10, 0.4); display: flex;
         flex-direction: column; justify-content: center; align-items: center;
         pointer-events: auto; backdrop-filter: blur(6px);
         -webkit-backdrop-filter: blur(6px);
+        overflow: hidden;
+    }
+    .menu-backdrop-layer {
+        position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
+    }
+    .menu-aurora-bloom {
+        position: absolute; width: 140%; height: 140%; top: -20%; left: -20%;
+        background: 
+            radial-gradient(circle at 18% 18%, rgba(0, 229, 255, 0.34) 0%, transparent 46%),
+            radial-gradient(circle at 82% 18%, rgba(255, 42, 95, 0.30) 0%, transparent 46%),
+            radial-gradient(circle at 18% 82%, rgba(57, 255, 20, 0.30) 0%, transparent 46%),
+            radial-gradient(circle at 82% 82%, rgba(255, 183, 0, 0.28) 0%, transparent 46%),
+            radial-gradient(circle at 50% 50%, rgba(157, 78, 221, 0.22) 0%, transparent 52%);
+        filter: blur(42px) saturate(1.25);
+        animation: auroraBloom 18s ease-in-out infinite alternate;
+        will-change: transform, opacity;
+    }
+    .menu-aurora-bloom-2 {
+        position: absolute; width: 150%; height: 150%; top: -25%; left: -25%;
+        background: 
+            radial-gradient(circle at 78% 22%, rgba(0, 229, 255, 0.28) 0%, transparent 42%),
+            radial-gradient(circle at 22% 78%, rgba(255, 42, 95, 0.28) 0%, transparent 42%),
+            radial-gradient(circle at 50% 18%, rgba(57, 255, 20, 0.24) 0%, transparent 46%),
+            radial-gradient(circle at 50% 82%, rgba(255, 183, 0, 0.24) 0%, transparent 46%);
+        filter: blur(52px) saturate(1.25);
+        animation: auroraBloomReverse 24s ease-in-out infinite alternate;
+        will-change: transform, opacity;
+    }
+    .menu-grid-pattern {
+        position: absolute; inset: -40px;
+        background-image: 
+            linear-gradient(rgba(0, 229, 255, 0.11) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 229, 255, 0.11) 1px, transparent 1px);
+        background-size: 44px 44px;
+        animation: gridPulse 6s ease-in-out infinite alternate;
+        will-change: opacity;
+    }
+    .menu-grid-vignette {
+        position: absolute; inset: 0;
+        background: radial-gradient(circle at 50% 50%, rgba(1, 10, 21, 0) 30%, rgba(1, 10, 21, 0.4) 68%, rgba(1, 10, 21, 0.9) 100%);
+    }
+    @keyframes auroraBloom {
+        0%   { transform: scale(1) rotate(0deg); opacity: 0.85; }
+        50%  { transform: scale(1.1) rotate(4deg); opacity: 1; }
+        100% { transform: scale(1.05) rotate(-3deg); opacity: 0.9; }
+    }
+    @keyframes auroraBloomReverse {
+        0%   { transform: scale(1.05) rotate(0deg); opacity: 0.75; }
+        50%  { transform: scale(0.95) rotate(-5deg); opacity: 0.95; }
+        100% { transform: scale(1.1) rotate(3deg); opacity: 0.8; }
+    }
+    @keyframes gridPulse {
+        0%   { opacity: 0.5; }
+        50%  { opacity: 0.85; }
+        100% { opacity: 0.6; }
     }
     .menu-box {
-        background: linear-gradient(135deg, rgba(0, 5, 15, 0.85), rgba(0, 10, 25, 0.95));
-        border: none;
-        border-top: 2px solid rgba(0, 229, 255, 0.5);
-        border-bottom: 2px solid rgba(0, 229, 255, 0.1);
-        padding: 40px; text-align: center; max-width: 900px; width: 90%;
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 229, 255, 0.1);
-        border-radius: 6px;
+        background: linear-gradient(135deg, rgba(0, 4, 12, 0.92), rgba(0, 8, 22, 0.96));
+        border: 1px solid rgba(0, 229, 255, 0.25);
+        border-top: 2px solid rgba(0, 229, 255, 0.75);
+        border-bottom: 2px solid rgba(0, 229, 255, 0.2);
+        padding: 24px 40px 32px 40px; text-align: center; max-width: 900px; width: 90%;
+        box-shadow: 
+            0 25px 70px rgba(0, 0, 0, 0.92), 
+            0 0 48px rgba(0, 229, 255, 0.22),
+            inset 0 0 60px rgba(0, 0, 0, 0.82),
+            inset 0 0 15px rgba(0, 229, 255, 0.12);
+        border-radius: 8px;
         position: relative;
         overflow: hidden;
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
+        transform-style: preserve-3d;
+        transition: transform 0.2s cubic-bezier(0.1, 0.8, 0.3, 1), box-shadow 0.3s ease;
     }
-    /* Add subtle scanlines over the menu boxes */
+    /* Dynamic CRT scanlines and sweep beam over menu boxes */
     .menu-box::before {
         content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 229, 255, 0.03) 2px, rgba(0, 229, 255, 0.03) 4px);
+        background: 
+            linear-gradient(rgba(0, 229, 255, 0) 50%, rgba(0, 229, 255, 0.04) 50%),
+            linear-gradient(90deg, rgba(255, 0, 0, 0.01), rgba(0, 255, 0, 0.005), rgba(0, 0, 255, 0.01));
+        background-size: 100% 3px, 3px 100%;
         pointer-events: none; z-index: 0;
+    }
+    /* Curved CRT glass specular glare */
+    .menu-box::after {
+        content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.015) 30%, transparent 55%);
+        pointer-events: none; z-index: 1;
+    }
+    /* Higher specificity than `.menu-box > *` (which resets children to
+       position:relative to sit above the CRT pseudo-layers); without this the
+       equal-specificity `> *` rule wins by source order and flips the beam to
+       relative, whose top:-120px still reserves 120px of flow -> pushes the
+       title down (the "forehead"). Scoping to a direct child keeps it absolute. */
+    .menu-box > .menu-crt-beam {
+        position: absolute; top: -120px; left: 0; width: 100%; height: 120px;
+        background: linear-gradient(to bottom, transparent, rgba(0, 229, 255, 0.06) 50%, transparent);
+        pointer-events: none; z-index: 1;
+        animation: crtBeamSweep 9s linear infinite;
+    }
+    @keyframes crtBeamSweep {
+        0% { transform: translateY(0); }
+        100% { transform: translateY(900px); }
     }
     .menu-box > * { position: relative; z-index: 1; }
     h1 { margin-top: 0; color: var(--neon-blue); text-shadow: 0 0 15px var(--neon-blue); text-transform: uppercase; letter-spacing: 2px; }
@@ -1144,7 +1229,14 @@
 </div>
 
 <div id="start-screen" class="menu-overlay">
+    <div class="menu-backdrop-layer">
+        <div class="menu-aurora-bloom"></div>
+        <div class="menu-aurora-bloom-2"></div>
+        <div class="menu-grid-pattern"></div>
+        <div class="menu-grid-vignette"></div>
+    </div>
     <div class="menu-box">
+        <div class="menu-crt-beam"></div>
         <!-- PHASE D: prestige rank badge (top-right), injected by applyPrestigeCosmetics() -->
         <div id="prestige-badge" style="position:absolute; top:10px; right:12px; z-index:5; pointer-events:none;"></div>
         <h1>FROZEN SOLDAT</h1>
@@ -2760,6 +2852,47 @@ function cancelGLCharge(player) {
     }
 }
 
+// Barrier chain-lay (COMBAT ENGINEER Lvl2, RAPID EMPLACEMENT). Press/release
+// wiring shared by keyboard and gamepad, mirroring the GL charge trio above so
+// both input paths behave identically. tryStartBarrierChain() returns true when
+// it took over the press (the caller must NOT also call useRightItem); every
+// other right item, and the barrier without Engineer Lvl2, returns false so
+// callers fall through to the existing instant tap-to-use path untouched. The
+// actual laying happens per-frame in Player.update while chainPlacing is set; a
+// quick tap (< 0.15s) instead places exactly one barrier, fired on release.
+function tryStartBarrierChain(player) {
+    if (!player || player.rightSelectIdx !== 1) return false;   // barrier slot only
+    const eng = (game && game.saveData && game.saveData.metaUpgrades)
+        ? (game.saveData.metaUpgrades.unlockBarrierEngineer || 0) : 0;
+    if (eng < 2 || player.barriersCount <= 0) return false;
+    if (!player.chainPlacing) {
+        player.chainPlacing = true;
+        player.chainHoldTime = 0;
+        player.chainAnchorX = null;
+        player.chainAnchorY = null;
+    }
+    return true; // already-chaining repeats (keyboard auto-repeat) are a no-op
+}
+
+function releaseBarrierChain(player) {
+    if (!player || !player.chainPlacing) return;
+    const tapped = player.chainHoldTime < 0.15; // muscle-memory tap == single placement
+    player.chainPlacing = false;
+    player.chainHoldTime = 0;
+    player.chainAnchorX = null;
+    player.chainAnchorY = null;
+    if (tapped) game.placeBarrier(player); // a genuine hold already laid its line in update
+}
+
+function cancelBarrierChain(player) {
+    if (player && player.chainPlacing) {
+        player.chainPlacing = false;
+        player.chainHoldTime = 0;
+        player.chainAnchorX = null;
+        player.chainAnchorY = null;
+    }
+}
+
 function useRightItem(player) {
     if (player.rightSelectIdx === 0) {
         game.handleDroneInput(player);
@@ -3001,7 +3134,7 @@ function renderHUDSelectors(player, suffix) {
 
             let items = [
                 { name: `FPV Drone (${droneStatus})`, countText: droneCountText, countColor: droneCountColor, icon: SVGIcons.drone },
-                { name: 'Barrier Wall', countText: player.barriersCount, countColor: player.barriersCount === 0 ? '#ff2a5f' : player.barriersCount >= 5 ? '#39ff14' : 'white', icon: SVGIcons.barrier },
+                { name: 'Barrier Wall', countText: player.barriersCount, countColor: player.barriersCount === 0 ? '#ff2a5f' : player.barriersCount >= game._maxBarriers() ? '#39ff14' : 'white', icon: SVGIcons.barrier },
                 { name: 'Auto Turret', countText: player.turretsCount, countColor: player.turretsCount === 0 ? '#ff2a5f' : player.turretsCount >= 1 ? '#39ff14' : 'white', icon: SVGIcons.turret },
                 { name: dogName, countText: dogCountText, countColor: dogCountColor, icon: SVGIcons.dog },
                 { name: 'Hunter Swarm', countText: player.hunterSwarmCount.toString(), countColor: player.hunterSwarmCount === 0 ? '#ff2a5f' : '#39ff14', icon: SVGIcons.hunter_swarm }
@@ -3069,6 +3202,12 @@ function renderHUDSelectors(player, suffix) {
         ammoBar.style.width = (ammoPct * 100) + '%';
         ammoBar.style.backgroundColor = ammoColor;
         ammoBar.style.boxShadow = `0 0 8px ${ammoColor}`;
+    }
+    // MATTER MANIPULATOR: tiny rubble-bank readout so the drilled-material
+    // total (spent building walls with F) is legible at a glance. Only shows
+    // once the player has actually mined something.
+    if (player.wallMaterial > 0) {
+        displayAmmoText += ` <span style="color:#a68a64">| RUBBLE ${Math.floor(player.wallMaterial)}</span>`;
     }
     if (ammoText) {
         ammoText.innerHTML = displayAmmoText;
@@ -6356,6 +6495,12 @@ class MapGen {
         // once per carve event -- see flushLineageEdges().
         this._dirtyLineages = new Set();
         this._wallDrawPass = 0;
+        // MATTER MANIPULATOR: refs to runtime player-built walls, in placement
+        // order, so a soft cap (see Game.placePlayerWall) can recycle the
+        // oldest and keep the unfiltered O(total walls) LOS scans (Boss /
+        // sniper) bounded no matter how much a player spams tiny blocks.
+        // Auto-resets each run because startNewGame() does `new MapGen()`.
+        this._playerWalls = [];
         
         const blueprints = [
             { id: 0, w: 2200, h: 2200, biome: { main: '#00e5ff', rgb: '0, 229, 255' } },
@@ -10505,6 +10650,30 @@ const PLAYER_GUN_GEOM = {
     LMG:     { barrelLen: 23, barrelH: 5, recX: 5, recLen: 14, recH: 8, stock: 3, grip: 6, fore: 17, mag: { x: 4, w: 9, h: 8 } }
 };
 
+// --- MATTER MANIPULATOR tuning (context-sensitive F: mine <-> build) ---
+// One crumbling damage cell is 24px @ 55hp (see MapGen._wallCellPlan), so the
+// costs here are quantized to that: a ~1-cell block is 55, a ~2x2 block is
+// 220. Built walls are always FULL health, with hp/maxHp set from
+// _destructibleHpFor(side,side,'crumbling') so the (lazily-built) cosmetic
+// damage-cell grid and the structural wall.hp can never disagree -- a mismatch
+// would leave a wall whose hp reaches 0 while a cell still has HP, so it never
+// carves and can't be re-damaged (an un-killable "zombie" wall). Placement is
+// human-paced, so the per-frame validation cost is negligible.
+const MATTER_MANIPULATOR = {
+    ARM_DELAY: 0.18,       // sec F must be held in open space before build arms (so a quick F tap stays an item-pickup, never a placement)
+    MIN_SIDE: 20,          // preview square starts at this px side
+    SMALL_SIDE: 34,        // largest side still rounding to a single 24px cell (cost 55)
+    MAX_SIDE: 52,          // ~2x2 cells; the biggest a player can build (cost 220)
+    GROW_RATE: 3.6,        // px/sec the preview grows while F is held (~9s tiny -> max)
+    CELL_COST: 55,         // hp of one crumbling cell -- minimum bank to enter build mode
+    BIG_COST: 220,         // hp of a full 2x2 block -- bank needed to grow to MAX_SIDE
+    REACH_GAP: 10,         // px gap projected past the player's leading edge
+    MAX_PLAYER_WALLS: 60,  // soft cap; oldest is recycled beyond this (bounds LOS scans)
+    TIER: 'crumbling',     // built walls are the soft tier: improvised, breachable cover
+    COLOR_MAIN: '#a68a64',
+    COLOR_RGB: '166, 138, 100'
+};
+
 class Player extends Entity {
     constructor(x, y, isPlayer2 = false) {
         super(x, y, 12);
@@ -10537,6 +10706,18 @@ class Player extends Entity {
         // why that pattern needs much more care.
         this.drillSoundTimer = 0;
         this.isDrilling = false; // true while the drill is actively contacting a wall this frame -- tracked for potential HUD/visual hooks; not currently read anywhere else
+        // --- MATTER MANIPULATOR (context-sensitive F) ---
+        // Same F key: aim at a destructible wall -> MINE (drill), harvesting
+        // the EXACT hp removed into wallMaterial (a run-scoped "rubble bank").
+        // Aim at open space with material banked -> BUILD: a preview square
+        // grows while held; on release it commits a real, full-health map
+        // wall costing exactly its own hp (see Game.placePlayerWall). Bank is
+        // reset for free every run since Player is reconstructed in
+        // startNewGame(); also stripped by the Hardcore death penalty.
+        this.wallMaterial = 0;      // banked rubble HP available to spend building
+        this.isBuilding = false;    // true while F is held in build (open-space) mode
+        this.buildTargetSide = 0;   // px side length of the in-progress preview square, grows while held
+        this.buildHoldTime = 0;     // sec F has been held in open space; gates build behind ARM_DELAY so a tap stays a pickup
         // Laser Beam collimation (see AIM_WEIGHT.COLLIMATION_* + the laser-
         // sight draw block in Game.draw()): 1 = fully focused/tight beam,
         // 0 = just fired/wide and unfocused. Snapped down on every shot
@@ -10652,6 +10833,12 @@ class Player extends Entity {
         this.glCharging = false;
         this.glChargeDist = 0;
         this.glHoldTime = 0;
+        // COMBAT ENGINEER Lvl2 (RAPID EMPLACEMENT): hold the deploy button and
+        // strafe to chain-lay barriers end-to-end. Mirrors the GL charge state.
+        this.chainPlacing = false;
+        this.chainHoldTime = 0;
+        this.chainAnchorX = null;
+        this.chainAnchorY = null;
         this.barriersCount = 0;
         this.turretsCount = 0;
         this.dronesCount = 0;
@@ -11034,6 +11221,25 @@ class Player extends Entity {
             this.glHoldTime += dt;
             this.glChargeDist = Math.min(GL_ARC.MAX_DIST, this.glChargeDist + GL_ARC.SLIDE_SPEED * dt);
         }
+        // RAPID EMPLACEMENT: while the deploy button is held on the barrier slot,
+        // drop a barrier each time we've strafed roughly one barrier-width from
+        // the last drop, so they abut end-to-end. The 0.15s gate keeps a quick
+        // tap == a single placement (that path fires on release in
+        // releaseBarrierChain, exactly the old behavior). Switching the right
+        // selector away mid-hold (rightSelectIdx !== 1) suspends laying without
+        // dropping the wrong item.
+        if (this.chainPlacing) {
+            this.chainHoldTime += dt;
+            if (this.chainHoldTime >= 0.15 && this.rightSelectIdx === 1 && this.barriersCount > 0) {
+                const CHAIN_SPACING = 80; // == barrier length L, for flush abutment
+                if (this.chainAnchorX === null ||
+                    Math.hypot(this.x - this.chainAnchorX, this.y - this.chainAnchorY) >= CHAIN_SPACING) {
+                    game.placeBarrierChained(this);
+                    this.chainAnchorX = this.x;
+                    this.chainAnchorY = this.y;
+                }
+            }
+        }
 
         // --- Fire System (Interchangeable Mouse/Trigger) ---
         let isFiring = !this.isPlayer2 && input.mouseDown;
@@ -11168,9 +11374,25 @@ class Player extends Entity {
             }
 
             if (bestWall) {
+                // --- MINE MODE: aiming at a wall -> drill it + harvest rubble ---
                 this.isDrilling = true;
+                this.isBuilding = false;
+                this.buildTargetSide = 0;
+                this.buildHoldTime = 0;
                 const DRILL_DPS = 140; // damage/sec -- see _wallCellPlan's cellMax comment for how this lines up against crumbling/light/reinforced cell toughness
+
+                // MATTER MANIPULATOR: bank the EXACT hp damageWallPoint removes
+                // this frame. damageWallPoint caps its bite at the struck
+                // cell's remaining hp (and at wall.hp) and decrements wall.hp
+                // BEFORE any carve (_openHole) fires, so this delta is always
+                // real HP that truly existed and was truly removed -- reading
+                // wall.hp right after is correct even on the hit that finishes
+                // the wall, and an already-chipped wall simply yields less,
+                // with no separate "damaged past X doesn't count" rule needed.
+                let hpBefore = bestWall.hp;
                 game.map.damageWallPoint(bestWall, bestPx, bestPy, DRILL_DPS * dt);
+                let hpLost = hpBefore - bestWall.hp;
+                if (hpLost > 0) this.wallMaterial += hpLost;
 
                 // Sparks kicked back off the contact point, roughly away
                 // from the wall surface -- reuses the same addParticle/
@@ -11195,12 +11417,54 @@ class Player extends Entity {
                     audio.playDrill(0.5);
                     this.drillSoundTimer = 0.11;
                 }
-            } else {
+            } else if (this.wallMaterial >= MATTER_MANIPULATOR.CELL_COST) {
+                // --- BUILD MODE: aiming at open space with banked rubble ---
+                // The preview square grows while F is held, but only as large
+                // as the bank can actually afford (it visibly STOPS growing
+                // when material runs out) and never past MAX_SIDE. The commit
+                // itself happens on release, in the outer else below.
                 this.isDrilling = false;
+                // Arm only after a short hold so a quick F tap remains an
+                // item pickup (bindInput's keydown handler) rather than
+                // instantly placing a block.
+                this.buildHoldTime = (this.buildHoldTime || 0) + dt;
+                if (this.buildHoldTime >= MATTER_MANIPULATOR.ARM_DELAY) {
+                    this.isBuilding = true;
+                    // A full 2x2 (MAX_SIDE, 220hp) needs 220 banked; otherwise
+                    // cap at a 1-cell footprint (SMALL_SIDE stays 1 cell =>
+                    // 55hp) which we know is covered (entered on >= CELL_COST).
+                    let maxAffordSide = (this.wallMaterial >= MATTER_MANIPULATOR.BIG_COST)
+                        ? MATTER_MANIPULATOR.MAX_SIDE : MATTER_MANIPULATOR.SMALL_SIDE;
+                    let grown = (this.buildTargetSide || MATTER_MANIPULATOR.MIN_SIDE) + MATTER_MANIPULATOR.GROW_RATE * dt;
+                    this.buildTargetSide = MathUtils.clamp(grown, MATTER_MANIPULATOR.MIN_SIDE,
+                        Math.min(MATTER_MANIPULATOR.MAX_SIDE, maxAffordSide));
+
+                    // Rhythmic heavy clank while the block forms -- deliberately
+                    // distinct from the drill grind (reuses the deploy/mine-place
+                    // thunk on a slower cadence).
+                    this.drillSoundTimer -= dt;
+                    if (this.drillSoundTimer <= 0) {
+                        if (audio && audio.playMinePlace) audio.playMinePlace(this.x, this.y);
+                        this.drillSoundTimer = 0.4;
+                    }
+                }
+            } else {
+                // Holding F at open space with no usable material: idle.
+                this.isDrilling = false;
+                this.isBuilding = false;
+                this.buildTargetSide = 0;
+                this.buildHoldTime = 0;
                 this.drillSoundTimer = 0;
             }
         } else {
+            // --- F RELEASED (or drone-piloting): commit any in-progress build ---
+            if (this.isBuilding && this.buildTargetSide > 0 && typeof game !== 'undefined' && game) {
+                game.placePlayerWall(this);
+            }
             this.isDrilling = false;
+            this.isBuilding = false;
+            this.buildTargetSide = 0;
+            this.buildHoldTime = 0;
             this.drillSoundTimer = 0;
         }
 
@@ -20295,6 +20559,15 @@ const ARMORY_UPGRADES = [
       costPerLevel: [20],
       desc: 'Adds Barrier MK.II upgrade to the Shop. (Base Barrier always available.)',
       levelDescs: ['Adds Barrier MK.II upgrade to the Shop'] },
+    // COMBAT ENGINEER: two-level barrier deployment upgrade. Lvl1 relaxes the
+    // placeBarrier wall-overlap block (into-wall placement, rendered bolted-in
+    // via drawBarrier) and raises the max via _maxBarriers() 5->7. Lvl2 wires
+    // the barrier deploy button into a hold-to-chain lay, reusing the GL charge
+    // press/release trio (tryStartBarrierChain/releaseBarrierChain/cancelBarrierChain).
+    { key: 'unlockBarrierEngineer', name: 'REQUISITION: COMBAT ENGINEER', maxLevel: 2,
+      costPerLevel: [30, 45],
+      desc: 'Lvl1: REINFORCED EMPLACEMENTS -- deploy barriers flush into walls (they render bolted-in) and carry +2 more (5->7). Lvl2: RAPID EMPLACEMENT -- hold the deploy button and strafe to chain barriers end-to-end.',
+      levelDescs: ['REINFORCED EMPLACEMENTS (into-wall placement, +2 max barriers)', 'RAPID EMPLACEMENT (hold-to-chain deploy)'] },
     { key: 'unlockOverclocks', name: 'REQUISITION: OVERCLOCKS', maxLevel: 2,
       costPerLevel: [30, 40],
       desc: 'Lvl1: standard Weapon Overclocks in the Shop. Lvl2: Extended Mags.',
@@ -23213,10 +23486,11 @@ class Game {
                     if (!tryStartGLCharge(this.player)) useLeftItem(this.player);
                 }
                 if (key === 'z') {
+                    cancelBarrierChain(this.player);
                     this.player.rightSelectIdx = (this.player.rightSelectIdx + 1) % 5;
                 }
                 if (key === 'c') {
-                    useRightItem(this.player);
+                    if (!tryStartBarrierChain(this.player)) useRightItem(this.player);
                 }
                 if (key === 'f') {
                     interactPickUpItem(this.player);
@@ -23232,6 +23506,9 @@ class Game {
             if (key === 'e' && this.state === 'playing' && this.player && !this.player.dead) {
                 releaseGLCharge(this.player);
             }
+            if (key === 'c' && this.state === 'playing' && this.player && !this.player.dead) {
+                releaseBarrierChain(this.player);
+            }
         });
         window.addEventListener('mousemove', e => {
             const isTouchPlaying = window.touchController && window.touchController.enabled && this && this.state === 'playing' && !this.isPaused;
@@ -23241,6 +23518,20 @@ class Game {
             this.input.mx = e.clientX; this.input.my = e.clientY;
             this.crosshair.style.left = e.clientX + 'px';
             this.crosshair.style.top = e.clientY + 'px';
+
+            // Subtle 3D parallax tilt for main menu glass box
+            if (this.state === 'start') {
+                const menuBox = document.querySelector('#start-screen .menu-box');
+                if (menuBox) {
+                    const cx = window.innerWidth / 2;
+                    const cy = window.innerHeight / 2;
+                    const dx = (e.clientX - cx) / cx;
+                    const dy = (e.clientY - cy) / cy;
+                    const rotX = (-dy * 0.6).toFixed(2);
+                    const rotY = (dx * 0.6).toFixed(2);
+                    menuBox.style.transform = `perspective(1000px) rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+                }
+            }
 
             // Clear gamepad highlight on mouse move so it doesn't clash with mouse hover
             const focused = document.querySelectorAll('#start-screen .focused-btn');
@@ -23304,6 +23595,8 @@ class Game {
         if (this.isPaused) {
             cancelGLCharge(this.player);
             cancelGLCharge(this.player2);
+            cancelBarrierChain(this.player);
+            cancelBarrierChain(this.player2);
             this.switchPauseTab('system');
         } else {
             this.switchPauseTab('system');
@@ -23598,10 +23891,6 @@ class Game {
                         playerInstance.switchWeapon(1);
                         this.gpadButtonCooldown = 0.22;
                     }
-                    if (gp.buttons[11].pressed) { // Right Stick Press (R3) - Use Right Selector
-                        useRightItem(playerInstance);
-                        this.gpadButtonCooldown = 0.3;
-                    }
                     if (gp.buttons[2].pressed) { // Square / Xbox X - Pick up placed item / Land Drone
                         interactPickUpItem(playerInstance);
                         this.gpadButtonCooldown = 0.3;
@@ -23635,6 +23924,19 @@ class Game {
                     releaseGLCharge(playerInstance);
                 }
                 playerInstance._glL3WasDown = l3Down;
+
+                // Right Stick Press (R3) - Use Right Selector. Edge-tracked like
+                // L3 above (moved out of the gpadButtonCooldown gate) so COMBAT
+                // ENGINEER Lvl2 can sense a HOLD every frame and chain-lay; every
+                // other right item still fires once on the press edge, matching
+                // the old cooldown-gated feel.
+                let r3Down = gp.buttons[11].pressed;
+                if (r3Down && !playerInstance._chainR3WasDown) {
+                    if (!tryStartBarrierChain(playerInstance)) useRightItem(playerInstance);
+                } else if (!r3Down && playerInstance._chainR3WasDown) {
+                    releaseBarrierChain(playerInstance);
+                }
+                playerInstance._chainR3WasDown = r3Down;
             };
 
             pollPlayer(gp1, this.player);
@@ -24438,6 +24740,14 @@ class Game {
         });
     }
 
+    // Max barriers a player may stock. COMBAT ENGINEER Lvl1 raises it 5->7.
+    // Read at the shop buy gates + the HUD "full" indicator. Null-safe so it
+    // can be called before saveData is fully seated.
+    _maxBarriers() {
+        const MA = this.saveData && this.saveData.metaUpgrades;
+        return (MA && (MA.unlockBarrierEngineer || 0) >= 1) ? 7 : 5;
+    }
+
     placeBarrier(player) {
         if (!player || player.dead || player.barriersCount <= 0) return;
         
@@ -24457,7 +24767,18 @@ class Game {
         
         let newBarrier = { ax, ay, bx, by, r: R, hp: 600, maxHp: 600, owner: player };
         
+        // COMBAT ENGINEER Lvl1 (REINFORCED EMPLACEMENTS): barriers may be
+        // deployed flush into walls. We still walk the same 5-sample AABB
+        // sweep, but for engineers a hit no longer blocks the placement --
+        // instead we flag which endpoint(s) are embedded so the second-pass
+        // can render a mounting plate at the wall edge. Non-engineers keep
+        // the original hard block (first wall hit -> ricochet, no placement).
+        const MA = this.saveData && this.saveData.metaUpgrades;
+        const engineer = !!(MA && (MA.unlockBarrierEngineer || 0) >= 1);
+        
         let overlap = false;
+        let hitA = false, hitB = false;
+        let wallA = null, wallB = null;
         for (let wall of this.map.walls) {
             for (let i = 0; i <= 4; i++) {
                 let t = i / 4;
@@ -24466,13 +24787,54 @@ class Game {
                 let col = MathUtils.circleIntersectAABB(cpx, cpy, R, wall);
                 if (col.hit) {
                     overlap = true;
-                    break;
+                    if (t <= 0.25) { hitA = true; wallA = wall; }
+                    if (t >= 0.75) { hitB = true; wallB = wall; }
+                    if (!engineer) break;
                 }
             }
-            if (overlap) break;
+            if (overlap && !engineer) break;
         }
         
-        if (!overlap) {
+        if (!overlap || engineer) {
+            newBarrier.builtInA = hitA;
+            newBarrier.builtInB = hitB;
+            // Find the wall-edge intersection point for each embedded end.
+            // Walk from midpoint toward the embedded endpoint in fine steps;
+            // the last step that's OUTSIDE the wall is approximately the edge.
+            if (hitA && wallA) {
+                let ex = cx, ey = cy; // start at midpoint (outside)
+                for (let s = 0; s <= 20; s++) {
+                    let t = s / 20;
+                    let tx = cx + t * (ax - cx);
+                    let ty = cy + t * (ay - cy);
+                    if (MathUtils.circleIntersectAABB(tx, ty, 1, wallA).hit) break;
+                    ex = tx; ey = ty;
+                }
+                newBarrier.plateAx = ex; newBarrier.plateAy = ey;
+                let dLeft = Math.abs(ex - wallA.x);
+                let dRight = Math.abs(ex - (wallA.x + wallA.w));
+                let dTop = Math.abs(ey - wallA.y);
+                let dBottom = Math.abs(ey - (wallA.y + wallA.h));
+                let minDist = Math.min(dLeft, dRight, dTop, dBottom);
+                newBarrier.plateOrientA = (minDist === dLeft || minDist === dRight) ? 'vert' : 'horiz';
+            }
+            if (hitB && wallB) {
+                let ex = cx, ey = cy;
+                for (let s = 0; s <= 20; s++) {
+                    let t = s / 20;
+                    let tx = cx + t * (bx - cx);
+                    let ty = cy + t * (by - cy);
+                    if (MathUtils.circleIntersectAABB(tx, ty, 1, wallB).hit) break;
+                    ex = tx; ey = ty;
+                }
+                newBarrier.plateBx = ex; newBarrier.plateBy = ey;
+                let dLeft = Math.abs(ex - wallB.x);
+                let dRight = Math.abs(ex - (wallB.x + wallB.w));
+                let dTop = Math.abs(ey - wallB.y);
+                let dBottom = Math.abs(ey - (wallB.y + wallB.h));
+                let minDist = Math.min(dLeft, dRight, dTop, dBottom);
+                newBarrier.plateOrientB = (minDist === dLeft || minDist === dRight) ? 'vert' : 'horiz';
+            }
             let barrierData = player.barriersInventory.pop();
             let hp = 600;
             let maxHp = 600;
@@ -24499,6 +24861,282 @@ class Game {
             this.spawnDeployRing(cx, cy);
         } else {
             audio.playRicochet(); 
+        }
+    }
+
+    // MATTER MANIPULATOR: resolve the square the player is about to build from
+    // their current build-progress (buildTargetSide grows in Player.update
+    // while F is held in open space). Shared by the world-space preview and
+    // the commit so "what you see is what you place." Cost/hp come straight
+    // from _destructibleHpFor(side,side,'crumbling'), so the built wall is
+    // always full-health with hp === maxHp === cols*rows*cellMax -- the
+    // invariant that keeps the lazy damage-cell grid consistent with wall.hp.
+    computeWallBuildFootprint(player) {
+        let side = player.buildTargetSide || MATTER_MANIPULATOR.MIN_SIDE;
+        let cost = this.map._destructibleHpFor(side, side, MATTER_MANIPULATOR.TIER);
+        // Project the square just past the player's leading edge, along aim.
+        let dist = player.r + side / 2 + MATTER_MANIPULATOR.REACH_GAP;
+        let cx = player.x + Math.cos(player.angle) * dist;
+        let cy = player.y + Math.sin(player.angle) * dist;
+        let x = cx - side / 2, y = cy - side / 2;
+        let valid = this._wallBuildValid(player, x, y, side, cost);
+        return { x, y, cx, cy, side, cost, valid };
+    }
+
+    // Placement gate for a player-built wall: affordable, in-bounds, and not
+    // overlapping existing walls / a player / a live enemy. Mirrors the intent
+    // of placeBarrier's overlap sweep, but AABB-based since the footprint is a
+    // rect. Cheap: getWallsNear is a 3x3-cell query and the enemy loop is
+    // distance-culled, and this only runs while a build is actually in
+    // progress (a few frames of a human holding F), never for the whole world.
+    _wallBuildValid(player, x, y, side, cost) {
+        if (!player || player.wallMaterial < cost) return false;
+        if (x < 0 || y < 0 || x + side > this.mapW || y + side > this.mapH) return false;
+        let cx = x + side / 2, cy = y + side / 2;
+        let rect = { x, y, w: side, h: side };
+        // No overlapping existing wall geometry.
+        let near = this.map.getWallsNear(cx, cy);
+        for (let w of near) {
+            if (x < w.x + w.w && x + side > w.x && y < w.y + w.h && y + side > w.y) return false;
+        }
+        // Don't bury a player (self or co-op partner).
+        for (let p of [this.player, this.player2]) {
+            if (!p || p.dead) continue;
+            if (MathUtils.circleIntersectAABB(p.x, p.y, p.r, rect).hit) return false;
+        }
+        // Don't trap or eject a live enemy: reject if one overlaps the rect.
+        for (let e of this.enemies) {
+            if (!e || e.dead) continue;
+            let dx = e.x - cx, dy = e.y - cy;
+            if (dx * dx + dy * dy > 300 * 300) continue; // cheap cull before the precise test
+            if (MathUtils.circleIntersectAABB(e.x, e.y, e.r || 12, rect).hit) return false;
+        }
+        return true;
+    }
+
+    // MATTER MANIPULATOR: commit the in-progress build square into a real,
+    // destructible map wall (full health) and deduct its exact hp from the
+    // rubble bank. Denied placements keep the material and just buzz. A soft
+    // cap recycles the oldest player-built wall so the unfiltered O(total
+    // walls) LOS scans (Boss / sniper) stay bounded under wall spam. No path
+    // cache invalidation is needed -- enemies re-route within the cache's
+    // 0.45s TTL, exactly as they already do when a wall is destroyed.
+    placePlayerWall(player) {
+        if (!player || player.dead) return;
+        let f = this.computeWallBuildFootprint(player);
+        if (!f.valid) {
+            if (audio && audio.playRicochet) audio.playRicochet();
+            return;
+        }
+        player.wallMaterial -= f.cost;
+
+        let wall = {
+            x: f.x, y: f.y, w: f.side, h: f.side,
+            destructible: true,
+            tier: MATTER_MANIPULATOR.TIER,
+            hp: f.cost, maxHp: f.cost,   // === _destructibleHpFor(side,side,'crumbling'); keeps hp/cell grid consistent
+            colorMain: MATTER_MANIPULATOR.COLOR_MAIN,
+            colorRgb: MATTER_MANIPULATOR.COLOR_RGB,
+            _playerBuilt: true
+        };
+        this.map.walls.push(wall);
+        this.map._insertWallIntoGrid(wall);
+
+        let pw = this.map._playerWalls;
+        pw.push(wall);
+        while (pw.length > MATTER_MANIPULATOR.MAX_PLAYER_WALLS) {
+            let old = pw.shift();
+            let idx = this.map.walls.indexOf(old);
+            if (idx !== -1) {
+                this.map.walls.splice(idx, 1);
+                this.map._removeWallFromGrid(old);
+            }
+        }
+
+        this.spawnDeployRing(f.cx, f.cy);
+        for (let i = 0; i < 10; i++) {
+            this.addParticle(f.cx, f.cy, MathUtils.rand(-90, 90), MathUtils.rand(-90, 90), MATTER_MANIPULATOR.COLOR_MAIN, 0.35, 2);
+        }
+        if (audio && audio.playExplosion) audio.playExplosion(0.18, f.cx, f.cy);
+    }
+
+    // MATTER MANIPULATOR: the growing build-preview square, drawn in world
+    // space (same cam convention as drawBarrier: subtract cam.x/cam.y).
+    // Green = placeable, red = blocked (overlap / out of bounds / unaffordable)
+    // -- so the player sees the exact footprint and its validity before
+    // releasing F. Drawn AFTER the player so it reads as a hologram on top.
+    drawWallBuildPreview(player, cam) {
+        if (!player || player.dead || !player.isBuilding || player.buildTargetSide <= 0) return;
+        let f = this.computeWallBuildFootprint(player);
+        let sx = f.x - cam.x, sy = f.y - cam.y;
+        let ctx = this.ctx;
+        ctx.save();
+        ctx.strokeStyle = f.valid ? '#39ff14' : '#ff2a5f';
+        ctx.fillStyle = f.valid ? 'rgba(57, 255, 20, 0.15)' : 'rgba(255, 42, 95, 0.15)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.lineDashOffset = -((Date.now() / 60) % 18);
+        ctx.fillRect(sx, sy, f.side, f.side);
+        ctx.strokeRect(sx, sy, f.side, f.side);
+        ctx.restore();
+    }
+
+    // RAPID EMPLACEMENT chain variant: each chained barrier follows the
+    // player's AIM direction. We compute where a normal barrier WOULD go
+    // (52px in front, perpendicular to look angle), find the previous
+    // barrier's closest endpoint to that ideal spot, and extend from the
+    // snap point toward the ideal center. This lets the player spin and
+    // chain a polygon — the chain naturally follows the crosshair.
+    placeBarrierChained(player) {
+        if (!player || player.dead || player.barriersCount <= 0) return;
+
+        // Find the most recently placed barrier owned by this player
+        let prev = null;
+        if (this.barriers && this.barriers.length > 0) {
+            for (let i = this.barriers.length - 1; i >= 0; i--) {
+                if (this.barriers[i].owner === player) {
+                    prev = this.barriers[i];
+                    break;
+                }
+            }
+        }
+
+        // No previous barrier to snap to — fall back to regular placement
+        if (!prev) { this.placeBarrier(player); return; }
+
+        // Compute where a normal barrier WOULD be placed
+        let idealCx = player.x + Math.cos(player.angle) * 52;
+        let idealCy = player.y + Math.sin(player.angle) * 52;
+
+        // Find which prev endpoint (A or B) is closest to the ideal center
+        let dA = Math.hypot(prev.ax - idealCx, prev.ay - idealCy);
+        let dB = Math.hypot(prev.bx - idealCx, prev.by - idealCy);
+        let snapX, snapY;
+        if (dA <= dB) {
+            snapX = prev.ax; snapY = prev.ay;
+        } else {
+            snapX = prev.bx; snapY = prev.by;
+        }
+
+        // If the snap point is too far from the ideal center, start fresh
+        let distToSnap = Math.hypot(snapX - idealCx, snapY - idealCy);
+        if (distToSnap > 120) { this.placeBarrier(player); return; }
+
+        // Build the new barrier from the snap point, extending TOWARD the
+        // ideal center (the direction the player is looking). The length is
+        // fixed at L=80.
+        let L = 80;
+        let R = 8;
+
+        // Direction from snap point toward the ideal center
+        let dirX = idealCx - snapX;
+        let dirY = idealCy - snapY;
+        let dirLen = Math.hypot(dirX, dirY);
+        if (dirLen < 1) {
+            // Degenerate — ideal center is ON the snap point; use player angle
+            dirX = Math.cos(player.angle + Math.PI / 2);
+            dirY = Math.sin(player.angle + Math.PI / 2);
+        } else {
+            dirX /= dirLen;
+            dirY /= dirLen;
+        }
+
+        let ax = snapX;
+        let ay = snapY;
+        let bx = snapX + dirX * L;
+        let by = snapY + dirY * L;
+        let cx = (ax + bx) / 2;
+        let cy = (ay + by) / 2;
+
+        let newBarrier = { ax, ay, bx, by, r: R, hp: 600, maxHp: 600, owner: player };
+
+        // Same engineer wall-embedding check as placeBarrier
+        const MA = this.saveData && this.saveData.metaUpgrades;
+        const engineer = !!(MA && (MA.unlockBarrierEngineer || 0) >= 1);
+
+        let overlap = false;
+        let hitA = false, hitB = false;
+        let wallA = null, wallB = null;
+        for (let wall of this.map.walls) {
+            for (let i = 0; i <= 4; i++) {
+                let t = i / 4;
+                let cpx = ax + t * (bx - ax);
+                let cpy = ay + t * (by - ay);
+                let col = MathUtils.circleIntersectAABB(cpx, cpy, R, wall);
+                if (col.hit) {
+                    overlap = true;
+                    if (t <= 0.25) { hitA = true; wallA = wall; }
+                    if (t >= 0.75) { hitB = true; wallB = wall; }
+                    if (!engineer) break;
+                }
+            }
+            if (overlap && !engineer) break;
+        }
+
+        if (!overlap || engineer) {
+            newBarrier.builtInA = hitA;
+            newBarrier.builtInB = hitB;
+            // Compute wall-edge intersection for mounting plates
+            if (hitA && wallA) {
+                let ex = cx, ey = cy;
+                for (let s = 0; s <= 20; s++) {
+                    let t = s / 20;
+                    let tx = cx + t * (ax - cx);
+                    let ty = cy + t * (ay - cy);
+                    if (MathUtils.circleIntersectAABB(tx, ty, 1, wallA).hit) break;
+                    ex = tx; ey = ty;
+                }
+                newBarrier.plateAx = ex; newBarrier.plateAy = ey;
+                let dLeft = Math.abs(ex - wallA.x);
+                let dRight = Math.abs(ex - (wallA.x + wallA.w));
+                let dTop = Math.abs(ey - wallA.y);
+                let dBottom = Math.abs(ey - (wallA.y + wallA.h));
+                let minDist = Math.min(dLeft, dRight, dTop, dBottom);
+                newBarrier.plateOrientA = (minDist === dLeft || minDist === dRight) ? 'vert' : 'horiz';
+            }
+            if (hitB && wallB) {
+                let ex = cx, ey = cy;
+                for (let s = 0; s <= 20; s++) {
+                    let t = s / 20;
+                    let tx = cx + t * (bx - cx);
+                    let ty = cy + t * (by - cy);
+                    if (MathUtils.circleIntersectAABB(tx, ty, 1, wallB).hit) break;
+                    ex = tx; ey = ty;
+                }
+                newBarrier.plateBx = ex; newBarrier.plateBy = ey;
+                let dLeft = Math.abs(ex - wallB.x);
+                let dRight = Math.abs(ex - (wallB.x + wallB.w));
+                let dTop = Math.abs(ey - wallB.y);
+                let dBottom = Math.abs(ey - (wallB.y + wallB.h));
+                let minDist = Math.min(dLeft, dRight, dTop, dBottom);
+                newBarrier.plateOrientB = (minDist === dLeft || minDist === dRight) ? 'vert' : 'horiz';
+            }
+            let barrierData = player.barriersInventory.pop();
+            let hp = 600;
+            let maxHp = 600;
+            let isMKII = player.barrierUpgraded || false;
+
+            if (typeof barrierData === 'object' && barrierData !== null) {
+                hp = barrierData.hp;
+                maxHp = barrierData.maxHp || 600;
+                isMKII = barrierData.isMKII || isMKII;
+            } else if (typeof barrierData === 'number') {
+                hp = barrierData;
+            }
+
+            newBarrier.hp = hp;
+            newBarrier.maxHp = maxHp;
+            newBarrier.isMKII = isMKII;
+
+            this.barriers.push(newBarrier);
+            audio.playPickup('weapon');
+            let pColor = isMKII ? '#d500f9' : '#00e5ff';
+            for (let i = 0; i < 12; i++) {
+                this.addParticle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.4, 2);
+            }
+            this.spawnDeployRing(cx, cy);
+        } else {
+            audio.playRicochet();
         }
     }
 
@@ -24686,17 +25324,14 @@ class Game {
             this.ctx.stroke();
         }
         
+        // COMBAT ENGINEER mounting plates + health bars are rendered in a
+        // second pass AFTER walls (see main draw loop) so they're visible
+        // on top of wall geometry while the barrier body stays under walls.
+        
         this.ctx.restore();
         
-        if (bar.hp < bar.maxHp) {
-            let pct = bar.hp / bar.maxHp;
-            let mx = (sax + sbx) / 2;
-            let my = (say + sby) / 2;
-            this.ctx.fillStyle = 'rgba(255, 0, 0, 0.4)';
-            this.ctx.fillRect(mx - 20, my - bar.r - 8, 40, 4);
-            this.ctx.fillStyle = colorMain;
-            this.ctx.fillRect(mx - 20, my - bar.r - 8, 40 * pct, 4);
-        }
+        // Health bar rendering moved to the second-pass in the main draw
+        // loop (after walls/entities) so it renders on top of everything.
     }
 
     handleDroneInput(playerInstance) {
@@ -24787,6 +25422,7 @@ class Game {
         this.drawPermanentMarks(this.ctx, droneCam, visibleW, visibleH);
 
         this.map.drawOperatorBiomeBands(this.ctx, droneCam, pw, ph);
+        if (this.barriers) for (let bar of this.barriers) this.drawBarrier(bar, droneCam);
         this.map.draw(this.ctx, droneCam, pw, ph);
         this.map.drawFoliageGround(this.ctx, droneCam, pw, ph);
         
@@ -24806,14 +25442,11 @@ class Game {
         }
         if (!this.player.dead) this.player.draw(this.ctx, droneCam);
         if (this.isTwoPlayer && this.player2 && !this.player2.dead) this.player2.draw(this.ctx, droneCam);
+        this.drawWallBuildPreview(this.player, droneCam);
+        if (this.isTwoPlayer && this.player2) this.drawWallBuildPreview(this.player2, droneCam);
         for (let b of this.bullets) b.draw(this.ctx, droneCam);
         
-        if (this.barriers) {
-            for (let bar of this.barriers) {
-                this.drawBarrier(bar, droneCam);
-            }
-        }
-        
+
         droneInstance.draw(this.ctx, droneCam);
 
         this.map.drawFoliageCanopy(this.ctx, droneCam, pw, ph);
@@ -25118,8 +25751,8 @@ class Game {
         // Deliberately skip drawFoliageGround/Canopy here -- ground
         // clutter and canopy occlusion add visual noise this inset doesn't
         // need; it only has to answer "is the perimeter holding".
-        this.map.draw(this.ctx, baseCam, pw, ph, true);
         if (this.barriers) for (let bar of this.barriers) this.drawBarrier(bar, baseCam);
+        this.map.draw(this.ctx, baseCam, pw, ph, true);
         if (this.turrets) for (let t of this.turrets) t.draw(this.ctx, baseCam);
         if (this.dogs) for (let d of this.dogs) d.draw(this.ctx, baseCam);
         for (let e of this.enemies) e.draw(this.ctx, baseCam);
@@ -28980,6 +29613,11 @@ class Game {
             p.medpacks = 0;
             p.energyDrinks = 0;
             p.energyDrinkTimer = 0;
+            // MATTER MANIPULATOR: banked rubble is a run resource too.
+            p.wallMaterial = 0;
+            p.isBuilding = false;
+            p.buildTargetSide = 0;
+            p.buildHoldTime = 0;
             p.isExhausted = false;
             p.flashOpacity = 0;
             p.pistolHP = false;
@@ -29586,7 +30224,7 @@ class Game {
 
             let barBtn = document.getElementById('btn-buy-barrier-' + suffix);
             if (barBtn) {
-                if (p.barriersCount >= 5) { barBtn.classList.add('maxed'); barBtn.innerText = "BARRIER (MAX)"; barBtn.disabled = true; }
+                if (p.barriersCount >= this._maxBarriers()) { barBtn.classList.add('maxed'); barBtn.innerText = "BARRIER (MAX)"; barBtn.disabled = true; }
                 else { barBtn.classList.remove('maxed'); barBtn.innerText = "Barrier ($75)"; barBtn.disabled = false; }
             }
 
@@ -29878,7 +30516,7 @@ class Game {
             p.cash -= 40; p.medpacks++;
         } else if (type === 'boost' && p.cash >= 40 && p.energyDrinks < 6) {
             p.cash -= 40; p.energyDrinks++;
-        } else if (type === 'barrier' && p.cash >= 75 && p.barriersCount < 5) {
+        } else if (type === 'barrier' && p.cash >= 75 && p.barriersCount < this._maxBarriers()) {
             p.cash -= 75; p.barriersCount++;
         } else if (type === 'drone' && p.cash >= 150 && p.dronesCount < 3) {
             p.cash -= 150; p.dronesCount++;
@@ -30404,6 +31042,12 @@ class Game {
                 if (typeof sd.metaUpgrades.greedyHands !== 'number') sd.metaUpgrades.greedyHands = 0;
                 if (typeof sd.hasSeenArmoryTutorial !== 'boolean') sd.hasSeenArmoryTutorial = false;
                 if (typeof sd.touchFireHintDone !== 'boolean') sd.touchFireHintDone = false;
+            }},
+            // v12: COMBAT ENGINEER armory requisition (into-wall barrier
+            // placement + hold-to-chain lay + 5->7 max barriers). Additive only.
+            { to: 12, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.unlockBarrierEngineer !== 'number') sd.metaUpgrades.unlockBarrierEngineer = 0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -30436,7 +31080,7 @@ class Game {
         // PHASE B: shop-capability unlock keys (belt-and-suspenders alongside
         // the v7 migration, matching how the keys above are also re-defaulted).
         for (const k of ['unlockFpvDrone', 'unlockSpotRobot', 'unlockSwarm',
-                         'unlockTurretMk2', 'unlockBarrierMk2', 'unlockOverclocks', 'unlockCorrupted']) {
+                         'unlockTurretMk2', 'unlockBarrierMk2', 'unlockBarrierEngineer', 'unlockOverclocks', 'unlockCorrupted']) {
             if (MA[k] === undefined) MA[k] = 0;
         }
         // JULY batch: v11 key defaults (mirrors the v11 migration).
@@ -32742,6 +33386,13 @@ class Game {
         this.ctx.restore();
 
         this.map.drawOperatorBiomeBands(this.ctx, cam, viewportW, viewportH);
+        // Barriers draw BEFORE walls so wall geometry occludes the embedded
+        // ends of engineer-placed barriers, making them look seamlessly
+        // built into the wall. The color-matched mounting plate (drawBarrier)
+        // sits on the OUTSIDE face and remains visible.
+        if (this.barriers) {
+            for (let bar of this.barriers) this.drawBarrier(bar, cam);
+        }
         this.map.draw(this.ctx, cam, viewportW, viewportH);
         this.map.drawFoliageGround(this.ctx, cam, viewportW, viewportH);
 
@@ -33096,12 +33747,66 @@ class Game {
         }
         if (!this.player.dead) this.player.draw(this.ctx, cam);
         if (this.isTwoPlayer && this.player2 && !this.player2.dead) this.player2.draw(this.ctx, cam);
+        this.drawWallBuildPreview(this.player, cam);
+        if (this.isTwoPlayer && this.player2) this.drawWallBuildPreview(this.player2, cam);
         
         for (let b of this.bullets) b.draw(this.ctx, cam);
         
+        // Barriers draw before walls (see above drawOperatorBiomeBands)
+        // so wall geometry occludes embedded ends. Mounting plates and
+        // health bars render here in a second pass ON TOP of walls.
         if (this.barriers) {
             for (let bar of this.barriers) {
-                this.drawBarrier(bar, cam);
+                let sax = bar.ax - cam.x;
+                let say = bar.ay - cam.y;
+                let sbx = bar.bx - cam.x;
+                let sby = bar.by - cam.y;
+                // Mounting plates: color-matched rectangle sitting flush
+                // against the wall face (vertical or horizontal)
+                if (bar.builtInA || bar.builtInB) {
+                    let plateColor = bar.isMKII ? '#d500f9' : '#00e5ff';
+                    let plateStroke = '#ffffff';
+                    let drawPlate = (ex, ey, orient) => {
+                        this.ctx.save();
+                        this.ctx.translate(ex, ey);
+                        this.ctx.fillStyle = plateColor;
+                        this.ctx.strokeStyle = plateStroke;
+                        this.ctx.lineWidth = 1.5;
+                        this.ctx.globalAlpha = 0.95;
+                        this.ctx.beginPath();
+                        if (orient === 'vert') {
+                            // Vertical wall face: box is 10px wide x 22px tall flush with wall edge
+                            this.ctx.rect(-5, -11, 10, 22);
+                        } else {
+                            // Horizontal wall face: box is 22px wide x 10px tall flush with wall edge
+                            this.ctx.rect(-11, -5, 22, 10);
+                        }
+                        this.ctx.fill();
+                        this.ctx.stroke();
+                        this.ctx.restore();
+                    };
+                    if (bar.builtInA) {
+                        let pax = (bar.plateAx !== undefined ? bar.plateAx : bar.ax) - cam.x;
+                        let pay = (bar.plateAy !== undefined ? bar.plateAy : bar.ay) - cam.y;
+                        drawPlate(pax, pay, bar.plateOrientA || 'vert');
+                    }
+                    if (bar.builtInB) {
+                        let pbx = (bar.plateBx !== undefined ? bar.plateBx : bar.bx) - cam.x;
+                        let pby = (bar.plateBy !== undefined ? bar.plateBy : bar.by) - cam.y;
+                        drawPlate(pbx, pby, bar.plateOrientB || 'vert');
+                    }
+                }
+                // Health bar
+                if (bar.hp < bar.maxHp) {
+                    let pct = bar.hp / bar.maxHp;
+                    let mx = (sax + sbx) / 2;
+                    let my = (say + sby) / 2;
+                    let colorMain = bar.isMKII ? '#d500f9' : '#00e5ff';
+                    this.ctx.fillStyle = 'rgba(255, 0, 0, 0.4)';
+                    this.ctx.fillRect(mx - 20, my - bar.r - 8, 40, 4);
+                    this.ctx.fillStyle = colorMain;
+                    this.ctx.fillRect(mx - 20, my - bar.r - 8, 40 * pct, 4);
+                }
             }
         }
 
