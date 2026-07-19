@@ -36,9 +36,10 @@ Weapons have physical kickback that affects your movement. Sustained fire causes
 *   💻 **FPV Operator Mode:** A completely asymmetric survival experience. Locked in a bunker, your only offense is piloting FPV bomber drones, deploying automated turrets, and dispatching SPOT robot dogs while monitoring a security feed.
 *   🔫 **Deep Weapon Physics:** Features open-bolt firing delays, dynamic laser sight collimation, stamina-draining equipment weight, and recoil that physically shoves your character.
 *   💥 **Destructible Environments:** Blow open walls with C4, or grind through enemy bunkers cell-by-cell with your breaching drill to create new tactical flanking routes. 
-*   🛠️ **Armory & Meta-Progression:** Extract with Intel to permanently upgrade your operative. Unlock underbarrel grenade launchers, extended mags, prism-array laser sights, and Operator Kits (*Breacher, Ghost, Technician*). 
+*   🛠️ **Armory & Meta-Progression:** Extract with Intel to permanently upgrade your operative. Unlock underbarrel grenade launchers, drone deploying mines, extended mags, prism-array laser sights, and Operator Kits (*Breacher, Ghost, Technician*). 
 *   💀 **Dynamic Boss Fights:** Face down 5 distinct bosses, including cloaked Infiltrators, 4-man Hammerhead APCs, and Widowmaker sniper walkers.
 *   🤝 **Couch Co-Op & PvP:** Plug in two controllers for seamless 2-player local co-op. Turn on hardcore friendly fire, or switch to PvP mode and hunt each other down.
+*   🧱 **World Building (Like Minecraft):** As you grind through cells of walls, you gather rubble that shows next to your ammo count. You can then place new world blocks using the same F key to use for anyhting such as making a custom bunker with barriers or create bricks to anchor yourself for high-kickback full-auto sprays or just make it harder for the AI to get to you. I guess it's just up to your imagination what you use this for... 
 
 ## 📸 Field Intel (Gallery)
 
