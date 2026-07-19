@@ -953,11 +953,26 @@
         text-transform: uppercase;
     }
 
-    .wiz-grid-3x2 {
+    /* Mode grid: 3 cards on the top row (span 4 of 12), 4 on the bottom row
+       (span 3 of 12). Keeps all 7 deployment types to two rows so the wizard
+       fits a phone without clipping the footer. Compression below is SCOPED to
+       this grid so the roster/difficulty steps are unaffected. */
+    .wiz-mode-grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        grid-template-rows: repeat(2, auto);
-        gap: 12px;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 8px;
+    }
+    .wiz-mode-grid > .tactical-card { grid-column: span 4; }        /* top row: 3 across */
+    .wiz-mode-grid > .tactical-card.mode-half { grid-column: span 3; } /* bottom row: 4 across */
+    .wiz-mode-grid .tactical-card { padding: 9px; gap: 3px; }
+    .wiz-mode-grid .card-icon { height: 30px; }
+    .wiz-mode-grid .card-title { font-size: 10.5px; letter-spacing: 0.5px; }
+    .wiz-mode-grid .card-desc { font-size: 8.5px; line-height: 1.28; }
+    @media (max-width: 560px) {
+        /* On the narrowest phones, give the 4-up row a hair more breathing room. */
+        .wiz-mode-grid { gap: 6px; }
+        .wiz-mode-grid .tactical-card { padding: 7px; }
+        .wiz-mode-grid .card-title { letter-spacing: 0.3px; }
     }
 
     .tactical-card {
@@ -1332,14 +1347,14 @@
             <!-- STEP 1: DEPLOYMENT TYPE (Game Mode) -->
             <div id="wiz-step-1" class="wizard-step">
                 <h3 class="wiz-section-title">DEPLOYMENT TYPE</h3>
-                <div class="wiz-grid-3x2">
+                <div class="wiz-mode-grid">
                     <!-- Normal Wave Ops -->
                     <div class="tactical-card active-mode" id="btn-gm-normal" onclick="game.setGameMode('normal'); game.nextStep();">
                         <div class="card-icon">
                             <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: var(--green);"><circle cx="32" cy="32" r="16" /><line x1="32" y1="8" x2="32" y2="56" /><line x1="8" y1="32" x2="56" y2="32" /><circle cx="32" cy="32" r="24" stroke-dasharray="4 4" /></svg>
                         </div>
                         <div class="card-title">NORMAL WAVE OPS</div>
-                        <div class="card-desc">Classic wave survival. Build up defenses, purchase gear, and outlast the scaling enemy assault waves.</div>
+                        <div class="card-desc">Classic wave survival. Build defenses and outlast escalating enemy waves.</div>
                     </div>
                     <!-- Extraction -->
                     <div class="tactical-card" id="btn-gm-extraction" onclick="game.setGameMode('extraction'); game.nextStep();">
@@ -1347,7 +1362,7 @@
                             <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #d500f9;"><rect x="16" y="16" width="32" height="32" rx="4" /><line x1="24" y1="26" x2="40" y2="26" /><line x1="24" y1="32" x2="36" y2="32" /><circle cx="32" cy="40" r="2" fill="currentColor" /><path d="M10 20 A 24 24 0 0 1 10 44" stroke-dasharray="2 2" /><path d="M54 20 A 24 24 0 0 0 54 44" stroke-dasharray="2 2" /></svg>
                         </div>
                         <div class="card-title">EXTRACTION OPS</div>
-                        <div class="card-desc">Objective-driven insertion. Track down cyber uplinks, crack the network, and make it to the evac zone.</div>
+                        <div class="card-desc">Objective insertion. Crack cyber uplinks, then reach the evac zone.</div>
                     </div>
                     <!-- Chaos Draft -->
                     <div class="tactical-card" id="btn-gm-chaos_draft" onclick="game.setGameMode('chaos_draft'); game.nextStep();">
@@ -1355,31 +1370,38 @@
                             <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: var(--neon-blue);"><rect x="14" y="20" width="20" height="32" rx="3" transform="rotate(-15 24 36)" /><rect x="30" y="16" width="20" height="32" rx="3" transform="rotate(10 40 32)" /><text x="32" y="38" font-size="12" font-family="monospace" stroke="none" fill="currentColor" text-anchor="middle">?</text></svg>
                         </div>
                         <div class="card-title">CHAOS DRAFT</div>
-                        <div class="card-desc">Highly volatile protocol. Draft random combat perks each wave instead of using standard shop items.</div>
+                        <div class="card-desc">Volatile protocol. Draft random combat perks each wave instead of shopping.</div>
                     </div>
                     <!-- Action Now -->
-                    <div class="tactical-card" id="btn-gm-now" onclick="game.setGameMode('now'); game.nextStep();">
+                    <div class="tactical-card mode-half" id="btn-gm-now" onclick="game.setGameMode('now'); game.nextStep();">
                         <div class="card-icon">
                             <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #ff2a5f;"><path d="M38 6 L18 34 H32 L26 58 L50 26 H32 Z" /></svg>
                         </div>
                         <div class="card-title">ACTION NOW</div>
-                        <div class="card-desc">Drop directly into hot territory. Start at wave 5 with a massive budget for immediate high-tier combat.</div>
+                        <div class="card-desc">Drop straight into hot territory at wave 5 with a big budget.</div>
                     </div>
                     <!-- FPV Operator -->
-                    <div class="tactical-card" id="btn-gm-operator" onclick="game.setGameMode('operator'); game.nextStep();">
+                    <div class="tactical-card mode-half" id="btn-gm-operator" onclick="game.setGameMode('operator'); game.nextStep();">
                         <div class="card-icon">
                             <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #ff7a00;"><circle cx="32" cy="32" r="8" /><line x1="18" y1="18" x2="46" y2="46" /><line x1="46" y1="18" x2="18" y2="46" /><circle cx="18" cy="18" r="5" /><circle cx="46" cy="18" r="5" /><circle cx="18" cy="46" r="5" /><circle cx="46" cy="46" r="5" /></svg>
                         </div>
                         <div class="card-title">FPV OPERATOR</div>
-                        <div class="card-desc">Bunker defense command. Piloted combat drone support for automated defense systems. Solo only.</div>
+                        <div class="card-desc">Bunker defense. Pilot combat drones. Solo only.</div>
                     </div>
                     <!-- Testing Sandbox -->
-                    <div class="tactical-card" id="btn-gm-sandbox" onclick="game.setGameMode('sandbox'); game.nextStep();">
+                    <div class="tactical-card mode-half" id="btn-gm-sandbox" onclick="game.setGameMode('sandbox'); game.nextStep();">
                         <div class="card-icon">
                             <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #808f9c;"><circle cx="32" cy="32" r="12" /><path d="M32 8 L35 12 L40 10 L41 15 L46 16 L45 21 L49 24 L46 28 L48 32 L44 35 L45 40 L40 41 L39 46 L34 45 L32 49 L28 45 L24 46 L23 41 L18 40 L19 35 L15 32 L18 28 L16 24 L21 23 L22 18 L27 19 Z" fill="none" /><line x1="26" y1="38" x2="14" y2="50" stroke-width="3" /></svg>
                         </div>
                         <div class="card-title">TESTING SANDBOX</div>
-                        <div class="card-desc">Isolated parameters. Unrestricted weapons and god options enabled. No career Intel rewards.</div>
+                        <div class="card-desc">Isolated params, unrestricted weapons, god options. No Intel.</div>
+                    </div>
+                    <div class="tactical-card mode-half" id="btn-gm-peaceful" onclick="game.setGameMode('peaceful'); game.nextStep();">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #39ff14;"><path d="M32 10 C 20 22, 20 40, 32 54 C 44 40, 44 22, 32 10 Z" fill="none"/><line x1="32" y1="20" x2="32" y2="48" /><path d="M32 30 L24 24 M32 38 L40 32" /></svg>
+                        </div>
+                        <div class="card-title">NO ENEMIES</div>
+                        <div class="card-desc">Nothing spawns. Build freely, or set Friendly Fire to PvP for pure 1v1. No Intel.</div>
                     </div>
                 </div>
 
@@ -1638,16 +1660,8 @@
                     </div>
                 </div>
                 <div id="lbl-start-wave-warn" style="display:none; color: var(--red); font-size: 9px; letter-spacing: 1px; margin: -2px 0 8px; text-align: left;">&#9888; CUSTOM START WAVE &mdash; INTEL &amp; LEADERBOARD DISABLED THIS RUN</div>
-
-                <!-- Touch Interface -->
-                <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0;">
-                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">TOUCH INTERFACE:</label>
-                    <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                        <button id="btn-touch-auto" class="active-mode" onclick="game.setTouchMode('auto')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Auto-Detect</button>
-                        <button id="btn-touch-on" onclick="game.setTouchMode('on')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Force On</button>
-                        <button id="btn-touch-off" onclick="game.setTouchMode('off')" style="font-size: 11px; padding: 5px 10px; margin: 0;">Force Off</button>
-                    </div>
-                </div>
+                <!-- TOUCH INTERFACE moved to Settings -> Controls (it's a controls
+                     setting, not a per-run game option). -->
             </div>
         </div>
 
@@ -1669,6 +1683,24 @@
                         <button id="btn-scheme-screen" onclick="game.setScheme('screen')">Screen-Relative</button>
                         <button id="btn-scheme-player" onclick="game.setScheme('player')">Player-Relative (Classic)</button>
                     </div>
+                </div>
+
+                <!-- TOUCH INTERFACE (moved here from Game Options -- it's a
+                     controls preference). Force On/Off/Auto-detect + virtual
+                     stick size for phones/tablets. -->
+                <div style="margin-bottom: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.15);">
+                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">TOUCH INTERFACE:</label><br>
+                    <div style="display: flex; justify-content: center; gap: 12px; margin-top: 10px;">
+                        <button id="btn-touch-auto" class="active-mode" onclick="game.setTouchMode('auto')" style="font-size: 11px; padding: 5px 12px; margin: 0;">Auto-Detect</button>
+                        <button id="btn-touch-on" onclick="game.setTouchMode('on')" style="font-size: 11px; padding: 5px 12px; margin: 0;">Force On</button>
+                        <button id="btn-touch-off" onclick="game.setTouchMode('off')" style="font-size: 11px; padding: 5px 12px; margin: 0;">Force Off</button>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 14px; max-width: 360px; margin-left: auto; margin-right: auto;">
+                        <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; white-space: nowrap;">STICK SIZE:</label>
+                        <input type="range" id="sld-touch-stick-size" min="0.7" max="1.5" step="0.05" value="1.0" style="flex-grow: 1; cursor: pointer; height: 4px; margin: 0;" oninput="game.setTouchStickScale(parseFloat(this.value))">
+                        <span id="lbl-touch-stick-size" style="font-weight: bold; color: var(--text-color); font-size: 11px; min-width: 40px; text-align: right;">100%</span>
+                    </div>
+                    <div style="font-size: 9px; color: #b0bec5; margin: 6px auto 0; max-width: 360px; text-align: center;">Resizes the on-screen virtual thumbsticks. Takes effect immediately on touch devices.</div>
                 </div>
                 
                 <div style="display: flex; gap: 15px; text-align: left; background: rgba(0, 10, 25, 0.6); padding: 12px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); max-height: 240px; overflow-y: auto;">
@@ -2183,6 +2215,7 @@
             <p style="color:#e0f7fa; font-size:11px; margin-bottom: 20px;">SYSTEMS CURRENTLY STANDBY</p>
             <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
                 <button id="btn-pause-resume" onclick="game.togglePause()" style="width: 100%; margin: 0; border-color: var(--green); color: var(--green);">RESUME OPERATIONS</button>
+                <button id="btn-pause-openshop" onclick="game.openShopFromPause()" style="width: 100%; margin: 0; border-color: var(--neon-blue); color: var(--neon-blue); display: none;">&#128722; OPEN SHOP</button>
                 <button id="btn-pause-share" onclick="game.copyChallengeLink('btn-pause-share')" style="width: 100%; margin: 0;">COPY CHALLENGE LINK (THIS MAP + RULES)</button>
                 <button id="btn-pause-abandon" onclick="game.abandonRun()" style="width: 100%; margin: 0; border-color: var(--red); color: var(--red);">ABANDON MISSION (EXIT TO HQ)</button>
             </div>
@@ -10718,6 +10751,11 @@ class Player extends Entity {
         this.isBuilding = false;    // true while F is held in build (open-space) mode
         this.buildTargetSide = 0;   // px side length of the in-progress preview square, grows while held
         this.buildHoldTime = 0;     // sec F has been held in open space; gates build behind ARM_DELAY so a tap stays a pickup
+        // MATTER MANIPULATOR mode latch: decided once on the rising edge of F
+        // (drill if looking at a wall that instant, else build) and held for
+        // the whole press so sweeping the aim across a wall mid-hold NEVER
+        // flips drill<->build. null = F not currently held. Cleared on release.
+        this.manipulatorLatch = null;
         // Laser Beam collimation (see AIM_WEIGHT.COLLIMATION_* + the laser-
         // sight draw block in Game.draw()): 1 = fully focused/tight beam,
         // 0 = just fired/wide and unfocused. Snapped down on every shot
@@ -11373,7 +11411,17 @@ class Player extends Entity {
                 }
             }
 
-            if (bestWall) {
+            // MODE LATCH: on the first frame of the hold, lock in drill vs
+            // build based on whether a wall is in reach THAT instant. Held for
+            // the whole press so you can't accidentally start drilling while
+            // laying a wall (or vice-versa) just by sweeping your aim -- you
+            // must lift F and press again to switch modes.
+            if (this.manipulatorLatch === null) {
+                this.manipulatorLatch = bestWall ? 'drill' : 'build';
+            }
+            const latchDrill = (this.manipulatorLatch === 'drill');
+
+            if (latchDrill && bestWall) {
                 // --- MINE MODE: aiming at a wall -> drill it + harvest rubble ---
                 this.isDrilling = true;
                 this.isBuilding = false;
@@ -11417,8 +11465,10 @@ class Player extends Entity {
                     audio.playDrill(0.5);
                     this.drillSoundTimer = 0.11;
                 }
-            } else if (this.wallMaterial >= MATTER_MANIPULATOR.CELL_COST) {
-                // --- BUILD MODE: aiming at open space with banked rubble ---
+            } else if (!latchDrill && this.wallMaterial >= MATTER_MANIPULATOR.CELL_COST) {
+                // --- BUILD MODE: latched to build with banked rubble ---
+                // (Latched builds keep going even when the aim crosses a wall;
+                // task 8 lets that block overlap existing geometry.)
                 // The preview square grows while F is held, but only as large
                 // as the bank can actually afford (it visibly STOPS growing
                 // when material runs out) and never past MAX_SIDE. The commit
@@ -11466,6 +11516,8 @@ class Player extends Entity {
             this.buildTargetSide = 0;
             this.buildHoldTime = 0;
             this.drillSoundTimer = 0;
+            // Release clears the mode latch so the next press re-decides.
+            this.manipulatorLatch = null;
         }
 
         if (this.energyDrinkTimer > 0) {
@@ -20489,6 +20541,9 @@ const ARMORY_UPGRADES = [
     { key: 'operatorPaint', name: 'OPERATOR PAINT SHOP', maxLevel: 1,
       costPerLevel: [35],
       desc: 'Cosmetic: unlocks custom operator body colors for P1 and P2. Pick a paint below once owned.' },
+    { key: 'manipulatorPaint', name: 'MATTER PAINT SHOP', maxLevel: 1,
+      costPerLevel: [35],
+      desc: 'Cosmetic: unlocks custom colors for walls you build with the Matter Manipulator. Pick a paint below once owned.' },
     // PHASE 4: L2 (deferred attachment complexity from the roadmap) --
     // ricochet rounds; the bounce is an opts.restitution on the SAME
     // ShrapnelGrenade class (its wall-bounce physics were already there).
@@ -21391,6 +21446,7 @@ class Game {
         this.isTwoPlayer = false;
         this.isTestingMode = false;
         this.nowMode = false;
+        this.peacefulMode = false;   // PEACEFUL / NO ENEMIES build+PvP mode (see setGameMode)
         this._nowModePerkQueue = [];
         this.difficultyMode = 'hard';
         this.cashMultiplier = 1.0;
@@ -23105,7 +23161,7 @@ class Game {
                 audio.resume();
                 if (typeof musicEngine !== 'undefined') {
                     let track = this.saveData.musicTrack;
-                    if (!track || track === 'off') track = 'agent'; 
+                    if (!track || track === 'off') track = 'action'; 
                     this.setMusicTrack(track); 
                 }
                 splash.style.opacity = '0';
@@ -23597,6 +23653,9 @@ class Game {
             cancelGLCharge(this.player2);
             cancelBarrierChain(this.player);
             cancelBarrierChain(this.player2);
+            // PEACEFUL: expose the manual OPEN SHOP action in the pause menu.
+            const shopBtn = document.getElementById('btn-pause-openshop');
+            if (shopBtn) shopBtn.style.display = this.peacefulMode ? 'block' : 'none';
             this.switchPauseTab('system');
         } else {
             this.switchPauseTab('system');
@@ -24336,6 +24395,7 @@ class Game {
         return {
             system: [
                 ['btn-pause-resume'],
+                ...(this.peacefulMode ? [['btn-pause-openshop']] : []),
                 ['btn-pause-share'],
                 ['btn-pause-abandon']
             ],
@@ -24359,6 +24419,8 @@ class Game {
         let settingsSubtabRows = {
             controls: [
                 ['btn-scheme-screen', 'btn-scheme-player'],
+                ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
+                ['sld-touch-stick-size'],
                 ['btn-p1-gp-auto', 'btn-p1-gp-none', 'btn-p1-gp-0', 'btn-p1-gp-1', 'btn-p1-gp-2', 'btn-p1-gp-3'],
                 ['btn-p2-gp-auto', 'btn-p2-gp-none', 'btn-p2-gp-0', 'btn-p2-gp-1', 'btn-p2-gp-2', 'btn-p2-gp-3']
             ],
@@ -24402,8 +24464,7 @@ class Game {
                 ['btn-cash-down', 'btn-cash-up'],
                 ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore', 'btn-ff-pvp'],
                 ['sld-time-scale'],
-                ['sld-start-wave'],
-                ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off']
+                ['sld-start-wave']
             ],
             settings: [
                 ['btn-settings-subtab-controls', 'btn-settings-subtab-audio', 'btn-settings-subtab-performance', 'btn-settings-subtab-data'],
@@ -24880,7 +24941,23 @@ class Game {
         let cy = player.y + Math.sin(player.angle) * dist;
         let x = cx - side / 2, y = cy - side / 2;
         let valid = this._wallBuildValid(player, x, y, side, cost);
-        return { x, y, cx, cy, side, cost, valid };
+        // Overlap is now decoupled from validity: overlapping existing wall
+        // geometry no longer BLOCKS placement (players can bury blocks into
+        // walls for heavy fortification), it just paints the preview red as a
+        // heads-up. See _wallBuildOverlapsWall + drawWallBuildPreview.
+        let overlap = valid && this._wallBuildOverlapsWall(x, y, side);
+        return { x, y, cx, cy, side, cost, valid, overlap };
+    }
+
+    // True if the prospective footprint overlaps any existing wall rect.
+    // Purely advisory (drives the red preview) -- placement is still allowed.
+    _wallBuildOverlapsWall(x, y, side) {
+        let cx = x + side / 2, cy = y + side / 2;
+        let near = this.map.getWallsNear(cx, cy);
+        for (let w of near) {
+            if (x < w.x + w.w && x + side > w.x && y < w.y + w.h && y + side > w.y) return true;
+        }
+        return false;
     }
 
     // Placement gate for a player-built wall: affordable, in-bounds, and not
@@ -24894,11 +24971,10 @@ class Game {
         if (x < 0 || y < 0 || x + side > this.mapW || y + side > this.mapH) return false;
         let cx = x + side / 2, cy = y + side / 2;
         let rect = { x, y, w: side, h: side };
-        // No overlapping existing wall geometry.
-        let near = this.map.getWallsNear(cx, cy);
-        for (let w of near) {
-            if (x < w.x + w.w && x + side > w.x && y < w.y + w.h && y + side > w.y) return false;
-        }
+        // NOTE: overlapping existing wall geometry is intentionally NOT a
+        // rejection anymore (see _wallBuildOverlapsWall) -- players may build
+        // into walls for dense fortification. We still refuse to bury a
+        // living player or trap a live enemy below.
         // Don't bury a player (self or co-op partner).
         for (let p of [this.player, this.player2]) {
             if (!p || p.dead) continue;
@@ -24930,13 +25006,21 @@ class Game {
         }
         player.wallMaterial -= f.cost;
 
+        // MATTER PAINT SHOP: use the player's chosen wall color once unlocked
+        // (empty string / locked = stock tan). Kept run-agnostic: read straight
+        // off saveData so a mid-run paint swap applies to the next block built.
+        const paintHex = (this.saveData && (this.saveData.metaUpgrades.manipulatorPaint || 0) >= 1 && this.saveData.wallColor)
+            ? this.saveData.wallColor : MATTER_MANIPULATOR.COLOR_MAIN;
+        const paintRgb = (paintHex === MATTER_MANIPULATOR.COLOR_MAIN)
+            ? MATTER_MANIPULATOR.COLOR_RGB : this._hexToRgbStr(paintHex);
+
         let wall = {
             x: f.x, y: f.y, w: f.side, h: f.side,
             destructible: true,
             tier: MATTER_MANIPULATOR.TIER,
             hp: f.cost, maxHp: f.cost,   // === _destructibleHpFor(side,side,'crumbling'); keeps hp/cell grid consistent
-            colorMain: MATTER_MANIPULATOR.COLOR_MAIN,
-            colorRgb: MATTER_MANIPULATOR.COLOR_RGB,
+            colorMain: paintHex,
+            colorRgb: paintRgb,
             _playerBuilt: true
         };
         this.map.walls.push(wall);
@@ -24955,7 +25039,7 @@ class Game {
 
         this.spawnDeployRing(f.cx, f.cy);
         for (let i = 0; i < 10; i++) {
-            this.addParticle(f.cx, f.cy, MathUtils.rand(-90, 90), MathUtils.rand(-90, 90), MATTER_MANIPULATOR.COLOR_MAIN, 0.35, 2);
+            this.addParticle(f.cx, f.cy, MathUtils.rand(-90, 90), MathUtils.rand(-90, 90), paintHex, 0.35, 2);
         }
         if (audio && audio.playExplosion) audio.playExplosion(0.18, f.cx, f.cy);
     }
@@ -24970,9 +25054,12 @@ class Game {
         let f = this.computeWallBuildFootprint(player);
         let sx = f.x - cam.x, sy = f.y - cam.y;
         let ctx = this.ctx;
+        // Green ONLY when placeable AND clear; red when it would overlap a
+        // wall (still placeable) or is otherwise blocked/unaffordable.
+        let showGreen = f.valid && !f.overlap;
         ctx.save();
-        ctx.strokeStyle = f.valid ? '#39ff14' : '#ff2a5f';
-        ctx.fillStyle = f.valid ? 'rgba(57, 255, 20, 0.15)' : 'rgba(255, 42, 95, 0.15)';
+        ctx.strokeStyle = showGreen ? '#39ff14' : '#ff2a5f';
+        ctx.fillStyle = showGreen ? 'rgba(57, 255, 20, 0.15)' : 'rgba(255, 42, 95, 0.15)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([5, 4]);
         ctx.lineDashOffset = -((Date.now() / 60) % 18);
@@ -26062,7 +26149,7 @@ class Game {
             // so nothing is lost by deferring; the banner will be waiting at
             // HQ (returnToMainMenu doesn't clear the armed state).
             if (this.state === 'start') {
-                const validModes = ['normal', 'sandbox', 'operator', 'now', 'extraction', 'chaos_draft'];
+                const validModes = ['normal', 'sandbox', 'operator', 'now', 'extraction', 'chaos_draft', 'peaceful'];
                 if (validModes.includes(c.mode)) this.setGameMode(c.mode);
                 // Operator forces map 11 inside setGameMode; don't fight it.
                 if (c.mode !== 'operator' && Number.isFinite(c.mapId)) {
@@ -26120,7 +26207,7 @@ class Game {
         const c = this._challengeConfig;
         // Re-assert config + seed (idempotent; setters handle UI state).
         if (Number.isFinite(c.seed)) this.pendingMapSeed = c.seed >>> 0;
-        const validModes = ['normal', 'sandbox', 'operator', 'now', 'extraction', 'chaos_draft'];
+        const validModes = ['normal', 'sandbox', 'operator', 'now', 'extraction', 'chaos_draft', 'peaceful'];
         if (validModes.includes(c.mode)) this.setGameMode(c.mode);
         if (c.mode !== 'operator' && Number.isFinite(c.mapId)) {
             const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16];
@@ -26281,8 +26368,35 @@ class Game {
             // on the SLIDER, not the resolved startingCash above -- ACTION
             // NOW's fixed $10,000 budget is a mode design, not a player
             // opt-in, so NOW runs stay intel-eligible).
-            intelEligible: !this.isTestingMode && !(this.startingCash > 0)
+            intelEligible: !this.isTestingMode && !this.peacefulMode && !(this.startingCash > 0)
         };
+    }
+
+    // Find an open spawn point near (tx,ty), spiralling outward until a spot
+    // clear of walls is found. Mirrors the enemy-spawn wall test (getWallsNear
+    // + circleIntersectAABB). Used for PvP corner spawns, where the requested
+    // corner may land inside a wall on some map templates. Always returns a
+    // point (falls back to the map center, which map-gen keeps clear).
+    _findSafeSpawnNear(tx, ty, clearR = 22) {
+        const clampX = (v) => MathUtils.clamp(v, clearR + 10, this.mapW - clearR - 10);
+        const clampY = (v) => MathUtils.clamp(v, clearR + 10, this.mapH - clearR - 10);
+        const isClear = (x, y) => {
+            for (const wall of this.map.getWallsNear(x, y)) {
+                if (MathUtils.circleIntersectAABB(x, y, clearR, wall).hit) return false;
+            }
+            return true;
+        };
+        let cx = clampX(tx), cy = clampY(ty);
+        if (isClear(cx, cy)) return { x: cx, y: cy };
+        // Expanding ring search around the requested point.
+        for (let r = 40; r <= 900; r += 40) {
+            for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+                const x = clampX(tx + Math.cos(a) * r);
+                const y = clampY(ty + Math.sin(a) * r);
+                if (isClear(x, y)) return { x, y };
+            }
+        }
+        return { x: this.mapW / 2, y: this.mapH / 2 };
     }
 
     startNewGame() {
@@ -26418,6 +26532,7 @@ class Game {
         this.evacCalled = false;
         this._evacObjectiveSpawned = false;
         this.isDevShopActive = false;
+        this._manualShopActive = false;
         this.winFlashIntensity = 0;
         this.roundWinDelay = 0;
         toggleClass('start-screen', 'hidden', true);
@@ -26439,8 +26554,21 @@ class Game {
         this.p1Ready = false;
         this.p2Ready = false;
         if (this.isTwoPlayer) {
-            this.player = new Player(this.mapW/2 - 40, this.mapH/2, false);
-            this.player2 = new Player(this.mapW/2 + 40, this.mapH/2, true);
+            // PvP: spawn the two operators at opposite corners so a 1v1 starts
+            // with real separation instead of face-to-face at map center. Co-op
+            // (any non-PvP friendly-fire) keeps the classic center pairing so
+            // partners deploy together. Corners aren't guaranteed clear on every
+            // map template, so _findSafeSpawnNear nudges to open ground.
+            if (this.friendlyFireMode === 'pvp') {
+                const m = 220; // inset from the corner so nobody spawns flush to the boundary wall
+                const s1 = this._findSafeSpawnNear(m, m);
+                const s2 = this._findSafeSpawnNear(this.mapW - m, this.mapH - m);
+                this.player = new Player(s1.x, s1.y, false);
+                this.player2 = new Player(s2.x, s2.y, true);
+            } else {
+                this.player = new Player(this.mapW/2 - 40, this.mapH/2, false);
+                this.player2 = new Player(this.mapW/2 + 40, this.mapH/2, true);
+            }
             this.camera2 = new Camera();
             
             let cross2 = document.getElementById('crosshair-p2');
@@ -26694,8 +26822,12 @@ class Game {
             grantNowModeLoadout(this.player);
             if (this.player2) grantNowModeLoadout(this.player2);
         } else {
-            this.player.cash = this.startingCash;
-            if (this.player2) this.player2.cash = this.startingCash;
+            // PEACEFUL: no enemies means no cash income, so seed a comfortable
+            // budget (respecting a higher slider setting) so the manual shop is
+            // actually useful for buying weapons/barriers to build or duel with.
+            let cash = this.peacefulMode ? Math.max(this.startingCash, 10000) : this.startingCash;
+            this.player.cash = cash;
+            if (this.player2) this.player2.cash = cash;
         }
         
         // runConfig.startWave already encodes the right opening wave per mode
@@ -26800,6 +26932,26 @@ class Game {
         this.prepTimer = this.nowMode ? NOW_MODE.PREP_TIME : (this.chaosDraftMode ? 5.0 : 15.0);
         
         this.enemiesToSpawn = 5 + this.wave * 4;
+        if (this.peacefulMode) {
+            // NO ENEMIES: empty the spawn queue and skip all boss / mutator /
+            // reinforcement / evac setup. State was already flipped to
+            // 'playing' at the top, so the operator can move, build, and (with
+            // PvP friendly fire) fight a partner freely. The auto-wave-clear
+            // branch in update() is suppressed for peaceful, so an empty field
+            // never trips the inter-wave shop; the operator opens it manually.
+            // prepTimer 0 => no incursion-countdown banner.
+            this.enemiesToSpawn = 0;
+            this.isBossWave = false;
+            this.pendingBoss = null;
+            this.pendingBossKey = null;
+            this.activeMutator = null;
+            this.allEnemiesAreElite = false;
+            this.prepTimer = 0;
+            this.spawnTimer = 0;
+            this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: 0.5 };
+            this.updateHUD();
+            return;
+        }
         this.rollBossWave(); // may reduce enemiesToSpawn to an escort-sized fraction and set this.isBossWave/pendingBoss
 
         // JULY item 8: fresh final-kill slate each wave; a RUNNER that made
@@ -29587,7 +29739,7 @@ class Game {
                 // unified debrief. The bespoke death-screen is gone.
                 this.endRun(RUN_OUTCOMES.DEATH);
             }
-        } else if (this.enemies.length === 0 && this.enemiesToSpawn === 0 && this.roundWinDelay === 0) {
+        } else if (!this.peacefulMode && this.enemies.length === 0 && this.enemiesToSpawn === 0 && this.roundWinDelay === 0) {
             this.roundWinDelay = 1.5;
             this.triggerRoundWinEffects();
         }
@@ -30032,6 +30184,27 @@ class Game {
         return false;                         // unlocked -> caller proceeds
     }
 
+    // Manually open the inter-wave shop mid-session (PEACEFUL mode). Flagged
+    // so the shop-close deploy path resumes play instead of starting a wave,
+    // and so openShopInterface skips the wave-clear payout. No-op unless a run
+    // is actually live and on the field.
+    openManualShop() {
+        if (!this.peacefulMode) return;
+        if (this.state !== 'playing') return;
+        if (this.isPaused) this._safeUnpause && this._safeUnpause();
+        this._manualShopActive = true;
+        this.state = 'shop';
+        this.openShopInterface();
+    }
+
+    // Pause-menu entry point for the manual shop: resume out of the pause
+    // overlay first, then open the shop.
+    openShopFromPause() {
+        if (!this.peacefulMode) return;
+        if (this.isPaused) this.togglePause();
+        this.openManualShop();
+    }
+
     openShopInterface() {
         // PHASE 0: wave-clear Intel routes through the RunLedger (the single
         // write path). Rates live on RunConfig.rewardRules, not inline here.
@@ -30039,7 +30212,7 @@ class Game {
         // waveStarted guard: openShopInterface() also runs on the INITIAL
         // shop of Sandbox/ACTION NOW (before any wave) -- the old inline code
         // leaked +2 Intel for that no-op "wave". Fixed here.
-        if (this.runLedger && this.waveStarted) {
+        if (this.runLedger && this.waveStarted && !this.peacefulMode && !this._manualShopActive) {
             this.runLedger.recordWaveCleared();
             const rr = (this.runConfig && this.runConfig.rewardRules) || { intelPerWave: 2, intelPerElite: 3 };
             const intelGained = rr.intelPerWave + (this._elitesKilledThisWave || 0) * rr.intelPerElite;
@@ -30704,6 +30877,14 @@ class Game {
                 toggleClass('shop-screen', 'hidden', true);
                 this.state = 'playing';
                 this.isPaused = false;
+            } else if (this.peacefulMode || this._manualShopActive) {
+                // PEACEFUL / manual shop: leaving the shop resumes the same
+                // build/PvP session -- it does NOT advance a wave (there are
+                // none). Mirrors the dev-shop close path.
+                this._manualShopActive = false;
+                toggleClass('shop-screen', 'hidden', true);
+                this.state = 'playing';
+                this.isPaused = false;
             } else {
                 this.startNextWave();
             }
@@ -31048,6 +31229,14 @@ class Game {
             { to: 12, up: (sd) => {
                 if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
                 if (typeof sd.metaUpgrades.unlockBarrierEngineer !== 'number') sd.metaUpgrades.unlockBarrierEngineer = 0;
+            }},
+            // v13: MATTER PAINT SHOP (custom player-built wall color) +
+            // adjustable touch virtual-stick size. Additive only.
+            { to: 13, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.manipulatorPaint !== 'number') sd.metaUpgrades.manipulatorPaint = 0;
+                if (typeof sd.wallColor !== 'string') sd.wallColor = '';
+                if (typeof sd.touchStickScale !== 'number') sd.touchStickScale = 1.0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -31068,6 +31257,9 @@ class Game {
         if (this.saveData.musicTrack === undefined) this.saveData.musicTrack = 'off';
         if (this.saveData.musicVolume === undefined) this.saveData.musicVolume = 0.5;
         if (this.saveData.sfxVolume === undefined) this.saveData.sfxVolume = 0.5;
+        // v13 mirrors: MATTER PAINT color (empty = stock tan) + touch stick scale.
+        if (typeof this.saveData.wallColor !== 'string') this.saveData.wallColor = '';
+        if (typeof this.saveData.touchStickScale !== 'number') this.saveData.touchStickScale = 1.0;
         
         if (this.saveData.intel === undefined)         this.saveData.intel = 0;
         if (!this.saveData.metaUpgrades)               this.saveData.metaUpgrades = {};
@@ -31085,6 +31277,8 @@ class Game {
         }
         // JULY batch: v11 key defaults (mirrors the v11 migration).
         if (MA.greedyHands === undefined) MA.greedyHands = 0;
+        // v13: MATTER PAINT SHOP unlock (mirrors the v13 migration).
+        if (MA.manipulatorPaint === undefined) MA.manipulatorPaint = 0;
         if (typeof this.saveData.hasSeenArmoryTutorial !== 'boolean') this.saveData.hasSeenArmoryTutorial = false;
         if (typeof this.saveData.touchFireHintDone !== 'boolean') this.saveData.touchFireHintDone = false;
         // PHASE D: prestige counter default (mirrors the v8 migration).
@@ -31111,6 +31305,9 @@ class Game {
         } else {
             this.setMaxPermanentMarks(30000);
         }
+        // Sync the touch stick-size slider/label (and apply if the touch
+        // controller is already up). Boot also re-applies once DOM is ready.
+        this.setTouchStickScale(this.saveData.touchStickScale !== undefined ? this.saveData.touchStickScale : 1.0);
         if (this.saveData.startingCash !== undefined) {
             this.startingCash = this.saveData.startingCash;
         } else {
@@ -31608,6 +31805,21 @@ class Game {
                 extraHTML = paintRow('playerColorP1', 'P1') + paintRow('playerColorP2', 'P2');
             }
 
+            // MATTER PAINT SHOP: single shared swatch row for built-wall color.
+            if (upg.key === 'manipulatorPaint' && currentLevel >= 1) {
+                const stockHex = MATTER_MANIPULATOR.COLOR_MAIN; // stock tan
+                const cur = this.saveData.wallColor || '';
+                let out = `<div style="display:flex; align-items:center; gap:4px; margin-top:4px; flex-wrap:wrap;"><span style="font-size:9px; color:#a9c2c7; width:36px;">WALL</span>`;
+                // Stock tan swatch first so the player can revert to default.
+                const stockSel = !cur;
+                out += `<div title="STOCK TAN" onclick="game.setWallColor('')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:${stockHex}; border:2px solid ${stockSel ? '#fff' : 'transparent'};"></div>`;
+                for (const c of PLAYER_COLORS) {
+                    const sel = (cur === c.hex);
+                    out += `<div title="${c.name}" onclick="game.setWallColor('${c.hex}')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:${c.hex}; border:2px solid ${sel ? '#fff' : 'transparent'};"></div>`;
+                }
+                extraHTML = out + '</div>';
+            }
+
             grid.innerHTML += `
                 <div class="armory-card">
                     <div class="armory-card-name">${upg.name}</div>
@@ -31638,6 +31850,27 @@ class Game {
         this.saveGameData();
         this.renderArmoryTab();
         if (audio) audio.playPickup('money');
+    }
+
+    // MATTER PAINT SHOP: built-wall color selection. Persisted; consumed by
+    // placePlayerWall (empty string = stock tan). Shared across P1/P2 since
+    // walls are a single world-space resource, not a per-operator cosmetic.
+    setWallColor(hex) {
+        if ((this.saveData.metaUpgrades.manipulatorPaint || 0) < 1) return;
+        this.saveData.wallColor = hex || '';
+        this.saveGameData();
+        this.renderArmoryTab();
+        if (audio) audio.playPickup('money');
+    }
+
+    // Hex '#rrggbb' -> 'r, g, b' string, matching MATTER_MANIPULATOR.COLOR_RGB
+    // format used for a built wall's colorRgb (lighting/particle tint).
+    _hexToRgbStr(hex) {
+        if (!hex || hex[0] !== '#' || hex.length < 7) return MATTER_MANIPULATOR.COLOR_RGB;
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `${r}, ${g}, ${b}`;
     }
 
     setLaserColor(pKey, rgb) {
@@ -31975,7 +32208,11 @@ class Game {
         if (this.gameMode !== 'operator') {
             steps.push(2);
         }
-        steps.push(3);
+        // PEACEFUL has no combat, so the difficulty step is meaningless -- skip
+        // it. Every other mode still tunes difficulty here.
+        if (this.gameMode !== 'peaceful') {
+            steps.push(3);
+        }
         if (this.gameMode === 'extraction') {
             steps.push(4);
         }
@@ -32068,7 +32305,8 @@ class Game {
                             chaos_draft: 'Chaos',
                             now: 'Action',
                             operator: 'FPV',
-                            sandbox: 'Testing'
+                            sandbox: 'Testing',
+                            peaceful: 'No Enemies'
                         };
                         subValue = modeNames[this.gameMode] || '';
                     }
@@ -32173,7 +32411,7 @@ class Game {
         switch (this.wizardStep) {
             case 1:
                 rows.push(['btn-gm-normal', 'btn-gm-extraction', 'btn-gm-chaos_draft']);
-                rows.push(['btn-gm-now', 'btn-gm-operator', 'btn-gm-sandbox']);
+                rows.push(['btn-gm-now', 'btn-gm-operator', 'btn-gm-sandbox', 'btn-gm-peaceful']);
                 rows.push(['btn-quick-play']); // JULY item 9
                 break;
             case 2:
@@ -32565,15 +32803,20 @@ class Game {
     }
 
     setGameMode(mode) {
-        // mode: 'normal' | 'sandbox' | 'operator' | 'now' | 'extraction' | 'chaos_draft'
+        // mode: 'normal' | 'sandbox' | 'operator' | 'now' | 'extraction' | 'chaos_draft' | 'peaceful'
         this.gameMode = mode;
         this.isTestingMode = (mode === 'sandbox');
         this.operatorMode = (mode === 'operator');
         this.nowMode = (mode === 'now');
         this.extractionMode = (mode === 'extraction');
         this.chaosDraftMode = (mode === 'chaos_draft');
+        // PEACEFUL / NO ENEMIES: a self-contained build/PvP loop -- waves never
+        // spawn and never auto-clear (so the shop doesn't spam); the operator
+        // opens it manually. Shares the standard Normal wave scaffolding, just
+        // suspended. Enables freeform fortification and pure 1v1 (via PvP FF).
+        this.peacefulMode = (mode === 'peaceful');
 
-        ['normal', 'sandbox', 'operator', 'now', 'extraction', 'chaos_draft'].forEach(m => {
+        ['normal', 'sandbox', 'operator', 'now', 'extraction', 'chaos_draft', 'peaceful'].forEach(m => {
             const btn = document.getElementById('btn-gm-' + m);
             if (btn) btn.classList.toggle('active-mode', m === mode);
         });
@@ -32700,6 +32943,25 @@ class Game {
         const label = document.getElementById('lbl-time-scale');
         if (slider) slider.value = this.timeScale;
         if (label) label.innerText = this.timeScale.toFixed(1) + 'x';
+        this.saveGameData();
+    }
+
+    // Adjustable virtual-stick size (touch only). Persists a 0.7-1.5 scale and
+    // hands it to the TouchController, which resizes BOTH the logical clamp
+    // radius (maxRadius) and the visible joystick DOM together so the knob and
+    // ring stay in sync. Safe to call with no touch controller present.
+    setTouchStickScale(value) {
+        let s = parseFloat(value);
+        if (!Number.isFinite(s)) s = 1.0;
+        s = Math.max(0.7, Math.min(1.5, s));
+        this.saveData.touchStickScale = s;
+        const slider = document.getElementById('sld-touch-stick-size');
+        const label = document.getElementById('lbl-touch-stick-size');
+        if (slider) slider.value = s;
+        if (label) label.innerText = Math.round(s * 100) + '%';
+        if (typeof window !== 'undefined' && window.touchController && window.touchController.applyStickScale) {
+            window.touchController.applyStickScale(s);
+        }
         this.saveGameData();
     }
 
@@ -35059,7 +35321,7 @@ class TouchController {
         // ancestor whose bounding box overlaps the joystick's home corner
         // even when the touch isn't really on a tappable control, which is
         // what was silently eating every left-stick touch.
-        const realTarget = real.closest('.hud-item-slot, .weapon-slot, #touch-pause-btn, #touch-interact-btn, #touch-dev-btn');
+        const realTarget = real.closest('.hud-item-slot, .weapon-slot, #touch-pause-btn, #touch-interact-btn, #touch-zoom-btn, #touch-shop-btn, #touch-dev-btn');
         if (!realTarget) return false;
 
         // Redirect capture so real native pointermove/pointerup events for
@@ -35096,6 +35358,8 @@ class TouchController {
         const leftEl = document.getElementById('touch-joystick-left');
         const rightEl = document.getElementById('touch-joystick-right');
         const interactEl = document.getElementById('touch-interact-btn');
+        const zoomEl = document.getElementById('touch-zoom-btn');
+        const shopEl = document.getElementById('touch-shop-btn');
         const pauseEl = document.getElementById('touch-pause-btn');
         const devEl = document.getElementById('touch-dev-btn');
         const canvas = document.getElementById('gameCanvas');
@@ -35123,6 +35387,8 @@ class TouchController {
                     e.target.closest('#touch-joystick-right') ||
                     e.target.closest('#touch-pause-btn') ||
                     e.target.closest('#touch-dev-btn') ||
+                    e.target.closest('#touch-zoom-btn') ||
+                    e.target.closest('#touch-shop-btn') ||
                     e.target.closest('#touch-interact-btn')) {
                     return;
                 }
@@ -35304,6 +35570,35 @@ class TouchController {
                 game.input.keys['f'] = false;
             }
         });
+
+        // --- Zoom FAB: cycle aim zoom 1x/2x/3x (touch parity with the gamepad
+        //     D-pad-left zoom). Writes the SAME gamepadZoomIndex the touch aim
+        //     math already reads, so no separate zoom path is needed. ---
+        if (zoomEl) {
+            zoomEl.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const p = game && game.player;
+                if (!p) return;
+                p.gamepadZoomIndex = ((p.gamepadZoomIndex || 0) + 1) % 3;
+                const label = p.gamepadZoomIndex === 1 ? '2X' : p.gamepadZoomIndex === 2 ? '3X' : '1X';
+                const lblEl = document.getElementById('touch-zoom-label');
+                if (lblEl) lblEl.innerText = label;
+                if (audio && audio.playPickup) audio.playPickup('money');
+                if (game.floatingTexts && game.spawnFloatingText) {
+                    game.floatingTexts.push(game.spawnFloatingText(p.x, p.y - 30, 'AIM ZOOM: ' + label, '#00e5ff', 1.0));
+                }
+            });
+        }
+
+        // --- Shop FAB (PEACEFUL only): open the inter-wave shop mid-session. ---
+        if (shopEl) {
+            shopEl.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (game && game.openManualShop) game.openManualShop();
+            });
+        }
         
         // --- Pause FAB Event ---
         pauseEl.addEventListener('click', (e) => {
@@ -35738,6 +36033,27 @@ class TouchController {
         }
     }
     
+    // Resize the virtual sticks by a scale factor (0.7-1.5). Scales the
+    // logical clamp radius AND the visible DOM together so the knob travel
+    // still matches the ring. Base sizes mirror the CSS/constructor defaults
+    // (left 130px ring / 75px radius / 48px knob; right 200px / 98px / 64px).
+    applyStickScale(scale) {
+        let s = parseFloat(scale);
+        if (!Number.isFinite(s)) s = 1.0;
+        s = Math.max(0.7, Math.min(1.5, s));
+        this.stickScale = s;
+        this.leftStick.maxRadius = 75 * s;
+        this.rightStick.maxRadius = 98 * s;
+        const setSize = (id, px) => {
+            const el = document.getElementById(id);
+            if (el) { el.style.width = px + 'px'; el.style.height = px + 'px'; }
+        };
+        setSize('touch-joystick-left', 130 * s);
+        setSize('touch-joystick-left-knob', 48 * s);
+        setSize('touch-joystick-right', 200 * s);
+        setSize('touch-joystick-right-knob', 64 * s);
+    }
+
     updateStickDisplacement(stick) {
         let dx = stick.curX - stick.startX;
         let dy = stick.curY - stick.startY;
@@ -35766,6 +36082,10 @@ class TouchController {
         }
         
         this.showOverlay();
+
+        // PEACEFUL: show the manual SHOP FAB only in the NO ENEMIES mode.
+        const shopBtn = document.getElementById('touch-shop-btn');
+        if (shopBtn) shopBtn.classList.toggle('hidden', !game.peacefulMode);
         
         // --- Left Stick: WASD + Sprint ---
         if (this.leftStick.active && this.leftStick.dist > 0.15) {
@@ -35921,6 +36241,10 @@ window.touchController = new TouchController();
 window.addEventListener('DOMContentLoaded', () => {
     window.touchController.init();
     window.touchController.updateVisibility();
+    // Apply any saved stick-size preference now that the joystick DOM exists.
+    const savedScale = (typeof game !== 'undefined' && game && game.saveData && typeof game.saveData.touchStickScale === 'number')
+        ? game.saveData.touchStickScale : 1.0;
+    window.touchController.applyStickScale(savedScale);
 });
 
 // Monkey-patching setTouchMode method on Game prototype
@@ -36199,6 +36523,40 @@ game = new Game();
     letter-spacing: 0.5px;
 }
 
+/* Aim-zoom cycle button, tucked just above INTERACT on the right thumb side. */
+#touch-zoom-btn {
+    right: 148px;
+    bottom: 368px;
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+#touch-zoom-btn .btn-label { font-size: 15px; line-height: 1; }
+#touch-zoom-btn .btn-sub { font-size: 8px; opacity: 0.7; margin-top: 1px; }
+
+/* PEACEFUL manual shop button, above the zoom button on the right thumb side. */
+#touch-shop-btn {
+    right: 148px;
+    bottom: 438px;
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    border-color: rgba(57, 255, 20, 0.4);
+    color: var(--green);
+}
+#touch-shop-btn:active {
+    border-color: var(--green);
+    box-shadow: 0 0 20px rgba(57, 255, 20, 0.4);
+    background: rgba(57, 255, 20, 0.12);
+}
+#touch-shop-btn .btn-label { font-size: 18px; line-height: 1; }
+#touch-shop-btn .btn-sub { font-size: 8px; opacity: 0.75; margin-top: 1px; }
+#touch-shop-btn.hidden { display: none; }
+
 #touch-interact-btn .btn-label {
     font-size: 8px;
     line-height: 1;
@@ -36250,6 +36608,20 @@ game = new Game();
     <div id="touch-interact-btn" class="touch-fab">
         <span class="btn-label">INTERACT</span>
         <span class="btn-sub">F</span>
+    </div>
+
+    <!-- Touch aim-zoom cycle (1x/2x/3x), the touch equivalent of the gamepad
+         D-pad-left zoom. Pushes the same gamepadZoomIndex the aim math reads. -->
+    <div id="touch-zoom-btn" class="touch-fab">
+        <span class="btn-label" id="touch-zoom-label">1X</span>
+        <span class="btn-sub">ZOOM</span>
+    </div>
+
+    <!-- PEACEFUL manual shop trigger. Hidden unless the current run is the
+         NO ENEMIES mode (toggled in TouchController.update). -->
+    <div id="touch-shop-btn" class="touch-fab hidden">
+        <span class="btn-label">&#128722;</span>
+        <span class="btn-sub">SHOP</span>
     </div>
 </div>
 </body>
