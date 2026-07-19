@@ -1,7 +1,7 @@
 <div align="center">
 
   <!-- Logo/Title Image -->
-  <img src="screenshot2.png" alt="Frozen Soldat" width="600" />
+  <img src="images/screenshot2.png" alt="Frozen Soldat" width="600" />
 
   **A hardcore, tactical top-down shooter and extraction simulator.**<br>  
   Runs instantly in your browser. No downloads, no game engines, zero assets. 
@@ -15,7 +15,7 @@
   <br>
 
   <a href="https://skatardude10.github.io/FrozenSoldat/LATEST_MASTER.html">
-    <img src="screenshot.jpg" alt="Frozen Soldat Gameplay Showcase" width="100%" />
+    <img src="images/screenshot.jpg" alt="Frozen Soldat Gameplay Showcase" width="100%" />
   </a>
 
 </div>
@@ -48,22 +48,22 @@ Weapons have physical kickback that affects your movement. Sustained fire causes
     <tr>
       <td align="center">
         <a href="https://skatardude10.github.io/FrozenSoldat/LATEST_MASTER.html">
-          <img src="playerarms.png" alt="Arms and Guns Update" width="400"/>
+          <img src="images/worldbuild.png" alt="Minecraft Update" width="400"/>
         </a><br>
-        <em>Update: Player/AI Guns, Arms, and Hands!</em>
+        <em>Mine and Build</em>
       </td>
       <td align="center">
-        <img src="chaos.png" alt="Gameplay Screenshot 2" width="400"/><br>
+        <img src="images/chaos.png" alt="Gameplay Screenshot 2" width="400"/><br>
         <em>Fun Gambling</em>
       </td>
     </tr>
     <tr>
       <td align="center">
-        <img src="drone.png" alt="Gameplay Screenshot 3" width="400"/><br>
+        <img src="images/drone.png" alt="Gameplay Screenshot 3" width="400"/><br>
         <em>FPV Drone Operations</em>
       </td>
       <td align="center">
-        <img src="menu.png" alt="Gameplay Screenshot 4" width="400"/><br>
+        <img src="images/menu.png" alt="Gameplay Screenshot 4" width="400"/><br>
         <em>Armory and Meta-Progression</em>
       </td>
     </tr>
