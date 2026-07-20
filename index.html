@@ -797,6 +797,31 @@
         background-color: var(--btn-color-bg) !important;
         box-shadow: 0 0 10px var(--btn-color-glow) !important;
     }
+    /* CUSTOM MAPS drop-down (Maps tab) */
+    button.cmap-toggle { text-transform: uppercase; font-weight: bold; }
+    .cmap-row { display: flex; gap: 6px; align-items: stretch; }
+    button.cmap-load {
+        flex: 1; display: flex; align-items: center; gap: 10px; text-align: left;
+        padding: 8px 12px; margin: 0; letter-spacing: 1px;
+        border-color: rgba(255, 183, 0, 0.35); color: #f2e6c8;
+        background-color: rgba(255, 183, 0, 0.05); transition: all 0.15s ease;
+    }
+    button.cmap-load:hover, button.cmap-load.focused-btn {
+        border-color: #ffb700; color: #fff5dc;
+        background-color: rgba(255, 183, 0, 0.14); box-shadow: 0 0 12px rgba(255, 183, 0, 0.4);
+    }
+    .cmap-icon { font-size: 15px; color: #ffb700; line-height: 1; flex-shrink: 0; }
+    .cmap-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .cmap-name { font-size: 13px; font-weight: bold; letter-spacing: 2px; }
+    .cmap-sub { font-size: 9px; color: #9a8b66; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    button.cmap-del {
+        flex-shrink: 0; width: 34px; margin: 0; padding: 0; font-size: 13px; line-height: 1;
+        border-color: rgba(220, 20, 60, 0.35); color: #dc143c; background-color: rgba(220, 20, 60, 0.04);
+        transition: all 0.15s ease;
+    }
+    button.cmap-del:hover, button.cmap-del.focused-btn {
+        border-color: #dc143c; color: #fff; background-color: rgba(220, 20, 60, 0.25); box-shadow: 0 0 10px rgba(220, 20, 60, 0.4);
+    }
     .map-list-scroll::-webkit-scrollbar { width: 6px; }
     .map-list-scroll::-webkit-scrollbar-track { background: rgba(0, 229, 255, 0.05); border-radius: 3px; }
     .map-list-scroll::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, 0.3); border-radius: 3px; }
@@ -1271,6 +1296,13 @@
             <div style="display: flex; gap: 20px; height: 380px;">
                 <!-- Left: Select List -->
                 <div class="map-list-scroll" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 10px;" onmouseleave="if(game) game.previewMap(game.selectedMapId)">
+                    <!-- CUSTOM MAPS: a collapsible drop-down pinned to the top of the
+                         list. Saved from the pause menu; each entry loads/deletes.
+                         Populated by game.renderCustomMapsList(). -->
+                    <div id="custom-maps-section" style="display: flex; flex-direction: column; gap: 6px;">
+                        <button id="btn-custom-maps-toggle" class="map-btn cmap-toggle" style="--btn-color: #ffb700; --btn-color-glow: rgba(255,183,0,0.6); --btn-color-bg: rgba(255,183,0,0.10);" onclick="game.toggleCustomMapsList()">&#9656; CUSTOM MAPS <span style="opacity:0.65;">(0)</span></button>
+                        <div id="custom-maps-list" style="display: none; flex-direction: column; gap: 5px; padding: 2px 2px 2px 8px; border-left: 2px solid rgba(255,183,0,0.25); margin-left: 4px;"></div>
+                    </div>
                     <button id="btn-map-random" class="map-btn active-mode" style="--btn-color: #00e5ff; --btn-color-glow: rgba(0,229,255,0.6); --btn-color-bg: rgba(0,229,255,0.12);" onclick="game.setMap(-1)" onmouseenter="game.previewMap(-1)">[?] Random Generation</button>
                     <button id="btn-map-10" class="map-btn" style="--btn-color: #00e5ff; --btn-color-glow: rgba(0,229,255,0.6); --btn-color-bg: rgba(0,229,255,0.12);" onclick="game.setMap(10)" onmouseenter="game.previewMap(10)">[7.5K] Massive Open World</button>
                     <button id="btn-map-0" class="map-btn" style="--btn-color: #00e5ff; --btn-color-glow: rgba(0,229,255,0.6); --btn-color-bg: rgba(0,229,255,0.12);" onclick="game.setMap(0)" onmouseenter="game.previewMap(0)">The Cross (Classic)</button>
@@ -2216,6 +2248,7 @@
             <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
                 <button id="btn-pause-resume" onclick="game.togglePause()" style="width: 100%; margin: 0; border-color: var(--green); color: var(--green);">RESUME OPERATIONS</button>
                 <button id="btn-pause-openshop" onclick="game.openShopFromPause()" style="width: 100%; margin: 0; border-color: var(--neon-blue); color: var(--neon-blue); display: none;">&#128722; OPEN SHOP</button>
+                <button id="btn-pause-savemap" onclick="game.saveCurrentMapAsCustom()" style="width: 100%; margin: 0; border-color: #ffb700; color: #ffb700; display: none;">&#128190; SAVE MAP TO BLUEPRINTS</button>
                 <button id="btn-pause-share" onclick="game.copyChallengeLink('btn-pause-share')" style="width: 100%; margin: 0;">COPY CHALLENGE LINK (THIS MAP + RULES)</button>
                 <button id="btn-pause-abandon" onclick="game.abandonRun()" style="width: 100%; margin: 0; border-color: var(--red); color: var(--red);">ABANDON MISSION (EXIT TO HQ)</button>
             </div>
@@ -23224,6 +23257,17 @@ class Game {
     }
     
     setMap(mapId) {
+        // CUSTOM MAPS: picking a DIFFERENT map than the staged custom one means
+        // the player is choosing a new map source -- drop the staging (and its
+        // forced seed) so a normal pick rolls fresh terrain. Re-asserting the
+        // SAME id (e.g. quickPlay syncing the highlight) keeps the staging.
+        // pendingMapSeed is only touched here in the custom-clear case; the
+        // challenge-link flow owns its own seed lifecycle and never hits this.
+        if (this._pendingCustomMap && this._pendingCustomMap.mapId !== mapId) {
+            this._pendingCustomMap = null;
+            this.pendingMapSeed = null;
+            if (this.renderCustomMapsList) this.renderCustomMapsList();
+        }
         this.selectedMapId = mapId;
         const ids = ['random', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '12', '13', '14', '15', '16'];
         ids.forEach(id => {
@@ -23701,6 +23745,15 @@ class Game {
             // PEACEFUL: expose the manual OPEN SHOP action in the pause menu.
             const shopBtn = document.getElementById('btn-pause-openshop');
             if (shopBtn) shopBtn.style.display = this.peacefulMode ? 'block' : 'none';
+            // CUSTOM MAPS: offer "SAVE MAP TO BLUEPRINTS" wherever the map is a
+            // build space -- any mode except Operator (map 11 is op-only) and
+            // Extraction (mission-scoped maps). Peaceful is the headline case;
+            // saving a battlefield mid-normal-run is a fine bonus.
+            const saveMapBtn = document.getElementById('btn-pause-savemap');
+            if (saveMapBtn) {
+                const canSaveMap = !!this.map && !this.operatorMode && !this.extractionMode;
+                saveMapBtn.style.display = canSaveMap ? 'block' : 'none';
+            }
             this.switchPauseTab('system');
         } else {
             this.switchPauseTab('system');
@@ -24458,6 +24511,7 @@ class Game {
             system: [
                 ['btn-pause-resume'],
                 ...(this.peacefulMode ? [['btn-pause-openshop']] : []),
+                ...((this.map && !this.operatorMode && !this.extractionMode) ? [['btn-pause-savemap']] : []),
                 ['btn-pause-share'],
                 ['btn-pause-abandon']
             ],
@@ -24501,9 +24555,20 @@ class Game {
             ]
         };
         let playRows = this._getWizardStepRows();
+        // CUSTOM MAPS: the drop-down toggle is always navigable; its rows
+        // (load + delete per map) join the grid only while expanded, so a
+        // collapsed section leaves zero dead rows. Order matches the rendered
+        // list (newest first) so highlight and layout can't drift.
+        let customMapRows = [['btn-custom-maps-toggle']];
+        if (this._customMapsOpen && Array.isArray(this.saveData.customMaps)) {
+            for (const m of this.saveData.customMaps.slice().reverse()) {
+                customMapRows.push(['cmap-load-' + m.id, 'cmap-del-' + m.id]);
+            }
+        }
         return {
             play: playRows,
             maps: [
+                ...customMapRows,
                 ['btn-map-random'],
                 ['btn-map-10'],
                 ['btn-map-0'],
@@ -26224,6 +26289,9 @@ class Game {
     applyChallengeLink(c) {
         try {
             if (Number.isFinite(c.seed)) { this.pendingMapSeed = c.seed >>> 0; this._challengeArmed = true; }
+            // A challenge link and a staged custom map are alternative map
+            // sources -- arming a challenge supersedes any custom selection.
+            if (this._pendingCustomMap) { this._pendingCustomMap = null; if (this.renderCustomMapsList) this.renderCustomMapsList(); }
             // Keep the parsed link so DEPLOY CHALLENGE can re-assert the
             // full config at deploy time -- the player may wander the menus
             // and change mode/map between link-load and deploy, and the
@@ -26345,6 +26413,272 @@ class Game {
         setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, durationMs);
     }
 
+    // ========================================================================
+    // CUSTOM MAPS -- save a fortified/exploded map and reload its snapshot.
+    //
+    // Design (see TASK10 bootstrap): a map's IMMUTABLE skeleton (dimensions,
+    // biome/theme, boundary walls, building prefabs, roofs/doors/decor, nav
+    // skeleton, barrel/operator spawns) is fully reproducible from three
+    // numbers -- mapId + mapSeed + genVersion -- exactly like a challenge
+    // link. The only things that are NOT deterministic are the player's
+    // edits: base walls they've drilled/exploded (now carved into stubs or
+    // gone) and walls they've BUILT. So a saved custom map is just:
+    //     { mapId, mapSeed, genVersion, palette, walls: [ <mutable layer> ] }
+    // where `walls` is a raw snapshot of every non-skeleton wall AS IT STANDS
+    // at save time. We never try to REPLAY damage on load -- we regenerate a
+    // pristine base from the seed, strip its mutable destructible layer, and
+    // stamp the saved geometry straight back down as fresh full-health walls.
+    // Snapshot semantics by design: a reloaded fort is a clean starting point,
+    // not a continuation, so full health on load is correct (and desirable --
+    // your silhouette comes back "repaired"). Because the geometry is stored
+    // explicitly, a future genVersion bump that reshuffles base terrain can't
+    // corrupt a saved fort: the blocks reload exactly, only the untouched
+    // backdrop might shift (we surface a soft note if so, like links do).
+    // ========================================================================
+
+    // Tier <-> compact code tables (kept adjacent so save & load can't drift).
+    static get _CMAP_TIERS() { return ['light', 'reinforced', 'fortified', 'crumbling']; }
+
+    // Snapshot the MUTABLE wall layer (base destructible walls in their
+    // current carved state + player-built walls) as compact geometry. The
+    // immutable skeleton (boundary + buildingId prefabs) is excluded -- it
+    // regenerates byte-identically from the seed, so storing it is pure waste.
+    // Colors are palette-compressed: most base walls carry NO explicit color
+    // (they draw from biome.main, which the seed reproduces), so only the few
+    // specially-tinted base walls and the player's painted blocks cost a
+    // palette slot. Coords are rounded to whole px -- sub-pixel wall geometry
+    // is imperceptible and integers keep the JSON tiny.
+    _snapshotCustomWallLayer() {
+        const TIER_CODE = { light: 0, reinforced: 1, fortified: 2, crumbling: 3 };
+        const palette = [];
+        const paletteIndex = new Map();
+        const colorIdx = (main, rgb) => {
+            if (!main) return -1;                     // no explicit color -> biome.main fallback reproduces it
+            const key = main + '|' + (rgb || '');
+            if (paletteIndex.has(key)) return paletteIndex.get(key);
+            const i = palette.length;
+            palette.push(rgb ? [main, rgb] : [main]);
+            paletteIndex.set(key, i);
+            return i;
+        };
+        const walls = [];
+        for (const w of this.map.walls) {
+            if (w.isBoundary || w.buildingId) continue;   // immutable skeleton -> regenerates from seed
+            const tc = (w.tier && TIER_CODE[w.tier] !== undefined) ? TIER_CODE[w.tier] : 0;
+            walls.push([
+                Math.round(w.x), Math.round(w.y), Math.round(w.w), Math.round(w.h),
+                tc, w._playerBuilt ? 1 : 0, colorIdx(w.colorMain, w.colorRgb)
+            ]);
+        }
+        return { palette, walls };
+    }
+
+    // A short base36 "license plate" for a saved map -- same visual family as
+    // the challenge-link seed codes. Hashes seed + wall geometry so identical
+    // saves read alike and different builds read differently; the code IS the
+    // name (no player typing). Collisions within one save file are re-salted.
+    _makeCustomMapName(mapSeed, snapshot) {
+        let h = (0x811c9dc5 ^ (mapSeed >>> 0)) >>> 0;         // FNV-ish 32-bit seed
+        const mix = (n) => { h ^= (n | 0); h = Math.imul(h, 0x01000193) >>> 0; };
+        for (const wr of snapshot.walls) { mix(wr[0]); mix(wr[1]); mix(wr[2]); mix(wr[3]); mix(wr[4] * 7 + wr[5] * 3 + (wr[6] + 2)); }
+        const base = (h >>> 0).toString(36).toUpperCase();
+        const existing = new Set((this.saveData.customMaps || []).map(m => m.name));
+        let name = base, salt = 1;
+        while (existing.has(name)) name = base + '-' + (salt++);
+        return name;
+    }
+
+    // Pause-menu action: bottle the current map (identity + live wall layer)
+    // into saveData.customMaps. Resolve-at-snapshot: reads the already-frozen
+    // runConfig, never a live menu flag. Oldest saves fall off a soft cap so
+    // localStorage stays sane.
+    saveCurrentMapAsCustom() {
+        if (!this.map || !this.runConfig) { this._menuToast('NO ACTIVE MAP TO SAVE', 'var(--red)'); return; }
+        const mapId = Number.isFinite(this.runConfig.resolvedMapId) ? this.runConfig.resolvedMapId : this.map.templateId;
+        if (mapId === 11) { this._menuToast("CAN'T SAVE THE OPERATOR MAP", '#ffb700'); return; }  // op-only template; not a build space
+        if (!Array.isArray(this.saveData.customMaps)) this.saveData.customMaps = [];
+        const CAP = 20;
+        const snapshot = this._snapshotCustomWallLayer();
+        const mapSeed = (Number.isFinite(this.runConfig.mapSeed) ? this.runConfig.mapSeed : SeededRNG.randomSeed()) >>> 0;
+        const name = this._makeCustomMapName(mapSeed, snapshot);
+        this.saveData.customMaps.push({
+            id: 'cm_' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36),
+            name, createdAt: Date.now(),
+            mapId, mapSeed,
+            genVersion: this.runConfig.genVersion || SeededRNG.GEN_VERSION,
+            palette: snapshot.palette,
+            walls: snapshot.walls
+        });
+        while (this.saveData.customMaps.length > CAP) this.saveData.customMaps.shift();  // drop oldest
+        this.saveGameData();
+        this.renderCustomMapsList();
+        const built = snapshot.walls.reduce((n, w) => n + (w[5] ? 1 : 0), 0);
+        const suffix = built > 0 ? '  (' + built + ' BUILT BLOCK' + (built === 1 ? '' : 'S') + ')' : '';
+        this._menuToast('MAP SAVED AS ' + name + ' IN CUSTOM MAPS!' + suffix, 'var(--green)', 4200);
+        if (audio) audio.playPickup('money');
+    }
+
+    // SELECT a saved custom map as the map to deploy -- exactly like picking a
+    // built-in map, NOT an immediate load. Stages the base identity (forced
+    // seed + template) plus the wall payload; the player then chooses mode /
+    // roster / options through the normal wizard and hits deploy. The staged
+    // walls are stamped in by startNewGame (see the _pendingCustomMap block
+    // there), so a map built in solo peaceful can be replayed 2P Action Now,
+    // Chaos Draft, or anything else. Mirrors how a challenge link stages a seed
+    // and then rides the normal start flow.
+    selectCustomMap(id) {
+        const entry = (this.saveData.customMaps || []).find(m => m.id === id);
+        if (!entry) { this._menuToast('CUSTOM MAP NOT FOUND', 'var(--red)'); return; }
+        // Point the base template selector at the saved map (updates preview +
+        // highlight). Do this FIRST: setMap clears any *prior* custom staging,
+        // then we install this one on top.
+        const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16];
+        if (legalMaps.includes(entry.mapId)) this.setMap(entry.mapId);
+        this._pendingCustomMap = entry;                    // stage the wall payload
+        this.pendingMapSeed = entry.mapSeed >>> 0;          // force the exact base (buildRunConfig lever)
+        // A custom map is an alternative map SOURCE to an armed challenge --
+        // selecting one supersedes the challenge banner.
+        this._challengeArmed = false; this._challengeConfig = null; this._refreshChallengeBanner();
+        // Visual: the custom row owns the "selected" highlight now, not a
+        // built-in map button.
+        document.querySelectorAll('#tab-maps [id^="btn-map-"]').forEach(b => b.classList.remove('active-mode'));
+        this.renderCustomMapsList();                        // re-marks the staged row active
+        const gvNote = (Number.isFinite(entry.genVersion) && entry.genVersion !== SeededRNG.GEN_VERSION)
+            ? ' (OLDER GENERATOR \u2014 BACKDROP MAY DIFFER, BLOCKS ARE EXACT)' : '';
+        this._menuToast('CUSTOM MAP ' + entry.name + ' SELECTED \u2014 PICK MODE & DEPLOY' + gvNote, 'var(--neon-blue)', 4200);
+        // Send them to the run wizard's MODE step, the natural next choice.
+        this.switchTab('play');
+        if (this.gotoStep) this.gotoStep(1);
+        if (audio) audio.playPickup('weapon');
+    }
+
+    // Strip the freshly-regenerated pristine base's mutable destructible layer
+    // and stamp the saved snapshot back down as fresh full-health walls. hp is
+    // RECOMPUTED from geometry+tier via _destructibleHpFor (never trusted from
+    // the save) so the lazy damage-cell grid can't disagree with wall.hp --
+    // the anti-"zombie-wall" invariant. Every wall is (re)filed into the
+    // spatial grid so it collides / blocks LOS / carves like a normal wall.
+    _injectCustomWalls(entry) {
+        if (!this.map || !entry || !Array.isArray(entry.walls)) return 0;
+        const TIER_NAME = Game._CMAP_TIERS;
+        const palette = Array.isArray(entry.palette) ? entry.palette : [];
+
+        // 1) Strip everything that ISN'T the immutable skeleton -- exactly the
+        //    set our snapshot replaces. What remains is the deterministic
+        //    skeleton the seed just rebuilt (boundary + building prefabs).
+        const keep = [];
+        for (const w of this.map.walls) {
+            if (w.isBoundary || w.buildingId) { keep.push(w); continue; }
+            this.map._removeWallFromGrid(w);
+        }
+        this.map.walls = keep;
+        this.map._playerWalls = [];
+
+        // 2) Stamp the snapshot down.
+        for (const rec of entry.walls) {
+            const x = rec[0], y = rec[1], w = rec[2], h = rec[3];
+            const tier = TIER_NAME[rec[4]] || 'light';
+            const pb = rec[5] === 1;
+            const ci = rec[6];
+            const hp = this.map._destructibleHpFor(w, h, tier);
+            const wall = { x, y, w, h, destructible: true, tier, hp, maxHp: hp };
+            if (ci >= 0 && palette[ci]) {
+                wall.colorMain = palette[ci][0];
+                if (palette[ci][1]) wall.colorRgb = palette[ci][1];
+            }
+            if (pb) wall._playerBuilt = true;
+            this.map.walls.push(wall);
+            this.map._insertWallIntoGrid(wall);
+            if (pb) this.map._playerWalls.push(wall);
+        }
+        // Defensive: honor the player-wall soft cap even against a hand-edited
+        // save (a well-formed one is <= MAX by construction).
+        const pw = this.map._playerWalls;
+        while (pw.length > MATTER_MANIPULATOR.MAX_PLAYER_WALLS) {
+            const old = pw.shift();
+            const idx = this.map.walls.indexOf(old);
+            if (idx !== -1) { this.map.walls.splice(idx, 1); this.map._removeWallFromGrid(old); }
+        }
+
+        // 3) Re-derive the nav grid from the loaded geometry (cheap; the same
+        //    call generation makes) so enemy pathing matches what's drawn if a
+        //    custom map is ever played in a combat mode. Clear the short-TTL
+        //    path cache too (it's position-keyed).
+        if (typeof this.map.buildNavGrid === 'function') this.map.buildNavGrid();
+        if (this.map._pathCache && this.map._pathCache.clear) this.map._pathCache.clear();
+
+        // 4) A saved wall may sit on a spawn point. Nudge any player caught
+        //    inside geometry to open ground (reuses the Task 2 spawn helper).
+        for (const p of [this.player, this.player2]) {
+            if (!p || p.dead) continue;
+            let stuck = false;
+            for (const wall of this.map.getWallsNear(p.x, p.y)) {
+                if (MathUtils.circleIntersectAABB(p.x, p.y, p.r, wall).hit) { stuck = true; break; }
+            }
+            if (stuck) { const s = this._findSafeSpawnNear(p.x, p.y); p.x = s.x; p.y = s.y; }
+        }
+        return entry.walls.length;
+    }
+
+    deleteCustomMap(id) {
+        if (!Array.isArray(this.saveData.customMaps)) return;
+        const before = this.saveData.customMaps.length;
+        const gone = this.saveData.customMaps.find(m => m.id === id);
+        this.saveData.customMaps = this.saveData.customMaps.filter(m => m.id !== id);
+        if (this.saveData.customMaps.length !== before) {
+            this.saveGameData();
+            this.renderCustomMapsList();
+            this._menuToast('DELETED CUSTOM MAP ' + (gone ? gone.name : ''), '#808f9c', 2200);
+            if (audio) audio.playPickup('money');
+        }
+    }
+
+    // Expand/collapse the Custom Maps drop-down at the top of the Maps list.
+    toggleCustomMapsList() {
+        this._customMapsOpen = !this._customMapsOpen;
+        this.renderCustomMapsList();
+        // The nav grid changed shape (rows appeared/vanished) -- reset focus
+        // so the gamepad highlight can't point at a now-hidden row.
+        this.mainMenuRowIndex = 0; this.mainMenuOptionIndex = 0;
+        if (this.refreshMainMenuHighlight) this.refreshMainMenuHighlight();
+        if (audio) audio.playPickup('money');
+    }
+
+    // Render the Custom Maps drop-down (header + expandable rows). Called on
+    // maps-tab entry, after save/delete, and on toggle. Same icon for every
+    // map (per design -- keep it simple); each row loads or deletes.
+    renderCustomMapsList() {
+        const toggle = document.getElementById('btn-custom-maps-toggle');
+        const list = document.getElementById('custom-maps-list');
+        if (!toggle || !list) return;
+        const maps = Array.isArray(this.saveData.customMaps) ? this.saveData.customMaps : [];
+        const open = !!this._customMapsOpen;
+        const caret = open ? '\u25BE' : '\u25B8';   // ▾ / ▸
+        toggle.innerHTML = caret + ' CUSTOM MAPS <span style="opacity:0.65;">(' + maps.length + ')</span>';
+        list.style.display = open ? 'flex' : 'none';
+        if (!open) return;
+        if (maps.length === 0) {
+            list.innerHTML = '<div style="padding:10px 14px; font-size:11px; color:#5f7480; line-height:1.5;">'
+                + 'No saved maps yet. Build or blast a map, then hit <b style="color:#8fb3bd;">SAVE MAP</b> in the pause menu to bottle it here.</div>';
+            return;
+        }
+        // Newest first.
+        const rows = maps.slice().reverse().map(m => {
+            const mn = (typeof MapIntel !== 'undefined' && MapIntel[String(m.mapId)]) ? MapIntel[String(m.mapId)].name : ('MAP ' + m.mapId);
+            const built = Array.isArray(m.walls) ? m.walls.reduce((n, w) => n + (w[5] ? 1 : 0), 0) : 0;
+            const sub = mn.replace(/\s*\(.*?\)\s*/g, '') + (built ? '  \u00B7  ' + built + ' block' + (built === 1 ? '' : 's') : '');
+            const staged = !!(this._pendingCustomMap && this._pendingCustomMap.id === m.id);
+            return '<div class="cmap-row">'
+                + '<button id="cmap-load-' + m.id + '" class="cmap-load' + (staged ? ' active-mode' : '') + '" onclick="game.selectCustomMap(\'' + m.id + '\')" title="Select this map to deploy">'
+                +   '<span class="cmap-icon">\u25A6</span>'
+                +   '<span class="cmap-text"><span class="cmap-name">' + m.name + (staged ? '  \u2713' : '') + '</span><span class="cmap-sub">' + sub + '</span></span>'
+                + '</button>'
+                + '<button id="cmap-del-' + m.id + '" class="cmap-del" onclick="game.deleteCustomMap(\'' + m.id + '\')" title="Delete">\u2715</button>'
+                + '</div>';
+        }).join('');
+        list.innerHTML = rows;
+    }
+
     buildRunConfig() {
         // PHASE 3: Escalation Protocols -- resolved ONCE at snapshot time.
         // All intel bonuses (escalation + difficulty + night mode) are
@@ -26390,7 +26724,9 @@ class Game {
             // re-arm) wins; otherwise fresh entropy. MapGen reads THIS
             // field -- never a live menu flag -- so a menu change mid-run
             // can't desync the map from its shareable seed.
-            mapSeed: Number.isFinite(this.pendingMapSeed) ? (this.pendingMapSeed >>> 0) : SeededRNG.randomSeed(),
+            mapSeed: Number.isFinite(this.pendingMapSeed) ? (this.pendingMapSeed >>> 0)
+                     : (this._pendingCustomMap && Number.isFinite(this._pendingCustomMap.mapSeed)) ? (this._pendingCustomMap.mapSeed >>> 0)
+                     : SeededRNG.randomSeed(),
             genVersion: SeededRNG.GEN_VERSION,
             fromChallenge: !!this._challengeArmed,
             isTwoPlayer: !!this.isTwoPlayer,
@@ -26808,7 +27144,20 @@ class Game {
             setupOperatorPlayer(this.player);
             setupOperatorPlayer(this.player2);
         }
-        
+
+        // CUSTOM MAPS: if a saved map was staged from the Maps tab, replace the
+        // freshly-regenerated pristine base's destructible layer with its
+        // snapshot NOW -- after players/meta/kit setup (so the spawn-nudge in
+        // _injectCustomWalls sees the real players) and BEFORE barrels and
+        // objectives place (so they land against the loaded geometry, not the
+        // pristine base). Consumed unconditionally so it can never leak into
+        // the next run. The mapId guard is belt-and-suspenders: the forced seed
+        // + selectedMapId already guarantee templateId matches what was saved.
+        if (this._pendingCustomMap && this.map && this._pendingCustomMap.mapId === this.map.templateId) {
+            this._injectCustomWalls(this._pendingCustomMap);
+        }
+        this._pendingCustomMap = null;
+
         if (this.bullets) {
             for (let b of this.bullets) this.inactiveBullets.push(b);
         }
@@ -31415,6 +31764,11 @@ class Game {
                 if (typeof sd.metaUpgrades.manipulatorPaint !== 'number') sd.metaUpgrades.manipulatorPaint = 0;
                 if (typeof sd.wallColor !== 'string') sd.wallColor = '';
                 if (typeof sd.touchStickScale !== 'number') sd.touchStickScale = 1.0;
+            }},
+            // v14: CUSTOM MAPS -- player-saved map snapshots (base identity +
+            // built/exploded wall layer). Additive only.
+            { to: 14, up: (sd) => {
+                if (!Array.isArray(sd.customMaps)) sd.customMaps = [];
             }}
         ];
         const runMigrations = (sd) => {
@@ -31438,6 +31792,8 @@ class Game {
         // v13 mirrors: MATTER PAINT color (empty = stock tan) + touch stick scale.
         if (typeof this.saveData.wallColor !== 'string') this.saveData.wallColor = '';
         if (typeof this.saveData.touchStickScale !== 'number') this.saveData.touchStickScale = 1.0;
+        // v14 mirror: CUSTOM MAPS list (player-saved map snapshots).
+        if (!Array.isArray(this.saveData.customMaps)) this.saveData.customMaps = [];
         
         if (this.saveData.intel === undefined)         this.saveData.intel = 0;
         if (!this.saveData.metaUpgrades)               this.saveData.metaUpgrades = {};
@@ -31779,6 +32135,9 @@ class Game {
         
         if (tabName === 'leaderboard') {
             this.renderLeaderboard();
+        }
+        if (tabName === 'maps') {
+            this.renderCustomMapsList();
         }
         if (tabName === 'settings') {
             // Restore whichever Controls/Audio/Performance sub-tab was
