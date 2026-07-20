@@ -23904,10 +23904,34 @@ class Game {
             return true;
         }
 
-        // 1. Pause Menu Controller Navigation
+        // 1. Pause Menu Controller Navigation.
+        //
+        // Route on the pause screen ACTUALLY being on-screen, not on isPaused
+        // alone -- the same ground-truth-DOM pattern the dev-dashboard branch
+        // above already uses, and for the same reason. isPaused is overloaded:
+        // the pause menu sets it, but so does every modal that pops over a
+        // menu (perk / ext-mags / chaos, all intercepted earlier), and
+        // _safeUnpause() intentionally leaves it set while state === 'shop'.
+        // If isPaused is ever left true with NO pause screen showing (e.g.
+        // Action Now's opening shop once the free-perk queue drains), routing
+        // on isPaused alone shoves the pad into the HIDDEN pause menu -- where
+        // a stray confirm lands on ABANDON MISSION and instantly kills the
+        // run. The pause screen's own visibility can't drift out of sync,
+        // because the only thing that shows the menu (togglePause) is the same
+        // thing that un-hides it -- there's no separate bookkeeping bit to
+        // forget. This closes the entire "stuck isPaused misroutes the pad"
+        // class for this screen and any future one. Cheap: the DOM read only
+        // runs on the rare frames isPaused is already true.
         if (this.isPaused) {
-            this.handlePauseMenuNavigation(gpList);
-            return true;
+            const pauseScreenEl = document.getElementById('pause-screen');
+            const pauseMenuVisible = pauseScreenEl && !pauseScreenEl.classList.contains('hidden');
+            if (pauseMenuVisible) {
+                this.handlePauseMenuNavigation(gpList);
+                return true;
+            }
+            // isPaused true but the pause menu isn't the visible surface --
+            // fall through to the state-based routing below (shop / start /
+            // playing), which reads the authoritative single-valued `state`.
         }
 
         // 2. Main Menu Controller Navigation
@@ -28020,7 +28044,23 @@ class Game {
     // screen at all). No-op whenever the queue is empty, i.e. always, for
     // every mode except Action Now.
     _advanceNowModePerkQueue() {
-        if (!this._nowModePerkQueue || this._nowModePerkQueue.length === 0) return;
+        if (!this._nowModePerkQueue || this._nowModePerkQueue.length === 0) {
+            // Queue drained: every free perk has been chosen and we're now
+            // sitting in Action Now's opening shop. Each grantRandomPerk()
+            // set isPaused = true to show its perk pop-up, and _safeUnpause()
+            // deliberately won't clear isPaused while state === 'shop' -- so
+            // without this, the NOW-mode shop is left stuck paused. Touch
+            // never notices (the shop DOM is live regardless of isPaused),
+            // but the gamepad does: pollGamepad() checks isPaused BEFORE
+            // state === 'shop', so a stuck-paused shop routes the pad to the
+            // (hidden) pause menu -- where a stray confirm can land on ABANDON
+            // MISSION, instantly killing the run. Restore the "shop => not
+            // paused" invariant the between-wave shop already holds. Safe:
+            // update() gates the world tick on state === 'playing', so
+            // unpausing in the shop never resumes gameplay early.
+            if (this.state === 'shop') this.isPaused = false;
+            return;
+        }
         let nextPlayer = this._nowModePerkQueue.shift();
         if (nextPlayer && !nextPlayer.dead) {
             this.grantRandomPerk(nextPlayer);
