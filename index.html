@@ -23714,6 +23714,43 @@ class Game {
                 this.player.switchWeapon(e.deltaY > 0 ? 1 : -1);
             }
         }, { passive: true });
+
+        // --- Held-input recovery on focus loss ---
+        // Movement/sprint read input.keys[...] every frame (see Player.update),
+        // and those booleans are only ever cleared by the 'keyup' handler above.
+        // If the window loses focus WHILE a key (or the mouse) is held, the
+        // matching keyup/mouseup fires on whatever stole focus, not on us -- so
+        // the key latches true forever and movement gets stuck/steered. This
+        // happens with: the native Ctrl+S save dialog, a native drag-and-drop of
+        // the page (Ctrl+A then drag the "game area" onto itself), alt-tab, and
+        // OS context menus. blur + the hidden branch of visibilitychange between
+        // them cover every one of those; both just wipe the held-input state.
+        window.addEventListener('blur', () => this._releaseAllHeldInput());
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) this._releaseAllHeldInput();
+        });
+        // Belt-and-suspenders for the drag-and-drop repro specifically: stop the
+        // page's own content/selection from starting a native drag at all (the
+        // translucent "ghost" drag of the game). This game has no legitimate
+        // drag-and-drop of its own, so suppressing dragstart is safe, and it
+        // kills the interaction at the source rather than only recovering after.
+        window.addEventListener('dragstart', e => e.preventDefault());
+    }
+
+    // Clear every held key + the mouse button, and cancel any in-progress
+    // charge holds, so a keyup/mouseup lost to a focus change can't leave input
+    // latched. Called from the blur/visibilitychange handlers in bindInput().
+    _releaseAllHeldInput() {
+        this.input.keys = {};
+        this.input.mouseDown = false;
+        // The 'e'/'c' keyup normally ends these holds; if that keyup was eaten
+        // by the focus loss, cancel here so a charge isn't stuck mid-hold.
+        // cancel* (not release*) => no accidental grenade/barrier fire on
+        // alt-tab. Both are null-safe, matching togglePause()'s cancel block.
+        cancelGLCharge(this.player);
+        cancelGLCharge(this.player2);
+        cancelBarrierChain(this.player);
+        cancelBarrierChain(this.player2);
     }
 
     getWorldAimCoords(player) {
