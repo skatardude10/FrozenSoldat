@@ -5577,6 +5577,19 @@ const NOW_MODE = {
     FREE_PERK_COUNT: 2    // random perk choice screens queued per player at start (see Game._advanceNowModePerkQueue())
 };
 
+// ==== PvP (Friendly Fire = PvP) tuning ====
+// PvP turns co-op into 1v1: hitting the other operator is allowed (see the
+// friendlyFireMode === 'pvp' bullet gate). These flesh out the loop so a
+// single kill isn't the end -- the downed operator respawns across the map
+// after a countdown, keeps their cash (death is NOT a hardcore strip in
+// PvP), and the killer earns a bounty to fund the rematch.
+const PVP_TUNING = {
+    RESPAWN_TIME: 5.0,    // seconds from death to respawn while the opponent lives
+    KILL_REWARD: 1000,    // cash bounty paid to the operator who lands the kill
+    RESPAWN_HP_FRAC: 1.0, // fraction of maxHp restored on respawn (full)
+    SPAWN_INVULN: 2.0     // brief spawn protection so you can't be instantly re-killed
+};
+
 // ==== TACTICAL WAVES: tuning ====
 // Rebalance pass 1: the stock wave mode's difficulty curve was pure
 // THROUGHPUT (5+wave*4 enemies at a spawn interval flooring at 0.2s ~= 5
@@ -10916,6 +10929,8 @@ class Player extends Entity {
         this.barrierUpgraded = false;
         this.droneUpgraded = false;
         this.activeDrone = null;
+        this._droneArmGuard = 0; // post-launch window blocking input-detonate (see handleDroneInput)
+        this.respawnInvuln = 0;  // PvP spawn-protection window (see _respawnPvpPlayer)
         this.semiAutoTriggerReleased = true;
         this.dogsInventory = [];
         this.hunterSwarmCount = 0;
@@ -11523,6 +11538,17 @@ class Player extends Entity {
         if (this.energyDrinkTimer > 0) {
             this.energyDrinkTimer -= dt;
             if (this.energyDrinkTimer <= 0) this.energyDrinkTimer = 0;
+        }
+        // Drone launch-arm guard countdown (see handleDroneInput): brief window
+        // after takeoff during which a still-held/repeating input can't detonate.
+        if (this._droneArmGuard > 0) {
+            this._droneArmGuard -= dt;
+            if (this._droneArmGuard <= 0) this._droneArmGuard = 0;
+        }
+        // PvP respawn spawn-protection countdown (see _respawnPvpPlayer).
+        if (this.respawnInvuln > 0) {
+            this.respawnInvuln -= dt;
+            if (this.respawnInvuln <= 0) this.respawnInvuln = 0;
         }
 
         if (this.flashOpacity > 0) {
@@ -12641,6 +12667,12 @@ class Player extends Entity {
     takeDamage(amt, pushDir, pushForce) {
         if (game && game.isTestingMode) {
             amt = 0;
+        }
+        // PvP spawn protection: a freshly-respawned operator shrugs off damage
+        // for a brief beat (see _respawnPvpPlayer) so they can't be instantly
+        // re-killed on their pad. Zero-damage calls still pass through.
+        if (this.respawnInvuln > 0 && amt > 0) {
+            return;
         }
         // PHASE 3 (Corrupted OC): GLASS NERVES' bill comes due here --
         // multiplied BEFORE armor absorption so the whole hit runs hotter.
@@ -16505,6 +16537,23 @@ class Bullet {
                         ent.takeDamage(calculatedDmg, Math.atan2(this.vy, this.vx), 180);
                     }
                     
+                    // PvP KILL BOUNTY: eliminating the other operator pays a
+                    // flat bounty so 1v1 has an economy loop (respawn + rebuy).
+                    // Resolve the shooter to its owning Player (a turret/dog/drone
+                    // bullet credits its owner) and never self-credit.
+                    if (game && game.friendlyFireMode === 'pvp' && ent instanceof Player && ent.dead && !wasDeadBefore) {
+                        let killer = (bulletOwner && bulletOwner.owner) ? bulletOwner.owner : bulletOwner;
+                        if (killer instanceof Player && killer !== ent && !killer.dead) {
+                            killer.cash = (killer.cash || 0) + PVP_TUNING.KILL_REWARD;
+                            game.floatingTexts.push(game.spawnFloatingText(
+                                killer.x, killer.y - 28,
+                                `+ELIMINATION $${PVP_TUNING.KILL_REWARD}`, '#ff2a5f', 1.6,
+                                (Math.random() - 0.5) * 40, -70, 150, false
+                            ));
+                            if (audio && audio.playPickup) audio.playPickup('money');
+                        }
+                    }
+
                     if (ent instanceof Enemy && ent.dead && !wasDeadBefore) {
                         let isTurret = (this.owner instanceof AutoTurret);
                         let isDog = (this.owner instanceof RobotDog);
@@ -23522,11 +23571,7 @@ class Game {
                         this.handleDroneInput(this.player);
                     }
                     if (key === 'c') {
-                        if (this.player.droneUpgraded && (this.player.activeDrone.bombsDropped || 0) < 3) {
-                            this.player.activeDrone.dropBomb();
-                        } else {
-                            this.player.activeDrone.detonate();
-                        }
+                        this.triggerDroneManualDetonate(this.player);
                     }
                     if (key === 'p' || e.key === 'Escape') {
                         this.togglePause();
@@ -23740,6 +23785,23 @@ class Game {
             return true;
         }
 
+        // DEV DASHBOARD via controller: Select/Back (button 8) toggles the dev
+        // terminal -- the gamepad equivalent of the keyboard ` / ~ / F1 and the
+        // touch >_ button. Placed ABOVE the dev-dashboard nav routing below so
+        // the same button both opens AND closes it (that block returns early
+        // while the dashboard is open). Gated behind devModeEnabled, restricted
+        // to in-run states, and edge-detected so a held button can't spam it.
+        // Button 8 is otherwise entirely unused.
+        if (this.devModeEnabled) {
+            let selDown = gpList.some(gp => gp && gp.buttons[8] && gp.buttons[8].pressed);
+            let inRun = (this.state === 'playing' || this.state === 'shop');
+            const devOpen = () => { const el = document.getElementById('dev-dashboard'); return el && !el.classList.contains('hidden'); };
+            if (selDown && !this._gpDevBtnWasDown && (inRun || devOpen())) {
+                this.toggleDevDashboard();
+            }
+            this._gpDevBtnWasDown = selDown;
+        }
+
         // Dev Dashboard Controller Navigation -- must be checked before the
         // isPaused branch below, since opening the dev dashboard also sets
         // isPaused = true (see toggleDevDashboard). Without this check first,
@@ -23891,12 +23953,12 @@ class Game {
                 if (playerInstance.activeDrone && playerInstance.activeDrone.isPiloted && !playerInstance.activeDrone.dead) {
                     if (this.gpadButtonCooldown <= 0) {
                         if (gp.buttons[11].pressed || gp.buttons[7].pressed) { // R3 or RT detonates
-                            if (playerInstance.droneUpgraded && (playerInstance.activeDrone.bombsDropped || 0) < 3) {
-                                playerInstance.activeDrone.dropBomb();
-                            } else {
-                                playerInstance.activeDrone.detonate();
+                            // Guarded: no-op during the post-launch arm window,
+                            // so the R3 press that launched flight can't carry
+                            // straight into a detonate (the double-trigger bug).
+                            if (this.triggerDroneManualDetonate(playerInstance)) {
+                                this.gpadButtonCooldown = 0.3;
                             }
-                            this.gpadButtonCooldown = 0.3;
                         } else if (gp.buttons[2].pressed) { // Square lands drone
                             this.handleDroneInput(playerInstance);
                             this.gpadButtonCooldown = 0.3;
@@ -25421,6 +25483,23 @@ class Game {
         // loop (after walls/entities) so it renders on top of everything.
     }
 
+    // Input-triggered detonate/drop-bomb for a piloted drone, gated by the
+    // launch-arm guard so the takeoff press can't carry into a detonation.
+    // Returns true if it acted. Internal detonations (enemy fire, battery
+    // expiry) call drone.detonate() directly and are NOT affected.
+    triggerDroneManualDetonate(playerInstance) {
+        if (!playerInstance) return false;
+        const drone = playerInstance.activeDrone;
+        if (!drone || drone.dead || !drone.isPiloted) return false;
+        if (playerInstance._droneArmGuard > 0) return false; // just launched -- ignore
+        if (playerInstance.droneUpgraded && (drone.bombsDropped || 0) < 3) {
+            drone.dropBomb();
+        } else {
+            drone.detonate();
+        }
+        return true;
+    }
+
     handleDroneInput(playerInstance) {
         if (!playerInstance || playerInstance.dead) return;
 
@@ -25451,6 +25530,15 @@ class Game {
             if (!playerInstance.activeDrone.isPiloted) {
                 playerInstance.activeDrone.isPiloted = true;
                 audio.playPickup('money');
+                // LAUNCH-ARM GUARD: the same physical press that launches the
+                // drone into flight is usually still held (gamepad R3) or
+                // key-repeating (keyboard C) on the next polled frame, which
+                // previously carried straight into a detonate/drop-bomb -- the
+                // "activates twice / blows up instead of flying" bug. Block
+                // input-triggered detonate/drop for a short beat so a distinct
+                // second press is required. Internal detonations (enemy fire,
+                // battery expiry) bypass this and are unaffected.
+                playerInstance._droneArmGuard = 0.3;
             } else {
                 playerInstance.activeDrone.isPiloted = false;
                 audio.playPickup('money');
@@ -26397,6 +26485,80 @@ class Game {
             }
         }
         return { x: this.mapW / 2, y: this.mapH / 2 };
+    }
+
+    // Pick a respawn point far from the living opponent: evaluate the four
+    // corner insets, keep the one geometrically farthest from `other`, then
+    // resolve it to open ground via _findSafeSpawnNear. Falls back to the
+    // opposite quadrant if no opponent is available.
+    _findPvpRespawnSpot(other) {
+        const m = 240;
+        const corners = [
+            { x: m, y: m }, { x: this.mapW - m, y: m },
+            { x: m, y: this.mapH - m }, { x: this.mapW - m, y: this.mapH - m }
+        ];
+        let target;
+        if (other && Number.isFinite(other.x)) {
+            let best = null, bestD = -1;
+            for (const c of corners) {
+                const d = (c.x - other.x) ** 2 + (c.y - other.y) ** 2;
+                if (d > bestD) { bestD = d; best = c; }
+            }
+            target = best;
+        } else {
+            target = corners[Math.floor(Math.random() * corners.length)];
+        }
+        return this._findSafeSpawnNear(target.x, target.y);
+    }
+
+    // PvP respawn countdown for one operator. Starts a 5s timer on the first
+    // frame of death (opponent still alive), counts it down on the WALL clock
+    // (divide out timeScale, like the death linger), and revives on expiry.
+    _tickPvpRespawn(p, other, dt) {
+        if (!p) return;
+        if (!p.dead) { p._pvpRespawnTimer = null; return; }
+        // Both down at once (mutual kill): don't strand anyone -- run the
+        // countdown for each; they'll respawn to opposite corners.
+        if (p._pvpRespawnTimer == null) {
+            p._pvpRespawnTimer = PVP_TUNING.RESPAWN_TIME;
+        }
+        p._pvpRespawnTimer -= (this.timeScale > 0 ? dt / this.timeScale : dt);
+        if (p._pvpRespawnTimer <= 0) {
+            p._pvpRespawnTimer = null;
+            this._respawnPvpPlayer(p, other);
+        }
+    }
+
+    // Revive a downed operator in PvP: relocate away from the opponent, restore
+    // HP/armor/stamina + brief spawn protection, and clear the transient death
+    // state -- WITHOUT stripping cash or gear (PvP death is not a hardcore
+    // wipe; you keep your bank to re-buy for the rematch).
+    _respawnPvpPlayer(p, other) {
+        if (!p) return;
+        const spot = this._findPvpRespawnSpot(other && !other.dead ? other : null);
+        p.dead = false;
+        p.x = spot.x; p.y = spot.y;
+        p.vx = 0; p.vy = 0;
+        // Restore correct maxHp/maxArmor from Armory, then fill.
+        if (this._applyMetaStatsToPlayer) this._applyMetaStatsToPlayer(p);
+        p.hp = Math.max(1, Math.round((p.maxHp || 100) * PVP_TUNING.RESPAWN_HP_FRAC));
+        p.armor = p.maxArmor || 0;
+        if (p.maxStamina !== undefined) p.stamina = p.maxStamina;
+        p.isExhausted = false;
+        p.flashOpacity = 0;
+        p.damageFlashIntensity = 0;
+        // Clear any transient action state carried across the death.
+        p.isBuilding = false; p.buildTargetSide = 0; p.buildHoldTime = 0;
+        p.manipulatorLatch = null;
+        p.isDrilling = false;
+        p._insurancePayout = 0;
+        // Brief spawn protection so you can't be instantly re-killed.
+        p.respawnInvuln = PVP_TUNING.SPAWN_INVULN;
+        // FX + callout.
+        if (this.spawnDeployRing) this.spawnDeployRing(p.x, p.y);
+        if (audio && audio.playPickup) audio.playPickup('money');
+        this.announce('OPERATOR REDEPLOYED', '#39ff14', 1.6,
+            (p.isPlayer2 ? 'P2' : 'P1') + ' BACK IN THE FIGHT');
     }
 
     startNewGame() {
@@ -29698,8 +29860,19 @@ class Game {
         // and the runner's own removal.
         this._updateFinalKillEvent(dt);
 
+        // PvP RESPAWN: a single death is NOT run-ending in 1v1. Tick each dead
+        // operator's respawn countdown; when it expires they revive across the
+        // map from the opponent (see _tickPvpRespawn). The run only ends when a
+        // player abandons from the pause menu. Runs BEFORE the bothDead check
+        // below so a mutual/both-down state can't funnel PvP into the debrief.
+        let pvpActive = (this.friendlyFireMode === 'pvp' && this.isTwoPlayer && this.player2);
+        if (pvpActive) {
+            this._tickPvpRespawn(this.player, this.player2, dt);
+            this._tickPvpRespawn(this.player2, this.player, dt);
+        }
+
         let bothDead = this.player.dead && (!this.isTwoPlayer || !this.player2 || this.player2.dead);
-        if (bothDead) {
+        if (bothDead && !pvpActive) {
             // DEATH LINGER + DEATH FX: hold in 'playing' for 2 wall-clock
             // seconds before the debrief so the kill lands -- gibs settle,
             // blood paints, the ELIMINATED banner drops, all under a
@@ -29748,6 +29921,11 @@ class Game {
     }
     
     applyDeadPlayerHardcorePenalties() {
+        // PvP: the respawn system (_respawnPvpPlayer) owns revival and
+        // deliberately preserves cash/gear -- a PvP death is not a hardcore
+        // wipe. Never route PvP operators through the resource strip below,
+        // even if a wave happens to clear while one is mid-respawn.
+        if (this.friendlyFireMode === 'pvp' && this.isTwoPlayer) return;
         let resetPlayer = (p) => {
             if (!p || !p.dead) return;
             p.dead = false;
@@ -34430,6 +34608,27 @@ class Game {
         this.ctx.fillStyle = vignette;
         this.ctx.fillRect(x, y, w, h);
 
+        // PvP RESPAWN COUNTDOWN: a downed operator sees a big "RESPAWNING IN N"
+        // timer in their own viewport (screen-space, so it ignores the camera).
+        if (p && p.dead && p._pvpRespawnTimer != null && this.friendlyFireMode === 'pvp') {
+            const secs = Math.max(1, Math.ceil(p._pvpRespawnTimer));
+            const cx = x + w / 2, cy = y + h / 2;
+            const bigFont = Math.round(Math.min(w, h) * 0.22);
+            this.ctx.save();
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.shadowColor = 'rgba(0,0,0,0.8)';
+            this.ctx.shadowBlur = 12;
+            this.ctx.fillStyle = '#ff2a5f';
+            this.ctx.font = `900 ${bigFont}px "Courier New", monospace`;
+            this.ctx.fillText(String(secs), cx, cy - bigFont * 0.15);
+            this.ctx.fillStyle = '#e0f7fa';
+            const lblFont = Math.round(Math.min(w, h) * 0.045);
+            this.ctx.font = `bold ${lblFont}px "Courier New", monospace`;
+            this.ctx.fillText('RESPAWNING', cx, cy + bigFont * 0.55);
+            this.ctx.restore();
+        }
+
         // 1b. EVENT ANNOUNCEMENTS (JULY item 8b) -- big screen-space
         // headlines with a falling settle. Font scales with viewport width
         // so co-op halves / phones don't overflow.
@@ -35897,11 +36096,7 @@ class TouchController {
         
         // Command 2: Detonate / Bomb FPV Drone (if active & piloted)
         if (game.player.activeDrone && game.player.activeDrone.isPiloted && !game.player.activeDrone.dead) {
-            if (game.player.droneUpgraded && (game.player.activeDrone.bombsDropped || 0) < 3) {
-                game.player.activeDrone.dropBomb();
-            } else {
-                game.player.activeDrone.detonate();
-            }
+            game.triggerDroneManualDetonate(game.player);
             return;
         }
         
