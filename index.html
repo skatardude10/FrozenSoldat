@@ -10762,13 +10762,33 @@ const MATTER_MANIPULATOR = {
     SMALL_SIDE: 34,        // largest side still rounding to a single 24px cell (cost 55)
     MAX_SIDE: 52,          // ~2x2 cells; the biggest a player can build (cost 220)
     GROW_RATE: 3.6,        // px/sec the preview grows while F is held (~9s tiny -> max)
-    CELL_COST: 55,         // hp of one crumbling cell -- minimum bank to enter build mode
-    BIG_COST: 220,         // hp of a full 2x2 block -- bank needed to grow to MAX_SIDE
+    CELL_COST: 55,         // hp of one crumbling cell -- fallback build-entry floor; live code derives the ACTIVE tier's cell cost via Game.manipBuildTierInfo
+    BIG_COST: 220,         // hp of a full 2x2 CRUMBLING block (documentation constant; the growth cap now computes 4x the active tier's cell cost)
     REACH_GAP: 10,         // px gap projected past the player's leading edge
     MAX_PLAYER_WALLS: 60,  // soft cap; oldest is recycled beyond this (bounds LOS scans)
-    TIER: 'crumbling',     // built walls are the soft tier: improvised, breachable cover
+    TIER: 'crumbling',     // stock built-wall tier (DENSE MATTER armory levels unlock heavier tiers -- see Game.manipBuildTierInfo)
     COLOR_MAIN: '#a68a64',
-    COLOR_RGB: '166, 138, 100'
+    COLOR_RGB: '166, 138, 100',
+    // --- DENSE MATTER (armory 'manipulatorHardening'): per-tier default block
+    // colors so upgraded blocks read as a different material at a glance.
+    // Fortified deliberately echoes the map's orange anchor-wall language --
+    // players already know orange = seriously tough. If the MATTER PAINT SHOP
+    // color is set, it wins but is shaded darker per tier (Game._manipPaintFor)
+    // so tiers stay distinguishable under custom paint too.
+    TIER_COLORS: {
+        crumbling:  { hex: '#a68a64', rgb: '166, 138, 100' },
+        light:      { hex: '#9aa3ad', rgb: '154, 163, 173' },
+        reinforced: { hex: '#7c8aa0', rgb: '124, 138, 160' },
+        fortified:  { hex: '#c47b2f', rgb: '196, 123, 47' }
+    },
+    // --- RAMPART FABRICATOR (armory 'manipulatorRampart'): lock-and-extrude build.
+    PAINT_TILE: 24,             // px tile side == one damage cell (CELL_LEN in _wallCellPlan), so cost per tile is exactly one cell's hp
+    MAX_PAINT_TILES: 240,       // hard per-stroke cap (bank usually caps first); bounds preview draw + commit work -- 60 slabs / ~2900px of wall per stroke
+    RAMPART_MAX_PLAYER_WALLS: 150, // raised soft cap once the fabricator is owned (merged rects keep real wall count well below tile count)
+    LOCK_DWELL: 1.0,            // sec of steadiness to lock plan block #1 -- accrues even while the square is still growing, so from "held steady" to "locked" is a flat second every time, regardless of bank/size
+    LOCK_JITTER: 36,            // px of head wander tolerated as "steady" (a block and a half) -- heartbeat, stick drift and small shuffles all pass; real walking does not
+    LOCK_SLIP: 0.25,            // sec of dwell DOCKED (not zeroed) per wander past LOCK_JITTER -- a natural out-and-back twitch trips it twice, so a real twitch costs ~half a second total; sustained walking trips it several times a second and can never lock
+    PAINT_CADENCE: 0.65         // sec between extruded blocks -- brisk but still a visible one-at-a-time rhythm; a 10-block run is ~6.5s
 };
 
 class Player extends Entity {
@@ -10820,6 +10840,22 @@ class Player extends Entity {
         // the whole press so sweeping the aim across a wall mid-hold NEVER
         // flips drill<->build. null = F not currently held. Cleared on release.
         this.manipulatorLatch = null;
+        // RAMPART FABRICATOR stroke state (armory 'manipulatorRampart'): the
+        // in-progress painted block plan. Null between strokes; populated by
+        // Game._rampartUpdateStroke while F is held in build mode with the
+        // upgrade owned; consumed + cleared by Game.commitPaintedWalls on
+        // release. _paintSet mirrors _paintTiles as packed grid keys for O(1)
+        // dedup. Run-scoped for free (Player is reconstructed in startNewGame).
+        this._paintTiles = null;
+        this._paintSet = null;
+        this._paintPitch = 1;      // cells per side of the locked working block (1 = 24px, 2 = 48px), set at lock from the grown square
+        this._paintCooldown = 0;   // sec until the extruder may lay its next block (PAINT_CADENCE rhythm)
+        this._lastStampGx = 0;     // cell coords of the frontier block's origin --
+        this._lastStampGy = 0;     // extrusion steps one block-pitch from here toward the aim
+        this._lockTimer = 0;       // sec the fully grown square has been held steady (locks at LOCK_DWELL)
+        this._lockAnchorX = null;  // head position the steadiness is measured against
+        this._lockAnchorY = null;
+        this._paintStarved = false; // one-shot latch: the first bank/cap refusal in a stroke buzzes, then stays quiet
         // Laser Beam collimation (see AIM_WEIGHT.COLLIMATION_* + the laser-
         // sight draw block in Game.draw()): 1 = fully focused/tight beam,
         // 0 = just fired/wide and unfocused. Snapped down on every shot
@@ -11493,7 +11529,12 @@ class Player extends Entity {
                 this.isBuilding = false;
                 this.buildTargetSide = 0;
                 this.buildHoldTime = 0;
-                const DRILL_DPS = 140; // damage/sec -- see _wallCellPlan's cellMax comment for how this lines up against crumbling/light/reinforced cell toughness
+                // MINING RIG (armory 'manipulatorRig'): each level speeds the
+                // grind by +50% of base. Base 140 -- see _wallCellPlan's cellMax
+                // comment for how that lines up against cell toughness.
+                const rigLvl = (typeof game !== 'undefined' && game && game.saveData && game.saveData.metaUpgrades)
+                    ? (game.saveData.metaUpgrades.manipulatorRig || 0) : 0;
+                const DRILL_DPS = 140 * (1 + 0.5 * rigLvl);
 
                 // MATTER MANIPULATOR: bank the EXACT hp damageWallPoint removes
                 // this frame. damageWallPoint caps its bite at the struck
@@ -11506,7 +11547,14 @@ class Player extends Entity {
                 let hpBefore = bestWall.hp;
                 game.map.damageWallPoint(bestWall, bestPx, bestPy, DRILL_DPS * dt);
                 let hpLost = hpBefore - bestWall.hp;
-                if (hpLost > 0) this.wallMaterial += hpLost;
+                // MINING RIG yield bonus (+20%/level) applies ONLY to walls
+                // the player didn't build. Your own placed blocks always
+                // recycle exactly 1:1 -- a >1 multiplier there would let
+                // place->grind->place print rubble from nothing (a perpetual-
+                // matter machine), since a built wall's cost IS its hp.
+                if (hpLost > 0) {
+                    this.wallMaterial += hpLost * (bestWall._playerBuilt ? 1 : (1 + 0.2 * rigLvl));
+                }
 
                 // Sparks kicked back off the contact point, roughly away
                 // from the wall surface -- reuses the same addParticle/
@@ -11531,10 +11579,15 @@ class Player extends Entity {
                     audio.playDrill(0.5);
                     this.drillSoundTimer = 0.11;
                 }
-            } else if (!latchDrill && this.wallMaterial >= MATTER_MANIPULATOR.CELL_COST) {
+            } else if (!latchDrill && this.wallMaterial >= ((typeof game !== 'undefined' && game && game.manipBuildTierInfo) ? game.manipBuildTierInfo().cellCost : MATTER_MANIPULATOR.CELL_COST)) {
                 // --- BUILD MODE: latched to build with banked rubble ---
                 // (Latched builds keep going even when the aim crosses a wall;
                 // task 8 lets that block overlap existing geometry.)
+                // Entry threshold is one CELL of the ACTIVE tier (DENSE MATTER
+                // armory selection -- see Game.manipBuildTierInfo), not the
+                // crumbling constant: a fortified cell is 520hp, and entering
+                // build mode without the bank to place even one would arm a
+                // preview that can never commit.
                 // The preview square grows while F is held, but only as large
                 // as the bank can actually afford (it visibly STOPS growing
                 // when material runs out) and never past MAX_SIDE. The commit
@@ -11546,22 +11599,48 @@ class Player extends Entity {
                 this.buildHoldTime = (this.buildHoldTime || 0) + dt;
                 if (this.buildHoldTime >= MATTER_MANIPULATOR.ARM_DELAY) {
                     this.isBuilding = true;
-                    // A full 2x2 (MAX_SIDE, 220hp) needs 220 banked; otherwise
-                    // cap at a 1-cell footprint (SMALL_SIDE stays 1 cell =>
-                    // 55hp) which we know is covered (entered on >= CELL_COST).
-                    let maxAffordSide = (this.wallMaterial >= MATTER_MANIPULATOR.BIG_COST)
-                        ? MATTER_MANIPULATOR.MAX_SIDE : MATTER_MANIPULATOR.SMALL_SIDE;
-                    let grown = (this.buildTargetSide || MATTER_MANIPULATOR.MIN_SIDE) + MATTER_MANIPULATOR.GROW_RATE * dt;
-                    this.buildTargetSide = MathUtils.clamp(grown, MATTER_MANIPULATOR.MIN_SIDE,
-                        Math.min(MATTER_MANIPULATOR.MAX_SIDE, maxAffordSide));
+                    const tinfo = game.manipBuildTierInfo();
+                    // The classic grow-square runs for EVERYONE -- with the
+                    // RAMPART FABRICATOR it is phase 1 of the same hold (grow,
+                    // carry, aim; nothing commits while anything moves), so
+                    // the growth delay, size range and walk-anywhere feel are
+                    // identical with or without the upgrade. Growth freezes
+                    // once a paint plan exists (the locked block set the
+                    // working size for the whole run).
+                    if (!this._paintTiles || this._paintTiles.length === 0) {
+                        // A full 2x2 (MAX_SIDE) needs 4 cells banked at the
+                        // active tier; otherwise cap at a 1-cell footprint
+                        // (SMALL_SIDE stays 1 cell), covered by the entry
+                        // condition.
+                        let maxAffordSide = (this.wallMaterial >= tinfo.cellCost * 4)
+                            ? MATTER_MANIPULATOR.MAX_SIDE : MATTER_MANIPULATOR.SMALL_SIDE;
+                        let grown = (this.buildTargetSide || MATTER_MANIPULATOR.MIN_SIDE) + MATTER_MANIPULATOR.GROW_RATE * dt;
+                        this.buildTargetSide = MathUtils.clamp(grown, MATTER_MANIPULATOR.MIN_SIDE,
+                            Math.min(MATTER_MANIPULATOR.MAX_SIDE, maxAffordSide));
+                    }
+                    if ((game.saveData.metaUpgrades.manipulatorRampart || 0) >= 1) {
+                        // RAMPART FABRICATOR phase logic: while no plan
+                        // exists, watch for a deliberate HOLD-STEADY on the
+                        // fully grown square (lock block #1 exactly where it
+                        // was steadied -- stillness IS the aiming gesture, so
+                        // it can never fire mid-walk); once locked, extrude
+                        // one same-size block per cadence tick from the
+                        // frontier toward the aim, 4-connected and leashed.
+                        // See Game._rampartUpdateStroke.
+                        game._rampartUpdateStroke(this, tinfo, dt);
+                    }
 
                     // Rhythmic heavy clank while the block forms -- deliberately
                     // distinct from the drill grind (reuses the deploy/mine-place
-                    // thunk on a slower cadence).
-                    this.drillSoundTimer -= dt;
-                    if (this.drillSoundTimer <= 0) {
-                        if (audio && audio.playMinePlace) audio.playMinePlace(this.x, this.y);
-                        this.drillSoundTimer = 0.4;
+                    // thunk on a slower cadence). Only in phase 1: during
+                    // extrusion each STAMPED block plays its own thunk, so the
+                    // audio cadence IS the fabrication cadence.
+                    if (!this._paintTiles || this._paintTiles.length === 0) {
+                        this.drillSoundTimer -= dt;
+                        if (this.drillSoundTimer <= 0) {
+                            if (audio && audio.playMinePlace) audio.playMinePlace(this.x, this.y);
+                            this.drillSoundTimer = 0.4;
+                        }
                     }
                 }
             } else {
@@ -11571,17 +11650,32 @@ class Player extends Entity {
                 this.buildTargetSide = 0;
                 this.buildHoldTime = 0;
                 this.drillSoundTimer = 0;
+                // Defensive: no paint plan should exist here (a stroke can't
+                // start without the bank for its first tile, and the bank is
+                // only charged at commit), but never let one dangle.
+                this._paintTiles = null; this._paintSet = null;
+                this._paintCooldown = 0; this._lockTimer = 0;
+                this._lockAnchorX = null; this._lockAnchorY = null;
             }
         } else {
             // --- F RELEASED (or drone-piloting): commit any in-progress build ---
-            if (this.isBuilding && this.buildTargetSide > 0 && typeof game !== 'undefined' && game) {
-                game.placePlayerWall(this);
+            // RAMPART FABRICATOR strokes commit the whole painted plan;
+            // otherwise the classic single-square path commits as before.
+            if (this.isBuilding && typeof game !== 'undefined' && game) {
+                if (this._paintTiles && this._paintTiles.length > 0 && game.commitPaintedWalls) {
+                    game.commitPaintedWalls(this);
+                } else if (this.buildTargetSide > 0) {
+                    game.placePlayerWall(this);
+                }
             }
             this.isDrilling = false;
             this.isBuilding = false;
             this.buildTargetSide = 0;
             this.buildHoldTime = 0;
             this.drillSoundTimer = 0;
+            this._paintTiles = null; this._paintSet = null;
+            this._paintCooldown = 0; this._lockTimer = 0;
+            this._lockAnchorX = null; this._lockAnchorY = null;
             // Release clears the mode latch so the next press re-decides.
             this.manipulatorLatch = null;
         }
@@ -14727,6 +14821,7 @@ class Enemy extends Entity {
                 let bdx = ent.x - this.x, bdy = ent.y - this.y;
                 let distSq = bdx*bdx + bdy*bdy;
                 if (distSq < blastRadiusSq) {
+                    if (game.blastOccluded(this.x, this.y, ent)) continue; // BLAST OCCLUSION: corpse pops don't chain through intact walls
                     let dist = Math.sqrt(distSq);
                     let splashDmg = damage * (1.0 - dist / blastRadius);
                     let wasDeadBefore = ent.dead;
@@ -15761,6 +15856,7 @@ class BossDrone {
                 if (!ent || ent.dead) continue;
                 let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
                 if (dist < blastRadius) {
+                    if (game.blastOccluded(this.x, this.y, ent)) continue; // BLAST OCCLUSION: intact cover blocks the pop
                     let dmg = 14 * (1.0 - dist / blastRadius);
                     ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 220);
                 }
@@ -16022,6 +16118,10 @@ class MortarMarker {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < this.r) {
+                // BLAST OCCLUSION: a mortar shell that LANDS inside your
+                // courtyard still hurts (center is past the wall, nothing
+                // between); one landing outside an intact wall does not.
+                if (game.blastOccluded(this.x, this.y, ent)) continue;
                 // Slightly lower per-shell damage than the old single-mortar
                 // version -- multiple shells can now land close enough to
                 // overlap, so this keeps a full salvo's worst case in line
@@ -17102,11 +17202,16 @@ class Bullet {
             let blastRadius = 60;
             let damage = this.dmg * 0.75;
 
+            // BLAST OCCLUSION: walls eat their damage FIRST, then the entity
+            // loop is gated on surviving cover (see Game.blastOccluded).
+            game.map.damageWallsNear(this.x, this.y, blastRadius, damage * 1.3);
+
             let targets = game.getBulletBlastEntities(this.shooter);
 
             let blastRadiusSq = blastRadius * blastRadius;
             for (let ent of targets) {
                 if (ent.dead) continue;
+                if (game.blastOccluded(this.x, this.y, ent)) continue;
                 // PERF: cull by squared distance; only pay the sqrt for the
                 // few entities actually inside the blast (same deferred-sqrt
                 // shape as Enemy.update's separation loop). Falloff/knockback
@@ -17136,7 +17241,6 @@ class Bullet {
                     if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
                 }
             }
-            game.map.damageWallsNear(this.x, this.y, blastRadius, damage * 1.3);
             game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
 
             // TACTICAL PERKS (Phase 3): chaos aggro cost. Perk-driven player
@@ -17602,6 +17706,9 @@ class FPVDrone {
         if (game.camera2) game.camera2.punchZoom(0.12);
         
         let blastRadius = 300; 
+        // BLAST OCCLUSION: walls take the hit first; surviving cover then
+        // shields entities behind it (see Game.blastOccluded).
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 320);
         let entities = game.getBlastEntities();
         
         let preDead = 0;
@@ -17613,6 +17720,7 @@ class FPVDrone {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
+                if (game.blastOccluded(this.x, this.y, ent)) continue;
                 let damage = 250 * (1.0 - dist / blastRadius); 
                 // Same fix as MiniDrone.detonate(): a direct hit (dist tiny,
                 // since this drone crashes straight into contact) makes the
@@ -17682,7 +17790,6 @@ class FPVDrone {
             this.pilot.activeDrone = null;
         }
         game.spawnScorchMark(this.x, this.y, 55);
-        game.map.damageWallsNear(this.x, this.y, blastRadius, 320);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     
@@ -19230,6 +19337,8 @@ class MiniDrone extends Entity {
         if (game.camera2) game.camera2.punchZoom(0.04);
         
         let blastRadius = 65;
+        // BLAST OCCLUSION: walls first, then entities gated on surviving cover.
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 155);
         let entities = game.getBlastEntities();
         let preDead = 0;
         for (let ent of entities) {
@@ -19240,6 +19349,7 @@ class MiniDrone extends Entity {
             if (ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
+                if (game.blastOccluded(this.x, this.y, ent)) continue;
                 let damage = 120 * (1.0 - dist / blastRadius);
                 // A direct hit (dist is tiny -- this is how the drone kills
                 // most of the time, by flying into contact with its target)
@@ -19282,7 +19392,6 @@ class MiniDrone extends Entity {
             let color = Math.random() > 0.5 ? '#ffea00' : '#ff3d00';
             game.addParticle(this.x, this.y, Math.cos(angle)*speed, Math.sin(angle)*speed, color, 0.3, 2);
         }
-        game.map.damageWallsNear(this.x, this.y, blastRadius, 155);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     
@@ -19410,6 +19519,12 @@ class ShrapnelGrenade {
         game.camera.punchZoom(0.08);
         if (game.camera2) game.camera2.punchZoom(0.08);
 
+        // BLAST OCCLUSION: walls take their damage first, then splash is
+        // gated on surviving cover (see Game.blastOccluded). The 16 real
+        // bullet fragments below were ALWAYS wall-blocked, so a grenade's
+        // through-wall punch was only ever this invisible splash.
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 180);
+
         let entities = game.getBlastEntities();
         
         let preDead = 0;
@@ -19421,6 +19536,7 @@ class ShrapnelGrenade {
             if (ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
+                if (game.blastOccluded(this.x, this.y, ent)) continue;
                 let damage = 140 * (1.0 - dist / blastRadius);
                 ent.takeDamage(damage, Math.atan2(ent.y - this.y, ent.x - this.x), 500);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
@@ -19451,7 +19567,6 @@ class ShrapnelGrenade {
             game.addParticle(this.x, this.y, Math.cos(a)*spd*0.5, Math.sin(a)*spd*0.5, '#ffff00', 0.4, 4);
         }
         game.spawnScorchMark(this.x, this.y, 38);
-        game.map.damageWallsNear(this.x, this.y, blastRadius, 180);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     draw(ctx, cam) {
@@ -19530,11 +19645,17 @@ class HeCannonShell {
         game.spawnShockwave(this.x, this.y, 110, 0.25);
 
         let blastRadius = 110;
+        // BLAST OCCLUSION: walls first, then entities gated on surviving
+        // cover. The shell explodes ON contact with a wall face -- the
+        // struck wall is adjacent, not containing, so same-side targets
+        // are hit and far-side targets are shielded, which is the point.
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 70);
         let targets = game.getEnemyBulletBlastEntities();
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
+                if (game.blastOccluded(this.x, this.y, ent)) continue;
                 let dmg = 55 * (1.0 - dist / blastRadius);
                 ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 400);
             }
@@ -19547,7 +19668,6 @@ class HeCannonShell {
             game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.6, Math.sin(a) * spd * 0.6, '#ffb700', 0.35, 3);
         }
         game.spawnScorchMark(this.x, this.y, 26);
-        game.map.damageWallsNear(this.x, this.y, blastRadius, 70);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     draw(ctx, cam) {
@@ -19626,11 +19746,16 @@ class EnemyFragGrenade {
         game.spawnShockwave(this.x, this.y, 150, 0.28);
 
         let blastRadius = 150;
+        // BLAST OCCLUSION: walls first, then entities gated on surviving
+        // cover -- yes, this protects the PLAYER from enemy grenades behind
+        // an intact wall, which is exactly the fortification promise.
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 62);
         let targets = game.getEnemyFragBlastEntities();
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
+                if (game.blastOccluded(this.x, this.y, ent)) continue;
                 let dmg = 48 * (1.0 - dist / blastRadius);
                 ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 400);
             }
@@ -19642,7 +19767,6 @@ class EnemyFragGrenade {
             game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.5, Math.sin(a) * spd * 0.5, '#39ff14', 0.35, 3);
         }
         game.spawnScorchMark(this.x, this.y, 30);
-        game.map.damageWallsNear(this.x, this.y, blastRadius, 62);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     draw(ctx, cam) {
@@ -19930,6 +20054,8 @@ class TripMine {
         game.camera.punchZoom(0.06);
         if (game.camera2) game.camera2.punchZoom(0.06);
         
+        // BLAST OCCLUSION: walls first, then entities gated on surviving cover.
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 140);
         let entities = game.getBlastEntities();
         
         let preDead = 0;
@@ -19941,6 +20067,7 @@ class TripMine {
             if (ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
+                if (game.blastOccluded(this.x, this.y, ent)) continue;
                 let damage = (this.blastDamage || 110) * (1.0 - dist / blastRadius);
                 ent.takeDamage(damage, Math.atan2(ent.y - this.y, ent.x - this.x), 450);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
@@ -19970,7 +20097,6 @@ class TripMine {
             game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#d500f9', 0.5, 4);
         }
         game.spawnScorchMark(this.x, this.y, 32);
-        game.map.damageWallsNear(this.x, this.y, blastRadius, 140);
         game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
     }
     draw(ctx, cam) {
@@ -20320,6 +20446,11 @@ class ExplosiveBarrel {
         if (game.camera2) game.camera2.punchZoom(0.12);
 
         let blastRadius = 300; // same footprint as the FPV drone's detonation
+        // BLAST OCCLUSION: walls take the barrel's structural damage FIRST --
+        // a crumbling shack this blast flattens no longer protects anyone
+        // inside it, while a fortified wall that tanks it fully shields the
+        // far side (see Game.blastOccluded).
+        game.map.damageWallsNear(this.x, this.y, blastRadius, 320);
         let entities = game.getBlastEntities();
 
         let preDead = 0;
@@ -20331,6 +20462,7 @@ class ExplosiveBarrel {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
+                if (game.blastOccluded(this.x, this.y, ent)) continue;
                 let damage = 250 * (1.0 - dist / blastRadius);
                 let pushDir = Math.atan2(ent.y - this.y, ent.x - this.x);
                 ent.takeDamage(damage, pushDir, 700);
@@ -20362,7 +20494,6 @@ class ExplosiveBarrel {
             game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.7, Math.sin(a) * spd * 0.7, '#ff3d00', 0.7, 5);
         }
         game.spawnScorchMark(this.x, this.y, 55);
-        game.map.damageWallsNear(this.x, this.y, blastRadius, 320);
 
         // Chain reaction: any other live barrel caught in this blast goes up
         // too, with a tiny stagger so clustered barrels read as a cascade
@@ -20759,6 +20890,31 @@ const ARMORY_UPGRADES = [
     { key: 'manipulatorPaint', name: 'MATTER PAINT SHOP', maxLevel: 1,
       costPerLevel: [35],
       desc: 'Cosmetic: unlocks custom colors for walls you build with the Matter Manipulator. Pick a paint below once owned.' },
+    // ---- MATTER MANIPULATOR track (buildcrafting): tiers, drilling, painting.
+    // DENSE MATTER reuses the map's own wall-tier ladder (crumbling 55 /
+    // light 115 / reinforced 220 / fortified 520 hp per 24px cell -- see
+    // _wallCellPlan), so upgraded blocks need zero new balance or draw code.
+    // Rubble cost always equals hp (conservation of matter): a heavier tier
+    // is the SAME banked hp packed denser, not a discount or a tax.
+    { key: 'manipulatorHardening', name: 'DENSE MATTER', maxLevel: 3,
+      costPerLevel: [40, 85, 160],
+      desc: 'Matter Manipulator blocks build at heavier wall tiers. Rubble cost scales with toughness (same matter, packed denser) — pick your working tier below once owned.',
+      levelDescs: [
+          'COMPOSITE BLOCKS — build LIGHT-tier walls (115 HP/cell, ~2× stock)',
+          'REINFORCED BLOCKS — 220 HP/cell (4× stock); a frag grenade can no longer one-shot a cell',
+          'FORTIFIED BLOCKS — 520 HP/cell (~9.5× stock); bunker-grade, anchor-wall toughness'
+      ] },
+    { key: 'manipulatorRig', name: 'MINING RIG', maxLevel: 3,
+      costPerLevel: [30, 60, 100],
+      desc: 'Overhauls the Matter Manipulator drill: +50% grind speed per level, and map walls yield bonus rubble (+20% per level). Your own placed blocks always recycle 1:1 — no perpetual-matter machines.',
+      levelDescs: [
+          'HARDENED BIT — drill 1.5× faster, +20% rubble from map walls',
+          'THERMAL LANCE — drill 2× faster, +40% rubble from map walls',
+          'RESONANT CUTTER — drill 2.5× faster, +60% rubble from map walls'
+      ] },
+    { key: 'manipulatorRampart', name: 'RAMPART FABRICATOR', maxLevel: 1,
+      costPerLevel: [100],
+      desc: 'Extends the block builder into a wall fabricator: grow and carry a block as normal, then HOLD IT STEADY for a beat to lock it in place — from there, sweep your aim or walk and the fabricator extrudes matching blocks one at a time along your path. Release to build the whole run. Stops when your rubble runs out; grind any wall of yours back down for a full refund.' },
     // PHASE 4: L2 (deferred attachment complexity from the roadmap) --
     // ricochet rounds; the bounce is an opts.restitution on the SAME
     // ShrapnelGrenade class (its wall-bounce physics were already there).
@@ -21862,6 +22018,34 @@ class Game {
         const MA = (this.saveData && this.saveData.metaUpgrades) || {};
         const lvl = Math.min(MA.mineTech || 0, MINE_TECH.levels.length - 1);
         return MINE_TECH.levels[lvl].cost;
+    }
+
+    // BLAST OCCLUSION: true if a SURVIVING wall stands between a blast center
+    // and an entity. Fortification intent made real: intact cover stops splash
+    // damage cold. Every explosion's entity loop calls this AFTER its
+    // damageWallsNear pass (call sites were reordered walls-first for exactly
+    // this reason), so cover the blast itself just vaporized or carved no
+    // longer protects -- a shack of crumbling walls flattened by a barrel
+    // still kills whoever hid inside it (walls came down = damage expected),
+    // while a fortified tunnel wall that TANKS the hit fully shields the
+    // player behind it, and a hole punched by this very blast leaks it
+    // through. Same center-to-center segment test as enemy LOS (the flashbang
+    // already used this exact gate), spatially pruned via getWallsAlongSegment.
+    // Containment guards: a wall the blast center or the entity's own center
+    // sits INSIDE can't occlude -- otherwise a grenade flush against a wall
+    // face (or a body clipped into an edge) would shadow everything. Deployed
+    // barriers deliberately do NOT occlude: they're bullet cover, and blasts
+    // already interact with them through their own hp system.
+    blastOccluded(bx, by, ent) {
+        if (!this.map || !this.map.getWallsAlongSegment) return false;
+        const walls = this.map.getWallsAlongSegment(bx, by, ent.x, ent.y);
+        for (const w of walls) {
+            if (w.destructible && w.hp !== undefined && w.hp <= 0) continue; // defensive: dead walls shouldn't be filed, but never let one shield
+            if (bx >= w.x && bx <= w.x + w.w && by >= w.y && by <= w.y + w.h) continue;
+            if (ent.x >= w.x && ent.x <= w.x + w.w && ent.y >= w.y && ent.y <= w.y + w.h) continue;
+            if (MathUtils.lineIntersectAABB(bx, by, ent.x, ent.y, w)) return true;
+        }
+        return false;
     }
 
     getBlastEntities() {
@@ -25255,7 +25439,11 @@ class Game {
     // invariant that keeps the lazy damage-cell grid consistent with wall.hp.
     computeWallBuildFootprint(player) {
         let side = player.buildTargetSide || MATTER_MANIPULATOR.MIN_SIDE;
-        let cost = this.map._destructibleHpFor(side, side, MATTER_MANIPULATOR.TIER);
+        // DENSE MATTER: cost/hp come from the ACTIVE build tier (armory
+        // selection), not the crumbling constant -- heavier tiers cost
+        // exactly their hp, so conservation of matter holds at every tier.
+        const tinfo = this.manipBuildTierInfo();
+        let cost = this.map._destructibleHpFor(side, side, tinfo.tier);
         // Project the square just past the player's leading edge, along aim.
         let dist = player.r + side / 2 + MATTER_MANIPULATOR.REACH_GAP;
         let cx = player.x + Math.cos(player.angle) * dist;
@@ -25267,7 +25455,7 @@ class Game {
         // walls for heavy fortification), it just paints the preview red as a
         // heads-up. See _wallBuildOverlapsWall + drawWallBuildPreview.
         let overlap = valid && this._wallBuildOverlapsWall(x, y, side);
-        return { x, y, cx, cy, side, cost, valid, overlap };
+        return { x, y, cx, cy, side, cost, valid, overlap, tier: tinfo.tier };
     }
 
     // True if the prospective footprint overlaps any existing wall rect.
@@ -25327,21 +25515,18 @@ class Game {
         }
         player.wallMaterial -= f.cost;
 
-        // MATTER PAINT SHOP: use the player's chosen wall color once unlocked
-        // (empty string / locked = stock tan). Kept run-agnostic: read straight
-        // off saveData so a mid-run paint swap applies to the next block built.
-        const paintHex = (this.saveData && (this.saveData.metaUpgrades.manipulatorPaint || 0) >= 1 && this.saveData.wallColor)
-            ? this.saveData.wallColor : MATTER_MANIPULATOR.COLOR_MAIN;
-        const paintRgb = (paintHex === MATTER_MANIPULATOR.COLOR_MAIN)
-            ? MATTER_MANIPULATOR.COLOR_RGB : this._hexToRgbStr(paintHex);
+        // MATTER PAINT SHOP + DENSE MATTER: color resolution (custom paint if
+        // unlocked, tier default otherwise, tier-shaded either way) lives in
+        // one place -- _manipPaintFor -- shared with the fabricator commit.
+        const paint = this._manipPaintFor(f.tier);
 
         let wall = {
             x: f.x, y: f.y, w: f.side, h: f.side,
             destructible: true,
-            tier: MATTER_MANIPULATOR.TIER,
-            hp: f.cost, maxHp: f.cost,   // === _destructibleHpFor(side,side,'crumbling'); keeps hp/cell grid consistent
-            colorMain: paintHex,
-            colorRgb: paintRgb,
+            tier: f.tier,
+            hp: f.cost, maxHp: f.cost,   // === _destructibleHpFor(side,side,tier); keeps hp/cell grid consistent
+            colorMain: paint.hex,
+            colorRgb: paint.rgb,
             _playerBuilt: true
         };
         this.map.walls.push(wall);
@@ -25349,7 +25534,8 @@ class Game {
 
         let pw = this.map._playerWalls;
         pw.push(wall);
-        while (pw.length > MATTER_MANIPULATOR.MAX_PLAYER_WALLS) {
+        const pwCap = this._playerWallCap();
+        while (pw.length > pwCap) {
             let old = pw.shift();
             let idx = this.map.walls.indexOf(old);
             if (idx !== -1) {
@@ -25360,7 +25546,7 @@ class Game {
 
         this.spawnDeployRing(f.cx, f.cy);
         for (let i = 0; i < 10; i++) {
-            this.addParticle(f.cx, f.cy, MathUtils.rand(-90, 90), MathUtils.rand(-90, 90), paintHex, 0.35, 2);
+            this.addParticle(f.cx, f.cy, MathUtils.rand(-90, 90), MathUtils.rand(-90, 90), paint.hex, 0.35, 2);
         }
         if (audio && audio.playExplosion) audio.playExplosion(0.18, f.cx, f.cy);
     }
@@ -25371,7 +25557,45 @@ class Game {
     // -- so the player sees the exact footprint and its validity before
     // releasing F. Drawn AFTER the player so it reads as a hologram on top.
     drawWallBuildPreview(player, cam) {
-        if (!player || player.dead || !player.isBuilding || player.buildTargetSide <= 0) return;
+        if (!player || player.dead || !player.isBuilding) return;
+        // RAMPART FABRICATOR stroke: draw every planned tile as a green ghost.
+        // All-green by construction -- tiles only enter the plan if the bank
+        // covers them (stamp-time cap), and in-bounds is checked at stamp too.
+        // Cost is bounded by MAX_PAINT_TILES; same dash style as the square.
+        if (player._paintTiles && player._paintTiles.length > 0) {
+            const TILE = MATTER_MANIPULATOR.PAINT_TILE;
+            let ctx = this.ctx;
+            ctx.save();
+            ctx.strokeStyle = '#39ff14';
+            ctx.fillStyle = 'rgba(57, 255, 20, 0.15)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([5, 4]);
+            ctx.lineDashOffset = -((Date.now() / 60) % 18);
+            // PERF: ONE path, ONE fill, ONE dashed stroke for the whole plan.
+            // Dashed strokes are CPU-rasterized in canvas2d -- a separate
+            // dashed strokeRect per tile was up to ~240 dashed draws/frame on
+            // a big plan, a real frame-killer on integrated GPUs.
+            ctx.beginPath();
+            for (const t of player._paintTiles) {
+                ctx.rect(t.gx * TILE - cam.x, t.gy * TILE - cam.y, TILE, TILE);
+            }
+            ctx.fill();
+            ctx.stroke();
+            // Extrusion HEAD CURSOR: a block-sized outline at the aim point
+            // so steering reads at a glance -- the run is always building
+            // toward this, at its own pace, from wherever the frontier is.
+            const pitch = player._paintPitch || 1;
+            const bpx = pitch * TILE;
+            const side = player.buildTargetSide || MATTER_MANIPULATOR.MIN_SIDE;
+            const dproj = player.r + side / 2 + MATTER_MANIPULATOR.REACH_GAP;
+            const hx = player.x + Math.cos(player.angle) * dproj;
+            const hy = player.y + Math.sin(player.angle) * dproj;
+            ctx.strokeStyle = 'rgba(57, 255, 20, 0.85)';
+            ctx.strokeRect(hx - bpx / 2 - cam.x, hy - bpx / 2 - cam.y, bpx, bpx);
+            ctx.restore();
+            return;
+        }
+        if (player.buildTargetSide <= 0) return;
         let f = this.computeWallBuildFootprint(player);
         let sx = f.x - cam.x, sy = f.y - cam.y;
         let ctx = this.ctx;
@@ -25386,7 +25610,375 @@ class Game {
         ctx.lineDashOffset = -((Date.now() / 60) % 18);
         ctx.fillRect(sx, sy, f.side, f.side);
         ctx.strokeRect(sx, sy, f.side, f.side);
+        // RAMPART FABRICATOR lock-charge ring: while the fully grown square is
+        // being held steady, a white arc fills around it (0 -> full over
+        // LOCK_DWELL). Full circle = block #1 locks and extrusion begins.
+        // Reads as "keep holding still to start fabricating HERE".
+        if (player._lockTimer > 0.04) {
+            const prog = MathUtils.clamp(player._lockTimer / MATTER_MANIPULATOR.LOCK_DWELL, 0, 1);
+            ctx.setLineDash([]);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(sx + f.side / 2, sy + f.side / 2, f.side * 0.72, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2);
+            ctx.stroke();
+        }
         ctx.restore();
+    }
+
+    // DENSE MATTER: resolve the ACTIVE build tier + its one-cell rubble cost.
+    // Tier ladder reuses the map's own wall tiers (nothing new to balance or
+    // draw): crumbling 55 / light 115 / reinforced 220 / fortified 520 hp per
+    // 24px cell (see _wallCellPlan). The armory selection (saveData.buildTier)
+    // is CLAMPED to the owned manipulatorHardening level at read time, so a
+    // stale selection (post-prestige/reset) silently degrades instead of
+    // over-reaching; empty selection = strongest owned. cellCost is computed
+    // through _destructibleHpFor so it can never drift from the cell plan.
+    manipBuildTierInfo() {
+        const MA = (this.saveData && this.saveData.metaUpgrades) || {};
+        const TIERS = ['crumbling', 'light', 'reinforced', 'fortified'];
+        const maxIdx = Math.min(MA.manipulatorHardening || 0, TIERS.length - 1);
+        let idx = TIERS.indexOf(this.saveData ? this.saveData.buildTier : '');
+        if (idx < 0 || idx > maxIdx) idx = maxIdx;
+        const tier = TIERS[idx];
+        const cellCost = this.map
+            ? this.map._destructibleHpFor(MATTER_MANIPULATOR.PAINT_TILE, MATTER_MANIPULATOR.PAINT_TILE, tier)
+            : MATTER_MANIPULATOR.CELL_COST;
+        return { tier, cellCost, maxIdx };
+    }
+
+    // Built-wall color for a tier: MATTER PAINT SHOP color wins if unlocked+set
+    // (shaded darker per tier so tiers stay readable under custom paint);
+    // otherwise the tier's default color (see MATTER_MANIPULATOR.TIER_COLORS).
+    _manipPaintFor(tier) {
+        const custom = (this.saveData && (this.saveData.metaUpgrades.manipulatorPaint || 0) >= 1 && this.saveData.wallColor)
+            ? this.saveData.wallColor : '';
+        const T = MATTER_MANIPULATOR.TIER_COLORS[tier] || MATTER_MANIPULATOR.TIER_COLORS.crumbling;
+        if (!custom) return { hex: T.hex, rgb: T.rgb };
+        const shade = (tier === 'fortified') ? 0.6 : (tier === 'reinforced') ? 0.74 : (tier === 'light') ? 0.88 : 1.0;
+        const hex = this._shadeHex(custom, shade);
+        return { hex, rgb: this._hexToRgbStr(hex) };
+    }
+
+    // Multiply a '#rrggbb' toward black (mult < 1). Bad input passes through.
+    _shadeHex(hex, mult) {
+        if (!hex || hex[0] !== '#' || hex.length < 7) return hex;
+        const ch = (i) => Math.round(MathUtils.clamp(parseInt(hex.slice(i, i + 2), 16) * mult, 0, 255))
+            .toString(16).padStart(2, '0');
+        return '#' + ch(1) + ch(3) + ch(5);
+    }
+
+    // Player-built wall soft cap: raised once the RAMPART FABRICATOR is owned
+    // (painted structures are rect-merged at commit, so real wall count stays
+    // far below tile count, but a serious fort still needs more headroom than
+    // 60). Single source of truth for placePlayerWall, commitPaintedWalls AND
+    // _injectCustomWalls, so a saved fort can't be truncated on reload by a
+    // site using a stale constant.
+    _playerWallCap() {
+        const MA = (this.saveData && this.saveData.metaUpgrades) || {};
+        return (MA.manipulatorRampart || 0) >= 1
+            ? MATTER_MANIPULATOR.RAMPART_MAX_PLAYER_WALLS
+            : MATTER_MANIPULATOR.MAX_PLAYER_WALLS;
+    }
+
+    // RAMPART FABRICATOR: one frame of stroke logic, both phases. The head is
+    // the same projected point the square footprint uses (just past the
+    // leading edge, along aim).
+    //
+    // PHASE 1 (no plan yet) -- LOCK DETECTION. The classic square already grew
+    // and followed the aim in Player.update; here we only watch for a
+    // deliberate hold-steady: the square must be FULLY grown and the head must
+    // stay within LOCK_JITTER of its anchor for LOCK_DWELL seconds. Any walk
+    // or sweep resets the dwell, so you can carry a grown block across the
+    // whole map indefinitely and it will never lock in motion -- stillness IS
+    // the aiming gesture, and the lock lands exactly where you steadied it
+    // (snapped to the cell grid, <= half a tile of visual jump). The locked
+    // size sets the working pitch for the entire stroke: a grown 2x2 extrudes
+    // 2x2 slabs, a small square extrudes single cells.
+    //
+    // PHASE 2 (plan exists) -- EXTRUSION. One block per PAINT_CADENCE tick
+    // steps from the frontier block toward the head, axis-major (4-connected,
+    // so runs come out solid with no corner gaps), on the lattice anchored at
+    // block #1. Contiguity is by construction -- no interpolation needed, and
+    // you cannot outrun it into gaps: the run trails you at its own pace
+    // across ANY distance (no leash -- a steady walk always outruns a 1.5s
+    // cadence, so any finite reach limit just pauses mid-run; phase 2 was
+    // entered deliberately via the lock dwell and release commits, so bank,
+    // the stroke cap and letting go of F are the only bounds that matter).
+    // Stepping back over already-planned blocks moves the frontier for free
+    // (no cost), letting you reverse and branch a run. Cost is bounded at ONE
+    // block attempt per tick; the phase-1 check is a couple of compares.
+    _rampartUpdateStroke(player, tinfo, dt) {
+        const M = MATTER_MANIPULATOR;
+        const TILE = M.PAINT_TILE;
+        const side = player.buildTargetSide || M.MIN_SIDE;
+        const dproj = player.r + side / 2 + M.REACH_GAP;
+        const hx = player.x + Math.cos(player.angle) * dproj;
+        const hy = player.y + Math.sin(player.angle) * dproj;
+
+        if (!player._paintTiles || player._paintTiles.length === 0) {
+            // ---- PHASE 1: watch for the hold-steady lock ----
+            // The anchor must be a STORED point the head drifts against --
+            // never derived from the current head (that measures the head
+            // against itself, jitter reads as zero forever, and walking
+            // would lock after the dwell; caught by the stroke harness).
+            if (player._lockAnchorX === null) {
+                player._lockAnchorX = hx; player._lockAnchorY = hy;
+                player._lockTimer = 0;
+                return;
+            }
+            const jx = hx - player._lockAnchorX, jy = hy - player._lockAnchorY;
+            if ((jx * jx + jy * jy) > M.LOCK_JITTER * M.LOCK_JITTER) {
+                // FORGIVENESS: wandering past the (generous) jitter radius
+                // re-anchors and DOCKS the dwell rather than zeroing it -- a
+                // heartbeat twitch at 0.9s costs half a second, not the whole
+                // second. Sustained walking trips this every fraction of a
+                // second, bleeding dwell faster than it accrues, so motion
+                // still can never lock.
+                player._lockAnchorX = hx; player._lockAnchorY = hy;
+                player._lockTimer = Math.max(0, player._lockTimer - M.LOCK_SLIP);
+                return;
+            }
+            // RING = TRUTH: the dwell alone fires the lock. There is NO
+            // growth gate -- the base square takes ~9s to fully grow
+            // (GROW_RATE 3.6), and gating the fire on it made the ring
+            // complete at 1s while the lock silently waited many more
+            // seconds (the exact "ring finishes but nothing happens" bug).
+            // You lock WHATEVER you've grown so far: steady at any point and
+            // one second later it's planned. Hold time chooses the block
+            // size -- grown past 36px fabricates 2x2 slabs, under it single
+            // cells (the _wallCellPlan round(side/24) breakpoint).
+            player._lockTimer += dt;
+            if (player._lockTimer < M.LOCK_DWELL) return;
+            // LOCK: convert the steadied square into plan block #1.
+            const pitch = (side >= 36) ? 2 : 1;
+            player._paintPitch = pitch;
+            if (!player._paintTiles) { player._paintTiles = []; player._paintSet = new Set(); }
+            const bpx = pitch * TILE;
+            const ox = Math.round((hx - bpx / 2) / TILE);
+            const oy = Math.round((hy - bpx / 2) / TILE);
+            if (!this._stampPaintBlock(player, ox, oy, tinfo)) {
+                // Out of bounds (map edge). Keep phase 1 alive; re-steady to retry.
+                player._lockTimer = 0;
+                return;
+            }
+            player._lastStampGx = ox; player._lastStampGy = oy;
+            player._paintCooldown = M.PAINT_CADENCE;
+            if (audio && audio.playMinePlace) audio.playMinePlace(player.x, player.y);
+            return;
+        }
+
+        // ---- PHASE 2: extrusion ----
+        player._paintCooldown -= dt;
+        if (player._paintCooldown > 0) return;
+        const pitch = player._paintPitch || 1;
+        const bpx = pitch * TILE;
+        const fx = player._lastStampGx * TILE + bpx / 2;  // frontier block center
+        const fy = player._lastStampGy * TILE + bpx / 2;
+        const ddx = hx - fx, ddy = hy - fy;
+        const distSq = ddx * ddx + ddy * ddy;
+        if (distSq <= (bpx * 0.6) * (bpx * 0.6)) return;                       // head parked on the frontier: idle
+        // No distance cutoff: the wall CHASES the head at its own pace across
+        // any range -- walk ahead or aim at a far point and it builds up
+        // toward you (a steady walk ALWAYS outruns a 1.5s-cadence extruder,
+        // so any finite leash just pauses mid-run; the stroke-harness proved
+        // it). Phase 2 was entered deliberately (the lock dwell) and release
+        // commits, so the only bounds that matter are bank, the stroke cap,
+        // and letting go of F.
+        const stepX = (Math.abs(ddx) >= Math.abs(ddy)) ? (ddx > 0 ? 1 : -1) : 0;
+        const stepY = (stepX === 0) ? (ddy > 0 ? 1 : -1) : 0;
+        const nx = player._lastStampGx + stepX * pitch;
+        const ny = player._lastStampGy + stepY * pitch;
+        if (this._stampPaintBlock(player, nx, ny, tinfo)) {
+            player._lastStampGx = nx; player._lastStampGy = ny;
+            player._paintCooldown = M.PAINT_CADENCE;
+            player._paintStarved = false;
+            if (audio && audio.playMinePlace) audio.playMinePlace(player.x, player.y);
+        } else {
+            // Bank / stroke cap / map edge: hold the cadence so this stays a
+            // per-tick check, not a per-frame one. The plan visibly stops
+            // growing -- the same idiom as the square stopping -- and the
+            // FIRST refusal buzzes once, so a stroke never just goes silent
+            // mid-run and reads as a mystery cutoff.
+            player._paintCooldown = M.PAINT_CADENCE;
+            if (!player._paintStarved) {
+                player._paintStarved = true;
+                if (audio && audio.playRicochet) audio.playRicochet();
+            }
+        }
+    }
+
+    // Stamp one pitch x pitch block of cells at cell-origin (ox, oy) into the
+    // stroke plan. All-or-nothing on the block's NEW cells (keeps painted
+    // shapes clean); a block already fully in the plan returns true at zero
+    // cost so the extrusion frontier can travel back over its own line. The
+    // bank cap counts the whole plan plus this block at the active tier --
+    // the fabricator's honesty mechanism: you can never paint more than you
+    // can pay for, so commit needs no unfunded-blueprint state, no expiry,
+    // and no cancel gesture (grinding a misplaced wall refunds 1:1 anyway).
+    // Overlapping existing REAL walls stays allowed, same as the single
+    // square (fortify-into-geometry is a feature).
+    _stampPaintBlock(player, ox, oy, tinfo) {
+        const M = MATTER_MANIPULATOR;
+        const TILE = M.PAINT_TILE;
+        const pitch = player._paintPitch || 1;
+        const x = ox * TILE, y = oy * TILE, s = pitch * TILE;
+        if (x < 0 || y < 0 || x + s > this.mapW || y + s > this.mapH) return false;
+        let newCells = 0;
+        for (let cy = 0; cy < pitch; cy++) {
+            for (let cx = 0; cx < pitch; cx++) {
+                if (!player._paintSet.has((ox + cx) * 8192 + (oy + cy))) newCells++;
+            }
+        }
+        if (newCells === 0) return true; // frontier may advance over existing plan for free
+        if (player._paintTiles.length + newCells > M.MAX_PAINT_TILES) return false;
+        if ((player._paintTiles.length + newCells) * tinfo.cellCost > player.wallMaterial) return false;
+        for (let cy = 0; cy < pitch; cy++) {
+            for (let cx = 0; cx < pitch; cx++) {
+                const k = (ox + cx) * 8192 + (oy + cy);
+                if (!player._paintSet.has(k)) {
+                    player._paintSet.add(k);
+                    player._paintTiles.push({ gx: ox + cx, gy: oy + cy });
+                }
+            }
+        }
+        return true;
+    }
+
+    // Reset every scrap of RAMPART FABRICATOR stroke state on a player. The
+    // single authority for stroke teardown -- called from release, commit,
+    // idle, PvP respawn and the Hardcore penalty so no site can miss a field.
+    _clearPaintStroke(p) {
+        p._paintTiles = null; p._paintSet = null;
+        p._paintCooldown = 0; p._lockTimer = 0;
+        p._lockAnchorX = null; p._lockAnchorY = null;
+        p._paintStarved = false;
+    }
+
+    // Greedy rectangle decomposition of a painted tile set, in grid units.
+    // Width expands first (up to 18 cells), then height while every row in
+    // the span is fully painted (up to 4 cells) -- exactly _wallCellPlan's
+    // MAX_LONG_CELLS / MAX_THIN_CELLS, so a merged rect's cell grid rounds to
+    // PRECISELY its tile count and hp === tiles x cellMax with no clamping
+    // surprises. Fewer, larger walls keep the player-wall cap and the
+    // unfiltered LOS scans happy under painted forts.
+    _mergePaintTiles(tiles) {
+        const key = (gx, gy) => gx * 8192 + gy;
+        const set = new Set();
+        for (const t of tiles) set.add(key(t.gx, t.gy));
+        const sorted = tiles.slice().sort((a, b) => (a.gy - b.gy) || (a.gx - b.gx));
+        const rects = [];
+        for (const t of sorted) {
+            if (!set.has(key(t.gx, t.gy))) continue;   // already absorbed
+            let w = 1;
+            while (w < 18 && set.has(key(t.gx + w, t.gy))) w++;
+            let h = 1;
+            growDown: while (h < 4) {
+                for (let i = 0; i < w; i++) {
+                    if (!set.has(key(t.gx + i, t.gy + h))) break growDown;
+                }
+                h++;
+            }
+            for (let yy = 0; yy < h; yy++) {
+                for (let xx = 0; xx < w; xx++) set.delete(key(t.gx + xx, t.gy + yy));
+            }
+            rects.push({ gx: t.gx, gy: t.gy, cw: w, ch: h });
+        }
+        return rects;
+    }
+
+    // RAMPART FABRICATOR: commit a released paint stroke into real walls.
+    // Mirrors placePlayerWall's contract per merged rect: full-health
+    // destructible walls with hp === maxHp === _destructibleHpFor(w,h,tier)
+    // (the anti-zombie-wall invariant), filed into the spatial grid, tracked
+    // in _playerWalls under the soft cap. Per-tile commit validation is
+    // FORGIVING where the single square is strict: a tile that would bury a
+    // live player or enemy is simply skipped (its rubble is never charged)
+    // instead of one bad tile voiding a 40-tile stroke. No path-cache or nav
+    // invalidation needed -- same reasoning as placePlayerWall (0.45s TTL).
+    commitPaintedWalls(player) {
+        const tiles = player ? player._paintTiles : null;
+        if (!player || player.dead || !tiles || tiles.length === 0) return;
+        const tinfo = this.manipBuildTierInfo();
+        const TILE = MATTER_MANIPULATOR.PAINT_TILE;
+
+        const valid = [];
+        let skipped = 0;
+        const rect = { x: 0, y: 0, w: TILE, h: TILE };
+        for (const t of tiles) {
+            rect.x = t.gx * TILE; rect.y = t.gy * TILE;
+            let blocked = false;
+            for (const p of [this.player, this.player2]) {
+                if (!p || p.dead) continue;
+                if (MathUtils.circleIntersectAABB(p.x, p.y, p.r, rect).hit) { blocked = true; break; }
+            }
+            if (!blocked) {
+                const tcx = rect.x + TILE / 2, tcy = rect.y + TILE / 2;
+                for (const e of this.enemies) {
+                    if (!e || e.dead) continue;
+                    const dx = e.x - tcx, dy = e.y - tcy;
+                    if (dx * dx + dy * dy > 300 * 300) continue; // cheap cull, same as _wallBuildValid
+                    if (MathUtils.circleIntersectAABB(e.x, e.y, e.r || 12, rect).hit) { blocked = true; break; }
+                }
+            }
+            if (blocked) skipped++; else valid.push(t);
+        }
+
+        // Clear the stroke regardless of outcome -- release ends the plan.
+        this._clearPaintStroke(player);
+
+        if (valid.length === 0) {
+            if (audio && audio.playRicochet) audio.playRicochet();
+            return;
+        }
+
+        const rects = this._mergePaintTiles(valid);
+        const paint = this._manipPaintFor(tinfo.tier);
+        let totalCost = 0;
+        let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+        const pw = this.map._playerWalls;
+        for (const r of rects) {
+            const wx = r.gx * TILE, wy = r.gy * TILE, ww = r.cw * TILE, wh = r.ch * TILE;
+            const hp = this.map._destructibleHpFor(ww, wh, tinfo.tier); // === cw*ch*cellCost given the merge caps
+            totalCost += hp;
+            const wall = {
+                x: wx, y: wy, w: ww, h: wh,
+                destructible: true,
+                tier: tinfo.tier,
+                hp: hp, maxHp: hp,
+                colorMain: paint.hex,
+                colorRgb: paint.rgb,
+                _playerBuilt: true
+            };
+            this.map.walls.push(wall);
+            this.map._insertWallIntoGrid(wall);
+            pw.push(wall);
+            if (wx < mnX) mnX = wx; if (wy < mnY) mnY = wy;
+            if (wx + ww > mxX) mxX = wx + ww; if (wy + wh > mxY) mxY = wy + wh;
+        }
+        // Stamp-time bank cap guarantees affordability; Math.max is armor
+        // against any future drift, never a price change.
+        player.wallMaterial = Math.max(0, player.wallMaterial - totalCost);
+
+        const pwCap = this._playerWallCap();
+        while (pw.length > pwCap) {
+            const old = pw.shift();
+            const idx = this.map.walls.indexOf(old);
+            if (idx !== -1) {
+                this.map.walls.splice(idx, 1);
+                this.map._removeWallFromGrid(old);
+            }
+        }
+
+        const ccx = (mnX + mxX) / 2, ccy = (mnY + mxY) / 2;
+        this.spawnDeployRing(ccx, ccy);
+        for (let i = 0; i < 12; i++) {
+            this.addParticle(ccx, ccy, MathUtils.rand(-90, 90), MathUtils.rand(-90, 90), paint.hex, 0.35, 2);
+        }
+        if (audio && audio.playExplosion) audio.playExplosion(0.18, ccx, ccy);
+        // Some tiles were skipped over a live body: the classic denial buzz
+        // tells the player part of the plan didn't take.
+        if (skipped > 0 && audio && audio.playRicochet) audio.playRicochet();
     }
 
     // RAPID EMPLACEMENT chain variant: each chained barrier follows the
@@ -26797,9 +27389,12 @@ class Game {
             if (pb) this.map._playerWalls.push(wall);
         }
         // Defensive: honor the player-wall soft cap even against a hand-edited
-        // save (a well-formed one is <= MAX by construction).
+        // save (a well-formed one is <= cap by construction). Uses the SAME
+        // _playerWallCap() as live placement, so a RAMPART FABRICATOR fort
+        // saved under the raised cap reloads without truncation.
         const pw = this.map._playerWalls;
-        while (pw.length > MATTER_MANIPULATOR.MAX_PLAYER_WALLS) {
+        const pwCap = this._playerWallCap();
+        while (pw.length > pwCap) {
             const old = pw.shift();
             const idx = this.map.walls.indexOf(old);
             if (idx !== -1) { this.map.walls.splice(idx, 1); this.map._removeWallFromGrid(old); }
@@ -27091,6 +27686,7 @@ class Game {
         // Clear any transient action state carried across the death.
         p.isBuilding = false; p.buildTargetSide = 0; p.buildHoldTime = 0;
         p.manipulatorLatch = null;
+        this._clearPaintStroke(p);
         p.isDrilling = false;
         p._insurancePayout = 0;
         // Brief spawn protection so you can't be instantly re-killed.
@@ -30558,6 +31154,7 @@ class Game {
             p.isBuilding = false;
             p.buildTargetSide = 0;
             p.buildHoldTime = 0;
+            this._clearPaintStroke(p);
             p.isExhausted = false;
             p.flashOpacity = 0;
             p.pistolHP = false;
@@ -32030,6 +32627,17 @@ class Game {
             // built/exploded wall layer). Additive only.
             { to: 14, up: (sd) => {
                 if (!Array.isArray(sd.customMaps)) sd.customMaps = [];
+            }},
+            // v15: MATTER MANIPULATOR track -- DENSE MATTER build tiers,
+            // MINING RIG drill upgrades, RAMPART FABRICATOR brush build, and
+            // the persisted working-tier selection (empty = strongest owned).
+            // Additive only.
+            { to: 15, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                for (const k of ['manipulatorHardening', 'manipulatorRig', 'manipulatorRampart']) {
+                    if (typeof sd.metaUpgrades[k] !== 'number') sd.metaUpgrades[k] = 0;
+                }
+                if (typeof sd.buildTier !== 'string') sd.buildTier = '';
             }}
         ];
         const runMigrations = (sd) => {
@@ -32074,6 +32682,11 @@ class Game {
         if (MA.greedyHands === undefined) MA.greedyHands = 0;
         // v13: MATTER PAINT SHOP unlock (mirrors the v13 migration).
         if (MA.manipulatorPaint === undefined) MA.manipulatorPaint = 0;
+        // v15: MATTER MANIPULATOR track (mirrors the v15 migration).
+        if (MA.manipulatorHardening === undefined) MA.manipulatorHardening = 0;
+        if (MA.manipulatorRig === undefined) MA.manipulatorRig = 0;
+        if (MA.manipulatorRampart === undefined) MA.manipulatorRampart = 0;
+        if (typeof this.saveData.buildTier !== 'string') this.saveData.buildTier = '';
         if (typeof this.saveData.hasSeenArmoryTutorial !== 'boolean') this.saveData.hasSeenArmoryTutorial = false;
         if (typeof this.saveData.touchFireHintDone !== 'boolean') this.saveData.touchFireHintDone = false;
         // PHASE D: prestige counter default (mirrors the v8 migration).
@@ -32618,6 +33231,31 @@ class Game {
                 extraHTML = out + '</div>';
             }
 
+            // DENSE MATTER: working-tier selector chips once owned. Mirrors
+            // the paint swatch row; only tiers up to the owned level render.
+            // The selection is persisted (saveData.buildTier) and CLAMPED to
+            // the owned level at read time (Game.manipBuildTierInfo), so a
+            // post-reset/prestige save silently degrades instead of building
+            // above its station.
+            if (upg.key === 'manipulatorHardening' && currentLevel >= 1) {
+                const TIER_CHIPS = [
+                    ['crumbling',  'STOCK', '55 HP/cell'],
+                    ['light',      'LIGHT', '115 HP/cell'],
+                    ['reinforced', 'REINF', '220 HP/cell'],
+                    ['fortified',  'FORT',  '520 HP/cell']
+                ];
+                const selTier = this.manipBuildTierInfo().tier;
+                let out = `<div style="display:flex; align-items:center; gap:4px; margin-top:4px; flex-wrap:wrap;"><span style="font-size:9px; color:#a9c2c7; width:36px;">TIER</span>`;
+                for (let i = 0; i < TIER_CHIPS.length; i++) {
+                    if (i > currentLevel) continue;
+                    const tKey = TIER_CHIPS[i][0], tLabel = TIER_CHIPS[i][1], tHp = TIER_CHIPS[i][2];
+                    const tCol = MATTER_MANIPULATOR.TIER_COLORS[tKey].hex;
+                    const sel = (selTier === tKey);
+                    out += `<div title="${tLabel}: ${tHp} (rubble cost matches hp)" onclick="game.setBuildTier('${tKey}')" style="cursor:pointer; padding:2px 6px; font-size:9px; font-weight:bold; letter-spacing:1px; border-radius:2px; color:#0b0f14; background:${tCol}; border:2px solid ${sel ? '#fff' : 'transparent'};">${tLabel}</div>`;
+                }
+                extraHTML = out + '</div>';
+            }
+
             grid.innerHTML += `
                 <div class="armory-card">
                     <div class="armory-card-name">${upg.name}</div>
@@ -32656,6 +33294,21 @@ class Game {
     setWallColor(hex) {
         if ((this.saveData.metaUpgrades.manipulatorPaint || 0) < 1) return;
         this.saveData.wallColor = hex || '';
+        this.saveGameData();
+        this.renderArmoryTab();
+        if (audio) audio.playPickup('money');
+    }
+
+    // DENSE MATTER: working-tier selection. Persisted; consumed everywhere
+    // through manipBuildTierInfo (which also clamps to the owned level, so
+    // this gate is belt-and-suspenders against a hand-crafted onclick).
+    // Shared across P1/P2 like the wall color -- walls are a single
+    // world-space resource, not a per-operator loadout.
+    setBuildTier(tier) {
+        const TIERS = ['crumbling', 'light', 'reinforced', 'fortified'];
+        const idx = TIERS.indexOf(tier);
+        if (idx < 0 || idx > (this.saveData.metaUpgrades.manipulatorHardening || 0)) return;
+        this.saveData.buildTier = tier;
         this.saveGameData();
         this.renderArmoryTab();
         if (audio) audio.playPickup('money');
