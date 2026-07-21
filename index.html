@@ -8674,10 +8674,14 @@ class MapGen {
     // the whole lineage's blurred silhouette ONCE per carve event into an
     // offscreen sprite, and blit that per frame (fragments then draw with
     // shadowBlur = 0). Regenerated only from flushLineageEdges(), i.e.
-    // only when the geometry actually changes. Skipped entirely on
-    // templates that already draw walls without blur (11/12).
+    // only when the geometry actually changes. Skipped entirely on the
+    // dense maps that already draw walls without blur (id>=10 -- operator
+    // 11/12 plus the procgen/large templates 10/13/14/15/16). This gate
+    // MUST stay in lockstep with the wallBlur gate in draw(): those maps
+    // never blit this sprite (draw skips it when wallBlur===0), so building
+    // it here would be pure wasted work on every carve event.
     _rebuildLineageShadow(lineage) {
-        if (this.templateId === 11 || this.templateId === 12) { lineage._shadow = null; return; }
+        if (this.templateId >= 10) { lineage._shadow = null; return; }
         const pieces = lineage.pieces;
         if (!pieces || pieces.length === 0) { lineage._shadow = null; return; }
         const BLUR = 10, PAD = BLUR * 2;
@@ -9063,8 +9067,22 @@ class MapGen {
         // in ONE coalesced recompute before drawing.
         this.flushLineageEdges();
         this._wallDrawPass++;
-        const wallBlur = (this.templateId === 11 || this.templateId === 12) ? 0 : 10;
-        ctx.shadowBlur = wallBlur; // PERF: operator map has 150+ walls vs ~20-40 on classic templates; per-shape blur at that count was a real, significant rendering cost invisible to headless testing. Template 12 (~340 walls) is denser still, so it gets the same treatment. Templates 0-9 keep the original blur look unchanged.
+        // PERF: per-wall shadowBlur is a real, significant per-frame cost that
+        // scales with the visible PRISTINE wall count (carved fragments already
+        // use the cached lineage shadow blitted below, so they don't pay it).
+        // It was invisible to headless testing. Every dense map pays this on
+        // every intact wall every frame: operator 11 (~150 walls) / 12 (~340),
+        // AND the later large/procgen templates 10, 13 (Foundry), 14 (Shatter
+        // Bazaar), 15 (Warrens), 16 (Legacy Open World) -- which run up to the
+        // 720-wall budget (_procgenValidate). Those later ids were added after
+        // the original 11/12-only exclusion and silently fell through to
+        // blur=10, eating hundreds of gaussian-blur passes per frame -- the
+        // procgen-map frame drop. All dense maps are id>=10 (0-9 are the
+        // hand-authored classic maps and keep the original blur look unchanged);
+        // gate on that so future dense templates are covered too. Mirrors the
+        // 10+ boundary already used by useLargeMapPath in buildNavGrid.
+        const wallBlur = (this.templateId >= 10) ? 0 : 10;
+        ctx.shadowBlur = wallBlur;
         let bufferX = Math.max(150, visibleW * 0.18);
         let bufferY = Math.max(150, visibleH * 0.18);
         // PERF (item 9a): fillStyle/lineWidth are loop-invariant -- every
@@ -14679,10 +14697,15 @@ class Enemy extends Entity {
             
             let blastRadius = 90;
             let damage = 50;
+            let blastRadiusSq = blastRadius * blastRadius;
             for (let ent of game.enemies) {
                 if (ent === this || ent.dead) continue;
-                let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
-                if (dist < blastRadius) {
+                // PERF: squared-distance cull, sqrt only for entities actually
+                // hit (mirrors the separation loop's deferred-sqrt pattern).
+                let bdx = ent.x - this.x, bdy = ent.y - this.y;
+                let distSq = bdx*bdx + bdy*bdy;
+                if (distSq < blastRadiusSq) {
+                    let dist = Math.sqrt(distSq);
                     let splashDmg = damage * (1.0 - dist / blastRadius);
                     let wasDeadBefore = ent.dead;
                     ent.takeDamage(splashDmg, Math.atan2(ent.y - this.y, ent.x - this.x), 200);
@@ -16330,19 +16353,26 @@ class Bullet {
             // Smart Munitions steering logic
             if (this.isPlayerBullet && this.shooter && this.shooter.perkSmartMunitions) {
                 let nearestEnemy = null;
-                let minDist = 400;
+                // PERF: squared-distance nearest-enemy select, mirroring the
+                // dSq pattern Enemy.update's separation loop already uses. The
+                // raw distance is only a ranking key here (the steering angle
+                // is derived from dx/dy, not dist), so no sqrt is ever taken.
+                // Threshold 400 -> 400*400. Runs per-substep per-enemy for
+                // every Smart Munitions bullet, so it's a real hot path when
+                // that perk is active.
+                let minDistSq = 400 * 400;
                 let currentAngle = Math.atan2(this.vy, this.vx);
                 
                 for (let ent of entities) {
                     if (ent instanceof Enemy && !ent.dead) {
                         let dx = ent.x - this.x;
                         let dy = ent.y - this.y;
-                        let dist = Math.hypot(dx, dy);
-                        if (dist < minDist) {
+                        let distSq = dx*dx + dy*dy;
+                        if (distSq < minDistSq) {
                             let angleToEnemy = Math.atan2(dy, dx);
                             let angleDiff = Math.atan2(Math.sin(angleToEnemy - currentAngle), Math.cos(angleToEnemy - currentAngle));
                             if (Math.abs(angleDiff) < 0.6) {
-                                minDist = dist;
+                                minDistSq = distSq;
                                 nearestEnemy = ent;
                             }
                         }
@@ -16979,10 +17009,18 @@ class Bullet {
 
             let targets = game.getBulletBlastEntities(this.shooter);
 
+            let blastRadiusSq = blastRadius * blastRadius;
             for (let ent of targets) {
                 if (ent.dead) continue;
-                let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
-                if (dist < blastRadius) {
+                // PERF: cull by squared distance; only pay the sqrt for the
+                // few entities actually inside the blast (same deferred-sqrt
+                // shape as Enemy.update's separation loop). Falloff/knockback
+                // math below is byte-for-byte identical -- dist is recovered
+                // exactly for the entities that pass the cull.
+                let bdx = ent.x - this.x, bdy = ent.y - this.y;
+                let distSq = bdx*bdx + bdy*bdy;
+                if (distSq < blastRadiusSq) {
+                    let dist = Math.sqrt(distSq);
                     let splashDmg = damage * (1.0 - dist / blastRadius);
                     // Same fix as MiniDrone/FPVDrone detonate(): this can re-hit
                     // the same enemy the bullet just struck directly (Explosive
