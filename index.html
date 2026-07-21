@@ -14401,15 +14401,37 @@ class Enemy extends Entity {
             let scx = this.x - cam.x;
             let scy = this.y - cam.y;
             let glowAlpha = 0.12 + 0.08 * Math.sin((game ? game.gameTime : 0) * 4.0);
+            // PERF: the gaussian shadowBlur ring is baked once per distinct
+            // elite radius into a sprite and blitted -- the same
+            // per-shape-blur-to-cached-bitmap move the wall pass and the
+            // scorch gradient cache use. Per-frame per-elite blur only
+            // really bites under the Juggernaut mutator (every spawn is
+            // elite, so a full on-screen horde of blur-30 rings), but the
+            // bake is visually equivalent everywhere: compositing the
+            // pre-rendered stroke+shadow under the same pulsing globalAlpha
+            // is a linear alpha scale, identical to drawing it live. The
+            // key set is tiny (6 base sizes x the one 1.45 elite scale).
+            if (!Enemy._eliteGlowSprites) Enemy._eliteGlowSprites = new Map();
+            let glowSprite = Enemy._eliteGlowSprites.get(this.r);
+            if (!glowSprite) {
+                let glowPad = 36; // covers the 30px blur reach + 3px line width
+                let glowDim = Math.ceil((this.r + 6 + glowPad) * 2);
+                glowSprite = document.createElement('canvas');
+                glowSprite.width = glowDim;
+                glowSprite.height = glowDim;
+                let gctx = glowSprite.getContext('2d');
+                gctx.shadowBlur = 30;
+                gctx.shadowColor = '#ffcc00';
+                gctx.strokeStyle = '#ffcc00';
+                gctx.lineWidth = 3;
+                gctx.beginPath();
+                gctx.arc(glowDim / 2, glowDim / 2, this.r + 6, 0, Math.PI * 2);
+                gctx.stroke();
+                Enemy._eliteGlowSprites.set(this.r, glowSprite);
+            }
             ctx.save();
             ctx.globalAlpha = Math.max(0, glowAlpha);
-            ctx.shadowBlur = 30;
-            ctx.shadowColor = '#ffcc00';
-            ctx.strokeStyle = '#ffcc00';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(scx, scy, this.r + 6, 0, Math.PI * 2);
-            ctx.stroke();
+            ctx.drawImage(glowSprite, scx - glowSprite.width / 2, scy - glowSprite.height / 2);
             ctx.restore();
         }
 
@@ -16341,6 +16363,27 @@ class Bullet {
         let currentSpeed = Math.hypot(this.vx, this.vy);
         let stepCount = Math.max(1, Math.ceil(currentSpeed * dt / 15)); 
         let stepDt = dt / stepCount;
+
+        // PERF (bullet spatial pruning): the hit loop below used to scan
+        // EVERY entity (players + assets + all enemies) every substep --
+        // at high waves that's bullets x substeps x ~150 entities of
+        // instanceof/friendly-fire branching per frame, and it profiled as
+        // ~85% of Game.update in a 140-enemy headless firefight. Enemies
+        // dominate that list, and they're already spatially hashed
+        // (game._sepBuckets, refreshed at entities-build time -- see
+        // Game.update), so each substep now assembles a small candidate
+        // list instead: the <10 non-enemies (flat, always), plus only the
+        // enemies from the 3x3 bucket neighborhood around the bullet.
+        // Rebuilt lazily -- only when the bullet crosses a 128px cell
+        // boundary (substeps are <=15 units, so ~1-2 rebuilds per frame).
+        // candUsable gates the whole thing on the exact structures the
+        // scheme assumes; anything else falls back to the original full
+        // scan.
+        let candList = entities;
+        let candCellX = 0x7fffffff;
+        let candCellY = 0x7fffffff;
+        let candUsable = !!(game && game._entitiesScratch === entities &&
+            game._entitiesEnemyStart !== undefined && game._sepBuckets);
         
         for (let step = 0; step < stepCount; step++) {
             let prevX = this.x; 
@@ -16503,7 +16546,59 @@ class Bullet {
             }
 
             let hitRegistered = false;
-            for (let ent of entities) {
+            if (candUsable) {
+                // GUARANTEED superset of the existing point test: each
+                // substep tests |bullet - center| < ent.r at the bullet's
+                // CURRENT position (that's the existing, unchanged test --
+                // stepCount above already prevents tunneling by capping
+                // substeps at ~15 units, so no swept query is needed here).
+                // Max enemy radius in the game is 38 (ApcBoss; elites cap
+                // ~22), knockback is velocity-only (no mid-frame
+                // teleports), and barrel body-pushes since the bucket
+                // refresh move things a few px at most -- while a 3x3
+                // neighborhood of 128px cells covers every center within at
+                // least 128px Chebyshev of the query point. Bucket
+                // membership was snapshotted at the same moment `entities`
+                // froze, so the candidate set can only ever equal-or-exceed
+                // what the full scan could actually hit.
+                let qcx = (this.x / 128) | 0;
+                let qcy = (this.y / 128) | 0;
+                if (qcx !== candCellX || qcy !== candCellY) {
+                    candCellX = qcx;
+                    candCellY = qcy;
+                    let scratch = game._bulletCandScratch || (game._bulletCandScratch = []);
+                    scratch.length = 0;
+                    let enemyStart = game._entitiesEnemyStart;
+                    for (let ci = 0; ci < enemyStart; ci++) scratch.push(entities[ci]);
+                    let sortFrom = scratch.length;
+                    for (let ox = -1; ox <= 1; ox++) {
+                        for (let oy = -1; oy <= 1; oy++) {
+                            let bucket = game._sepBuckets.get(((qcx + ox) * 4096) + (qcy + oy));
+                            if (bucket) {
+                                for (let bi = 0; bi < bucket.length; bi++) scratch.push(bucket[bi]);
+                            }
+                        }
+                    }
+                    // Restore exact entities-array order for the enemy
+                    // candidates (insertion sort on _bktIdx; tiny N,
+                    // allocation-free). Which entity a non-AP bullet stops
+                    // on when two overlap, and the order AP damage decays
+                    // through a crowd, must match the original full scan
+                    // byte-for-byte.
+                    for (let si = sortFrom + 1; si < scratch.length; si++) {
+                        let sv = scratch[si];
+                        let sj = si - 1;
+                        while (sj >= sortFrom && scratch[sj]._bktIdx > sv._bktIdx) {
+                            scratch[sj + 1] = scratch[sj];
+                            sj--;
+                        }
+                        scratch[sj + 1] = sv;
+                    }
+                    candList = scratch;
+                }
+            }
+            for (let _ci = 0; _ci < candList.length; _ci++) {
+                let ent = candList[_ci];
                 if (ent.dead) continue;
                 
                 let canHit = false;
@@ -25769,7 +25864,18 @@ class Game {
         for (let m of this.mines) m.draw(this.ctx, droneCam);
         for (let g of this.grenades) g.draw(this.ctx, droneCam);
         for (let p of this.particles) p.draw(this.ctx, droneCam);
-        for (let e of this.enemies) e.draw(this.ctx, droneCam);
+        for (let e of this.enemies) {
+            // PERF: same viewport cull (and same Boss / laser-sniper
+            // exceptions) as the main drawViewport enemy loop -- the PIP
+            // feed shows a small window onto the same horde.
+            if (!(e instanceof Boss) &&
+                !(e.weaponType === 'sniper' && e.cachedHasLOS && e.cachedTarget && !e.cachedTarget.dead)) {
+                let cullM = e.r + 60;
+                if (e.x < droneCam.x - cullM || e.x > droneCam.x + visibleW + cullM ||
+                    e.y < droneCam.y - cullM || e.y > droneCam.y + visibleH + cullM) continue;
+            }
+            e.draw(this.ctx, droneCam);
+        }
         if (this.turrets) {
             for (let t of this.turrets) t.draw(this.ctx, droneCam);
         }
@@ -29999,7 +30105,47 @@ class Game {
                 if (!h.dead) entities.push(h); // PHASE 2: hostages are hittable/pushable
             }
         }
-        for (let e of this.enemies) entities.push(e);
+        // PERF (bullet spatial pruning): mark where the enemy block begins
+        // inside the scratch list, then push enemies while ALSO refreshing
+        // _sepBuckets in the same walk. The frame-start build above fed the
+        // separation pass with start-of-frame positions; this second build
+        // re-snapshots membership AFTER enemy movement and mid-frame spawns
+        // (boss splits, wave trickle), at the exact moment `entities`
+        // freezes -- so bucket membership is identical to the enemy tail of
+        // this list, which is what lets Bullet.update query buckets instead
+        // of scanning every entity (see the candidate assembly there). Each
+        // enemy also records its array index (_bktIdx) so the bullet loop
+        // can restore exact entities-order iteration for the few candidates
+        // it gathers -- non-AP first-hit priority and AP pass-through
+        // damage decay both depend on that order. Cost: one extra
+        // O(enemies) pass per frame, paid once, vs the
+        // O(bullets x substeps x enemies) scan it replaces. The separation
+        // system is unaffected: its one consumer (Enemy.update) already ran
+        // above against the frame-start build, and next frame's start
+        // rebuild happens before it runs again.
+        this._entitiesEnemyStart = entities.length;
+        for (let i = 0; i < this._sepTouched.length; i++) {
+            this._sepTouched[i].length = 0;
+        }
+        this._sepTouched.length = 0;
+        for (let i = 0; i < this.enemies.length; i++) {
+            let e = this.enemies[i];
+            entities.push(e);
+            e._bktIdx = i;
+            if (e.dead) continue;
+            let cx = (e.x / 128) | 0;
+            let cy = (e.y / 128) | 0;
+            let key = (cx * 4096) + cy;
+            let bucket = this._sepBuckets.get(key);
+            if (!bucket) {
+                bucket = [];
+                this._sepBuckets.set(key, bucket);
+            }
+            if (bucket.length === 0) {
+                this._sepTouched.push(bucket);
+            }
+            bucket.push(e);
+        }
 
         // Chain-reaction fuses: game-time countdown (pause/abandon safe --
         // see the queueing site in ExplosiveBarrel.explode). The claimed
@@ -34563,6 +34709,24 @@ class Game {
         this.ctx.shadowBlur = 0;
         this.ctx.restore();
         for (let e of this.enemies) {
+            // PERF (viewport cull): off-screen enemies were paying the full
+            // vector body draw (feet, arms, gun, torso, rings -- ~15-20
+            // path ops each) every frame; at high waves most of the horde
+            // is off-screen at any moment. Margin covers every off-body
+            // extent in Enemy.draw (elite glow ring at r+6 with its 30px
+            // blur reach, the r+18 "!" indicator, the drop shadow). Two
+            // deliberate exceptions, both because their visuals can extend
+            // onto the screen from off it: bosses are never culled (there
+            // are at most a couple, and subclass draws paint further out),
+            // and neither is a sniper holding LOS on a live target -- its
+            // targeting laser legitimately crosses the viewport. Same
+            // cam-rect test drawPermanentMarks already uses.
+            if (!(e instanceof Boss) &&
+                !(e.weaponType === 'sniper' && e.cachedHasLOS && e.cachedTarget && !e.cachedTarget.dead)) {
+                let cullM = e.r + 60;
+                if (e.x < cam.x - cullM || e.x > cam.x + visibleW + cullM ||
+                    e.y < cam.y - cullM || e.y > cam.y + visibleH + cullM) continue;
+            }
             e.draw(this.ctx, cam);
             if (e.chaosDraftShield && e.chaosDraftShield > 0) {
                 this.ctx.save();
