@@ -2546,6 +2546,11 @@
                         <button class="neon-btn" onclick="game.devSpawnEnemy('swarmer', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Swarmer</button>
                         <button class="neon-btn" onclick="game.devSpawnEnemy('enforcer', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Enforcer</button>
                         <button class="neon-btn" onclick="game.devSpawnEnemy('sapper', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Sapper</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('drone_op', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Drone Op</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('bombardier', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Bombardier</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('shield', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Phalanx</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('comm', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Comm Officer</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('jammer', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Jammer</button>
                         <button class="neon-btn" onclick="game.devSpawnEnemy('grunt', true)" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: var(--red); color: var(--red);">Elite Grunt</button>
                     </div>
                 </div>
@@ -5498,7 +5503,24 @@ const EnemyTypes = {
     enforcer: { hp: 125, speed: 105, color: '#d500f9', type: 'enforcer', score: 30, size: 15, weapon: 'heavy_pistol' },
     shotgun_grunt: { hp: 70, speed: 160, color: '#ff5722', type: 'shotgun_grunt', score: 25, size: 13, weapon: 'shotgun' },
     sniper_grunt: { hp: 55, speed: 130, color: '#f50057', type: 'sniper_grunt', score: 35, size: 12, weapon: 'sniper' },
-    sapper: { hp: 35, speed: 210, color: '#ffea00', type: 'sapper', score: 20, weapon: 'melee', size: 11 }
+    sapper: { hp: 35, speed: 210, color: '#ffea00', type: 'sapper', score: 20, weapon: 'melee', size: 11 },
+    // ---- NEW ENEMY TYPES (support/specialist tier) ----
+    // drone_op: skittish pilot; deploys ONE HostileMiniDrone at a time (see
+    //   class HostileMiniDrone + the special-abilities block in Enemy.update).
+    // bombardier: fragile spotter; calls small telegraphed MortarMarker
+    //   strikes on its target while it has line of sight.
+    // shield: riot phalanx; bullets from the front arc are mostly blocked
+    //   (see the shieldArcHalf check in the bullet hit chain). Explosions,
+    //   melee, and flanking shots take full effect; AP partially penetrates.
+    // comm: unarmed high-value target; flees, buffs nearby enemies' speed
+    //   and fire rate while alive (_commBuffTimer aura).
+    // jammer: signal-hardened; player Auto-Turrets and swarm MiniDrones
+    //   cannot target-lock it (guns/dog/FPV still work).
+    drone_op:   { hp: 55,  speed: 140, color: '#39ff14', type: 'drone_op',   score: 40, size: 12, weapon: 'pistol' },
+    bombardier: { hp: 45,  speed: 95,  color: '#b388ff', type: 'bombardier', score: 40, size: 12, weapon: 'melee' },
+    shield:     { hp: 90,  speed: 115, color: '#90a4ae', type: 'shield',     score: 35, size: 14, weapon: 'heavy_pistol', shieldArc: Math.PI / 3 },
+    comm:       { hp: 60,  speed: 150, color: '#ffffff', type: 'comm',       score: 60, size: 12, weapon: 'melee' },
+    jammer:     { hp: 110, speed: 100, color: '#64ffda', type: 'jammer',     score: 45, size: 13, weapon: 'pistol' }
 };
 
 // ---- Boss registry ----
@@ -13242,6 +13264,18 @@ class Enemy extends Entity {
         this.markedTimer = 0;      // Combat Scanner: tracked through walls
         this.suppressedTimer = 0;  // Suppressing Fire: return fire blocked
         this.enragedTimer = 0;     // chaos-perk aggro cost: brief speed surge
+        // NEW ENEMY TYPES: ALL pool-reset per the Phase 1 gotcha about
+        // fields leaking across Enemy pool reuse.
+        this._commBuffTimer = 0;                       // comm aura: brief speed/fire-rate surge on nearby enemies
+        this._shieldFlash = 0;                         // riot phalanx: brief block-flash visual timer
+        this.shieldArcHalf = config.shieldArc || 0;    // riot phalanx: half-angle of the protected front arc (0 = no shield)
+        this._droneCooldown = MathUtils.rand(2.5, 4.5);// drone_op: time until next deploy is ready
+        this._activeHostileDrone = null;               // drone_op: at most ONE live drone per operator
+        this._mortarCooldown = MathUtils.rand(3.5, 5.5); // bombardier: first strike is delayed post-spawn
+        // Skittish types keep distance instead of using the stock
+        // hold-at-240px moonwalk (whose reversed-angle math assumes the
+        // move angle points AT the target -- theirs points away).
+        this.isSkittish = (config.type === 'comm' || config.type === 'drone_op' || config.type === 'bombardier');
         
         // Game-feel variables
         this.muzzleFlashTimer = 0;
@@ -13359,6 +13393,9 @@ class Enemy extends Entity {
         if (this.markedTimer > 0) { this.markedTimer -= dt; if (this.markedTimer < 0) this.markedTimer = 0; }
         if (this.suppressedTimer > 0) { this.suppressedTimer -= dt; if (this.suppressedTimer < 0) this.suppressedTimer = 0; }
         if (this.enragedTimer > 0) { this.enragedTimer -= dt; if (this.enragedTimer < 0) this.enragedTimer = 0; }
+        // NEW ENEMY TYPES: comm-aura + shield-flash timer decay
+        if (this._commBuffTimer > 0) { this._commBuffTimer -= dt; if (this._commBuffTimer < 0) this._commBuffTimer = 0; }
+        if (this._shieldFlash > 0) { this._shieldFlash -= dt; if (this._shieldFlash < 0) this._shieldFlash = 0; }
         // PHASE 2 (tactical AI): reaction-time hold + spot-radio cooldown
         if (this.fireHoldTimer > 0) { this.fireHoldTimer -= dt; if (this.fireHoldTimer < 0) this.fireHoldTimer = 0; }
         if (this._spotCooldown > 0) { this._spotCooldown -= dt; if (this._spotCooldown < 0) this._spotCooldown = 0; }
@@ -13771,6 +13808,38 @@ class Enemy extends Entity {
                 this.fireHoldTimer = Math.max(this.fireHoldTimer || 0, 1.0);
             }
 
+            // NEW ENEMY TYPES: comm aura broadcast. Runs on the same
+            // 30-frame stagger as the rest of this block, so cost is one
+            // O(enemies) distance pass per comm per half-second-ish.
+            // Bosses run their own update loops and never read the timer,
+            // so they're skipped; comms don't stack on each other.
+            if (this.type === 'comm' && allEnemies) {
+                for (let i = 0; i < allEnemies.length; i++) {
+                    const ce = allEnemies[i];
+                    if (ce === this || ce.dead || ce instanceof Boss || ce.type === 'comm') continue;
+                    const cdx = ce.x - this.x, cdy = ce.y - this.y;
+                    if (cdx * cdx + cdy * cdy < 490000) ce._commBuffTimer = 1.4; // 700px radius
+                }
+            }
+
+            // NEW ENEMY TYPES: skittish standoff. Comm / bombardier /
+            // drone_op back off to a preferred range instead of closing --
+            // the exact movement-only override pattern the runner/patrol
+            // blocks above use, so combat ranging (distToTarget) stays
+            // honest. Beyond the standoff they drift with the squad.
+            if (this.isSkittish && game && !game.operatorMode && !this.finalKillRole) {
+                const standoff = this.type === 'comm' ? 620 : (this.type === 'bombardier' ? 430 : 380);
+                if (distToTarget < standoff) {
+                    const away = Math.atan2(this.y - targetY, this.x - targetX);
+                    moveTargetX = Math.max(50, Math.min(game.mapW - 50, this.x + Math.cos(away) * 320));
+                    moveTargetY = Math.max(50, Math.min(game.mapH - 50, this.y + Math.sin(away) * 320));
+                    // While repositioning the move angle points away from
+                    // the target, so hold fire rather than shooting
+                    // backwards (comm/bombardier are melee-typed anyway).
+                    this.fireHoldTimer = Math.max(this.fireHoldTimer, 0.5);
+                }
+            }
+
             // Pathfinding move angle -- uses moveTargetX/Y (which is either
             // the real combat target or, in operator mode while sneaking,
             // the cover-route waypoint -- see moveTargetX/Y assignment
@@ -13996,6 +14065,9 @@ class Enemy extends Entity {
         let pushMult = this.cachedPushing ? TACTICAL_TUNING.PUSH_SPEED_MULT : 1.0;
         if (this.enragedTimer > 0) pushMult = Math.max(pushMult, 1.2);
         if (this.tactic && this.cachedDistToTarget > TACTICAL_TUNING.FLANK_DIST) pushMult = Math.max(pushMult, 1.3);
+        // NEW ENEMY TYPES: comm aura -- coordinated surge while a Comm
+        // Officer is alive nearby (same multiplier lever as push/enraged).
+        if (this._commBuffTimer > 0) pushMult = Math.max(pushMult, 1.25);
         let speedScalar = (this.cachedRunFromDrone ? 1.5 : pushMult) * slowFactor;
         // PHASE 4 (patrolling AI): unengaged patrollers WALK their beat --
         // the drop back to combat speed on contact is part of the tell.
@@ -14076,7 +14148,7 @@ class Enemy extends Entity {
                 }
             }
         } else {
-            if (this.cachedHasLOS && this.cachedDistToTarget < 240 && !this.cachedRunFromDrone && !this.cachedPushing && !this.patrolUntilContact) {
+            if (this.cachedHasLOS && this.cachedDistToTarget < 240 && !this.cachedRunFromDrone && !this.cachedPushing && !this.patrolUntilContact && !this.isSkittish) {
                 this.vx -= Math.cos(this.angle) * this.speed * dt * 1.5;
                 this.vy -= Math.sin(this.angle) * this.speed * dt * 1.5;
             } else {
@@ -14109,11 +14181,58 @@ class Enemy extends Entity {
             // could legally shoot (LOS <800px), the patrol state breaks and
             // the reaction-delay hold takes over. This gate only covers the
             // long-LOS window (open sightlines past detection range).
-            if (this.cachedHasLOS && inEngagementRange && gameTime - this.lastFire > this.fireRate && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact) {
+            if (this.cachedHasLOS && inEngagementRange && gameTime - this.lastFire > this.fireRate * (this._commBuffTimer > 0 ? 0.72 : 1) && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact) {
                 // Phase 3: Suppressing Fire perk blocks return fire while
                 // suppressedTimer runs (set on player bullet hit).
                 this.fire(game);
                 this.lastFire = gameTime;
+            }
+        }
+
+        // ---- NEW ENEMY TYPES: special abilities (cooldowns tick every
+        // frame; conditions read the cached AI state, same as flashbangs
+        // below). Both are inert in Operator mode, which has its own AI
+        // overlay and balance.
+        if (this.type === 'drone_op' && game && !game.operatorMode) {
+            // Treat a drone as gone if it died OR if the bossDrones array
+            // was wiped out from under it (wave-clear etc.) -- otherwise an
+            // orphaned non-dead reference would block redeploy forever.
+            if (this._activeHostileDrone && (this._activeHostileDrone.dead ||
+                !game.bossDrones || game.bossDrones.indexOf(this._activeHostileDrone) === -1)) {
+                this._activeHostileDrone = null;
+            }
+            if (!this._activeHostileDrone) {
+                this._droneCooldown -= dt;
+                if (this._droneCooldown <= 0 && this.cachedTarget && this.cachedDistToTarget < 1500) {
+                    // One drone in the air at a time; the next only starts
+                    // prepping once this one is destroyed or expires.
+                    this._droneCooldown = MathUtils.rand(6.5, 9.5);
+                    let hd = new HostileMiniDrone(this.x, this.y, this);
+                    game.bossDrones.push(hd); // rides the existing hostile-drone update/draw/bullet-collision/wave-wipe path
+                    this._activeHostileDrone = hd;
+                    audio.playPickup('weapon');
+                    for (let c = 0; c < 6; c++) {
+                        game.addParticle(this.x, this.y, MathUtils.rand(-90, 90), MathUtils.rand(-90, 90), '#ff1744', 0.3, 2);
+                    }
+                }
+            }
+        }
+        if (this.type === 'bombardier' && game && !game.operatorMode) {
+            this._mortarCooldown -= dt;
+            if (this._mortarCooldown <= 0 && this.cachedHasLOS && this.cachedTarget && !this.cachedTarget.dead && this.cachedDistToTarget < 1100 && !this.cachedRunFromDrone) {
+                this._mortarCooldown = MathUtils.rand(7, 10);
+                const bt = this.cachedTarget;
+                // Slight velocity lead + jitter so standing still is
+                // punished but the shell stays dodgeable in the 1.9s window.
+                let lx = bt.x + (bt.vx || 0) * 0.35 + MathUtils.rand(-30, 30);
+                let ly = bt.y + (bt.vy || 0) * 0.35 + MathUtils.rand(-30, 30);
+                lx = Math.max(50, Math.min(game.mapW - 50, lx));
+                ly = Math.max(50, Math.min(game.mapH - 50, ly));
+                game.grenades.push(new MortarMarker(lx, ly, 1.9, 58, 34));
+                audio.playShoot('Shotgun', this.x, this.y);
+                for (let c = 0; c < 5; c++) {
+                    game.addParticle(this.x, this.y, MathUtils.rand(-60, 60), MathUtils.rand(-160, -60), '#b388ff', 0.35, 2.5);
+                }
             }
         }
 
@@ -14558,6 +14677,61 @@ class Enemy extends Entity {
             ctx.stroke();
             ctx.restore();
         }
+        // NEW ENEMY TYPES: comm-aura recipient ring -- steady amber halo on
+        // every buffed enemy so the "kill the Comm Officer first" read is
+        // taught visually. Plain stroke, same cost class as the rings above.
+        if (this._commBuffTimer > 0 && this.type !== 'comm' && this.opacity > 0.05) {
+            let scx = this.x - cam.x, scy = this.y - cam.y;
+            ctx.save();
+            ctx.globalAlpha = 0.28 * this.opacity;
+            ctx.strokeStyle = '#ffb700';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 4, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+        // NEW ENEMY TYPES: comm radio pulse -- expanding rings broadcast
+        // from the officer itself, visually linking it to the amber halos.
+        if (this.type === 'comm' && this.opacity > 0.05) {
+            let scx = this.x - cam.x, scy = this.y - cam.y;
+            let t = ((game ? game.gameTime : 0) % 1.6) / 1.6;
+            ctx.save();
+            ctx.globalAlpha = (1.0 - t) * 0.45 * this.opacity;
+            ctx.strokeStyle = '#ffb700';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 4 + t * 26, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+        // NEW ENEMY TYPES: jammer static field -- rotating dashed ring with
+        // an alpha flicker so it reads as "disruption", not a perk mark
+        // (scanner ring is cyan + static; this is teal + spinning + jittery).
+        if (this.type === 'jammer' && this.opacity > 0.05) {
+            let scx = this.x - cam.x, scy = this.y - cam.y;
+            let gt = (game ? game.gameTime : 0);
+            ctx.save();
+            ctx.globalAlpha = (0.3 + 0.15 * Math.sin(gt * 17.0)) * this.opacity;
+            ctx.strokeStyle = '#64ffda';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3, 6]);
+            ctx.lineDashOffset = gt * 30;
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 9, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            // Two short random static ticks per frame -- cheap noise.
+            for (let s = 0; s < 2; s++) {
+                let sa = Math.random() * Math.PI * 2;
+                let sr = this.r + 7 + Math.random() * 5;
+                ctx.beginPath();
+                ctx.moveTo(scx + Math.cos(sa) * sr, scy + Math.sin(sa) * sr);
+                ctx.lineTo(scx + Math.cos(sa) * (sr + 4), scy + Math.sin(sa) * (sr + 4));
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
 
         // FPV OPERATOR MODE: "marked" indicator -- pulsing amber ring on
         // any enemy currently taking bonus damage (see FPVDrone.detonate's
@@ -14730,6 +14904,104 @@ class Enemy extends Entity {
             ctx.fillStyle = isLightOn ? '#ffea00' : '#443300';
             ctx.beginPath();
             ctx.arc(0, 0, 3, 0, Math.PI*2);
+            ctx.fill();
+        }
+
+        // ---- NEW ENEMY TYPES: identity art (rotated body space; plain
+        // strokes/fills only -- per the elite-glow lesson, no shadowBlur).
+        if (this.type === 'shield') {
+            // Riot shield: thick layered arc covering the protected front
+            // cone (matches shieldArcHalf exactly, so the visual IS the
+            // hitbox), flashing white when it eats a bullet.
+            let arcHalf = this.shieldArcHalf || Math.PI / 3;
+            let blocked = this._shieldFlash > 0;
+            ctx.strokeStyle = blocked ? '#ffffff' : '#cfd8dc';
+            ctx.lineWidth = blocked ? 5 : 4;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.r + 4, -arcHalf, arcHalf);
+            ctx.stroke();
+            ctx.strokeStyle = blocked ? '#e0f7fa' : '#546e7a';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.r + 7, -arcHalf * 0.85, arcHalf * 0.85);
+            ctx.stroke();
+            // Visor slit so the body itself reads "armored".
+            ctx.fillStyle = '#263238';
+            ctx.fillRect(this.r * 0.2, -this.r * 0.35, this.r * 0.35, this.r * 0.7);
+        } else if (this.type === 'comm') {
+            // Radio pack on the back + swept antenna with a blinking tip.
+            ctx.fillStyle = '#37474f';
+            ctx.fillRect(-this.r * 0.95, -this.r * 0.45, this.r * 0.5, this.r * 0.9);
+            ctx.strokeStyle = '#eceff1';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(-this.r * 0.75, -this.r * 0.3);
+            ctx.lineTo(-this.r * 1.7, -this.r * 1.1);
+            ctx.stroke();
+            let tipOn = Math.floor((game ? game.gameTime : 0) * 5) % 2 === 0;
+            ctx.fillStyle = tipOn ? '#ffb700' : '#5d4300';
+            ctx.beginPath();
+            ctx.arc(-this.r * 1.7, -this.r * 1.1, 2, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (this.type === 'drone_op') {
+            // Control rig: dark tablet held forward + a spare drone chevron
+            // racked on the back that strobes red while re-deploy is close
+            // -- the player-readable "another one is coming" tell.
+            ctx.fillStyle = '#1b2b1b';
+            ctx.strokeStyle = '#39ff14';
+            ctx.lineWidth = 1.2;
+            ctx.fillRect(this.r * 0.55, -this.r * 0.4, this.r * 0.6, this.r * 0.8);
+            ctx.strokeRect(this.r * 0.55, -this.r * 0.4, this.r * 0.6, this.r * 0.8);
+            let prepping = !this._activeHostileDrone;
+            let rackAlpha = 1.0;
+            if (prepping && this._droneCooldown < 2.0) {
+                rackAlpha = Math.floor((game ? game.gameTime : 0) * 10) % 2 === 0 ? 1.0 : 0.25;
+            } else if (!prepping) {
+                rackAlpha = 0.25; // rack is empty while its drone is in the air
+            }
+            ctx.save();
+            ctx.globalAlpha = this.opacity * rackAlpha;
+            ctx.strokeStyle = '#ff1744';
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(-this.r * 0.5, 0);
+            ctx.lineTo(-this.r * 1.1, -this.r * 0.35);
+            ctx.lineTo(-this.r * 0.9, 0);
+            ctx.lineTo(-this.r * 1.1, this.r * 0.35);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.restore();
+        } else if (this.type === 'bombardier') {
+            // Shoulder mortar tube angled back over the body, with a muzzle
+            // ring that heats up as the next strike approaches.
+            ctx.save();
+            ctx.rotate(-0.6);
+            ctx.fillStyle = '#4a3b6b';
+            ctx.strokeStyle = '#b388ff';
+            ctx.lineWidth = 1.5;
+            ctx.fillRect(-this.r * 1.5, -this.r * 0.28, this.r * 2.0, this.r * 0.56);
+            ctx.strokeRect(-this.r * 1.5, -this.r * 0.28, this.r * 2.0, this.r * 0.56);
+            let charge = this._mortarCooldown < 1.2;
+            ctx.strokeStyle = charge ? '#ffea00' : '#b388ff';
+            ctx.lineWidth = charge ? 2.5 : 1.5;
+            ctx.beginPath();
+            ctx.arc(this.r * 0.5, 0, this.r * 0.34, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        } else if (this.type === 'jammer') {
+            // Twin stubby antennae + a bright core: a walking transmitter.
+            ctx.strokeStyle = '#64ffda';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(-this.r * 0.4, -this.r * 0.4);
+            ctx.lineTo(-this.r * 1.2, -this.r * 1.0);
+            ctx.moveTo(-this.r * 0.4, this.r * 0.4);
+            ctx.lineTo(-this.r * 1.2, this.r * 1.0);
+            ctx.stroke();
+            let coreOn = Math.floor((game ? game.gameTime : 0) * 12) % 3 !== 0;
+            ctx.fillStyle = coreOn ? '#64ffda' : '#1a4a42';
+            ctx.beginPath();
+            ctx.arc(0, 0, this.r * 0.28, 0, Math.PI * 2);
             ctx.fill();
         }
 
@@ -15933,6 +16205,181 @@ class BossDrone {
     }
 }
 
+// ---- NEW ENEMY TYPES: hostile mini drone (Drone Operator payload) ----
+// The player's own MiniDrone chevron, mirrored: a red '>' that hunts the
+// closest player. Unlike BossDrone it does NOT fly over walls -- it uses
+// the MiniDrone-style wall repulsion plus a throttled shared-path waypoint
+// (the swarmer path cache) to actually navigate around cover. Lives in
+// game.bossDrones on purpose: that array already gives it its update tick,
+// draw call, player-bullet collision, and wave-clear wipe for free.
+class HostileMiniDrone {
+    constructor(x, y, owner) {
+        this.x = x; this.y = y;
+        this.vx = 0; this.vy = 0;
+        this.r = 5.5;
+        this.hp = 1;
+        this.dead = false;
+        this.owner = owner;
+        this.life = 16;
+        this.armTimer = 0.7; // brief spin-up hover before it commits -- the player's reaction window
+        this.angle = Math.random() * Math.PI * 2;
+        this._repathTimer = 0;
+        this._wp = null;
+    }
+    takeDamage() {
+        if (this.dead) return;
+        this.explode(false);
+    }
+    explode(hitPlayer) {
+        if (this.dead) return;
+        this.dead = true;
+        if (!game) return;
+        if (audio.playMiniExplosion) audio.playMiniExplosion(this.x, this.y);
+        else audio.playExplosion(0.5, this.x, this.y);
+        game.applyExplosionShake(this.x, this.y, 10, 55);
+        game.spawnShockwave(this.x, this.y, 50, 0.2);
+        if (!hitPlayer) {
+            // Shot down near a player: small occluded splash, same rules as BossDrone.
+            let blastRadius = 42;
+            let targets = [game.player];
+            if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+            for (let ent of targets) {
+                if (!ent || ent.dead) continue;
+                let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
+                if (dist < blastRadius) {
+                    if (game.blastOccluded(this.x, this.y, ent)) continue;
+                    let dmg = 12 * (1.0 - dist / blastRadius);
+                    ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 200);
+                }
+            }
+        }
+        for (let c = 0; c < 12; c++) {
+            let a = Math.random() * Math.PI * 2;
+            let spd = MathUtils.rand(80, 220);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ff1744', 0.32, 2.5);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.6, Math.sin(a) * spd * 0.6, '#ffffff', 0.22, 1.8);
+        }
+        game.spawnScorchMark(this.x, this.y, 14);
+        game.triggerBarrelsInRadius(this.x, this.y, 42);
+    }
+    update(dt, game) {
+        if (this.dead) return;
+        this.life -= dt;
+        if (this.life <= 0) { this.dead = true; return; } // silent expiry, same contract as BossDrone
+
+        if (this.armTimer > 0) {
+            // Spin-up hover: drift gently, telegraph via blink in draw().
+            this.armTimer -= dt;
+            this.vx *= Math.pow(0.1, dt);
+            this.vy *= Math.pow(0.1, dt);
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+            this.angle += dt * 6;
+            return;
+        }
+
+        let target = null;
+        let bestDist = Infinity;
+        if (game.player && !game.player.dead) { target = game.player; bestDist = Math.hypot(game.player.x - this.x, game.player.y - this.y); }
+        if (game.isTwoPlayer && game.player2 && !game.player2.dead) {
+            let d = Math.hypot(game.player2.x - this.x, game.player2.y - this.y);
+            if (d < bestDist) { target = game.player2; bestDist = d; }
+        }
+        if (!target) { this.dead = true; return; }
+
+        // Throttled routing: with LOS, home directly; without, steer at the
+        // next shared-path waypoint (the swarmer path cache -- cheap).
+        this._repathTimer -= dt;
+        if (this._repathTimer <= 0) {
+            this._repathTimer = 0.45;
+            let segWalls = game.map.getWallsAlongSegment(this.x, this.y, target.x, target.y);
+            let los = !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
+            if (los) {
+                this._wp = null;
+            } else {
+                let nearbyW = game.map.getWallsNear(this.x, this.y);
+                let path = game.map.getSharedPath(this.x, this.y, target.x, target.y, nearbyW);
+                this._wp = (path && path.length > 0) ? { x: path[0].x, y: path[0].y } : null;
+            }
+        }
+        let steerX = target.x, steerY = target.y;
+        if (this._wp) {
+            steerX = this._wp.x; steerY = this._wp.y;
+            if (Math.hypot(steerX - this.x, steerY - this.y) < 40) { this._wp = null; this._repathTimer = 0; }
+        }
+
+        let sdx = steerX - this.x, sdy = steerY - this.y;
+        let sdist = Math.hypot(sdx, sdy);
+        let targetSpeed = 340;
+        if (sdist > 0) {
+            this.vx += ((sdx / sdist) * targetSpeed - this.vx) * 6 * dt;
+            this.vy += ((sdy / sdist) * targetSpeed - this.vy) * 6 * dt;
+        }
+
+        // Wall repulsion (MiniDrone pattern) so it slides around corners
+        // instead of face-planting into cover between repath ticks.
+        let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+        for (let wall of nearbyWalls) {
+            let cx = Math.max(wall.x, Math.min(this.x, wall.x + wall.w));
+            let cy = Math.max(wall.y, Math.min(this.y, wall.y + wall.h));
+            let wdx = this.x - cx, wdy = this.y - cy;
+            let wdist = Math.hypot(wdx, wdy);
+            let repelDist = 26;
+            if (wdist < repelDist) {
+                let force = (repelDist - wdist) / repelDist;
+                if (wdist > 0) {
+                    this.vx += (wdx / wdist) * force * 320;
+                    this.vy += (wdy / wdist) * force * 320;
+                } else {
+                    let pushAngle = Math.atan2(this.y - (wall.y + wall.h / 2), this.x - (wall.x + wall.w / 2));
+                    this.vx += Math.cos(pushAngle) * 320;
+                    this.vy += Math.sin(pushAngle) * 320;
+                }
+            }
+        }
+
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.x = MathUtils.clamp(this.x, this.r, game.mapW - this.r);
+        this.y = MathUtils.clamp(this.y, this.r, game.mapH - this.r);
+        let spd = Math.hypot(this.vx, this.vy);
+        if (spd > 10) this.angle = Math.atan2(this.vy, this.vx);
+
+        if (bestDist < this.r + target.r + 3) {
+            let angleToTarget = Math.atan2(target.y - this.y, target.x - this.x);
+            this.explode(true);
+            target.takeDamage(16, angleToTarget, 200);
+        }
+    }
+    draw(ctx, cam) {
+        if (this.dead) return;
+        let scx = this.x - cam.x, scy = this.y - cam.y;
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(this.angle);
+        // Arming blink: strobing alpha while spinning up = "get ready".
+        if (this.armTimer > 0) {
+            ctx.globalAlpha = (Math.floor((game ? game.gameTime : 0) * 14) % 2 === 0) ? 1.0 : 0.35;
+        }
+        ctx.strokeStyle = '#ff1744';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(6.5, 0);
+        ctx.lineTo(-5, -5);
+        ctx.lineTo(-2.5, 0);
+        ctx.lineTo(-5, 5);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fill();
+        ctx.fillStyle = '#ff1744';
+        ctx.beginPath();
+        ctx.arc(0, 0, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
 // ---- Boss 4: Hound-9 Sentry ----
 // A huge quadruped robot (Boston-Dynamics-"Spot"-shaped, scaled way up):
 // twin side cannons for sustained pressure, and periodically launches 2-3
@@ -16093,12 +16540,13 @@ class SpotBoss extends Boss {
 // game.grenades alongside every other timed-explosive so it gets updated and
 // drawn for free through the existing loop.
 class MortarMarker {
-    constructor(x, y, warningTime = 1.6, radius = 70) {
+    constructor(x, y, warningTime = 1.6, radius = 70, dmg = 52) {
         this.x = x; this.y = y;
         this.vx = 0; this.vy = 0; // grenades-array contract expects these for getWallsNear(g.x,g.y) style lookups elsewhere; unused for actual movement
         this.r = radius;
         this.warningTime = warningTime;
         this.timer = warningTime;
+        this.dmg = dmg; // max damage at ground zero (NEW ENEMY TYPES: bombardier fires smaller, weaker shells than the boss)
     }
     update(dt, walls, game) {
         this.timer -= dt;
@@ -16127,7 +16575,7 @@ class MortarMarker {
                 // overlap, so this keeps a full salvo's worst case in line
                 // with the original single-mortar's worst case instead of
                 // compounding into an unavoidable near-instant kill.
-                let dmg = 52 * (1.0 - dist / this.r);
+                let dmg = this.dmg * (1.0 - dist / this.r);
                 ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 450);
             }
         }
@@ -16757,6 +17205,23 @@ class Bullet {
                             calculatedDmg *= 0.5; 
                         } else {
                             calculatedDmg *= 1.55; 
+                        }
+                    }
+
+                    // NEW ENEMY TYPES: Riot Phalanx front shield. Bullet-only
+                    // by design -- explosions, melee, and the dog ignore it,
+                    // so flanking and splash are the intended counters. Same
+                    // hit-angle-vs-facing routing the ApcBoss seat logic uses.
+                    // AP rounds partially punch through instead of full block.
+                    if (ent.shieldArcHalf && calculatedDmg > 0) {
+                        let inAngle = Math.atan2(this.vy, this.vx); // bullet travel direction
+                        let camF = Math.abs(MathUtils.angleDifference(inAngle + Math.PI, ent.angle)); // damage came from vs facing
+                        if (camF < ent.shieldArcHalf) {
+                            calculatedDmg *= this.isAP ? 0.55 : 0.12;
+                            ent._shieldFlash = 0.15;
+                            for (let c = 0; c < 3; c++) {
+                                game.addParticle(this.x, this.y, MathUtils.rand(-140, 140), MathUtils.rand(-140, 140), '#e0f7fa', 0.18, 1.5);
+                            }
                         }
                     }
                     
@@ -17967,6 +18432,7 @@ class AutoTurret extends Entity {
 
             for (let h of hostiles) {
                 if (h.dead) continue;
+                if (h.type === 'jammer') continue; // NEW ENEMY TYPES: signal-hardened -- turrets can't lock it
                 let d = Math.hypot(h.x - this.x, h.y - this.y);
                 if (d < nearestDist) {
                     // PERF: per-candidate segment-filtered walls (was: full wall
@@ -18997,6 +19463,7 @@ class MiniDrone extends Entity {
                 let huntPool = game.getHostilesFor(this);
                 for (let enemy of huntPool) {
                     if (enemy.dead) continue;
+                    if (enemy.type === 'jammer') continue; // NEW ENEMY TYPES: signal-hardened -- swarm drones can't lock it
                     if (otherTargets.includes(enemy)) continue;
                     if (enemy.lastMiniDroneTargetTime && game.gameTime - enemy.lastMiniDroneTargetTime < 5.0) continue;
                     
@@ -19015,6 +19482,7 @@ class MiniDrone extends Entity {
                     nearestDist = 600;
                     for (let enemy of huntPool) {
                         if (enemy.dead) continue;
+                        if (enemy.type === 'jammer') continue; // NEW ENEMY TYPES: signal-hardened
                         if (enemy.lastMiniDroneTargetTime && game.gameTime - enemy.lastMiniDroneTargetTime < 5.0) continue;
                         
                         let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
@@ -19149,6 +19617,7 @@ class MiniDrone extends Entity {
                 let reacquirePool = game.getHostilesFor(this);
                 for (let enemy of reacquirePool) {
                     if (enemy.dead) continue;
+                    if (enemy.type === 'jammer') continue; // NEW ENEMY TYPES: signal-hardened
                     let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                     if (d < nearestDist) {
                         let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment)
@@ -22789,7 +23258,17 @@ class Game {
             [8,  () => 0.4 + w * 0.10,                 ['enforcer', 'enforcer', 'shotgun_grunt']],
             [10, () => 0.4 + w * 0.14,                 ['sniper_grunt', 'grunt', 'grunt']],
             [12, () => 0.3 + w * 0.12,                 ['sniper_grunt', 'enforcer', 'shotgun_grunt', 'grunt']],
-            [14, () => 0.2 + w * 0.10,                 ['sniper_grunt', 'sniper_grunt', 'enforcer', 'shotgun_grunt', 'grunt']]
+            [14, () => 0.2 + w * 0.10,                 ['sniper_grunt', 'sniper_grunt', 'enforcer', 'shotgun_grunt', 'grunt']],
+            // ---- NEW ENEMY TYPES: specialist squads. Weights deliberately
+            // modest so these season the mix rather than dominate it.
+            [4,  () => 0.7 + w * 0.06,                 ['drone_op', 'grunt', 'grunt']],
+            [5,  () => 0.6 + w * 0.06,                 ['bombardier', 'grunt', 'grunt']],
+            [6,  () => 0.6 + w * 0.08,                 ['shield', 'grunt', 'grunt']],
+            [7,  () => 0.5 + w * 0.08,                 ['bombardier', 'shield', 'grunt']],
+            [8,  () => 0.5 + w * 0.10,                 ['comm', 'enforcer', 'grunt', 'grunt']],
+            [10, () => 0.4 + w * 0.10,                 ['jammer', 'shotgun_grunt', 'grunt', 'grunt']],
+            [12, () => 0.25 + w * 0.10,                ['comm', 'shield', 'shield', 'drone_op']],
+            [13, () => 0.2 + w * 0.10,                 ['jammer', 'bombardier', 'drone_op', 'grunt']]
         ];
         let pool = templates.filter(t => w >= t[0]);
         let total = 0;
