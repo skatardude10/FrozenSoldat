@@ -31010,6 +31010,17 @@ class Game {
                         if (this.wave >= 10) {
                             if (roll >= 0.65 && roll < 0.75) chosenType = EnemyTypes.sniper_grunt;
                         }
+                        // NEW ENEMY TYPES: specialist bands for the faucet
+                        // spawner (Action NOW + any faucet-mode fallback).
+                        // They occupy the previously-unused 0.75-1.0 slice
+                        // (which fell through to grunt), so existing band
+                        // odds are completely unchanged -- later waves just
+                        // trade some grunts for specialists as gates unlock.
+                        if (this.wave >= 4 && roll >= 0.75 && roll < 0.81) chosenType = EnemyTypes.drone_op;
+                        if (this.wave >= 5 && roll >= 0.81 && roll < 0.87) chosenType = EnemyTypes.bombardier;
+                        if (this.wave >= 6 && roll >= 0.87 && roll < 0.93) chosenType = EnemyTypes.shield;
+                        if (this.wave >= 9 && roll >= 0.93 && roll < 0.965) chosenType = EnemyTypes.comm;
+                        if (this.wave >= 11 && roll >= 0.965) chosenType = EnemyTypes.jammer;
                     }
                 }
                 
