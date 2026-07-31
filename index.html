@@ -10095,6 +10095,14 @@ class MapGen {
         ctx.fillStyle = '#010c1b';
         ctx.lineWidth = 2;
         for (let wall of this.walls) {
+            // SIMULATED SECOND FLOOR (perf): parapet/window segments are
+            // drawn in full by drawPlatformParapets -- the comment at their
+            // creation site always said "instead", but only the depth passes
+            // ever got this skip. Without it every segment a keep adds was
+            // ALSO paying a shadowBlur'd fill + stroke here (the documented
+            // most expensive per-wall cost in the engine) just to be painted
+            // over -- the mesa-maps-only frame chop.
+            if (wall._parapet) continue;
             if (wall.x + wall.w < cam.x - bufferX || wall.x > cam.x + visibleW + bufferX ||
                 wall.y + wall.h < cam.y - bufferY || wall.y > cam.y + visibleH + bufferY) continue;
 
@@ -10187,6 +10195,7 @@ class MapGen {
             const seen = new Set();
             this._diagRgbGroups = [];
             for (let w of this.walls) {
+                if (w._parapet) continue; // parapet palette colours must not add groups: each group re-scans EVERY wall below
                 let rgb = w.colorRgb || this.biome.rgb;
                 if (this.biome.splitTheme) {
                     let wx = w.x + w.w / 2;
@@ -10200,6 +10209,7 @@ class MapGen {
         for (let rgb of this._diagRgbGroups) {
             ctx.beginPath();
             for (let wall of this.walls) {
+                if (wall._parapet) continue; // overpainted by drawPlatformParapets; see main loop
                 if (wall.x + wall.w < cam.x - bufferX || wall.x > cam.x + visibleW + bufferX ||
                     wall.y + wall.h < cam.y - bufferY || wall.y > cam.y + visibleH + bufferY) continue;
                 let wRgb = wall.colorRgb || this.biome.rgb;
@@ -10271,6 +10281,7 @@ class MapGen {
         const seen = new Set();
         this._diagRgbGroups = [];
         for (const w of this.walls) {
+            if (w._parapet) continue; // same exclusion as the cross-hatch group build -- shared array
             const rgb = this._wallRgb(w);
             if (!seen.has(rgb)) { seen.add(rgb); this._diagRgbGroups.push(rgb); }
         }
