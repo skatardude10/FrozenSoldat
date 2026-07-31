@@ -5452,14 +5452,64 @@ const MathUtils = {
     // overloaded across three different meanings -- sight, bullet
     // collision, and nav-grid edge validity -- and windows must keep
     // BLOCKING the latter two (a window still stops most fire from below,
-    // and you still can't walk through one). Only the "can the player see
-    // that enemy" opacity system reads this, which is what keeps enemies on
-    // the street visible while you're perched behind a sill shooting down
-    // at them. Combat LOS is untouched, so enemies still can't target
-    // through a window and still route to the stairs instead.
+    // and you still can't walk through one).
+    //
+    // Kept as the shared primitive: `viewSeesPoint` below is the predicate
+    // the visibility system actually consumes, and it needs to tell
+    // "blocked by a solid wall" apart from "clear only because of a
+    // window", which a single boolean can't express. Anything that wants
+    // the plain window-transparent answer still asks here.
     lineBlocksSight: (x1, y1, x2, y2, rect) => {
         if (rect.seeThrough) return false;
         return MathUtils.lineIntersectAABB(x1, y1, x2, y2, rect);
+    },
+    // SIMULATED SECOND FLOOR -- deck camping counter-play.
+    // "Can `view` (a player, dog or FPV drone -- anything with x/y/angle)
+    // currently see the point (tx, ty)?"
+    //
+    // This is the ONE place the window-visibility rule lives. It replaces
+    // the older `!walls.some(lineBlocksSight)` idiom that the enemy-opacity
+    // system used to inline at every viewpoint, and it is deliberately a
+    // strict superset of that behaviour rather than a new rule bolted on
+    // top -- the three outcomes are:
+    //
+    //   1. a SOLID wall crosses the segment  -> not visible. Unchanged.
+    //   2. nothing crosses the segment       -> visible. Unchanged.
+    //   3. the only things crossing it are window segments -> visible only
+    //      if the viewer is actually LOOKING that way.
+    //
+    // Case 3 is the entire behavioural change, and cases 1 and 2 are
+    // untouched by construction: if no `seeThrough` wall lies on the
+    // segment, `windowDependent` never flips and the aim test is never
+    // reached. That is what protects the visibility this must NOT regress --
+    // an enemy seen through a stair gap, or one that has climbed onto the
+    // same deck, or any other plain 2D sightline, never routes through a
+    // window segment and so still resolves exactly as it did before.
+    //
+    // Why gate on aim at all: a window is transparent to sight from either
+    // side, so a player parked on a deck was passively revealing the whole
+    // street below at full 2D sightline range for free. Requiring the
+    // player to be pointed at what they want to see turns the perch from a
+    // surveillance post back into a firing position -- you can watch a
+    // sector or you can watch your back, not both. The cone is generous
+    // (see WINDOW_VIEW_CONE) precisely so a real engagement never feels
+    // unresponsive; the enemy-opacity fade smooths the edges further.
+    //
+    // A viewer with no facing (`angle` undefined) is treated as
+    // omnidirectional, so anything that isn't a directional viewpoint keeps
+    // the old behaviour by default rather than silently going blind.
+    viewSeesPoint: (view, tx, ty, walls) => {
+        let windowDependent = false;
+        for (let i = 0; i < walls.length; i++) {
+            const w = walls[i];
+            if (!MathUtils.lineIntersectAABB(view.x, view.y, tx, ty, w)) continue;
+            if (!w.seeThrough) return false;
+            windowDependent = true;
+        }
+        if (!windowDependent) return true;
+        if (view.angle === undefined || view.angle === null) return true;
+        const toTarget = Math.atan2(ty - view.y, tx - view.x);
+        return Math.abs(MathUtils.angleDifference(toTarget, view.angle)) <= SECOND_FLOOR.WINDOW_VIEW_CONE;
     },
     lineIntersectAABB: (x1, y1, x2, y2, rect) => {
         let minX = rect.x, maxX = rect.x + rect.w, minY = rect.y, maxY = rect.y + rect.h;
@@ -6242,6 +6292,39 @@ const SECOND_FLOOR = {
     // alone is the entire high-ground damage asymmetry -- raise it if the
     // perch feels oppressive, lower it if it feels unearned.
     WINDOW_UP_PASS: 0.18,
+
+    // Enemy-side half of the window mechanic. The pass-through roll above is
+    // already symmetric -- Bullet.update doesn't care who fired -- but it was
+    // almost never being EXERCISED by enemy fire, because enemy targeting
+    // uses lineIntersectAABB, which is opaque at a window, so an enemy below
+    // a deck never decided it had a shot in the first place.
+    //
+    // Rather than make combat LOS window-transparent wholesale (that flag
+    // also drives target selection, keep-distance, patrol-break, spot noise,
+    // the tactical push and mortars -- and would stop enemies routing to the
+    // stairs), a window shot is its own narrow permission: see
+    // `cachedWindowLOS` in Enemy.update. This multiplier is the "not
+    // constantly" lever -- an enemy with only a sliver of target visible over
+    // a sill takes slower, more deliberate shots than one in the open. Raise
+    // it if the deck feels oppressive to hold, lower it if the high ground
+    // feels free. The share of those shots that actually CLEAR the sill is
+    // still WINDOW_UP_PASS above, so effective uplift is roughly
+    // WINDOW_UP_PASS / ENEMY_WINDOW_FIRE_MULT of an open-ground engagement
+    // -- about 11% at the current values, from 18% of shots clearing the
+    // sill at ~62% of normal cadence. Both numbers are stated here so the
+    // next person tuning this doesn't have to re-derive them.
+    ENEMY_WINDOW_FIRE_MULT: 1.6,
+
+    // Half-angle (radians) of the cone within which a viewer counts as
+    // "looking through" a window -- see MathUtils.viewSeesPoint. Only ever
+    // consulted when a sightline's clearance DEPENDED on a window, so this
+    // number has no effect anywhere else in the game.
+    // ~40 degrees: wide enough that swinging onto a target below feels
+    // instant and holding a sector doesn't require pixel-perfect aim, tight
+    // enough that facing away genuinely costs you the view. Widen it if
+    // window fights feel unresponsive; tighten it if decks still feel like
+    // free surveillance.
+    WINDOW_VIEW_CONE: 0.70,
 
     // ---- Height illusion ----
     // In a strict top-down view height can only be conveyed by extrusion:
@@ -9947,7 +10030,28 @@ class MapGen {
                     g.addColorStop(1, 'rgba(0, 0, 0, ' + vg + ')');
                     this._vigCache[vk] = g;
                 }
+                // The caller (Game.draw / drawPiPViewport / drawOperatorBaseCam)
+                // has ALREADY applied ctx.scale(cam.zoom) before we get here --
+                // that's why every sibling pass in this function works in
+                // `visibleW = viewportW / cam.zoom` units, not raw pixels.
+                // This one can't follow that convention, because a canvas
+                // gradient is baked in the units it was CREATED in: building it
+                // at visibleW would mean rebuilding it every frame the zoom
+                // spring moves (Camera.update eases zoom continuously toward an
+                // aim-distance target), which is exactly the per-frame gradient
+                // allocation the scorch-mark cache in drawPermanentMarks exists
+                // to avoid. So instead: cache once in stable SCREEN pixels and
+                // undo the zoom locally at fill time. Scaling by the inverse
+                // *relative to the live transform* deliberately keeps the P2
+                // half-screen translate and the screen-shake offset intact --
+                // a setTransform(identity) here would drop both and paint P2's
+                // vignette into P1's half. Drawing it unscaled (the shipped
+                // bug) sized the rect in world units, so at any zoom != 1 it
+                // covered the wrong area and its centre drifted off-screen --
+                // the misaligned dark rectangle offset toward the bottom-right.
+                const vz = cam.zoom || 1;
                 ctx.save();
+                ctx.scale(1 / vz, 1 / vz);
                 ctx.fillStyle = this._vigCache[vk];
                 ctx.fillRect(0, 0, viewportW, viewportH);
                 ctx.restore();
@@ -14434,8 +14538,10 @@ class Enemy extends Entity {
         this.cachedTarget = null;
         this.cachedDistToTarget = Infinity;
         this.cachedHasLOS = false;
+        this.cachedWindowLOS = false;
         this.cachedRunFromDrone = false;
         this.cachedMoveAngle = 0;
+        this.cachedAimAngle = 0;
         this.cachedVisibleToPlayers = false;
         this.cachedReactingToDrone = false;
         this.reactingToDrone = false;
@@ -14508,8 +14614,10 @@ class Enemy extends Entity {
         this.waypoint = null;
         this.cachedDistToTarget = 9999;
         this.cachedHasLOS = false;
+        this.cachedWindowLOS = false;
         this.cachedRunFromDrone = false;
         this.cachedMoveAngle = 0;
+        this.cachedAimAngle = 0;
         this.cachedVisibleToPlayers = false;
         this.cachedReactingToDrone = false;
         this.reactingToDrone = false;
@@ -14886,26 +14994,55 @@ class Enemy extends Entity {
             } else {
                 hasLOS = !nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, targetX, targetY, w));
             }
+
+            // SIMULATED SECOND FLOOR: window shot (see
+            // SECOND_FLOOR.ENEMY_WINDOW_FIRE_MULT). Deliberately a SEPARATE
+            // flag rather than a relaxation of hasLOS above, because hasLOS
+            // is load-bearing for movement, target selection and detection
+            // and must keep treating a window as solid -- that opacity is
+            // what makes enemies route to the stairs instead of milling at
+            // the base of a mesa.
+            //
+            // The predicate is exact rather than approximate: combat LOS
+            // blocked (above) AND sight-class LOS clear means every wall on
+            // the segment was a `seeThrough` one, i.e. the ONLY thing in the
+            // way is window segments. Gated further on the two points
+            // actually being on different elevations, so this stays strictly
+            // the deck/street case the mechanic is about and can't quietly
+            // let two ground-level enemies shoot each other through a mesa.
+            //
+            // Cost: one extra .some() over walls already in hand, only for
+            // enemies that currently LACK line of sight, and only on maps
+            // that have platforms at all (floorSeparated early-outs to false
+            // everywhere else, so every other map pays a single array-length
+            // check).
+            let windowLOS = false;
+            if (!hasLOS && game.map.floorSeparated(this.x, this.y, targetX, targetY)) {
+                const wallsForWin = (this.weaponType === 'sniper')
+                    ? game.map.getWallsAlongSegment(this.x, this.y, targetX, targetY)
+                    : nearbyWalls;
+                windowLOS = !wallsForWin.some(w => MathUtils.lineBlocksSight(this.x, this.y, targetX, targetY, w));
+            }
             
             // Player visibility check (for rendering/opacity/name visibility)
             let visibleToPlayers = false;
             if (game) {
                 if (this.weaponType === 'sniper') {
-                    if (!game.player.dead && !game.map.getWallsAlongSegment(this.x, this.y, game.player.x, game.player.y).some(w => MathUtils.lineBlocksSight(this.x, this.y, game.player.x, game.player.y, w))) {
+                    if (!game.player.dead && MathUtils.viewSeesPoint(game.player, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player.x, game.player.y))) {
                         visibleToPlayers = true;
                     }
-                    if (!visibleToPlayers && game.isTwoPlayer && game.player2 && !game.player2.dead && !game.map.getWallsAlongSegment(this.x, this.y, game.player2.x, game.player2.y).some(w => MathUtils.lineBlocksSight(this.x, this.y, game.player2.x, game.player2.y, w))) {
+                    if (!visibleToPlayers && game.isTwoPlayer && game.player2 && !game.player2.dead && MathUtils.viewSeesPoint(game.player2, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player2.x, game.player2.y))) {
                         visibleToPlayers = true;
                     }
-                    if (!visibleToPlayers && game.player && game.player.activeDrone && !game.player.activeDrone.dead && !game.map.getWallsAlongSegment(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y).some(w => MathUtils.lineBlocksSight(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y, w))) {
+                    if (!visibleToPlayers && game.player && game.player.activeDrone && !game.player.activeDrone.dead && MathUtils.viewSeesPoint(game.player.activeDrone, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y))) {
                         visibleToPlayers = true;
                     }
-                    if (!visibleToPlayers && game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && !game.map.getWallsAlongSegment(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y).some(w => MathUtils.lineBlocksSight(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y, w))) {
+                    if (!visibleToPlayers && game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && MathUtils.viewSeesPoint(game.player2.activeDrone, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y))) {
                         visibleToPlayers = true;
                     }
                     if (!visibleToPlayers && game.dogs) {
                         for (let dog of game.dogs) {
-                            if (!dog.dead && !game.map.getWallsAlongSegment(this.x, this.y, dog.x, dog.y).some(w => MathUtils.lineBlocksSight(this.x, this.y, dog.x, dog.y, w))) {
+                            if (!dog.dead && MathUtils.viewSeesPoint(dog, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, dog.x, dog.y))) {
                                 visibleToPlayers = true;
                                 break;
                             }
@@ -14913,21 +15050,21 @@ class Enemy extends Entity {
                     }
                 } else {
                     let checkWalls = nearbyWalls;
-                    if (!game.player.dead && !checkWalls.some(w => MathUtils.lineBlocksSight(this.x, this.y, game.player.x, game.player.y, w))) {
+                    if (!game.player.dead && MathUtils.viewSeesPoint(game.player, this.x, this.y, checkWalls)) {
                         visibleToPlayers = true;
                     }
-                    if (game.isTwoPlayer && game.player2 && !game.player2.dead && !checkWalls.some(w => MathUtils.lineBlocksSight(this.x, this.y, game.player2.x, game.player2.y, w))) {
+                    if (game.isTwoPlayer && game.player2 && !game.player2.dead && MathUtils.viewSeesPoint(game.player2, this.x, this.y, checkWalls)) {
                         visibleToPlayers = true;
                     }
-                    if (game.player && game.player.activeDrone && !game.player.activeDrone.dead && !checkWalls.some(w => MathUtils.lineBlocksSight(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y, w))) {
+                    if (game.player && game.player.activeDrone && !game.player.activeDrone.dead && MathUtils.viewSeesPoint(game.player.activeDrone, this.x, this.y, checkWalls)) {
                         visibleToPlayers = true;
                     }
-                    if (game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && !checkWalls.some(w => MathUtils.lineBlocksSight(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y, w))) {
+                    if (game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && MathUtils.viewSeesPoint(game.player2.activeDrone, this.x, this.y, checkWalls)) {
                         visibleToPlayers = true;
                     }
                     if (game.dogs) {
                         for (let dog of game.dogs) {
-                            if (!dog.dead && !checkWalls.some(w => MathUtils.lineBlocksSight(this.x, this.y, dog.x, dog.y, w))) {
+                            if (!dog.dead && MathUtils.viewSeesPoint(dog, this.x, this.y, checkWalls)) {
                                 visibleToPlayers = true;
                                 break;
                             }
@@ -15107,8 +15244,24 @@ class Enemy extends Entity {
             this.cachedTarget = target;
             this.cachedDistToTarget = distToTarget;
             this.cachedHasLOS = hasLOS;
+            this.cachedWindowLOS = windowLOS;
             this.cachedRunFromDrone = runFromDrone;
             this.cachedMoveAngle = moveAngle;
+            // SIMULATED SECOND FLOOR: facing/aim is normally the same value
+            // as the move angle, and stays exactly that in every case but
+            // one. A window shot is the exception: combat LOS is blocked, so
+            // moveHasLOS is blocked too, so moveAngle is pointing at the
+            // first node of the A* route to the stairs -- firing along it
+            // would spray sideways at nothing. Splitting facing out lets the
+            // enemy turn and shoot UP at the sill while its steering (which
+            // reads cachedMoveAngle, not this.angle -- see the moveX/moveY
+            // derivation below) keeps walking the route. That's the intended
+            // read: suppressing fire on the way to the stairs, not a firing
+            // line that stops to camp. When windowLOS is false the two values
+            // are identical, so nothing outside this case changes at all.
+            this.cachedAimAngle = windowLOS
+                ? Math.atan2(targetY - this.y, targetX - this.x)
+                : moveAngle;
             this.cachedVisibleToPlayers = visibleToPlayers;
 
             // TACTICAL WAVES (Phase 2): coordinated push. From PUSH_MIN_WAVE
@@ -15134,7 +15287,10 @@ class Enemy extends Entity {
             }
         }
 
-        this.angle = this.cachedMoveAngle;
+        // Facing/aim. Identical to cachedMoveAngle except during a window
+        // shot -- see the cachedAimAngle assignment above. `?? ` guards a
+        // pooled enemy that hasn't run its first staggered AI tick yet.
+        this.angle = this.cachedAimAngle ?? this.cachedMoveAngle;
         this.reactingToDrone = this.cachedReactingToDrone || false;
 
         if (this.cachedVisibleToPlayers || this.markedTimer > 0) {
@@ -15176,9 +15332,13 @@ class Enemy extends Entity {
             const cp = (distToP1 <= distToP2) ? game.player : game.player2;
             if (cp && !cp.dead) {
                 const nw = game.map.getWallsNear(this.x, this.y);
-                // SIMULATED SECOND FLOOR: sight predicate, matching the
-                // main visibility block above -- windows don't hide anyone.
-                if (!nw.some(w => MathUtils.lineBlocksSight(this.x, this.y, cp.x, cp.y, w))) {
+                // SIMULATED SECOND FLOOR: same sight predicate as the main
+                // visibility block above, and it MUST stay the same one --
+                // this fast path can set cachedVisibleToPlayers on its own,
+                // so a looser test here would quietly hand back the passive
+                // deck-camping reveal that viewSeesPoint's aim gate exists
+                // to remove, for everything within 340px.
+                if (MathUtils.viewSeesPoint(cp, this.x, this.y, nw)) {
                     this.cachedVisibleToPlayers = true;
                     if (distToClosestPlayer < 220) this.opacity = Math.max(this.opacity, 0.45);
                 }
@@ -15367,7 +15527,21 @@ class Enemy extends Entity {
             // could legally shoot (LOS <800px), the patrol state breaks and
             // the reaction-delay hold takes over. This gate only covers the
             // long-LOS window (open sightlines past detection range).
-            if (this.cachedHasLOS && inEngagementRange && gameTime - this.lastFire > this.fireRate * (this._commBuffTimer > 0 ? 0.72 : 1) && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact) {
+            // SIMULATED SECOND FLOOR: `cachedWindowLOS` is the ONLY other way
+            // into this gate, and it is scoped to this branch on purpose --
+            // the direct-fire decision is the single place the window
+            // mechanic was failing to reach. Movement (above), the
+            // keep-distance back-off (above), detection/spot noise and the
+            // bombardier's mortar all keep reading cachedHasLOS alone, so a
+            // window still hides you from everything except getting shot at.
+            // The cadence penalty is the "not constantly" half of the intent;
+            // WINDOW_UP_PASS in Bullet.update is the "less often than firing
+            // down" half, and neither is touched here.
+            const canShoot = this.cachedHasLOS || this.cachedWindowLOS;
+            const fireInterval = this.fireRate
+                * (this._commBuffTimer > 0 ? 0.72 : 1)
+                * (this.cachedHasLOS ? 1 : SECOND_FLOOR.ENEMY_WINDOW_FIRE_MULT);
+            if (canShoot && inEngagementRange && gameTime - this.lastFire > fireInterval && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact) {
                 // Phase 3: Suppressing Fire perk blocks return fire while
                 // suppressedTimer runs (set on player bullet hit).
                 this.fire(game);
@@ -27990,6 +28164,31 @@ class Game {
         }
     }
 
+    // SIMULATED SECOND FLOOR: `deckOnly` splits the barrier pass in two,
+    // exactly the way drawPermanentMarks already splits gore -- and for the
+    // same reason. Barriers are drawn BEFORE map.draw() so wall geometry
+    // occludes their embedded ends (see the call site comment), but
+    // drawPlatformBase runs inside map.draw() and lays the cliff/deck fills
+    // over that whole footprint, so a barrier standing ON a deck was being
+    // painted over by the surface it's standing on. Ground barriers keep the
+    // old ordering unchanged -- being occluded by the platform's mass is the
+    // CORRECT read for them -- and only deck barriers are re-drawn after the
+    // surface exists. Elevation comes from the segment midpoint: floorAt is a
+    // pure function of position and a barrier is short enough that its ends
+    // can't straddle two elevations in walkable space.
+    // Costs nothing on maps without platforms: the deck pass returns
+    // immediately and the ground pass skips the per-barrier test entirely.
+    drawBarriers(cam, deckOnly) {
+        if (!this.barriers || !this.barriers.length) return;
+        const hasPlat = !!(this.map && this.map.platforms && this.map.platforms.length);
+        if (deckOnly && !hasPlat) return;
+        for (let bar of this.barriers) {
+            if (hasPlat &&
+                (this.map.floorAt((bar.ax + bar.bx) / 2, (bar.ay + bar.by) / 2) === 2) !== !!deckOnly) continue;
+            this.drawBarrier(bar, cam);
+        }
+    }
+
     drawBarrier(bar, cam) {
         let sax = bar.ax - cam.x;
         let say = bar.ay - cam.y;
@@ -28174,8 +28373,9 @@ class Game {
         this.drawPermanentMarks(this.ctx, droneCam, visibleW, visibleH);
 
         this.map.drawOperatorBiomeBands(this.ctx, droneCam, pw, ph);
-        if (this.barriers) for (let bar of this.barriers) this.drawBarrier(bar, droneCam);
+        this.drawBarriers(droneCam, false);
         this.map.draw(this.ctx, droneCam, pw, ph);
+        this.drawBarriers(droneCam, true);
         this.map.drawFoliageGround(this.ctx, droneCam, pw, ph);
         
         for (let i of this.items) i.draw(this.ctx, droneCam);
@@ -28514,8 +28714,9 @@ class Game {
         // Deliberately skip drawFoliageGround/Canopy here -- ground
         // clutter and canopy occlusion add visual noise this inset doesn't
         // need; it only has to answer "is the perimeter holding".
-        if (this.barriers) for (let bar of this.barriers) this.drawBarrier(bar, baseCam);
+        this.drawBarriers(baseCam, false);
         this.map.draw(this.ctx, baseCam, pw, ph, true);
+        this.drawBarriers(baseCam, true);
         if (this.turrets) for (let t of this.turrets) t.draw(this.ctx, baseCam);
         if (this.dogs) for (let d of this.dogs) d.draw(this.ctx, baseCam);
         for (let e of this.enemies) e.draw(this.ctx, baseCam);
@@ -36637,12 +36838,35 @@ class Game {
         return hostiles;
     }
 
+    // Third raycast implementation in the file, independent of both
+    // MathUtils.lineIntersectAABB (combat/collision) and lineBlocksSight
+    // (enemy-opacity). It is deliberately kept separate because it answers a
+    // different question -- "how far along this ray until something stops
+    // it", not "is anything in the way" -- but it belongs to the SIGHT class
+    // of raycast, not the combat class, so it honours `seeThrough` the same
+    // way lineBlocksSight does.
+    //
+    // SIMULATED SECOND FLOOR: every consumer of this is a visual read of
+    // where the player is pointing -- the laser-sight beam, the Spot Robot's
+    // beam, and the gun-retraction reach-check in Player.update. All three
+    // were treating a window (a waist-high sill you aim OVER) as a full wall,
+    // which is why the gun retracted into the chest and the beam died at the
+    // sill: it read as shooting *under* the wall instead of over a low
+    // barrier. Skipping seeThrough segments here fixes both symptoms at once,
+    // because both symptoms were this one raycast.
+    //
+    // This changes nothing about whether a shot actually gets through: that
+    // is Bullet.update's WINDOW_UP_PASS roll, which is untouched, and it is
+    // deliberately a different answer -- the gun reaches over the sill, the
+    // round may still clip it. Combat targeting (turrets, dogs, enemy aim)
+    // uses lineIntersectAABB and is likewise untouched here.
     getLaserEndPoint(startX, startY, angle, maxDist, walls) {
         let dx = Math.cos(angle);
         let dy = Math.sin(angle);
         let nearestT = maxDist;
         
         for (let w of walls) {
+            if (w.seeThrough) continue;
             let tNear = -Infinity;
             let tFar = Infinity;
             
@@ -36861,14 +37085,18 @@ class Game {
         // ends of engineer-placed barriers, making them look seamlessly
         // built into the wall. The color-matched mounting plate (drawBarrier)
         // sits on the OUTSIDE face and remains visible.
-        if (this.barriers) {
-            for (let bar of this.barriers) this.drawBarrier(bar, cam);
-        }
+        this.drawBarriers(cam, false);
         this.map.draw(this.ctx, cam, viewportW, viewportH);
         // SIMULATED SECOND FLOOR: gore that landed on a deck is re-drawn
         // here, on top of the platform surface instead of washed out
-        // beneath it. Then window sills -- above the walls, below entities.
+        // beneath it. Then barriers standing on a deck, for the same reason
+        // (they sit ON the gore, so they follow it), and then window sills --
+        // above the walls, below entities. Sills last of the three is
+        // deliberate: it restores the "embedded into the geometry" look for a
+        // deck barrier that meets a window, which is what the ground pass
+        // gets for free by running before the wall pass.
         this.drawPermanentMarks(this.ctx, cam, visibleW, visibleH, true);
+        this.drawBarriers(cam, true);
         this.map.drawPlatformParapets(this.ctx, cam, viewportW, viewportH, true);
         this.map.drawFoliageGround(this.ctx, cam, viewportW, viewportH);
 
