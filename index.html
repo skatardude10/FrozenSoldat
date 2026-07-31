@@ -5340,7 +5340,13 @@ const SeededRNG = {
     // extraction-signature stamp (vault_cell). 'normal'-mode output is
     // bit-identical to v2 (fingerprint-verified) -- the bump exists for
     // the modes that DO diverge on ids 10/13/14/15.
-    GEN_VERSION: 3,
+    // Bumped to 4: simulated second floors were added to a number of
+    // EXISTING templates (2-Fort's battlements, raised keeps on the classic
+    // and procedural maps), which changes their wall output. Old challenge
+    // links replay a different map and must surface the "older generator"
+    // notice rather than silently drifting. Template 17 alone would not
+    // have needed this -- a new id never does (bootstrap rule 2.2).
+    GEN_VERSION: 4,
     // mulberry32: tiny, fast, solid distribution for game-gen purposes.
     // Returns a () => [0,1) stream fully determined by the 32-bit seed.
     mulberry32(seed) {
@@ -6185,6 +6191,51 @@ class Camera {
 // untagged rects fall through to tagDestructibleWalls()'s area heuristic.
 // ==== SIMULATED SECOND FLOOR: tuning ====
 // One block so the feel knobs aren't buried in three different systems.
+// ==== WALL DEPTH: the ground-floor half of the 2.5D language ====
+// The platforms read as solid because of ONE thing: a bright top face
+// against a dark side face. PARAPET_CAP is rgba(150,122,235,0.95) -- a lit
+// surface. The luminance gap between that cap and its dark body IS the
+// 2.5D effect; the extrusion geometry only gives the gap somewhere to sit.
+//
+// Ground walls had no lit surface at all. They are #010c1b -- rgb(1,12,27)
+// -- on a background of about rgb(0,5,12), i.e. near-black on near-black,
+// with a thin neon outline doing all the work. Adding a darker side face to
+// that changed nothing, because there was no highlight for it to contrast
+// against. So the cap has to be LIT, and the side face dark, exactly as on
+// the platforms.
+//
+// Height hierarchy, unchanged:
+//     window / half-height segment    9px   -- shoot over it
+//     ordinary ground wall           13px   -- normal cover
+//     platform cliff                 20px   -- a storey up
+//     platform parapet               26px   -- tallest thing on the map
+//
+// All four passes are BATCHED and the existing per-wall loop is untouched:
+// it still sets fillStyle once outside itself and draws the same cap rect
+// and outline. The lit-cap pass groups by wall colour using the SAME cached
+// _diagRgbGroups the cross-hatch pass already relies on -- one path, one
+// fillStyle, one fill per distinct colour, of which a map has a handful.
+const WALL_DEPTH = {
+    H: 13,                                  // ground wall extrusion
+    BODY: 'rgba(0, 2, 6, 0.96)',            // side face -- near pure black
+    CAP_TINT: 0.34,                         // wall-colour wash on the top face (per colour group)
+    CAP_LIFT: 'rgba(146, 170, 208, 0.14)',  // neutral lift, so even dark-coloured walls gain value
+    RIM: 'rgba(216, 234, 255, 0.45)',       // catch-light on the lit faces
+    FLOOR_VIGNETTE: 0.38,
+
+    // ---- Backdrop ----
+    // The ground plane was a single hardcoded #01050e -- rgb(1,5,14),
+    // luminance 4.8, with no biome colour in it anywhere. Every map, from
+    // the neon Bazaar to the green Perimeter, sat on the identical black.
+    // Now it's a dark neutral floor value plus a bleed of the map's own
+    // biome colour, so each template has ground that belongs to it.
+    // Deliberately restrained: the lit wall caps land at L 48-88, so the
+    // floor wants to sit near L 15-21 -- clearly not black, still dark
+    // enough that walls and platforms read as the bright things.
+    FLOOR_BASE: 10,     // neutral value floor sits at, before any tint
+    FLOOR_TINT: 0.055   // how much biome colour bleeds into the ground
+};
+
 const SECOND_FLOOR = {
     // Chance a shot fired from GROUND level clears a window sill. Fire from
     // the deck outward always passes (see Bullet.update), so this number
@@ -6202,6 +6253,20 @@ const SECOND_FLOOR = {
     // thinner wall -- it's a SHORTER one, and drawing it at roughly a third
     // the parapet's height is what makes "you can shoot over this"
     // instantly readable instead of something the player has to be told.
+    // Per-platform palettes. A keep picks one deterministically at stamp
+    // time (or an authored map names one), so decks vary instead of every
+    // platform being the same violet slab. `id` is what authored maps ask
+    // for by name -- 'blu' and 'red' exist specifically for 2-Fort.
+    PALETTES: [
+        { id: 'violet', wall: '#7c4dff', rgb: '124, 77, 255',  deck: 'rgba(150, 128, 255, 0.20)', top: 'rgba(168, 148, 255, 0.30)', cliff: 'rgba(14, 8, 34, 0.82)',  face: 'rgba(20, 12, 44, 0.90)',  cap: 'rgba(150, 122, 235, 0.95)', rim: 'rgba(214, 200, 255, 0.85)' },
+        { id: 'rust',   wall: '#ff7043', rgb: '255, 112, 67',  deck: 'rgba(255, 150, 110, 0.20)', top: 'rgba(255, 170, 130, 0.30)', cliff: 'rgba(34, 14, 6, 0.82)',  face: 'rgba(46, 20, 10, 0.90)',  cap: 'rgba(226, 128, 88, 0.95)',  rim: 'rgba(255, 214, 190, 0.85)' },
+        { id: 'jade',   wall: '#26c6a2', rgb: '38, 198, 162',  deck: 'rgba(90, 226, 190, 0.20)',  top: 'rgba(120, 240, 205, 0.30)', cliff: 'rgba(4, 30, 24, 0.82)',  face: 'rgba(8, 42, 34, 0.90)',   cap: 'rgba(60, 200, 168, 0.95)',  rim: 'rgba(196, 255, 238, 0.85)' },
+        { id: 'amber',  wall: '#ffc107', rgb: '255, 193, 7',   deck: 'rgba(255, 210, 90, 0.20)',  top: 'rgba(255, 224, 130, 0.30)', cliff: 'rgba(34, 26, 2, 0.82)',  face: 'rgba(46, 34, 4, 0.90)',   cap: 'rgba(226, 176, 40, 0.95)',  rim: 'rgba(255, 240, 190, 0.85)' },
+        { id: 'blu',    wall: '#3a7ddb', rgb: '58, 125, 219',  deck: 'rgba(96, 156, 236, 0.22)',  top: 'rgba(126, 180, 246, 0.32)', cliff: 'rgba(6, 16, 38, 0.84)',  face: 'rgba(10, 24, 52, 0.92)',  cap: 'rgba(74, 140, 224, 0.95)',  rim: 'rgba(198, 224, 255, 0.88)' },
+        { id: 'red',    wall: '#c0392b', rgb: '192, 57, 43',   deck: 'rgba(226, 92, 76, 0.22)',   top: 'rgba(240, 122, 104, 0.32)', cliff: 'rgba(34, 6, 4, 0.84)',   face: 'rgba(48, 10, 8, 0.92)',   cap: 'rgba(198, 74, 58, 0.95)',   rim: 'rgba(255, 206, 198, 0.88)' }
+    ],
+
+    // Fallbacks, used only if a platform somehow has no palette attached.
     CLIFF_H: 20,      // deck-to-street drop
     PARAPET_H: 26,    // solid parapet standing on the deck
     WINDOW_H: 9,      // window / half-height segment -- deliberately ~1/3 PARAPET_H
@@ -6242,7 +6307,14 @@ const SECOND_FLOOR = {
 // lineIntersectAABB edge test. 220 guarantees a clean 2-node-wide
 // connection (same reasoning as template 12's 180px breach lane), which is
 // what lets enemies funnel up with zero pathfinding changes.
-function buildKeep(SW, SH, rng) {
+// `opts` lets an AUTHORED map pin down what procgen would otherwise roll:
+//   opts.stairSides  -- exact sides to put ramps on (0=N,1=E,2=S,3=W)
+//   opts.windowSides -- exact sides that get windows; all others solid
+// That's what makes a hand-built fort reproducible and symmetric (2-Fort
+// needs both battlements facing the bridge with matching firing arcs)
+// while procedural keeps keep rolling their own.
+function buildKeep(SW, SH, rng, opts) {
+    opts = opts || {};
     const T = 46, GAP = 220, RUN = 150, LIP = 12;
     const rects = [];
     rects.push({ platform: true, x: 0, y: 0, w: SW, h: SH });
@@ -6250,16 +6322,20 @@ function buildKeep(SW, SH, rng) {
     // Stair count: seed-driven for variety, floored at 2 on anything but
     // the small tower footprint -- a single entrance on a big keep is a
     // fortress that can be held indefinitely, which isn't a fight.
-    const small = Math.min(SW, SH) < 620;
-    const roll = rng();
-    const nStairs = small ? (roll < 0.45 ? 1 : 2) : (roll < 0.55 ? 2 : 3);
-
-    const sides = [0, 1, 2, 3];
-    for (let i = 3; i > 0; i--) {
-        const j = Math.floor(rng() * (i + 1));
-        const t = sides[i]; sides[i] = sides[j]; sides[j] = t;
+    let stairSides;
+    if (opts.stairSides) {
+        stairSides = opts.stairSides;
+    } else {
+        const small = Math.min(SW, SH) < 620;
+        const roll = rng();
+        const nStairs = small ? (roll < 0.45 ? 1 : 2) : (roll < 0.55 ? 2 : 3);
+        const sides = [0, 1, 2, 3];
+        for (let i = 3; i > 0; i--) {
+            const j = Math.floor(rng() * (i + 1));
+            const t = sides[i]; sides[i] = sides[j]; sides[j] = t;
+        }
+        stairSides = sides.slice(0, nStairs);
     }
-    const stairSides = sides.slice(0, nStairs);
 
     for (let side = 0; side < 4; side++) {
         const horiz = (side === 0 || side === 2);
@@ -6306,9 +6382,16 @@ function buildKeep(SW, SH, rng) {
             }
             spans.push({ a: segA, len: segLen });
         }
-        const isWin = spans.map(() => rng() < 0.42);
-        if (spans.length && !isWin.some(Boolean)) {
-            isWin[Math.floor(rng() * spans.length)] = true;
+        let isWin;
+        if (opts.windowSides) {
+            // Authored: this side is either a firing face or it isn't.
+            const on = opts.windowSides.indexOf(side) !== -1;
+            isWin = spans.map(() => on);
+        } else {
+            isWin = spans.map(() => rng() < 0.42);
+            if (spans.length && !isWin.some(Boolean)) {
+                isWin[Math.floor(rng() * spans.length)] = true;
+            }
         }
         for (let i = 0; i < spans.length; i++) {
             rects.push(mkSeg(spans[i].a, spans[i].len, isWin[i]));
@@ -6709,8 +6792,9 @@ const PROCGEN_RULES = {
     13: {  // "The Foundry" -- 3x3 forge blocks around a plaza spawn.
         cols: 3, rows: 3, street: 150, edgeStreet: 130, gates: 3,
         spawnCells: [[1, 1]],
-        roleDeck: ['arena', 'arena', 'cover_dense', 'cover_dense', 'sniper_lane', 'loot_pocket', 'ruins', 'choke'],
+        roleDeck: ['keep', 'arena', 'cover_dense', 'cover_dense', 'sniper_lane', 'loot_pocket', 'ruins', 'choke'],
         roles: {
+            keep:        { stamps: ['platform_keep', 'platform_bastion', 'platform_tower'], style: { main: '#7c4dff', rgb: '124, 77, 255' } },
             arena:       { stamps: ['ring_bastion', 'hourglass_jaws', 'mega_slab', 'trench_pair'], minor: ['pillar_cluster', 'scatter_cover'], style: { main: '#ff9100', rgb: '255, 145, 0' } },
             cover_dense: { stamps: ['maze_pocket', 'corner_bunker', 'crate_yard'], minor: ['rubble_pod'], style: { main: '#808f9c', rgb: '128, 143, 156' } },
             choke:       { stamps: ['fort_face', 'kill_box'], minor: ['reactor_block'], style: { main: '#ff2a5f', rgb: '255, 42, 95' } },
@@ -6735,10 +6819,11 @@ const PROCGEN_RULES = {
     14: {  // "Shatter Bazaar" -- 16 market blocks, spawn at the grand crossing.
         cols: 4, rows: 4, street: 140, edgeStreet: 130, gates: 5,
         spawnCells: [],
-        roleDeck: ['arena', 'arena', 'arena', 'cover_dense', 'cover_dense', 'cover_dense', 'cover_dense',
+        roleDeck: ['keep', 'keep', 'arena', 'cover_dense', 'cover_dense', 'cover_dense', 'cover_dense',
                    'choke', 'choke', 'sniper_lane', 'sniper_lane', 'loot_pocket', 'loot_pocket',
                    'ruins', 'ruins', 'crates'],
         roles: {
+            keep:        { stamps: ['platform_keep', 'platform_bastion', 'platform_tower'], style: { main: '#7c4dff', rgb: '124, 77, 255' } },
             arena:       { stamps: ['ring_bastion', 'hourglass_jaws', 'mega_slab', 'trench_pair'], minor: ['pillar_cluster', 'scatter_cover'], style: { main: '#e040fb', rgb: '224, 64, 251' } },
             cover_dense: { stamps: ['maze_pocket', 'corner_bunker', 'l_ruins', 'garden_court'], minor: ['rubble_pod'], style: { main: '#b388ff', rgb: '179, 136, 255' } },
             choke:       { stamps: ['fort_face', 'kill_box'], minor: ['reactor_block'], style: { main: '#ff007f', rgb: '255, 0, 127' } },
@@ -6781,11 +6866,17 @@ const PROCGEN_RULES = {
             { main: '#00e5ff', rgb: '0, 229, 255' },  { main: '#ffffff', rgb: '255, 255, 255' }, { main: '#ff5722', rgb: '255, 87, 34' },
             { main: '#0055ff', rgb: '0, 85, 255' },   { main: '#4caf50', rgb: '76, 175, 80' },   { main: '#d500f9', rgb: '213, 0, 249' }
         ],
-        rolePool: ['thicket', 'watch', 'ruins', 'hamlet', 'arena', 'slabfield', 'blocks', 'garden', 'boneyard', 'maze', 'spiralden'],
+        rolePool: ['thicket', 'watch', 'ruins', 'hamlet', 'arena', 'slabfield', 'blocks', 'garden', 'boneyard', 'maze', 'spiralden', 'citadel'],
         roles: {
             // count: [min,max] primary stamps per 2500px zone. filler
             // roles mark their walls procMinor so the budget trim eats
             // scatter before it ever touches a landmark.
+            // SIMULATED SECOND FLOOR: a zone that rolls 'citadel' gets one
+            // raised keep as its landmark. count [1,1] on purpose -- across
+            // a 7500px map the high ground should be somewhere you travel
+            // TO, not terrain you're constantly on. NOT marked filler, so
+            // the budget trim eats scatter long before it touches a keep.
+            citadel:   { count: [1, 1], stamps: ['platform_keep', 'platform_bastion', 'platform_tower'] },
             thicket:   { count: [10, 12], stamps: ['pillar_cluster', 'scatter_cover'], filler: true },
             watch:     { count: [7, 9],   anchor: 'tower_slats', stamps: ['sniper_spine', 'tower_slats'] },
             ruins:     { count: [7, 9],   stamps: ['l_ruins'] },
@@ -7010,8 +7101,19 @@ class MapGen {
         this.barrelRng = SeededRNG.mulberry32((this.seed ^ 0xBADA55E5) >>> 0);
 
         this.generate();
+        // SIMULATED SECOND FLOOR: authored templates call addPlatform()
+        // inside generate() and have no assembler to run the surround-clear
+        // for them, so it runs once here for everything. Idempotent -- the
+        // procgen assemblers already ran it before their own validators,
+        // and a second pass finds nothing left to remove. No-op on maps
+        // with no platforms.
+        this._clearPlatformSurrounds();
         this.initializeSpatialGrid();
         this.buildNavGrid();
+        // SIMULATED SECOND FLOOR: must run AFTER buildNavGrid -- it repairs
+        // that grid where the fixed node lattice happened to fall badly
+        // against a platform's stair gap. No-op without platforms.
+        this._linkPlatformStairs();
     }
     initializeSpatialGrid() {
         // Grid resolution scales with map size ONLY for the large maps (10,
@@ -7283,6 +7385,19 @@ class MapGen {
                     this.walls.push({ x, y, w, h });
                     placed++;
                 }
+                // SIMULATED SECOND FLOOR: the Cross is about the two clear
+                // lanes, so the high ground goes in the QUADRANTS and looks
+                // down into them -- it never sits in a lane. Two opposite
+                // quadrants, which pair the seed picks, so the map keeps its
+                // fixed skeleton while the commanding corners move.
+                {
+                    const q = [[0.27, 0.27], [0.73, 0.27], [0.73, 0.73], [0.27, 0.73]];
+                    const a = Math.floor(this.rng() * 4), b = (a + 2) & 3;
+                    for (const i of [a, b]) {
+                        this.addPlatform(this.width * q[i][0] - 210, this.height * q[i][1] - 210, 420, 420,
+                            { id: 'crosskeep' + i });
+                    }
+                }
                 break;
             }
             case 1: {
@@ -7312,6 +7427,21 @@ class MapGen {
                     this.walls.push({ x, y, w, h });
                     placed++;
                 }
+                // SIMULATED SECOND FLOOR: the hub itself stays open -- that
+                // exposed centre IS the map. Instead two towers sit OUTSIDE
+                // the ring on opposite sides, so the encirclement pressure
+                // now has a vertical answer: break out and climb, or get
+                // ringed in. Angle rides the seed so the pair rotates.
+                {
+                    const base = this.rng() * Math.PI * 2, R = 760;
+                    for (const k of [0, 1]) {
+                        const ang = base + k * Math.PI;
+                        this.addPlatform(
+                            MathUtils.clamp(cx + Math.cos(ang) * R - 190, 120, this.width - 500),
+                            MathUtils.clamp(cy + Math.sin(ang) * R - 190, 120, this.height - 500),
+                            380, 380, { id: 'hubtower' + k });
+                    }
+                }
                 break;
             }
             case 2: {
@@ -7335,6 +7465,21 @@ class MapGen {
                         this.walls.push({ x, y, w, h });
                     }
                 }
+                // SIMULATED SECOND FLOOR: two of the four bunkers become
+                // ELEVATED bunkers -- which two is seeded, so the map's
+                // central question ("which corner do I contest?") gets a
+                // fresh answer each run instead of four equivalent options.
+                // Deliberately not all four: the contrast only means
+                // something if some corners stay ground level.
+                {
+                    const pick = Math.floor(this.rng() * 4);
+                    const other = (pick + 1 + Math.floor(this.rng() * 3)) & 3;
+                    const cn = [[350, 350], [this.width - 350, 350],
+                                [350, this.height - 350], [this.width - 350, this.height - 350]];
+                    for (const i of [pick, other]) {
+                        this.addPlatform(cn[i][0] - 230, cn[i][1] - 230, 460, 460, { id: 'bunker' + i });
+                    }
+                }
                 break;
             }
             case 3: {
@@ -7351,6 +7496,16 @@ class MapGen {
                     if (x < cx + 150 && x + w > cx - 150 && y < cy + 150 && y + h > cy - 150) continue;
                     this.walls.push({ x, y, w, h });
                 }
+                // SIMULATED SECOND FLOOR: a tug-of-war needs ground you can
+                // WIN, so each half gets one watchtower set off the trench
+                // line. They're small (340) and sit north/south of the
+                // trench rather than in it -- the push down the middle is
+                // still the point, it just now happens under observation.
+                {
+                    const northFirst = this.rng() < 0.5;
+                    this.addPlatform(760, northFirst ? 150 : this.height - 490, 340, 340, { id: 'trenchtowerA' });
+                    this.addPlatform(this.width - 1100, northFirst ? this.height - 490 : 150, 340, 340, { id: 'trenchtowerB' });
+                }
                 break;
             }
             case 4: {
@@ -7360,7 +7515,14 @@ class MapGen {
                 this.walls.push({ x: this.width - cs, y: 0, w: cs, h: cs });
                 this.walls.push({ x: 0, y: this.height - cs, w: cs, h: cs });
                 this.walls.push({ x: this.width - cs, y: this.height - cs, w: cs, h: cs });
-                this.walls.push({ x: cx - 350, y: cy - 350, w: 700, h: 700 });
+                // SIMULATED SECOND FLOOR: the central blockade is now a
+                // CLIMBABLE reactor deck instead of a solid slab. It blocks
+                // ground movement exactly as the wall did -- the death loop
+                // is intact -- but the thing everyone circles is now a place
+                // you can take. Best single-map argument for verticality:
+                // same footprint, same routes, entirely new question.
+                this.addPlatform(cx - 350, cy - 350, 700, 700,
+                    { id: 'reactor', palette: 'amber' });
                 for(let i = 0; i < 12; i++) {
                     let w = this.srand(100, 180);
                     let h = this.srand(40, 80);
@@ -7432,6 +7594,20 @@ class MapGen {
                     if (inTL || inTR || inBL || inBR || inCenter) continue;
                     this.walls.push({ x, y, w, h });
                 }
+                // SIMULATED SECOND FLOOR: this map is pure sightline, so
+                // the keeps go in two OPPOSITE arms and shoot straight down
+                // them. Which axis (N/S or E/W) rides the seed, so the
+                // long-range duel sets up somewhere different each run.
+                {
+                    const vertical = this.rng() < 0.5, S = 430, o2 = S / 2;
+                    if (vertical) {
+                        this.addPlatform(cx - o2, 300, S, S, { id: 'qzN' });
+                        this.addPlatform(cx - o2, this.height - 300 - S, S, S, { id: 'qzS' });
+                    } else {
+                        this.addPlatform(300, cy - o2, S, S, { id: 'qzW' });
+                        this.addPlatform(this.width - 300 - S, cy - o2, S, S, { id: 'qzE' });
+                    }
+                }
                 break;
             }
             case 8: {
@@ -7447,6 +7623,33 @@ class MapGen {
                     this.walls.push({ x: this.srand(100, 600), y: this.srand(100, 800), w: 80, h: 80 });
                     this.walls.push({ x: this.srand(3500, 4100), y: this.srand(100, 800), w: 80, h: 80 });
                 }
+                // ==== SIMULATED SECOND FLOOR: the battlements ====
+                // 2-Fort's whole identity is the sniper duel across the
+                // bridge, so each base gets one raised battlement covering
+                // the no-man's-land -- BLU west, RED east, mirrored, fully
+                // static. No seed variation here on purpose: this map is
+                // about a symmetric standoff, and a keep that moved between
+                // runs would wreck the read that both sides are equal.
+                //
+                // Placement is forced by the existing geometry. The bridge
+                // corridor runs y 250-650 between the two long slabs, and
+                // it must stay open at ground level -- so the battlements
+                // sit NORTH of it (y 40-420), flanking the approach rather
+                // than plugging it. You can always run the bridge; you just
+                // do it under someone's guns.
+                //
+                //   windowSides -- only the face toward the enemy base, so
+                //     a battlement covers the crossing and nothing else. Its
+                //     back and flanks are solid: you cannot be shot off it
+                //     from inside your own fort.
+                //   stairSides  -- the SOUTH face, dropping into your own
+                //     half of the corridor. The climb is inside your
+                //     territory, which is what makes taking the enemy
+                //     battlement an actual push instead of a flank.
+                this.addPlatform(980, 40, 380, 420,
+                    { id: 'blufort', palette: 'blu', stairSides: [2], windowSides: [1] });
+                this.addPlatform(2840, 40, 380, 420,
+                    { id: 'redfort', palette: 'red', stairSides: [2], windowSides: [3] });
                 break;
             }
             case 9: {
@@ -7459,6 +7662,24 @@ class MapGen {
                     if (x < cx + 300 && x + w > cx - 300 && y < cy + 300 && y + h > cy - 300) continue;
                     this.walls.push({ x, y, w, h });
                     placed++;
+                }
+                // SIMULATED SECOND FLOOR: the Sieve exists to DENY
+                // sightlines, so a keep here is the sharpest contrast in the
+                // roster -- the one place the pillar forest stops mattering.
+                // Two of them, seeded position, deliberately off-centre so
+                // neither covers the whole field.
+                {
+                    // Opposed angles, not two independent rolls -- see the
+                    // overlap guard in addPlatform for why that mattered.
+                    const base = this.rng() * Math.PI * 2;
+                    for (let k = 0; k < 2; k++) {
+                        const ang = base + k * Math.PI;
+                        const R = 780 + this.rng() * 240;
+                        this.addPlatform(
+                            MathUtils.clamp(cx + Math.cos(ang) * R - 200, 140, this.width - 540),
+                            MathUtils.clamp(cy + Math.sin(ang) * R - 200, 140, this.height - 540),
+                            400, 400, { id: 'sieve' + k });
+                    }
                 }
                 break;
             }
@@ -8335,8 +8556,19 @@ class MapGen {
     // its footprint, then centered on px,py in world space) and push them
     // as walls. ALWAYS calls build() exactly once so the stamp stream
     // advances identically regardless of what placement does afterwards.
+    // SIMULATED SECOND FLOOR: authored maps hand in a stamp OBJECT rather
+    // than a MAP_STAMPS key (see addPlatform), so hand-built forts and
+    // procedural keeps run through exactly one placement path.
     _placeStamp(stampId, px, py, rot, rng, style, minor = false) {
-        const s = MAP_STAMPS[stampId];
+        if (stampId && typeof stampId === 'object') {
+            const inline = stampId;
+            stampId = inline.id || 'inline';
+            return this._placeStampDef(inline, stampId, px, py, rot, rng, style, minor);
+        }
+        return this._placeStampDef(MAP_STAMPS[stampId], stampId, px, py, rot, rng, style, minor);
+    }
+
+    _placeStampDef(s, stampId, px, py, rot, rng, style, minor = false) {
         if (!s) return;
         const rects = s.build(rng);
         const fw = (rot % 2 === 0) ? s.w : s.h;
@@ -8359,6 +8591,16 @@ class MapGen {
         const platRects = [];
         const stairRects = [];
         const parapetWalls = [];
+        // SIMULATED SECOND FLOOR: a platform stamp picks its own palette
+        // off the handed stream (or takes an authored one via s.palette),
+        // so keeps vary in colour instead of every deck being the same
+        // violet slab. Parapets are coloured from it too, so a keep reads
+        // as one object rather than a tinted floor with unrelated walls.
+        const PAL = SECOND_FLOOR.PALETTES;
+        let pal = null;
+        if (rigid) {
+            pal = (s.palette && PAL.find(q => q.id === s.palette)) || PAL[Math.floor(rng() * 4)];
+        }
         for (const r0 of rects) {
             let x, y, w, h;
             switch (rot) {
@@ -8392,7 +8634,8 @@ class MapGen {
                     w, h
                 };
             if (r0.tier) wall.tier = r0.tier;
-            if (style) { wall.colorMain = style.main; wall.colorRgb = style.rgb; }
+            if (pal) { wall.colorMain = pal.wall; wall.colorRgb = pal.rgb; }
+            else if (style) { wall.colorMain = style.main; wall.colorRgb = style.rgb; }
             if (minor) wall.procMinor = true;
             // SIMULATED SECOND FLOOR: a platform's perimeter must be
             // IMMUTABLE. If a parapet or window segment could be destroyed
@@ -8408,6 +8651,7 @@ class MapGen {
             // normal destructible cover.
             if (r0.structural) {
                 wall.buildingId = stampId + '_' + this._structuralSeq++;
+                wall._parapet = true;   // drawn by drawPlatformParapets at full height instead
                 parapetWalls.push(wall);
             }
             if (r0.seeThrough) wall.seeThrough = true;
@@ -8427,9 +8671,100 @@ class MapGen {
             }
             this.platforms.push({
                 x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0,
-                rects: platRects, stairs: stairRects, parapet: parapetWalls
+                rects: platRects, stairs: stairRects, parapet: parapetWalls,
+                pal: pal || PAL[0]
             });
         }
+    }
+
+    // ==== SIMULATED SECOND FLOOR: guarantee the climb ====
+    // Nav nodes sit on a FIXED absolute 100px lattice with a 24px wall
+    // margin, but a platform can be placed at any coordinate -- so whether
+    // a node happens to land in a stair gap, or inside a small deck, is
+    // pure alignment luck. Procedural keeps got away with it because they
+    // sit at macro-cell centres on big footprints; hand-placed platforms on
+    // the classic maps did not, and decks came out unreachable on a few
+    // seeds per map.
+    //
+    // Rather than tune footprints until the lottery stops biting, this
+    // makes the climb structural: inside a platform's own stair and deck
+    // regions, unblock every node that is not literally inside a wall, then
+    // re-link anything the margin test rejected but that has a genuinely
+    // clear line. Only ever adds connectivity where real geometry already
+    // allows walking, so it cannot open a route through a parapet.
+    _linkPlatformStairs() {
+        if (!this.platforms.length) return;
+        const MAXD = 155;
+        const inWall = (x, y) => {
+            const near = this.getWallsNear(x, y);
+            for (const w of near) {
+                if (x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) return true;
+            }
+            return false;
+        };
+        for (const p of this.platforms) {
+            const zones = p.stairs.concat(p.rects);
+            const zn = [];
+            for (const n of this.navNodes) {
+                for (const z of zones) {
+                    if (n.x >= z.x - 40 && n.x <= z.x + z.w + 40 &&
+                        n.y >= z.y - 40 && n.y <= z.y + z.h + 40) { zn.push(n); break; }
+                }
+            }
+            for (const n of zn) if (n.blocked && !inWall(n.x, n.y)) n.blocked = false;
+            for (const n of zn) {
+                if (n.blocked) continue;
+                for (const o of this.navNodes) {
+                    if (o === n || o.blocked) continue;
+                    if (Math.abs(o.x - n.x) > MAXD || Math.abs(o.y - n.y) > MAXD) continue;
+                    if (n.neighbors.indexOf(o) !== -1) continue;
+                    let blockedSeg = false;
+                    for (const w of this.getWallsAlongSegment(n.x, n.y, o.x, o.y)) {
+                        if (MathUtils.lineIntersectAABB(n.x, n.y, o.x, o.y, w)) { blockedSeg = true; break; }
+                    }
+                    if (blockedSeg) continue;
+                    n.neighbors.push(o);
+                    o.neighbors.push(n);
+                }
+            }
+        }
+    }
+
+    // ==== SIMULATED SECOND FLOOR: authored-map entry point ====
+    // One call adds high ground to ANY template, procedural or hand-built:
+    //
+    //   this.addPlatform(980, 40, 380, 420,
+    //       { palette: 'blu', stairSides: [2], windowSides: [1] });
+    //
+    // Coordinates are top-left + size, which is how every hand-authored
+    // case in generate() already talks. Everything downstream -- floorAt,
+    // blast gating, loot, the window bullet rule, all three render passes,
+    // custom-map persistence -- keys off this.platforms and needs no
+    // per-template knowledge, so a map either calls this or it doesn't.
+    //
+    // Draws from this.rng by default, keeping authored platforms inside the
+    // seeded stream like the rest of hand-built geometry.
+    addPlatform(x, y, w, h, opts) {
+        opts = opts || {};
+        // Two platforms must never overlap. Nothing downstream is built for
+        // it -- floorAt would report one deck's elevation inside another's
+        // parapet, and the two stair sets would fight over the same nav
+        // nodes. It happened for real: the Sieve picked an independent
+        // random angle per tower and landed both 34px apart, silently
+        // producing an unreachable deck. Refuse rather than corrupt, and
+        // report it so a caller can re-roll.
+        const PAD = 80;
+        for (const q of this.platforms) {
+            if (x < q.x + q.w + PAD && x + w > q.x - PAD &&
+                y < q.y + q.h + PAD && y + h > q.y - PAD) return false;
+        }
+        const rng = opts.rng || (() => this.rng());
+        this._placeStamp(
+            { id: opts.id || 'plat', w, h, rigid: true, palette: opts.palette,
+              build: (r) => buildKeep(w, h, r, opts) },
+            x + w / 2, y + h / 2, 0, rng, null, false
+        );
+        return true;
     }
 
     // ==== SIMULATED SECOND FLOOR: keep the keeps clean ====
@@ -9580,6 +9915,45 @@ class MapGen {
 
         // PHASE 1 (wall-break perf): apply any carve events from this frame
         // in ONE coalesced recompute before drawing.
+        // ==== FLOOR DEPTH ====
+        // One screen-space vignette, drawn after all floor detail and
+        // before anything solid. This is deliberately the ONLY change to
+        // the floor: the grid, panels, seam ticks, zone gradients and void
+        // treatment are all left exactly as they are.
+        //
+        // The floor never actually read as flat -- it already carries four
+        // layers of variation. What it lacked was a value RANGE for the
+        // walls to sit against, so everything occupied the same narrow band
+        // of dark. Falling the screen edges off gives the centre somewhere
+        // to be bright relative TO, which is what makes the newly extruded
+        // walls read as standing up out of it. Cheap (one radial gradient
+        // per frame), and because it's screen-space it costs the same on a
+        // 2200px map and a 7500px one.
+        {
+            const vg = WALL_DEPTH.FLOOR_VIGNETTE;
+            if (vg > 0) {
+                // Keyed cache, not a single slot: split-screen and the FPV
+                // drone view render at different dimensions in the SAME
+                // frame, so a one-slot cache would rebuild the gradient on
+                // every viewport switch instead of never.
+                if (!this._vigCache) this._vigCache = {};
+                const vk = viewportW + 'x' + viewportH;
+                if (!this._vigCache[vk]) {
+                    const g = ctx.createRadialGradient(
+                        viewportW / 2, viewportH / 2, Math.min(viewportW, viewportH) * 0.28,
+                        viewportW / 2, viewportH / 2, Math.max(viewportW, viewportH) * 0.78
+                    );
+                    g.addColorStop(0, 'rgba(0, 0, 0, 0)');
+                    g.addColorStop(1, 'rgba(0, 0, 0, ' + vg + ')');
+                    this._vigCache[vk] = g;
+                }
+                ctx.save();
+                ctx.fillStyle = this._vigCache[vk];
+                ctx.fillRect(0, 0, viewportW, viewportH);
+                ctx.restore();
+            }
+        }
+
         // SIMULATED SECOND FLOOR: shadow / ramps / cliff / deck surface.
         // Sits between the FLOOR and WALL passes on purpose -- running it
         // after the walls let the deck fill paint over its own parapets.
@@ -9610,6 +9984,10 @@ class MapGen {
         // changes -- so they're set ONCE here instead of per wall. Only
         // _drawWallDamage() touches fillStyle again (its own cosmetic
         // erosion color), so it's re-set once right after that call below.
+        // WALL DEPTH: side faces first, so the cap rects drawn by the loop
+        // below land on top of them. Batched -- one fill for the screen.
+        this._drawWallDepth(ctx, cam, visibleW, visibleH, bufferX, bufferY);
+
         ctx.fillStyle = '#010c1b';
         ctx.lineWidth = 2;
         for (let wall of this.walls) {
@@ -9684,6 +10062,11 @@ class MapGen {
             }
         }
 
+        // WALL DEPTH: lit top faces, then catch-light on their lit edges.
+        this._drawWallCaps(ctx, cam, visibleW, visibleH, bufferX, bufferY);
+        // WALL DEPTH: catch-light on the lit faces, over the caps.
+        this._drawWallRims(ctx, cam, visibleW, visibleH, bufferX, bufferY);
+
         // PERF (item 9b): the diagonal cross-hatch used to switch
         // strokeStyle and stroke() once PER WALL (~680 extra ops/frame on
         // template 12). Batched into one pass per distinct wRgb color
@@ -9746,6 +10129,140 @@ class MapGen {
     // block above generate()). One fillRect per damaged cell (not 4) to
     // keep this cheap even when several chunky walls are damaged and
     // visible at once.
+    // ==== Backdrop ====
+    // The opaque ground colour the whole frame is cleared to. Cached: biome
+    // never changes after generation, so this resolves once per map.
+    //
+    // Single source of truth on purpose. This colour is filled in TWO
+    // places -- Game.draw() and the zoom buffer -- and they must match
+    // exactly, because the atmospheric haze composites with 'screen' and
+    // would blend differently against a different backdrop. Having both
+    // read this method makes that impossible to get wrong; previously they
+    // were two independent string literals kept in sync by a comment.
+    backdropColor() {
+        if (!this._backdrop) {
+            const parts = String(this.biome.rgb).split(',').map(n => parseFloat(n) || 0);
+            const B = WALL_DEPTH.FLOOR_BASE, T = WALL_DEPTH.FLOOR_TINT;
+            const mix = (c) => Math.max(0, Math.min(255, Math.round(B + c * T)));
+            this._backdrop = 'rgb(' + mix(parts[0]) + ', ' + mix(parts[1]) + ', ' + mix(parts[2]) + ')';
+        }
+        return this._backdrop;
+    }
+
+    // Wall colour resolution -- the splitTheme override was duplicated in
+    // three places before this (main loop, cross-hatch grouping, cap pass),
+    // which is the point the golden rule says to abstract.
+    _wallRgb(wall) {
+        if (this.biome.splitTheme) {
+            const wx = wall.x + wall.w / 2;
+            if (wx < this.width * 0.35) return '255, 42, 95';
+            if (wx > this.width * 0.65) return '0, 229, 255';
+            return '128, 143, 156';
+        }
+        return wall.colorRgb || this.biome.rgb;
+    }
+
+    _ensureWallRgbGroups() {
+        if (this._diagRgbGroups) return this._diagRgbGroups;
+        const seen = new Set();
+        this._diagRgbGroups = [];
+        for (const w of this.walls) {
+            const rgb = this._wallRgb(w);
+            if (!seen.has(rgb)) { seen.add(rgb); this._diagRgbGroups.push(rgb); }
+        }
+        return this._diagRgbGroups;
+    }
+
+    // ==== WALL DEPTH: side faces ====
+    // One beginPath / one fill for every wall on screen. Each side face is
+    // the footprint offset toward the shadow side; the cap drawn afterwards
+    // covers the top-left of it, leaving the L-shaped sliver that reads as
+    // thickness.
+    //
+    // The CAP stays exactly on the wall's collision footprint -- the
+    // extrusion grows away from it, never over it. The shape you read is
+    // still precisely the shape you collide with, which is what makes this
+    // safe to apply to every wall in the game.
+    //
+    // Platform parapets are skipped: they carry their own taller extrusion
+    // in drawPlatformParapets and would otherwise be drawn twice.
+    _drawWallDepth(ctx, cam, visibleW, visibleH, bufferX, bufferY) {
+        const H = WALL_DEPTH.H;
+        ctx.save();
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        let any = false;
+        for (const wall of this.walls) {
+            if (wall._parapet) continue;
+            if (wall.x + wall.w < cam.x - bufferX || wall.x > cam.x + visibleW + bufferX ||
+                wall.y + wall.h < cam.y - bufferY || wall.y > cam.y + visibleH + bufferY) continue;
+            ctx.rect(wall.x + H - cam.x, wall.y + H - cam.y, wall.w, wall.h);
+            any = true;
+        }
+        if (any) { ctx.fillStyle = WALL_DEPTH.BODY; ctx.fill(); }
+        ctx.restore();
+    }
+
+    // ==== WALL DEPTH: lit top faces ====
+    // THE pass that makes walls read as solid. Two layers over the existing
+    // near-black cap: a neutral value lift (so a wall in a dark colour still
+    // gains luminance) and a wash of the wall's own colour (so it keeps its
+    // identity and the map stays colour-coded). Batched per colour group.
+    _drawWallCaps(ctx, cam, visibleW, visibleH, bufferX, bufferY) {
+        const groups = this._ensureWallRgbGroups();
+        const vis = (w) => !(w.x + w.w < cam.x - bufferX || w.x > cam.x + visibleW + bufferX ||
+                             w.y + w.h < cam.y - bufferY || w.y > cam.y + visibleH + bufferY);
+        ctx.save();
+        ctx.shadowBlur = 0;
+        // 1) neutral lift, one path for every wall on screen
+        ctx.beginPath();
+        let any = false;
+        for (const wall of this.walls) {
+            if (wall._parapet || !vis(wall)) continue;
+            ctx.rect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
+            any = true;
+        }
+        if (any) { ctx.fillStyle = WALL_DEPTH.CAP_LIFT; ctx.fill(); }
+        // 2) colour wash, one path per distinct wall colour
+        for (const rgb of groups) {
+            ctx.beginPath();
+            let hit = false;
+            for (const wall of this.walls) {
+                if (wall._parapet || !vis(wall)) continue;
+                if (this._wallRgb(wall) !== rgb) continue;
+                ctx.rect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
+                hit = true;
+            }
+            if (hit) {
+                ctx.fillStyle = `rgba(${rgb}, ${WALL_DEPTH.CAP_TINT})`;
+                ctx.fill();
+            }
+        }
+        ctx.restore();
+    }
+
+    // Catch-light along the two faces angled toward the light. One path,
+    // one stroke, no per-wall state.
+    _drawWallRims(ctx, cam, visibleW, visibleH, bufferX, bufferY) {
+        ctx.save();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let any = false;
+        for (const wall of this.walls) {
+            if (wall._parapet) continue;
+            if (wall.x + wall.w < cam.x - bufferX || wall.x > cam.x + visibleW + bufferX ||
+                wall.y + wall.h < cam.y - bufferY || wall.y > cam.y + visibleH + bufferY) continue;
+            const sx = wall.x - cam.x, sy = wall.y - cam.y;
+            ctx.moveTo(sx, sy + wall.h);
+            ctx.lineTo(sx, sy);
+            ctx.lineTo(sx + wall.w, sy);
+            any = true;
+        }
+        if (any) { ctx.strokeStyle = WALL_DEPTH.RIM; ctx.stroke(); }
+        ctx.restore();
+    }
+
     _drawWallDamage(ctx, cam, wall) {
         let dmg = wall._dmg;
         ctx.fillStyle = '#05070a';
@@ -10386,6 +10903,7 @@ class MapGen {
         // their top end. Graded dark->light along the climb so the ramp
         // reads as rising, with treads across it.
         for (const p of P) {
+            const PL = p.pal || SF.PALETTES[0];
             for (const s of p.stairs) {
                 if (!vis(s.x, s.y, s.w, s.h)) continue;
                 const sx = s.x - cam.x, sy = s.y - cam.y;
@@ -10396,8 +10914,8 @@ class MapGen {
                 const x1 = horiz ? sx : (s.sdir === 3 ? sx + s.w : sx);
                 const y1 = horiz ? (s.sdir === 0 ? sy + s.h : sy) : sy;
                 const g = ctx.createLinearGradient(x0, y0, x1, y1);
-                g.addColorStop(0, 'rgba(18, 12, 40, 0.55)');
-                g.addColorStop(1, SF.DECK_TINT);
+                g.addColorStop(0, PL.cliff);
+                g.addColorStop(1, PL.deck);
                 ctx.save();
                 ctx.fillStyle = g;
                 ctx.fillRect(sx, sy, s.w, s.h);
@@ -10427,19 +10945,20 @@ class MapGen {
         // quads) keeps this to two fills per platform.
         const H = SF.CLIFF_H;
         for (const p of P) {
+            const PL = p.pal || SF.PALETTES[0];
             for (const r of p.rects) {
                 if (!vis(r.x, r.y - H, r.w, r.h + H)) continue;
                 const sx = r.x - cam.x, sy = r.y - cam.y;
                 ctx.save();
-                ctx.fillStyle = SF.CLIFF_FACE;
+                ctx.fillStyle = PL.cliff;
                 ctx.fillRect(sx, sy - H, r.w, r.h + H);
-                ctx.fillStyle = SF.DECK_TOP_FACE;
+                ctx.fillStyle = PL.top;
                 ctx.fillRect(sx, sy - H, r.w, r.h);
-                ctx.fillStyle = SF.DECK_TINT;
+                ctx.fillStyle = PL.deck;
                 ctx.fillRect(sx, sy, r.w, r.h);
                 // Lit rim on the faces turned toward the light, so the
                 // plateau edge is unmistakable even in a crowded fight.
-                ctx.strokeStyle = SF.RIM_LIT;
+                ctx.strokeStyle = PL.rim;
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(sx, sy - H + r.h);
@@ -10451,29 +10970,37 @@ class MapGen {
         }
     }
 
-    drawPlatformParapets(ctx, cam, viewportW, viewportH) {
+    // `sills` selects which half to draw. Windows are drawn in their own
+    // pass BETWEEN the wall pass and the entities, so a player at a window
+    // renders OVER the sill -- you're aiming across a waist-high wall, not
+    // from underneath it. Solid parapets stay above entities so a body
+    // behind one is properly hidden. That split is the whole reason
+    // half-height reads as half-height.
+    drawPlatformParapets(ctx, cam, viewportW, viewportH, sills) {
         const P = this.platforms;
         if (!P.length) return;
         const SF = SECOND_FLOOR;
         const visibleW = viewportW / cam.zoom, visibleH = viewportH / cam.zoom;
         for (const p of P) {
             if (!p.parapet) continue;
+            const PL = p.pal || SF.PALETTES[0];
             for (const w of p.parapet) {
+                if (!!w.seeThrough !== !!sills) continue;
                 const H = w.seeThrough ? SF.WINDOW_H : SF.PARAPET_H;
                 if (w.x + w.w < cam.x || w.x > cam.x + visibleW ||
                     w.y + w.h < cam.y - H || w.y > cam.y + visibleH) continue;
                 const sx = w.x - cam.x, sy = w.y - cam.y;
                 ctx.save();
                 // Body (the vertical face) then cap (the top surface).
-                ctx.fillStyle = SF.PARAPET_FACE;
+                ctx.fillStyle = PL.face;
                 ctx.fillRect(sx, sy - H, w.w, w.h + H);
-                ctx.fillStyle = w.seeThrough ? 'rgba(120, 96, 190, 0.92)' : SF.PARAPET_CAP;
+                ctx.fillStyle = w.seeThrough ? PL.top : PL.cap;
                 ctx.fillRect(sx, sy - H, w.w, w.h);
                 if (w.seeThrough) {
                     // Sill marking: a bright line along the crest, so a
                     // half-height segment is legible as a firing position
                     // and not just a darker block.
-                    ctx.strokeStyle = 'rgba(226, 214, 255, 0.9)';
+                    ctx.strokeStyle = PL.rim;
                     ctx.lineWidth = 1.5;
                     ctx.beginPath();
                     if (w.w >= w.h) {
@@ -10485,7 +11012,7 @@ class MapGen {
                     }
                     ctx.stroke();
                 } else {
-                    ctx.strokeStyle = SF.RIM_LIT;
+                    ctx.strokeStyle = PL.rim;
                     ctx.lineWidth = 1;
                     ctx.strokeRect(sx + 0.5, sy - H + 0.5, w.w - 1, w.h - 1);
                 }
@@ -36186,7 +36713,18 @@ class Game {
         }
     }
 
-    drawPermanentMarks(ctx, cam, viewW, viewH) {
+    // SIMULATED SECOND FLOOR: `deckOnly` splits this into two passes. Ground
+    // marks are drawn before the map (as always); deck marks are re-drawn
+    // AFTER the platform surface, because drawPlatformBase lays three
+    // translucent fills (cliff 0.82 + top face 0.30 + tint 0.20) over the
+    // deck footprint -- gore painted underneath came out washed to near
+    // nothing, which read as blood falling *through* the platform.
+    // Costs nothing on maps without platforms: the deck pass returns
+    // immediately and the ground pass skips the per-mark test entirely.
+    drawPermanentMarks(ctx, cam, viewW, viewH, deckOnly) {
+        const hasPlat = !!(this.map && this.map.platforms && this.map.platforms.length);
+        if (deckOnly && !hasPlat) return;
+        const onDeck = (x, y) => this.map.floorAt(x, y) === 2;
         // JULY item 2: casings live in their own capped array now (see
         // _pushPermanentMark) -- drawn first in the same ground pass, a
         // touch dimmer than before (0.5 vs 0.65) so brass reads as texture
@@ -36195,6 +36733,7 @@ class Game {
             ctx.globalAlpha = 0.5;
             for (let m of this.casingMarks) {
                 if (m.x < cam.x - 8 || m.x > cam.x + viewW + 8 || m.y < cam.y - 8 || m.y > cam.y + viewH + 8) continue;
+                if (hasPlat && onDeck(m.x, m.y) !== !!deckOnly) continue;
                 ctx.fillStyle = m.c;
                 ctx.save();
                 ctx.translate(m.x - cam.x, m.y - cam.y);
@@ -36207,6 +36746,7 @@ class Game {
         for (let m of this.permanentMarks) {
             let margin = 30 + (m.r || 0);
             if (m.x < cam.x - margin || m.x > cam.x + viewW + margin || m.y < cam.y - margin || m.y > cam.y + viewH + margin) continue;
+            if (hasPlat && onDeck(m.x, m.y) !== !!deckOnly) continue;
 
             ctx.fillStyle = m.c;
             if (m.type === 'blood') {
@@ -36325,6 +36865,11 @@ class Game {
             for (let bar of this.barriers) this.drawBarrier(bar, cam);
         }
         this.map.draw(this.ctx, cam, viewportW, viewportH);
+        // SIMULATED SECOND FLOOR: gore that landed on a deck is re-drawn
+        // here, on top of the platform surface instead of washed out
+        // beneath it. Then window sills -- above the walls, below entities.
+        this.drawPermanentMarks(this.ctx, cam, visibleW, visibleH, true);
+        this.map.drawPlatformParapets(this.ctx, cam, viewportW, viewportH, true);
         this.map.drawFoliageGround(this.ctx, cam, viewportW, viewportH);
 
         if (this.explosiveBarrels) {
@@ -36769,9 +37314,9 @@ class Game {
         // Wall-cast shadows OVER entities (under canopy/roofs) -- see
         // MapGen.drawWallShadows for why this sits exactly here.
         this.map.drawWallShadows(this.ctx, cam, viewportW, viewportH);
-        // SIMULATED SECOND FLOOR: extruded parapets (tall) and windows
-        // (short), OVER entities so occlusion matches their height.
-        this.map.drawPlatformParapets(this.ctx, cam, viewportW, viewportH);
+        // SIMULATED SECOND FLOOR: solid parapets only -- tall enough to
+        // hide a body. Windows were already drawn below the entity layer.
+        this.map.drawPlatformParapets(this.ctx, cam, viewportW, viewportH, false);
         this.map.drawFoliageCanopy(this.ctx, cam, viewportW, viewportH);
         this.map.drawRoofs(this.ctx, cam, viewportW, viewportH);
 
@@ -37492,7 +38037,7 @@ class Game {
         // canvas. Then bake the zoom into the buffer transform exactly as
         // the caller's ctx.scale() would have.
         bctx.setTransform(1, 0, 0, 1, 0, 0);
-        bctx.fillStyle = '#01050e';
+        bctx.fillStyle = this.map ? this.map.backdropColor() : '#01050e';
         bctx.fillRect(0, 0, viewportW, viewportH);
         bctx.setTransform(effZoom, 0, 0, effZoom, 0, 0);
 
@@ -37557,7 +38102,9 @@ class Game {
     draw() {
         this.updateCrosshairVisibility();
 
-        this.ctx.fillStyle = '#01050e';
+        // Biome-tinted ground (see MapGen.backdropColor). Falls back to the
+        // old literal before a map exists -- e.g. the start screen.
+        this.ctx.fillStyle = this.map ? this.map.backdropColor() : '#01050e';
         this.ctx.fillRect(0, 0, this.width, this.height);
 
         if (this.state === 'start') return;
