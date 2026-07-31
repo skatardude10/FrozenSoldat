@@ -77,7 +77,7 @@ The 20 grep targets you will reach for most. All verified to match the file at b
 | `openShopInterface()` | Inter-wave shop + Chaos Draft branch point. The ~300-line imperative "button wall" (guide §6). |
 | `class RunLedger` | **Single write path** for in-run stats + Intel. Handles eligibility/taint + crash-safe persistence. |
 | `addIntel(` | The one Intel reward path (`RunLedger.addIntel`). Never poke `saveData.intel` directly. |
-| `const SAVE_MIGRATIONS = [` | Ordered, additive save-schema migrations. Head is **v11** (guide says v8 — guide is stale). |
+| `const SAVE_MIGRATIONS = [` | Ordered, additive save-schema migrations. Head is now **v14** (v14 adds `customMaps` for Task 10; v12 barrier-engineer, v13 matter-paint/touch-stick). Both this map's older notes and the guide's §8 predate these — trust the code. |
 | `const Weapons = {` | Weapon stat blocks (dmg, fireRate, ammoKey, color…). |
 | `const BossTypes = {` | Boss registry; adding an entry auto-populates the Dev Dashboard spawner. |
 | `const ARMORY_UPGRADES = [` | **The exemplar registry.** Render/buy/refund/reset + gating + prestige-max all iterate this. |
@@ -89,6 +89,14 @@ The 20 grep targets you will reach for most. All verified to match the file at b
 | `const PRESTIGE_THEMES` | 10 menu color themes + badge accents, indexed by prestige level (Phase D). |
 | `class Entity` | Base physics + the `takeDamage()` damage choke point. |
 | `takeDamage(amt, pushDir, pushForce)` | Single damage hook — drives RunLedger, objective interrupts, Blood Wager fail. Crowded, regression-sensitive. |
+| `floorAt(x, y)` / `floorSeparated(...)` | The entire elevation model for raised platforms ("mesas"). Pure functions of position — no entity carries a z/floor field. Both no-op (return 1 / false) on every map without platforms. |
+| `viewSeesPoint: (view, tx, ty, walls)` | **The single sight predicate** behind enemy visibility/opacity. Three cases: solid wall → hidden; clear segment → visible; window-only segment → visible **only within `SECOND_FLOOR.WINDOW_VIEW_CONE` of the viewer's facing**. The aim gate is unreachable unless a `seeThrough` wall is on the segment, which is what keeps non-window visibility byte-identical to pre-Task-4 behaviour. Intended reuse point for threat occlusion / fog of war. |
+| `cachedWindowLOS` | Enemy AI's "I can shoot through that window" permission. True only when combat LOS is blocked, sight LOS is clear, and the points are `floorSeparated`. Consumed by the direct-fire gate **only** — `cachedHasLOS` still governs movement, targeting, detection and mortars. Paired with `cachedAimAngle` so the enemy faces the target while its steering keeps walking the route. |
+| `drawBarriers(cam, deckOnly)` | Elevation-split barrier draw pass, mirroring `drawPermanentMarks`'s `deckOnly` convention. Ground barriers before `map.draw()` (occluded by platform mass — correct); deck barriers after `drawPlatformBase`. Called from all three viewports. |
+| `MapGen.addPlatform(x, y, w, h, opts)` | Authored-map entry point for a raised platform. `opts.stairSides`/`windowSides` pin down what procgen otherwise rolls (used by 2-Fort's mirrored forts). Refuses to place over another platform rather than corrupting geometry. |
+| `blastOccluded(bx, by, ent)` | One gate, 13 call sites: every explosion in the game routes through this. The platform floor-separation check lives here — one line covers grenades, mines, barrels, boss ordnance, all at once. |
+| `_drawWallDepth` / `_drawWallCaps` / `_drawWallRims` | Batched 2.5D lighting for ordinary walls (dark side, LIT top, rim). Bracket the hot per-wall loop without modifying it — see the tongs-zone note below before touching that loop. |
+| `backdropColor()` | Single source of truth for the ground-fill colour (biome-tinted). Read by both the main frame clear and the zoom buffer — they must match exactly for the atmospheric haze's `screen` blend to look right. |
 | `class TouchController` | Mobile touch input + its `Game.prototype.*` monkey-patches near end of file. |
 | `openChaosDraftInterface` | Chaos Draft + Black Market flow (Phase A). State in `this.chaosDraftState`. |
 
@@ -123,6 +131,20 @@ re-validate before shipping.
   in base-class loops (guide §5). Still live in the code. A future `Entity` subclass that
   defines `maxStamina` would silently inherit player-only logic. Disarm path if it ever
   bites: add explicit `this.isPlayer = true` in the `Player` constructor and batch-replace.
+- **The per-wall draw loop in `MapGen.draw()`** — hot path (per-wall `shadowBlur` gating,
+  cached lineage shadows, batched cross-hatch already live here). It sets `fillStyle` once
+  *outside* itself on purpose. The wall-depth passes (`_drawWallDepth`/`_drawWallCaps`/
+  `_drawWallRims`) bracket it rather than add per-wall state — follow that pattern for any
+  future per-wall visual change.
+- **Three independent raycast implementations, not one — split into two CLASSES.**
+  *Combat class:* `MathUtils.lineIntersectAABB` (bullets, nav-grid edges, enemy targeting)
+  — opaque at windows, and must stay that way; that opacity is what makes enemies route to
+  the stairs. *Sight class:* `MathUtils.viewSeesPoint` (enemy visibility/opacity; built on
+  the `lineBlocksSight` primitive) and `Game.getLaserEndPoint` (laser beam draw + Spot Robot
+  beam + gun-retraction reach-check) — both honour `seeThrough`. `getLaserEndPoint` used to
+  sit in neither camp, which was the single root cause of both "my gun retracts at a window"
+  and "the laser stops at the sill"; it now follows the sight class. Before adding a fourth
+  raycast, decide which class it belongs to.
 
 ---
 
@@ -132,6 +154,9 @@ re-validate before shipping.
   `prestigeLevel`). The actual code (`const SAVE_MIGRATIONS = [`) runs through **v11** —
   v9/v10 add `debugStartWave`, v11 adds `greedyHands` / `armoryTutorial` / `touchFireHint`.
   The guide predates those steps. Trust the code.
+- **`GEN_VERSION` is 4**, not 3 — bumped when existing templates (2-Fort's battlements,
+  raised keeps folded into the classic/procedural maps) started emitting different wall
+  output. Grep `GEN_VERSION:` for the authoritative value.
 - If you find further drift, note it here so it compounds into a useful erratum list rather
   than being rediscovered each time.
 
@@ -540,6 +565,59 @@ order. Major groupings:
 ### `id="preview-map-name"` , `id="preview-map-size"` , `id="preview-map-desc"`
 - What: Map preview info elements
 - Does: Displays map name, size, color hex, and tactical intel description in the preview pane.
+
+### CUSTOM MAPS (Task 10) — save a fortified/exploded map, then SELECT it like any built-in map
+- What: Player-saved map snapshots. A saved map = base identity (`mapId` +
+  `mapSeed` + `genVersion`, exactly like a challenge link) + a raw snapshot of
+  the MUTABLE wall layer (base destructible walls in their current carved/
+  exploded state + player-built walls, palette-compressed colors). **Selecting**
+  a custom map stages it as the map-to-deploy (forced seed + template + wall
+  payload); the player then picks mode / roster / options through the normal
+  run wizard and deploys. So a map built solo-peaceful can be replayed 2P
+  Action Now, Chaos Draft, etc. The staged walls are stamped in by
+  `startNewGame()` regardless of mode: it regenerates the pristine base from the
+  seed, STRIPS its destructible layer, and stamps the saved geometry back down
+  as fresh full-health walls. Snapshot semantics: no forward damage persistence.
+- Anchors (UI):
+  - `id="custom-maps-section"` , `btn-custom-maps-toggle` , `id="custom-maps-list"`
+    — collapsible drop-down pinned to the TOP of the Maps list. Toggle expands
+    the saved-map rows (`cmap-load-<id>` = SELECT, `cmap-del-<id>` = delete). The
+    staged row shows `active-mode` + a ✓. Amber theme. Rendered by
+    `renderCustomMapsList()`.
+  - `btn-pause-savemap` — pause-menu "SAVE MAP TO BLUEPRINTS"; shown by
+    `togglePause()` when `this.map && !operatorMode && !extractionMode` (mirrors
+    the Task 6 `btn-pause-openshop` conditional-visibility pattern).
+- Anchors (logic, on `class Game`):
+  - `saveCurrentMapAsCustom()` — pause-menu action; reads the resolved
+    `runConfig` (resolve-at-snapshot), snapshots the wall layer, names it, caps
+    the list at 20 (oldest dropped), `saveGameData()`, toasts "MAP SAVED AS X".
+  - `_snapshotCustomWallLayer()` — returns `{ palette, walls }`. Excludes the
+    immutable skeleton (`isBoundary` / `buildingId`). Each wall:
+    `[x, y, w, h, tierCode, playerBuiltFlag, colorIdx]`.
+  - `_makeCustomMapName(mapSeed, snapshot)` — short base36 FNV-ish hash → the
+    map's auto "license plate" (same family as `SeededRNG.toCode`). No typing.
+  - `selectCustomMap(id)` — **stages** the map: `setMap(entry.mapId)` (base
+    template + preview), then `_pendingCustomMap = entry` + `pendingMapSeed =
+    entry.mapSeed` (supersedes any armed challenge), highlights the row, routes
+    to the wizard MODE step. NOT an immediate load.
+  - `this._pendingCustomMap` — the staging slot. Consumed by `startNewGame()`
+    (search `this._pendingCustomMap && this.map`): after players/kit setup and
+    before barrels/objectives, calls `_injectCustomWalls()` then nulls it.
+    Cleared early by `setMap(id)` when a *different* map is picked, and by
+    `applyChallengeLink()` when a challenge is armed. `buildRunConfig()` falls
+    back to its seed if `pendingMapSeed` was cleared.
+  - `_injectCustomWalls(entry)` — strips the mutable layer (grid-safe via
+    `_removeWallFromGrid`), re-injects each saved wall with hp RECOMPUTED via
+    `_destructibleHpFor(w,h,tier)` (anti-"zombie-wall" invariant) +
+    `_insertWallIntoGrid`, routes `_playerBuilt` to `_playerWalls` (soft-capped),
+    rebuilds `buildNavGrid()` + clears `_pathCache`, nudges spawn-stuck players
+    via `_findSafeSpawnNear` (Task 2).
+  - `deleteCustomMap(id)` , `toggleCustomMapsList()` , `renderCustomMapsList()`
+    — list mgmt + render. `Game._CMAP_TIERS` static getter = tier code table.
+- Refs: `deployChallenge(` / `applyChallengeLink(` (staging pattern),
+  `placePlayerWall(` (canonical wall shape), `_destructibleHpFor(`,
+  `_insertWallIntoGrid(`, `_findSafeSpawnNear(`, `getMainMenuTabRows(` (maps nav
+  rows prepend custom entries), `const SAVE_MIGRATIONS = [` (v14 `customMaps`).
 
 ### `id="challenge-banner"` , `id="btn-challenge-deploy"` , `id="btn-challenge-dismiss"`
 - What: Challenge banner in Play tab
@@ -1837,7 +1915,7 @@ order. Major groupings:
 
 #### `_rebuildLineageShadow(lineage)`
 - What: Cached shadow sprite builder (PHASE 1 perf)
-- Does: Render entire lineage silhouette into offscreen canvas with shadowBlur=10. Blitted per-frame instead of per-fragment. Skipped for templates 11/12.
+- Does: Render entire lineage silhouette into offscreen canvas with shadowBlur=10. Blitted per-frame instead of per-fragment. Skipped for all dense maps (templateId>=10: operator 11/12 + procgen/large 10/13/14/15/16), which draw walls with wallBlur=0 in MapGen.draw() and so never blit this sprite. This gate and the draw-time `wallBlur` gate must stay in lockstep.
 
 #### `_recomputeLineageEdges(lineage)`
 - What: Segment-based visible edge recomputation
@@ -1926,7 +2004,7 @@ order. Major groupings:
 
 #### `_rebuildLineageShadow(lineage)`
 - What: Cached shadow sprite builder (PHASE 1 perf)
-- Does: Render entire lineage silhouette into offscreen canvas with shadowBlur=10. Blitted per-frame instead of per-fragment. Skipped for templates 11/12.
+- Does: Render entire lineage silhouette into offscreen canvas with shadowBlur=10. Blitted per-frame instead of per-fragment. Skipped for all dense maps (templateId>=10: operator 11/12 + procgen/large 10/13/14/15/16), which draw walls with wallBlur=0 in MapGen.draw() and so never blit this sprite. This gate and the draw-time `wallBlur` gate must stay in lockstep.
 
 #### `_recomputeLineageEdges(lineage)`
 - What: Segment-based visible edge recomputation
