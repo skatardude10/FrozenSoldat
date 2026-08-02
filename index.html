@@ -605,9 +605,9 @@
        and the player would have had no pointer at all inside them.
        pointer-events stays none, so it never eats a click. */
     #crosshair {
-        position: absolute; width: 24px; height: 24px; pointer-events: none;
-        transform: translate(-50%, -50%); border: 1.5px solid rgba(0, 229, 255, 0.6);
-        border-radius: 50%; z-index: 2000000;
+        position: absolute; top: 0; left: 0; width: 24px; height: 24px;
+        pointer-events: none; border: 1.5px solid rgba(0, 229, 255, 0.6);
+        border-radius: 50%; z-index: 2000000; will-change: transform;
     }
     #crosshair::before, #crosshair::after {
         content: ''; position: absolute; background: rgba(0, 229, 255, 0.6);
@@ -616,9 +616,9 @@
     #crosshair::after { top: 2px; left: 11px; width: 2px; height: 20px; }
     
     #crosshair-p2 {
-        position: absolute; width: 24px; height: 24px; pointer-events: none;
-        transform: translate(-50%, -50%); border: 1.5px solid rgba(255, 183, 0, 0.6);
-        border-radius: 50%; z-index: 2000000;
+        position: absolute; top: 0; left: 0; width: 24px; height: 24px;
+        pointer-events: none; border: 1.5px solid rgba(255, 183, 0, 0.6);
+        border-radius: 50%; z-index: 2000000; will-change: transform;
     }
     #crosshair-p2::before, #crosshair-p2::after {
         content: ''; position: absolute; background: rgba(255, 183, 0, 0.6);
@@ -12591,8 +12591,7 @@ class Player extends Entity {
 
             let crossNode = this.isPlayer2 ? game.crosshairP2El : game.crosshair;
             if (crossNode) {
-                crossNode.style.left = (this.isPlayer2 ? (game.width / 2 + input.mx) : input.mx) + 'px';
-                crossNode.style.top = input.my + 'px';
+                setCrosshairPos(crossNode, this.isPlayer2 ? (game.width / 2 + input.mx) : input.mx, input.my);
             }
         }
 
@@ -23647,6 +23646,28 @@ class RunLedger {
     }
 }
 
+// Crosshair positioning. transform, NOT left/top -- this is a latency fix, not
+// a style preference.
+//
+// Writing style.left/top forces the browser through layout -> paint ->
+// composite on every mousemove, all of which happen on the main thread. That
+// means the reticle can only move when the main thread is free, so it inherits
+// the game's frame time: at 30fps it sits ~33ms behind the physical mouse.
+// Writing a transform on a layer promoted via `will-change: transform` (see the
+// #crosshair CSS) skips straight to composite, which the compositor thread can
+// do even while the main thread is mid-canvas-draw.
+//
+// This latency was always present. It only became visible when the OS cursor
+// was hidden -- that arrow is drawn on a hardware cursor plane with effectively
+// zero latency, and the eye tracked it instead of the reticle underneath.
+//
+// translate3d (not translate) forces the layer promotion; the trailing
+// translate(-50%,-50%) reproduces the centering that used to live in CSS.
+function setCrosshairPos(el, x, y) {
+    if (!el) return;
+    el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0) translate(-50%,-50%)';
+}
+
 class Game {
     constructor() {
         if (!Game._vignetteCache) {
@@ -23696,8 +23717,7 @@ class Game {
         // Lock, whose deltas accumulate from wherever this last was.
         this.input = { keys: {}, mx: window.innerWidth / 2, my: window.innerHeight / 2, mouseDown: false };
         if (this.crosshair) {
-            this.crosshair.style.left = this.input.mx + 'px';
-            this.crosshair.style.top = this.input.my + 'px';
+            setCrosshairPos(this.crosshair, this.input.mx, this.input.my);
         }
         this.state = 'start';
         this.lastTime = 0;
@@ -25954,8 +25974,7 @@ class Game {
             } else {
                 this.input.mx = e.clientX; this.input.my = e.clientY;
             }
-            this.crosshair.style.left = this.input.mx + 'px';
-            this.crosshair.style.top = this.input.my + 'px';
+            setCrosshairPos(this.crosshair, this.input.mx, this.input.my);
 
             // Subtle 3D parallax tilt for main menu glass box
             if (this.state === 'start') {
@@ -39834,8 +39853,7 @@ class TouchController {
             const py = player.y + Math.sin(player.angle) * aimRange;
             const screenX = (px - cam.x) * cam.zoom;
             const screenY = (py - cam.y) * cam.zoom;
-            game.crosshair.style.left = screenX + 'px';
-            game.crosshair.style.top = screenY + 'px';
+            setCrosshairPos(game.crosshair, screenX, screenY);
         }
     }
     
