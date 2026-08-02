@@ -40297,5 +40297,26 @@ game = new Game();
         <span class="btn-sub">SHOP</span>
     </div>
 </div>
+<script>
+// 1. SAVE PROTECTION
+// Browsers are allowed to delete localStorage when disk space runs low, which
+// would wipe a player's Intel, Armory, and prestige. This asks the browser to
+// mark this site's storage as protected. Chrome decides silently based on how
+// much you use the site (no popup). Harmless if it says no.
+if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist();
+}
+ 
+// 2. OFFLINE PLAY
+// Registers the service worker. The .catch is there because this legitimately
+// fails when you open the .html by double-clicking it (file://) rather than
+// over https -- that's expected, not a bug, and we don't want a scary red
+// error in the console every time you test locally.
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+}
+</script>
 </body>
 </html>
