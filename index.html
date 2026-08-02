@@ -68,7 +68,26 @@
         touch-action: manipulation;
     }
     canvas { display: block; }
-    
+
+    /* --- OS cursor suppression, everywhere -------------------------------
+       The OS arrow is never wanted in this game. In-round it's a second,
+       perfectly-accurate reticle that undercuts AIM_WEIGHT (i.e. a cheat) --
+       the in-world laser sight is the only honest aim reference. In menus
+       the #crosshair reticle IS the pointer (it tracks mousemove and is
+       shared with gamepad navigation), so the OS arrow is just a duplicate
+       pointer sitting next to the real one.
+
+       Unconditional CSS rather than a JS-toggled class on purpose: there is
+       no state where the arrow is correct, so there's no reason to make the
+       cursor's visibility depend on the render loop still being alive.
+
+       The descendant `*` half is load-bearing: ~30 places in this file set
+       `cursor: pointer` (and friends) via inline style, and inline styles
+       outrank a plain element rule. `!important` on `*` is what beats them.
+       There are no text inputs or textareas in this file, so nothing loses a
+       meaningful I-beam. */
+    body, body * { cursor: none !important; }
+
     #ui-layer {
         position: absolute; top: 0; left: 0; width: 100%; height: 100%;
         pointer-events: none;
@@ -579,10 +598,16 @@
     
     /* Streamlined P2 positioning handled in unified HUD rules */
 
+    /* z-index 2000000: now that the OS cursor is gone site-wide, this reticle
+       is the ONLY pointer, so it has to float above every overlay that can
+       ever be on screen -- dev dashboard is 100000, the splash is 999999,
+       prestige FX is 99999. At z-index 100 it was painted *underneath* those
+       and the player would have had no pointer at all inside them.
+       pointer-events stays none, so it never eats a click. */
     #crosshair {
         position: absolute; width: 24px; height: 24px; pointer-events: none;
         transform: translate(-50%, -50%); border: 1.5px solid rgba(0, 229, 255, 0.6);
-        border-radius: 50%; z-index: 100;
+        border-radius: 50%; z-index: 2000000;
     }
     #crosshair::before, #crosshair::after {
         content: ''; position: absolute; background: rgba(0, 229, 255, 0.6);
@@ -593,7 +618,7 @@
     #crosshair-p2 {
         position: absolute; width: 24px; height: 24px; pointer-events: none;
         transform: translate(-50%, -50%); border: 1.5px solid rgba(255, 183, 0, 0.6);
-        border-radius: 50%; z-index: 100;
+        border-radius: 50%; z-index: 2000000;
     }
     #crosshair-p2::before, #crosshair-p2::after {
         content: ''; position: absolute; background: rgba(255, 183, 0, 0.6);
@@ -23638,6 +23663,14 @@ class Game {
         // display both used to call document.getElementById() on every
         // single call to draw()/update() respectively).
         this.crosshairP2El = document.getElementById('crosshair-p2');
+        // --- Pointer Lock state (see updatePointerLock / _bindPointerLock) ---
+        // Flip pointerLockEnabled to false to fall back to a free-roaming
+        // (but still invisible) OS pointer.
+        this.pointerLockEnabled = true;
+        this._lockPending = false;      // a request is in flight
+        this._lockRetryAt = 0;          // Chrome's post-Escape re-lock cooldown
+        this._lockReleasedByUs = false; // distinguishes our exit from the player's
+        this._lockLostAt = 0;           // timestamp for the stray-Escape guard
         this.operatorShopTimerEl = document.getElementById('operator-shop-timer');
         this.width = window.innerWidth;
         this.height = window.innerHeight;
@@ -23656,7 +23689,16 @@ class Game {
         // whatever the player last set.
         this.maxPermanentMarks = 30000;
         
-        this.input = { keys: {}, mx: 0, my: 0, mouseDown: false };
+        // Centered, not 0,0: with the OS cursor hidden site-wide the reticle
+        // is the only pointer on screen, and a fresh load parks it in the
+        // top-left corner until the first mousemove -- which reads as "the
+        // pointer is broken". Center is also the right seed value for Pointer
+        // Lock, whose deltas accumulate from wherever this last was.
+        this.input = { keys: {}, mx: window.innerWidth / 2, my: window.innerHeight / 2, mouseDown: false };
+        if (this.crosshair) {
+            this.crosshair.style.left = this.input.mx + 'px';
+            this.crosshair.style.top = this.input.my + 'px';
+        }
         this.state = 'start';
         this.lastTime = 0;
         this.gameTime = 0;
@@ -25833,6 +25875,17 @@ class Game {
                 this.toggleDevDashboard();
                 return;
             }
+            // The Escape that exits Pointer Lock is already handled by the
+            // pointerlockchange path below (which pauses the round). Chrome
+            // normally swallows that keydown, but not every version/platform
+            // does -- unguarded, the stray Escape reaches togglePause() and
+            // instantly un-pauses what the lock loss just paused, so the
+            // player taps Escape and nothing appears to happen. 300ms is far
+            // longer than the gap between the two events and far shorter than
+            // a deliberate second press.
+            if (e.key === 'Escape' && (Date.now() - (this._lockLostAt || 0)) < 300) {
+                return;
+            }
             let key = e.key.toLowerCase();
             this.input.keys[key] = true;
             
@@ -25882,14 +25935,27 @@ class Game {
                 releaseBarrierChain(this.player);
             }
         });
+        this._bindPointerLock();
         window.addEventListener('mousemove', e => {
             const isTouchPlaying = window.touchController && window.touchController.enabled && this && this.state === 'playing' && !this.isPaused;
             if (isTouchPlaying) {
                 return;
             }
-            this.input.mx = e.clientX; this.input.my = e.clientY;
-            this.crosshair.style.left = e.clientX + 'px';
-            this.crosshair.style.top = e.clientY + 'px';
+            // Under Pointer Lock the OS pointer has no position -- clientX/Y
+            // freeze at whatever they were when the lock engaged and only
+            // movementX/Y carry information. So integrate the deltas into our
+            // own virtual pointer and clamp it to the viewport. The clamp is
+            // the entire point of the lock: the aim reticle physically cannot
+            // leave the window, so it can't drift onto a second monitor or
+            // into the browser chrome mid-firefight.
+            if (document.pointerLockElement) {
+                this.input.mx = Math.max(0, Math.min(this.width,  this.input.mx + (e.movementX || 0)));
+                this.input.my = Math.max(0, Math.min(this.height, this.input.my + (e.movementY || 0)));
+            } else {
+                this.input.mx = e.clientX; this.input.my = e.clientY;
+            }
+            this.crosshair.style.left = this.input.mx + 'px';
+            this.crosshair.style.top = this.input.my + 'px';
 
             // Subtle 3D parallax tilt for main menu glass box
             if (this.state === 'start') {
@@ -38338,8 +38404,104 @@ class Game {
         }
     }
 
+    // --- Pointer Lock -----------------------------------------------------
+    // Pointer Lock is the only browser API that can actually confine the
+    // pointer to the window; `cursor: none` hides it but it still travels,
+    // so a fast flick mid-round could put it over another monitor or the
+    // browser chrome and the next click would land outside the game.
+    //
+    // The reason this is viable now and wasn't before: aiming used to read
+    // the absolute e.clientX/Y, which Pointer Lock freezes. Now that the OS
+    // pointer is invisible anyway, nothing depends on its real position --
+    // the mousemove handler integrates movementX/Y into a virtual, clamped
+    // input.mx/my instead, and every downstream consumer (aim angle, laser,
+    // drone waypoints, click-to-target) reads those exactly as before.
+    _bindPointerLock() {
+        if (!document.exitPointerLock) return; // unsupported: degrade silently
+
+        document.addEventListener('pointerlockchange', () => {
+            this._lockPending = false;
+            if (document.pointerLockElement) return;
+
+            // We exit the lock ourselves whenever the round stops being live
+            // (pause, shop, debrief, death). That's expected -- no reaction.
+            if (this._lockReleasedByUs) { this._lockReleasedByUs = false; return; }
+
+            // Otherwise the player broke it, which in practice means Escape.
+            // Escape is this game's pause key and the browser reserves it to
+            // release the lock -- that conflict is unwinnable, so lean into
+            // it: treat the release AS the pause. Escape ends up doing
+            // exactly what it always did, and hands the pointer back too.
+            this._lockLostAt = Date.now();
+            this._lockRetryAt = Date.now() + 1500; // Chrome blocks instant re-lock
+
+            // Deferred so it lands after any Escape keydown the browser did
+            // forward, and re-checked because that keydown may have paused
+            // already -- never pause twice.
+            setTimeout(() => {
+                if (this.state === 'playing' && !this.isPaused) this.togglePause();
+            }, 0);
+        });
+
+        document.addEventListener('pointerlockerror', () => {
+            this._lockPending = false;
+            this._lockRetryAt = Date.now() + 2000;
+        });
+
+        // Guaranteed-gesture path. Chrome wants recent user activation before
+        // granting a lock, and the per-frame request in updatePointerLock()
+        // fires from rAF where that activation may have expired. Firing on
+        // mousedown too means the lock re-engages on the player's first shot
+        // even in the worst case.
+        window.addEventListener('mousedown', () => this.updatePointerLock());
+    }
+
+    updatePointerLock() {
+        if (!this.canvas || !this.canvas.requestPointerLock) return;
+
+        // Touch players have no OS pointer to confine, and locking would
+        // suppress the synthetic mouse events the touch controller emits.
+        const touchActive = window.touchController && window.touchController.enabled;
+        const want = this.pointerLockEnabled && !touchActive
+                     && this.state === 'playing' && !this.isPaused;
+        const locked = (document.pointerLockElement === this.canvas);
+
+        if (want === locked) return;
+
+        if (!want) {
+            this._lockReleasedByUs = true;
+            document.exitPointerLock();
+            return;
+        }
+
+        if (this._lockPending || Date.now() < this._lockRetryAt) return;
+        this._lockPending = true;
+        this._lockRetryAt = Date.now() + 1500; // don't spam if it's being denied
+
+        // unadjustedMovement strips OS pointer acceleration so aim is 1:1 with
+        // hand movement -- the thing that makes locked aiming feel right. It's
+        // newer than the rest of the API: older Chrome returns undefined and
+        // ignores the dictionary, some platforms reject it outright. Both fall
+        // back to a plain lock (accelerated, but working).
+        let req;
+        try { req = this.canvas.requestPointerLock({ unadjustedMovement: true }); }
+        catch (err) { req = null; }
+
+        if (req && typeof req.catch === 'function') {
+            req.catch(() => {
+                try { this.canvas.requestPointerLock(); }
+                catch (err2) { this._lockPending = false; }
+            });
+        } else if (req === undefined) {
+            // Legacy sync signature: no promise to tell us how it went, so
+            // clear the in-flight flag and let pointerlockchange/error decide.
+            this._lockPending = false;
+        }
+    }
+
     draw() {
         this.updateCrosshairVisibility();
+        this.updatePointerLock();
 
         // Biome-tinted ground (see MapGen.backdropColor). Falls back to the
         // old literal before a map exists -- e.g. the start screen.
