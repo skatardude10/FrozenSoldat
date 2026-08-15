@@ -6245,6 +6245,9 @@ class Camera {
         this.zoomPunch = (this.zoomPunch || 0) + amount;
     }
     applyKickback(angle, force) {
+        let instantJolt = force * 0.05;
+        this.kickbackX -= Math.cos(angle) * instantJolt;
+        this.kickbackY -= Math.sin(angle) * instantJolt;
         this.kickbackVX -= Math.cos(angle) * force;
         this.kickbackVY -= Math.sin(angle) * force;
     }
@@ -12157,6 +12160,7 @@ class Player extends Entity {
         this.muzzleFlashTimer = 0;
         this.muzzleFlashX = 0;
         this.muzzleFlashY = 0;
+        this.gunRecoilKickPx = 0;
         this.emptyClickCooldown = 0;
 
         // --- Drill tool (hold F while facing a destructible wall) ---
@@ -12548,6 +12552,10 @@ class Player extends Entity {
         if (this.gunRetractPx === undefined) this.gunRetractPx = 0;
         this.gunRetractPx += (retractTarget - this.gunRetractPx) * Math.min(1, dt * 14);
         if (this.gunRetractPx < 0.05) this.gunRetractPx = 0;
+
+        if (this.gunRecoilKickPx === undefined) this.gunRecoilKickPx = 0;
+        this.gunRecoilKickPx += -this.gunRecoilKickPx * Math.min(1, dt * 18);
+        if (this.gunRecoilKickPx < 0.04) this.gunRecoilKickPx = 0;
 
         let chaseTargetAngle = targetAngle;
         if (this.isSprinting) {
@@ -14067,9 +14075,13 @@ class Player extends Entity {
         );
 
         let aimCoords = game.getWorldAimCoords(this);
-        let barrelX = this.x + Math.cos(this.angle)*(22 + GUN_MOUNT_OFFSET - _gunRe) - Math.sin(this.angle)*7;
-        let barrelY = this.y + Math.sin(this.angle)*(22 + GUN_MOUNT_OFFSET - _gunRe) + Math.cos(this.angle)*7;
-        this.muzzleFlashTimer = 0.04;
+        const G = (this.weapon && PLAYER_GUN_GEOM[this.weapon.name]) ? PLAYER_GUN_GEOM[this.weapon.name] : PLAYER_GUN_GEOM.SMG;
+        let barrelOffset = G ? (G.recX + G.barrelLen) : 22;
+        let fwd = GUN_MOUNT_OFFSET + barrelOffset - _gunRe;
+        let side = 6;
+        let barrelX = this.x + Math.cos(this.angle) * fwd - Math.sin(this.angle) * side;
+        let barrelY = this.y + Math.sin(this.angle) * fwd + Math.cos(this.angle) * side;
+        this.muzzleFlashTimer = 0.07;
         this.muzzleFlashX = barrelX;
         this.muzzleFlashY = barrelY;
         // Laser Beam: every shot immediately knocks the beam out of focus
@@ -14108,13 +14120,14 @@ class Player extends Entity {
         }
 
         const KICKBACK_FORCES = {
+            'Pistol': 45,
             'SMG': 65,
             'Shotgun': 280,
             'Sniper': 420,
             'M1A': 190,
             'LMG': 130
         };
-        let kickForce = KICKBACK_FORCES[this.weapon.name];
+        let kickForce = KICKBACK_FORCES[this.weapon.name] || 50;
         if (kickForce && game.camera) {
             game.camera.applyKickback(this.angle, kickForce);
         }
@@ -14122,9 +14135,17 @@ class Player extends Entity {
             game.camera2.applyKickback(this.angle, kickForce);
         }
 
-        if (['SMG', 'Shotgun', 'Sniper', 'M1A', 'LMG'].includes(this.weapon.name)) {
-            game.spawnBarrelFX(barrelX, barrelY, this.angle, this.z || 0);
-        }
+        // Mechanical sprite recoil kick (arms/gun slam back into chest)
+        const RECOIL_SPRITE_KICKS = { 'Pistol': 7.0, 'SMG': 6.0, 'M1A': 10.0, 'LMG': 11.0, 'Shotgun': 15.0, 'Sniper': 20.0 };
+        this.gunRecoilKickPx = RECOIL_SPRITE_KICKS[this.weapon.name] || 7.0;
+
+        // Camera optic zoom punch (concussive pressure wave)
+        const ZOOM_PUNCHES = { 'Pistol': 0.006, 'SMG': 0.008, 'M1A': 0.016, 'LMG': 0.018, 'Shotgun': 0.028, 'Sniper': 0.042 };
+        let zp = ZOOM_PUNCHES[this.weapon.name] || 0.008;
+        if (this.camera) this.camera.punchZoom(zp);
+        if (this.isTwoPlayer && game.camera2 && this.isPlayer2) game.camera2.punchZoom(zp);
+
+        game.spawnBarrelFX(barrelX, barrelY, this.angle, this.z || 0);
 
         // JULY item 1 (auto-switch to sidearm on empty): the shot that just
         // left the barrel was this weapon's LAST round -- fall back to the
@@ -14277,9 +14298,9 @@ class Player extends Entity {
         // at (0,0), so it stays centered on the player -- only the arms,
         // hands, barrel and receiver below move forward.
         // JULY item 6: the whole arm/gun group compresses toward the chest
-        // by gunRetractPx while the muzzle would otherwise clip a wall --
-        // the same value fire() uses for its spawn points.
-        ctx.translate(GUN_MOUNT_OFFSET - (this.gunRetractPx || 0), 0);
+        // by gunRetractPx while the muzzle would otherwise clip a wall, plus
+        // gunRecoilKickPx when the weapon fires for mechanical slide kick.
+        ctx.translate(GUN_MOUNT_OFFSET - ((this.gunRetractPx || 0) + (this.gunRecoilKickPx || 0)), 0);
 
         // Per-weapon silhouette + grip (see PLAYER_GUN_GEOM). Gun centered on
         // y=6, x forward along the aim axis.
@@ -24098,6 +24119,15 @@ class Game {
         // check counts only genuine player trigger pulls (shotgun pellets
         // each count, so accuracy is per-projectile).
         if (isPlayerBullet instanceof Player && this.runLedger) this.runLedger.shotsFired++;
+
+        // Concussive muzzle blast shockwave on environmental dust motes
+        if (this.applyDustShockwave) {
+            let dmg = (weaponInfo && weaponInfo.dmg) ? weaponInfo.dmg : 15;
+            let radius = Math.min(360, Math.max(140, 110 + dmg * 5.5));
+            let force = Math.min(260, Math.max(80, 70 + dmg * 3.8));
+            this.applyDustShockwave(x, y, radius, force, angle, 0.35);
+        }
+
         let b;
         if (this.inactiveBullets.length > 0) {
             b = this.inactiveBullets.pop();
@@ -25130,29 +25160,153 @@ class Game {
     }
 
     initDustMotes() {
-        const COUNT = 75;
+        const mapArea = (this.mapW || 2200) * (this.mapH || 2200);
+        // Distribute grounded motes across map (~450 to 950 motes map-wide, yielding ~130-175 visible on screen)
+        const count = Math.max(450, Math.min(950, Math.round(mapArea / 5500)));
         this.dustMotes = [];
-        for (let i = 0; i < COUNT; i++) {
+        for (let i = 0; i < count; i++) {
+            let baseAngle = Math.random() * Math.PI * 2;
+            let roll = Math.random();
+            let r, baseOpacity, driftSpeed, mass, baseZ, colorIdx;
+
+            if (roll < 0.60) {
+                // Tier 0: Fine ambient micro-haze (translucent cool air)
+                r = Math.random() * 0.5 + 0.4; // 0.4 - 0.9px
+                baseOpacity = Math.random() * 0.06 + 0.04; // 0.04 - 0.10
+                driftSpeed = Math.random() * 12 + 10; // 10 - 22 px/s flow
+                mass = 0.75;
+                baseZ = Math.random() * 12 + 2;
+                colorIdx = 0;
+            } else if (roll < 0.88) {
+                // Tier 1: Mid-air floating specks (soft silver particles)
+                r = Math.random() * 0.7 + 0.8; // 0.8 - 1.5px
+                baseOpacity = Math.random() * 0.08 + 0.08; // 0.08 - 0.16
+                driftSpeed = Math.random() * 14 + 14; // 14 - 28 px/s flow
+                mass = 1.0;
+                baseZ = Math.random() * 18 + 4;
+                colorIdx = 1;
+            } else {
+                // Tier 2: Ethereal high floaters (soft pale moonlight specks)
+                r = Math.random() * 0.6 + 1.4; // 1.4 - 2.0px
+                baseOpacity = Math.random() * 0.10 + 0.12; // 0.12 - 0.22
+                driftSpeed = Math.random() * 10 + 8; // 8 - 18 px/s flow
+                mass = 1.35;
+                baseZ = Math.random() * 22 + 6;
+                colorIdx = 2;
+            }
+
             this.dustMotes.push({
-                x: Math.random() * this.mapW,
-                y: Math.random() * this.mapH,
-                vx: (Math.random() - 0.5) * 18,
-                vy: (Math.random() - 0.5) * 18,
-                r: Math.random() * 2.5 + 0.5,
-                opacity: Math.random() * 0.18 + 0.04,
-                parallaxFactor: Math.random() * 0.35 + 0.15,
+                x: Math.random() * (this.mapW || 2200),
+                y: Math.random() * (this.mapH || 2200),
+                baseAngle: baseAngle,
+                driftSpeed: driftSpeed,
+                wobbleSpeed: Math.random() * 0.45 + 0.2, // lazy convection period
+                wobbleAmount: Math.random() * 1.4 + 0.7,
+                baseZ: baseZ,
+                z: baseZ,
+                vx: Math.cos(baseAngle) * driftSpeed,
+                vy: Math.sin(baseAngle) * driftSpeed,
+                r: r,
+                baseOpacity: baseOpacity,
+                mass: mass,
+                colorIdx: colorIdx,
+                // Subtle 2.5D elevation and perspective depth (-0.03 to +0.03)
+                parallax: (Math.random() - 0.5) * 0.06,
+                phase: Math.random() * Math.PI * 2,
+                twinkleSpeed: Math.random() * 1.2 + 0.5
             });
         }
     }
 
     updateDustMotes(dt) {
+        if (!this.dustMotes || this.dustMotes.length === 0) return;
+        let mapW = this.mapW || 2200;
+        let mapH = this.mapH || 2200;
+        let safeDt = Math.min(dt, 0.1);
+
+        // Collect active player positions for air turbulence wakes
+        let players = [];
+        if (this.player && !this.player.dead) players.push(this.player);
+        if (this.isTwoPlayer && this.player2 && !this.player2.dead) players.push(this.player2);
+
         for (let m of this.dustMotes) {
-            m.x += m.vx * dt;
-            m.y += m.vy * dt;
-            if (m.x < 0) m.x += this.mapW;
-            if (m.x > this.mapW) m.x -= this.mapW;
-            if (m.y < 0) m.y += this.mapH;
-            if (m.y > this.mapH) m.y -= this.mapH;
+            // Update twinkle and eddy phase
+            m.phase += safeDt * m.twinkleSpeed;
+
+            // Continuous gentle angular progression allows motes to meander across rooms
+            // rather than wobbling in a tiny fixed radius, naturally refilling cleared spaces
+            m.baseAngle += (Math.sin(m.phase * 0.3) * 0.35 + 0.1) * safeDt;
+
+            // Organic lazy-eddy ambient velocity (curling natural convection currents)
+            let angle = m.baseAngle + Math.sin(m.phase * m.wobbleSpeed) * m.wobbleAmount;
+            let targetVx = Math.cos(angle) * m.driftSpeed;
+            let targetVy = Math.sin(angle) * m.driftSpeed;
+
+            // 2.5D vertical air column breathing (subtle height fluctuation)
+            m.z = m.baseZ + Math.sin(m.phase * 0.7) * 4;
+
+            // Player movement air-wake displacement
+            for (let p of players) {
+                let dx = m.x - p.x;
+                let dy = m.y - p.y;
+                let distSq = dx * dx + dy * dy;
+                if (distSq < 10000 && distSq > 1) { // within 100px
+                    let dist = Math.sqrt(distSq);
+                    let wakeForce = (1 - dist / 100) * 36 / (m.mass || 1.0);
+                    let nx = dx / dist;
+                    let ny = dy / dist;
+                    m.vx += (nx * wakeForce + (p.vx || 0) * 0.07) * safeDt;
+                    m.vy += (ny * wakeForce + (p.vy || 0) * 0.07) * safeDt;
+                }
+            }
+
+            // Smoothly ease back toward organic ambient swirl (natural void in-fill)
+            m.vx += (targetVx - m.vx) * safeDt * 2.2;
+            m.vy += (targetVy - m.vy) * safeDt * 2.2;
+
+            m.x += m.vx * safeDt;
+            m.y += m.vy * safeDt;
+
+            // Wrap across map boundaries
+            if (m.x < 0) m.x += mapW;
+            if (m.x > mapW) m.x -= mapW;
+            if (m.y < 0) m.y += mapH;
+            if (m.y > mapH) m.y -= mapH;
+        }
+    }
+
+    // Featherweight gunshot & explosion air-shockwave impulse for dust motes.
+    // Zero allocations / GC pressure: runs in sub-microsecond in-place math.
+    applyDustShockwave(x, y, radius = 250, force = 120, angle = null, forwardBias = 0.35) {
+        if (!this.dustMotes || this.dustMotes.length === 0) return;
+        const rSq = radius * radius;
+        const fCos = angle !== null ? Math.cos(angle) : 0;
+        const fSin = angle !== null ? Math.sin(angle) : 0;
+
+        for (let m of this.dustMotes) {
+            let dx = m.x - x;
+            let dy = m.y - y;
+            let dSq = dx * dx + dy * dy;
+            if (dSq >= rSq || dSq < 1) continue;
+
+            let dist = Math.sqrt(dSq);
+            let falloff = 1 - dist / radius;
+            let push = (force * falloff) / (m.mass || 1.0);
+
+            let rPushX = (dx / dist) * push;
+            let rPushY = (dy / dist) * push;
+
+            if (angle !== null) {
+                m.vx += rPushX * (1 - forwardBias) + (fCos * push * forwardBias);
+                m.vy += rPushY * (1 - forwardBias) + (fSin * push * forwardBias);
+            } else {
+                m.vx += rPushX;
+                m.vy += rPushY;
+            }
+
+            // Clamp velocity to prevent extreme multi-pellet blowouts
+            if (m.vx > 380) m.vx = 380; else if (m.vx < -380) m.vx = -380;
+            if (m.vy > 380) m.vy = 380; else if (m.vy < -380) m.vy = -380;
         }
     }
 
@@ -25168,6 +25322,13 @@ class Game {
         // shells, sappers -- everything that shakes the screen.
         if (this.registerNoise) this.registerNoise(x, y, EXTRACTION_TUNING.NOISE.explosion);
         let maxDist = Math.max(600, blastRadius * 3);
+
+        // Environmental dust shockwave from explosion blast wave
+        if (this.applyDustShockwave) {
+            let expRadius = Math.max(350, Math.min(750, (blastRadius || 100) * 2.5));
+            let expForce = Math.max(180, Math.min(420, (maxShake || 20) * 10));
+            this.applyDustShockwave(x, y, expRadius, expForce, null);
+        }
         
         if (this.player && !this.player.dead) {
             let dist = Math.hypot(this.player.x - x, this.player.y - y);
@@ -25228,46 +25389,36 @@ class Game {
     }
 
     spawnBarrelFX(x, y, angle, z = 0) {
-        let smokeCount = 3 + Math.floor(Math.random() * 2);
-        for (let i = 0; i < smokeCount; i++) {
-            let spread = (Math.random() - 0.5) * 1.2;
-            let spd = Math.random() * 40 + 15;
-            this.smokeParticles.push({
-                x: x + (Math.random() - 0.5) * 8,
-                y: y + (Math.random() - 0.5) * 8,
-                vx: Math.cos(angle + spread) * spd - Math.sin(angle) * 25,
-                vy: Math.sin(angle + spread) * spd + Math.cos(angle) * 25,
-                r: 4 + Math.random() * 4,
-                maxR: 28 + Math.random() * 20,
-                life: 0.8 + Math.random() * 0.6,
-                maxLife: 0,
-                opacity: 0.35 + Math.random() * 0.15,
-                // Combat Dive: height the shooter was at when this puff was
-                // fired (see Player.z / DIVE_CONFIG) -- smoke has no z
-                // physics of its own (it just drifts and fades), so this is
-                // a fixed offset applied at draw time, not something that
-                // changes over the particle's life.
-                baseZ: z,
-            });
-            this.smokeParticles[this.smokeParticles.length - 1].maxLife = this.smokeParticles[this.smokeParticles.length - 1].life;
-        }
+        // Subtle, wispy propellant powder puff (atmospheric accent, not visual clutter)
+        let spread = (Math.random() - 0.5) * 0.5;
+        let spd = Math.random() * 60 + 50;
+        this.smokeParticles.push({
+            x: x + (Math.random() - 0.5) * 4,
+            y: y + (Math.random() - 0.5) * 4,
+            vx: Math.cos(angle + spread) * spd,
+            vy: Math.sin(angle + spread) * spd,
+            r: 3 + Math.random() * 2,
+            maxR: 16 + Math.random() * 8,
+            life: 0.45 + Math.random() * 0.25,
+            maxLife: 0,
+            opacity: 0.24 + Math.random() * 0.08,
+            color: 'rgb(145, 170, 195)',
+            baseZ: z
+        });
+        this.smokeParticles[this.smokeParticles.length - 1].maxLife = this.smokeParticles[this.smokeParticles.length - 1].life;
         
-        let emberCount = 1 + Math.floor(Math.random() * 2);
+        let emberCount = 1;
         for (let i = 0; i < emberCount; i++) {
-            let spread = (Math.random() - 0.5) * 0.8;
+            let eSpread = (Math.random() - 0.5) * 0.8;
             this.embers.push({
                 x: x,
                 y: y,
-                vx: Math.cos(angle + spread) * (Math.random() * 80 + 30) - Math.sin(angle) * 20,
-                vy: Math.sin(angle + spread) * (Math.random() * 80 + 30),
+                vx: Math.cos(angle + eSpread) * (Math.random() * 80 + 30) - Math.sin(angle) * 20,
+                vy: Math.sin(angle + eSpread) * (Math.random() * 80 + 30),
                 z: 0,
                 vz: Math.random() * 180 + 100,
-                life: 1.0 + Math.random() * 0.5,
+                life: 0.8 + Math.random() * 0.4,
                 maxLife: 0,
-                // Same idea as smoke's baseZ above: `z`/`vz` still do the
-                // ember's own little pop-and-settle arc unmodified, this is
-                // just the height it popped out of the gun FROM, added on
-                // top at draw time.
                 baseZ: z,
             });
             this.embers[this.embers.length - 1].maxLife = this.embers[this.embers.length - 1].life;
@@ -37160,18 +37311,42 @@ class Game {
         
         this.drawPermanentMarks(this.ctx, cam, visibleW, visibleH);
 
-        // DUST MOTES (parallax background)
+        // DUST MOTES (grounded environmental particles with diverse tiers & 2.5D elevation)
         this.ctx.save();
+        let camCenterX = cam.x + visibleW * 0.5;
+        let camCenterY = cam.y + visibleH * 0.5;
+        let moteCullBuffer = 40;
+        let minMoteX = cam.x - moteCullBuffer;
+        let maxMoteX = cam.x + visibleW + moteCullBuffer;
+        let minMoteY = cam.y - moteCullBuffer;
+        let maxMoteY = cam.y + visibleH + moteCullBuffer;
+
+        const MOTE_STYLES = [
+            'rgba(180, 215, 255, 1)', // Tier 0: Cool micro-haze
+            'rgba(215, 235, 255, 1)', // Tier 1: Soft silver crystalline speck
+            'rgba(240, 248, 255, 1)'  // Tier 2: Pale moonlight atmospheric floater
+        ];
+        let curStyleIdx = -1;
+
         for (let m of this.dustMotes) {
-            let mx = (m.x - cam.x * m.parallaxFactor) % viewportW;
-            if (mx < 0) mx += viewportW;
-            let my = (m.y - cam.y * m.parallaxFactor) % viewportH;
-            if (my < 0) my += viewportH;
-            
-            this.ctx.globalAlpha = m.opacity;
-            this.ctx.fillStyle = 'rgba(200, 220, 255, 1)';
+            // High-performance AABB cull: only draw motes currently inside the viewport
+            if (m.x < minMoteX || m.x > maxMoteX || m.y < minMoteY || m.y > maxMoteY) continue;
+
+            let cIdx = m.colorIdx || 0;
+            if (cIdx !== curStyleIdx) {
+                this.ctx.fillStyle = MOTE_STYLES[cIdx];
+                curStyleIdx = cIdx;
+            }
+
+            let sx = (m.x - cam.x) + (m.x - camCenterX) * (m.parallax || 0);
+            let sy = (m.y - cam.y) + (m.y - camCenterY) * (m.parallax || 0) - (m.z || 0);
+
+            let speedSq = m.vx * m.vx + m.vy * m.vy;
+            let speedGlint = Math.min(0.08, Math.sqrt(speedSq) * 0.0004);
+            let alpha = ((m.baseOpacity || 0.08) + speedGlint) * (0.7 + 0.3 * Math.sin(m.phase || 0));
+            this.ctx.globalAlpha = Math.max(0.015, Math.min(0.24, alpha));
             this.ctx.beginPath();
-            this.ctx.arc(mx, my, m.r, 0, Math.PI * 2);
+            this.ctx.arc(sx, sy, m.r, 0, Math.PI * 2);
             this.ctx.fill();
         }
         this.ctx.restore();
@@ -37425,7 +37600,7 @@ class Game {
         for (let s of this.smokeParticles) {
             let alpha = (s.life / s.maxLife) * s.opacity;
             this.ctx.globalAlpha = Math.max(0, alpha);
-            this.ctx.fillStyle = `rgb(30, 35, 40)`;
+            this.ctx.fillStyle = s.color || 'rgb(215, 225, 240)';
             this.ctx.beginPath();
             this.ctx.arc(s.x - cam.x, s.y - cam.y - (s.baseZ || 0), s.r, 0, Math.PI * 2);
             this.ctx.fill();
@@ -37644,27 +37819,107 @@ class Game {
         this.map.drawFoliageCanopy(this.ctx, cam, viewportW, viewportH);
         this.map.drawRoofs(this.ctx, cam, viewportW, viewportH);
 
-        // === MUZZLE FLASH PASS (world space, additive blending) ===
+        // === MUZZLE FLASH PASS (world space) ===
         {
-            let prevComp = this.ctx.globalCompositeOperation;
-            this.ctx.globalCompositeOperation = 'lighter';
-            
             const drawMuzzleFlash = (entity) => {
                 if (!entity || entity.dead || entity.muzzleFlashTimer <= 0) return;
-                let t = entity.muzzleFlashTimer / 0.04;
-                let flashRadius = 18 + (1 - t) * 8;
-                let alpha = t * 0.9;
+                let t = Math.min(1.0, entity.muzzleFlashTimer / 0.06);
+                let alpha = Math.min(1.0, t * 1.3);
                 
                 // Combat Dive: follow the shooter's height, same `- z`
                 // convention as the player sprite/laser/embers elsewhere
-                // (entity.z is undefined for anything that can't dive, e.g.
-                // enemies -- `|| 0` keeps this a no-op for them).
-                let sx = entity.muzzleFlashX - cam.x;
-                let sy = entity.muzzleFlashY - cam.y - (entity.z || 0);
+                let angle = entity.angle || 0;
+                let wName = entity.weapon ? entity.weapon.name : '';
+                let _gunRe = (entity.gunRetractPx || 0) + (entity.gunRecoilKickPx || 0);
                 
+                // Track exact live barrel muzzle tip per weapon geometry:
+                let wx, wy;
+                if (entity.x !== undefined && entity.y !== undefined) {
+                    const G = (entity.weapon && PLAYER_GUN_GEOM[entity.weapon.name]) ? PLAYER_GUN_GEOM[entity.weapon.name] : PLAYER_GUN_GEOM.SMG;
+                    let barrelOffset = G ? (G.recX + G.barrelLen) : 22;
+                    let fwd = GUN_MOUNT_OFFSET + barrelOffset - _gunRe;
+                    let side = 6;
+                    wx = entity.x + Math.cos(angle) * fwd - Math.sin(angle) * side;
+                    wy = entity.y + Math.sin(angle) * fwd + Math.cos(angle) * side;
+                } else {
+                    wx = entity.muzzleFlashX;
+                    wy = entity.muzzleFlashY;
+                }
+                
+                let sx = wx - cam.x;
+                let sy = wy - cam.y - (entity.z || 0);
+                
+                let flameLen = (wName === 'Sniper' ? 92 : wName === 'Shotgun' ? 70 : wName === 'M1A' ? 60 : wName === 'LMG' ? 56 : wName === 'SMG' ? 44 : 38) * (0.65 + t * 0.35);
+                let flameW = (wName === 'Shotgun' ? 42 : wName === 'Sniper' ? 22 : wName === 'M1A' || wName === 'LMG' ? 18 : 14) * (0.65 + t * 0.35);
+                let ventLen = flameLen * 0.55;
+                
+                // 1. Warm radial ambient aura (additive, centered on the fireball ahead of the barrel)
+                let glowCenterX = sx + Math.cos(angle) * (flameLen * 0.35);
+                let glowCenterY = sy + Math.sin(angle) * (flameLen * 0.35);
+                let glowR = flameLen * 0.9;
                 this.ctx.save();
+                this.ctx.globalCompositeOperation = 'lighter';
+                this.ctx.globalAlpha = Math.max(0, Math.min(1.0, alpha * 0.85));
+                this.ctx.drawImage(cachedWarmMuzzleFlashCanvas, glowCenterX - glowR, glowCenterY - glowR, glowR * 2, glowR * 2);
+                this.ctx.restore();
+                
+                // 2. High-contrast, sharp solid blast geometry (source-over, crisp and vibrant!)
+                this.ctx.save();
+                this.ctx.translate(sx, sy);
+                this.ctx.rotate(angle);
                 this.ctx.globalAlpha = Math.max(0, Math.min(1.0, alpha));
-                this.ctx.drawImage(cachedWarmMuzzleFlashCanvas, sx - flashRadius, sy - flashRadius, flashRadius * 2, flashRadius * 2);
+                
+                // Outer fiery orange/red blast diamond
+                this.ctx.fillStyle = '#ff4400';
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, -flameW * 0.65);
+                this.ctx.lineTo(flameLen * 1.12, 0);
+                this.ctx.lineTo(0, flameW * 0.65);
+                this.ctx.closePath();
+                this.ctx.fill();
+                
+                // Radiant golden flare
+                this.ctx.fillStyle = '#ffee22';
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, -flameW * 0.4);
+                this.ctx.lineTo(flameLen * 0.88, 0);
+                this.ctx.lineTo(0, flameW * 0.4);
+                this.ctx.closePath();
+                this.ctx.fill();
+                
+                // White-hot core star & diamond lance
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.beginPath();
+                this.ctx.moveTo(-flameLen * 0.08, -flameW * 0.2);
+                this.ctx.lineTo(flameLen * 0.68, 0);
+                this.ctx.lineTo(-flameLen * 0.08, flameW * 0.2);
+                this.ctx.closePath();
+                this.ctx.fill();
+                
+                // Lateral compensator exhaust prongs (bright yellow-orange)
+                this.ctx.fillStyle = '#ffcc00';
+                for (let sa of [0.72, -0.72]) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, 0);
+                    this.ctx.lineTo(Math.cos(sa) * ventLen, Math.sin(sa) * ventLen);
+                    this.ctx.lineTo(Math.cos(sa) * (ventLen * 0.45), Math.sin(sa) * (ventLen * 0.22));
+                    this.ctx.closePath();
+                    this.ctx.fill();
+                }
+                
+                // Shotgun wide incendiary spread teeth
+                if (wName === 'Shotgun') {
+                    this.ctx.fillStyle = '#ffa200';
+                    for (let sa of [-0.34, 0.34]) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(0, 0);
+                        this.ctx.lineTo(Math.cos(sa) * flameLen * 0.8, Math.sin(sa) * flameLen * 0.8);
+                        this.ctx.lineTo(Math.cos(sa) * flameLen * 0.38, Math.sin(sa) * flameLen * 0.2);
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                    }
+                }
+                
                 this.ctx.restore();
             };
             
@@ -37673,8 +37928,6 @@ class Game {
             for (let i = 0; i < this.enemies.length; i++) {
                 drawMuzzleFlash(this.enemies[i]);
             }
-            
-            this.ctx.globalCompositeOperation = prevComp;
         }
 
         // === SHOCKWAVE DRAW (world space, additive) ===

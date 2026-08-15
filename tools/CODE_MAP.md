@@ -1483,9 +1483,9 @@ order. Major groupings:
 - What: Seeded random number generator
 - Does: Mulberry32 PRNG for deterministic map generation. Base36 seed codes for shareable challenge links.
 
-#### `GEN_VERSION: 3`
+#### `GEN_VERSION: 4,`
 - What: Generator version constant
-- Does: v3 (PHASE 4): per-mode role decks, extraction vault stamp. Normal-mode bit-identical to v2.
+- Does: v4: platform decks & battlements support. Normal-mode bit-identical to earlier versions where templates untouched.
 
 #### `mulberry32(seed)`
 - What: Mulberry32 PRNG
@@ -2900,12 +2900,17 @@ order. Major groupings:
 - `initDustMotes()`
   - **Anchor**: `initDustMotes() {`
   - **What**: Ambient dust mote initializer.
-  - **Does**: Creates 75 dust motes with random position, slow velocity, radius 0.5-3.0, opacity 0.04-0.22, and parallax factor 0.15-0.50.
+  - **Does**: Populates `this.dustMotes` with grounded world-space particles scaled to map area, with subtle 2.5D elevation/parallax, baseline drift, and twinkle properties.
 
 - `updateDustMotes(dt)`
   - **Anchor**: `updateDustMotes(dt) {`
-  - **What**: Dust mote position updater with map wrap.
-  - **Does**: Advances each mote by velocity × dt, wrapping to opposite map edge on boundary crossing.
+  - **What**: Dust mote position updater with air wake and map wrap.
+  - **Does**: Advances motes by velocity, nudges nearby particles with player movement air-wakes, eases toward baseline draft, and wraps across map boundaries.
+
+- `applyDustShockwave(x, y, radius, force, angle, forwardBias)`
+  - **Anchor**: `applyDustShockwave(x, y, radius = 250, force = 120, angle = null, forwardBias = 0.35) {`
+  - **What**: Zero-allocation gunshot and explosion concussive impulse on ambient dust motes.
+  - **Does**: Applies radial and directional forward-jet impulse to dust motes within radius, with linear distance falloff and velocity clamping.
 
 - `triggerChromaticAberration(duration)`
   - **Anchor**: `triggerChromaticAberration(duration = 0.2) {`
@@ -3896,9 +3901,9 @@ order. Major groupings:
 - What: Unified ground-mark insertion with dual-cap FIFO.
 - Does: Casings go to separate `casingMarks` array capped at 400 (JULY item 2). All other marks (blood, scorch, debris) go to `permanentMarks` capped at `maxPermanentMarks` with bulk-shift trim on overflow.
 
-### `drawPermanentMarks(ctx, cam, viewW, viewH) {`
+### `drawPermanentMarks(ctx, cam, viewW, viewH, deckOnly) {`
 - What: Ground-mark rendering pass (casings + blood/trail/debris/scorch).
-- Does: Draw casingMarks at 0.5 alpha with rotation. Draw permanentMarks: blood (0.3 alpha circles), casings (rects with rotation), trails (fading circles), debris (irregular circ clusters), scorch (blotch clusters + cached radial gradient glow ring with translate-based camera tracking). All frustum-culled.
+- Does: Draw casingMarks at 0.5 alpha with rotation. Draw permanentMarks: blood (0.3 alpha circles), casings (rects with rotation), trails (fading circles), debris (irregular circ clusters), scorch (blotch clusters + cached radial gradient glow ring with translate-based camera tracking). All frustum-culled. Supports deckOnly filtering for 2nd floor platform pass.
 
 ### `drawViewport(`
 - What: Main viewport render pipeline.
