@@ -2069,6 +2069,7 @@
                         <button id="btn-buy-dog-upgrade-p1" onclick="game.buyItem('dog_upgrade', game.player)">Spot MK.II Upgrade ($1000)</button>
                         <button id="btn-buy-swarm-drone-p1" onclick="game.buyItem('swarm_drone', game.player)">1x Swarm Drone ($100)</button>
                         <button id="btn-buy-swarm-pack-p1" onclick="game.buyItem('swarm_pack', game.player)">4x Swarm Pack ($300)</button>
+                        <button id="btn-buy-camera-p1" onclick="game.buyItem('camera', game.player)">Security Cam ($350)</button>
                     </div>
                     
                     <div class="shop-section-title">Standard Munitions</div>
@@ -2174,6 +2175,7 @@
                         <button id="btn-buy-dog-upgrade-p2" onclick="game.buyItem('dog_upgrade', game.player2)">Spot MK.II Upgrade ($1000)</button>
                         <button id="btn-buy-swarm-drone-p2" onclick="game.buyItem('swarm_drone', game.player2)">1x Swarm Drone ($100)</button>
                         <button id="btn-buy-swarm-pack-p2" onclick="game.buyItem('swarm_pack', game.player2)">4x Swarm Pack ($300)</button>
+                        <button id="btn-buy-camera-p2" onclick="game.buyItem('camera', game.player2)">Security Cam ($350)</button>
                     </div>
                     
                     <div class="shop-section-title">Standard Munitions</div>
@@ -2765,7 +2767,8 @@ const SVGIcons = {
     turret: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14v4M5 18h14v2H5v-2z"/><circle cx="12" cy="11" r="5"/><path d="M12 11h8v2h-8z"/></svg>`,
     m1a: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13h4l2-1h14v2.5H10l-2 1.5H2v-3zM12 11v3M8 12.5h8"/></svg>`,
     dog: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="8" width="12" height="6" rx="1"/><line x1="8" y1="14" x2="6" y2="19"/><line x1="16" y1="14" x2="18" y2="19"/><line x1="10" y1="14" x2="9" y2="19"/><line x1="14" y1="14" x2="15" y2="19"/><circle cx="15" cy="6" r="1.5"/><line x1="13.5" y1="7.5" x2="15" y2="6"/></svg>`,
-    hunter_swarm: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="17" cy="14" r="1.5"/></svg>`
+    hunter_swarm: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="17" cy="14" r="1.5"/></svg>`,
+    camera: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/><circle cx="8" cy="12" r="3"/><line x1="4" y1="8" x2="4" y2="8.01"/></svg>`
 };
 
 // ==== JULY item 4: world-space loot icons ==================================
@@ -2789,7 +2792,8 @@ const ITEM_ICON_COLORS = {
     barrier:      '#4a9eff',
     turret:       '#ffee00',
     dog:          '#39ff14',
-    hunter_swarm: '#d500f9'
+    hunter_swarm: '#d500f9',
+    camera:       '#00e5ff'
 };
 const _worldIconCache = {};
 function getWorldIconPath(key) {
@@ -3011,6 +3015,8 @@ function useRightItem(player) {
                 game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 15, "MAX ACTIVE DRONES REACHED", '#ff2a5f', 1.2));
             }
         }
+    } else if (player.rightSelectIdx === 5) {
+        game.placeSecurityCamera(player);
     }
 }
 
@@ -3091,6 +3097,25 @@ function interactPickUpItem(player) {
             }
         }
     }
+    if (game.securityCameras) {
+        for (let i = 0; i < game.securityCameras.length; i++) {
+            let cam = game.securityCameras[i];
+            if (cam.owner === player) {
+                let dist = Math.hypot(cam.x - player.x, cam.y - player.y);
+                if (dist < interactDist) {
+                    player.camerasInventory.push({ hp: cam.hp, maxHp: cam.maxHp, tier: cam.tier || 1 });
+                    game.securityCameras.splice(i, 1);
+                    audio.playPickup('weapon');
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        player.x, player.y - 15, `+RETRIEVED SECURITY CAM (${Math.round(cam.hp)}HP)`,
+                        '#00e5ff', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
+                    return;
+                }
+            }
+        }
+    }
 }
 
 function getHUDSelectorStateKey(player, suffix) {
@@ -3136,6 +3161,7 @@ function getHUDSelectorStateKey(player, suffix) {
         player.barriersCount,
         player.barrierUpgraded,
         player.turretsCount,
+        player.camerasCount,
         player.pistolHP
     ].join('|');
 }
@@ -3234,13 +3260,21 @@ function renderHUDSelectors(player, suffix) {
                 { name: 'Barrier Wall', countText: player.barriersCount, countColor: player.barriersCount === 0 ? '#ff2a5f' : player.barriersCount >= game._maxBarriers() ? '#39ff14' : 'white', icon: SVGIcons.barrier },
                 { name: 'Auto Turret', countText: player.turretsCount, countColor: player.turretsCount === 0 ? '#ff2a5f' : player.turretsCount >= 1 ? '#39ff14' : 'white', icon: SVGIcons.turret },
                 { name: dogName, countText: dogCountText, countColor: dogCountColor, icon: SVGIcons.dog },
-                { name: 'Hunter Swarm', countText: player.hunterSwarmCount.toString(), countColor: player.hunterSwarmCount === 0 ? '#ff2a5f' : '#39ff14', icon: SVGIcons.hunter_swarm }
+                { name: 'Hunter Swarm', countText: player.hunterSwarmCount.toString(), countColor: player.hunterSwarmCount === 0 ? '#ff2a5f' : '#39ff14', icon: SVGIcons.hunter_swarm },
+                { name: 'Security Camera', countText: (player.camerasCount || 0).toString(), countColor: (player.camerasCount || 0) === 0 ? '#ff2a5f' : ((player.camerasCount || 0) >= 3 ? '#39ff14' : '#00e5ff'), icon: SVGIcons.camera }
             ];
             items.forEach((item, idx) => {
                 let slot = document.createElement('div');
                 slot.className = 'hud-item-slot' + (idx === player.rightSelectIdx ? (suffix === 'p2' ? ' active active-p2' : ' active') : '');
+                let iconCol = '#808f9c';
+                if (idx === 0) iconCol = droneColor;
+                else if (idx === 1) iconCol = ITEM_ICON_COLORS.barrier;
+                else if (idx === 2) iconCol = ITEM_ICON_COLORS.turret;
+                else if (idx === 3) iconCol = dogColor;
+                else if (idx === 4) iconCol = (player.hunterSwarmCount > 0 ? ITEM_ICON_COLORS.hunter_swarm : '#808f9c');
+                else if (idx === 5) iconCol = (player.camerasCount > 0 ? ITEM_ICON_COLORS.camera : '#808f9c');
                 slot.innerHTML = `
-                    <div class="item-icon-wrapper" style="color: ${idx === 0 ? droneColor : (idx === 1 ? ITEM_ICON_COLORS.barrier : (idx === 2 ? ITEM_ICON_COLORS.turret : (idx === 3 ? dogColor : (player.hunterSwarmCount > 0 ? ITEM_ICON_COLORS.hunter_swarm : '#808f9c'))))}">${item.icon}</div>
+                    <div class="item-icon-wrapper" style="color: ${iconCol}">${item.icon}</div>
                     <div class="item-count" style="color: ${item.countColor}">${item.countText}</div>
                     <div class="item-label-overlay">${item.name.toUpperCase()} [C / R3]</div>
                 `;
@@ -6319,7 +6353,7 @@ const SECOND_FLOOR = {
     // the deck outward always passes (see Bullet.update), so this number
     // alone is the entire high-ground damage asymmetry -- raise it if the
     // perch feels oppressive, lower it if it feels unearned.
-    WINDOW_UP_PASS: 0.18,
+    WINDOW_UP_PASS: 0.55,
 
     // Enemy-side half of the window mechanic. The pass-through roll above is
     // already symmetric -- Bullet.update doesn't care who fired -- but it was
@@ -12114,7 +12148,7 @@ const MATTER_MANIPULATOR = {
     CELL_COST: 55,         // hp of one crumbling cell -- fallback build-entry floor; live code derives the ACTIVE tier's cell cost via Game.manipBuildTierInfo
     BIG_COST: 220,         // hp of a full 2x2 CRUMBLING block (documentation constant; the growth cap now computes 4x the active tier's cell cost)
     REACH_GAP: 10,         // px gap projected past the player's leading edge
-    MAX_PLAYER_WALLS: 60,  // soft cap; oldest is recycled beyond this (bounds LOS scans)
+    MAX_PLAYER_WALLS: Infinity,  // un-capped so player-placed walls are never recycled/deleted
     TIER: 'crumbling',     // stock built-wall tier (DENSE MATTER armory levels unlock heavier tiers -- see Game.manipBuildTierInfo)
     COLOR_MAIN: '#a68a64',
     COLOR_RGB: '166, 138, 100',
@@ -12133,7 +12167,7 @@ const MATTER_MANIPULATOR = {
     // --- RAMPART FABRICATOR (armory 'manipulatorRampart'): lock-and-extrude build.
     PAINT_TILE: 24,             // px tile side == one damage cell (CELL_LEN in _wallCellPlan), so cost per tile is exactly one cell's hp
     MAX_PAINT_TILES: 240,       // hard per-stroke cap (bank usually caps first); bounds preview draw + commit work -- 60 slabs / ~2900px of wall per stroke
-    RAMPART_MAX_PLAYER_WALLS: 150, // raised soft cap once the fabricator is owned (merged rects keep real wall count well below tile count)
+    RAMPART_MAX_PLAYER_WALLS: Infinity, // un-capped
     LOCK_DWELL: 1.0,            // sec of steadiness to lock plan block #1 -- accrues even while the square is still growing, so from "held steady" to "locked" is a flat second every time, regardless of bank/size
     LOCK_JITTER: 36,            // px of head wander tolerated as "steady" (a block and a half) -- heartbeat, stick drift and small shuffles all pass; real walking does not
     LOCK_SLIP: 0.25,            // sec of dwell DOCKED (not zeroed) per wander past LOCK_JITTER -- a natural out-and-back twitch trips it twice, so a real twitch costs ~half a second total; sustained walking trips it several times a second and can never lock
@@ -12307,6 +12341,7 @@ class Player extends Entity {
         // Individual placeable health containers
         this.barriersInventory = [];
         this.turretsInventory = [];
+        this.camerasInventory = [];
         
         this.grenades = 1;
         this.maxGrenades = 3;
@@ -12439,6 +12474,19 @@ class Player extends Entity {
         }
         while (this.dogsInventory.length > val) {
             this.dogsInventory.pop();
+        }
+    }
+
+    get camerasCount() {
+        return this.camerasInventory ? this.camerasInventory.length : 0;
+    }
+    set camerasCount(val) {
+        if (!this.camerasInventory) this.camerasInventory = [];
+        while (this.camerasInventory.length < val) {
+            this.camerasInventory.push({ hp: 100, maxHp: 100 });
+        }
+        while (this.camerasInventory.length > val) {
+            this.camerasInventory.pop();
         }
     }
 
@@ -14795,6 +14843,11 @@ class Enemy extends Entity {
                             if (t.hp > 0) sapperTargets.push(t);
                         }
                     }
+                    if (game.securityCameras) {
+                        for (let c of game.securityCameras) {
+                            if (c.hp > 0) sapperTargets.push(c);
+                        }
+                    }
                 }
                 
                 if (sapperTargets.length > 0) {
@@ -14854,6 +14907,11 @@ class Enemy extends Entity {
                     if (game.dogs) {
                         for (let d of game.dogs) {
                             if (d.hp > 0) targets.push(d);
+                        }
+                    }
+                    if (game.securityCameras) {
+                        for (let c of game.securityCameras) {
+                            if (c.hp > 0) targets.push(c);
                         }
                     }
                 }
@@ -15104,6 +15162,21 @@ class Enemy extends Entity {
                             }
                         }
                     }
+                    if (!visibleToPlayers && game.securityCameras) {
+                        for (let cam of game.securityCameras) {
+                            if (cam.dead) continue;
+                            let d = Math.hypot(this.x - cam.x, this.y - cam.y);
+                            if (d <= cam.scanRange) {
+                                let toEnemy = Math.atan2(this.y - cam.y, this.x - cam.x);
+                                if (Math.abs(MathUtils.angleDifference(toEnemy, cam.angle)) <= cam.halfFov) {
+                                    if (MathUtils.viewSeesPoint(cam, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, cam.x, cam.y))) {
+                                        visibleToPlayers = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     let checkWalls = nearbyWalls;
                     if (!game.player.dead && MathUtils.viewSeesPoint(game.player, this.x, this.y, checkWalls)) {
@@ -15123,6 +15196,21 @@ class Enemy extends Entity {
                             if (!dog.dead && MathUtils.viewSeesPoint(dog, this.x, this.y, checkWalls)) {
                                 visibleToPlayers = true;
                                 break;
+                            }
+                        }
+                    }
+                    if (!visibleToPlayers && game.securityCameras) {
+                        for (let cam of game.securityCameras) {
+                            if (cam.dead) continue;
+                            let d = Math.hypot(this.x - cam.x, this.y - cam.y);
+                            if (d <= cam.scanRange) {
+                                let toEnemy = Math.atan2(this.y - cam.y, this.x - cam.x);
+                                if (Math.abs(MathUtils.angleDifference(toEnemy, cam.angle)) <= cam.halfFov) {
+                                    if (MathUtils.viewSeesPoint(cam, this.x, this.y, checkWalls)) {
+                                        visibleToPlayers = true;
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -15519,7 +15607,7 @@ class Enemy extends Entity {
                                 game.addParticle(this.x, this.y, Math.cos(a)*spd*0.7, Math.sin(a)*spd*0.7, '#ff3d00', 0.6, 4);
                             }
                         }
-                    } else if (target instanceof AutoTurret) { // auto turret
+                    } else if (target instanceof AutoTurret || target instanceof SecurityCamera) { // auto turret or security camera
                         let dist = Math.hypot(target.x - this.x, target.y - this.y);
                         if (dist < this.r + target.r + 5) {
                             target.takeDamage(300, 0, 0);
@@ -18573,7 +18661,7 @@ class Bullet {
                 } else if (this.isNeutral) {
                     canHit = true;
                 } else if (this.isPlayerBullet) {
-                    let isTargetAlly = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage);
+                    let isTargetAlly = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof SecurityCamera || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage);
                     let isTargetEnemy = (ent instanceof Enemy);
                     
                     if (isTargetEnemy) {
@@ -18598,7 +18686,7 @@ class Bullet {
                 } else {
                     // PHASE 2: hostile fire also threatens the escort --
                     // that risk IS the Asset Recovery mission.
-                    canHit = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage);
+                    canHit = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof SecurityCamera || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage);
                 }
                 
                 if (!canHit) continue;
@@ -18729,6 +18817,8 @@ class Bullet {
                         dmgCol = ent.isPlayer2 ? '#ffb700' : '#ff2a5f';
                     } else if (ent instanceof AutoTurret) {
                         dmgCol = '#ffd700';
+                    } else if (ent instanceof SecurityCamera) {
+                        dmgCol = '#00e5ff';
                     } else if (ent instanceof FPVDrone) {
                         dmgCol = '#ffff00';
                     } else if (ent instanceof RobotDog) {
@@ -18743,8 +18833,8 @@ class Bullet {
                         dmgCol, 0.9,
                         spread_vx, spread_vy, 280, true
                     ));
-                    if (ent instanceof AutoTurret || ent instanceof FPVDrone || ent instanceof RobotDog) {
-                        let pColor = ent instanceof AutoTurret ? '#ffd700' : ent instanceof FPVDrone ? '#ffff00' : '#ffffff';
+                    if (ent instanceof AutoTurret || ent instanceof FPVDrone || ent instanceof RobotDog || ent instanceof SecurityCamera) {
+                        let pColor = ent instanceof AutoTurret ? '#ffd700' : ent instanceof FPVDrone ? '#ffff00' : ent instanceof SecurityCamera ? '#00e5ff' : '#ffffff';
                         for(let c=0; c<4; c++) {
                             game.addParticle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.22, 2);
                         }
@@ -20053,6 +20143,319 @@ class AutoTurret extends Entity {
     }
 }
 
+class SecurityCamera extends Entity {
+    constructor(x, y, owner, tier = 1) {
+        super(x, y, 12);
+        this.owner = owner;
+        this.tier = tier;
+        this.hp = 120;
+        this.maxHp = 120;
+        // Face opposite the player upon placement
+        this.baseAngle = (owner ? owner.angle : 0) + Math.PI;
+        this.angle = this.baseAngle;
+        
+        // Tier properties: 1 = 600px/60°, 2 = 1000px/90°, 3 = 1500px/120° (Pan speed tuned to 80% baseline)
+        if (tier >= 3) {
+            this.scanRange = 1500;
+            this.sweepArc = Math.PI * (120 / 180); // 120 deg
+            this.sweepSpeed = 1.12;                // 80% of 1.4
+        } else if (tier === 2) {
+            this.scanRange = 1000;
+            this.sweepArc = Math.PI * (90 / 180);  // 90 deg
+            this.sweepSpeed = 0.96;                // 80% of 1.2
+        } else {
+            this.scanRange = 600;
+            this.sweepArc = Math.PI * (60 / 180);  // 60 deg
+            this.sweepSpeed = 0.80;                // 80% of 1.0
+        }
+        this.halfFov = this.sweepArc / 2;
+        this.sweepTimer = MathUtils.rand(0, Math.PI * 2);
+        this.blinkTimer = 0;
+        this.spottedEnemies = [];
+        this.alertCooldown = 0;
+        this.fireCooldown = 0;
+        this.target = null;
+    }
+
+    updatePhysics(dt, walls) {
+        this.vx = 0;
+        this.vy = 0;
+    }
+
+    takeDamage(amt, pushDir, pushForce) {
+        this.hp -= amt;
+        if (this.hp <= 0 && !this.dead) {
+            this.dead = true;
+            this.onDeath();
+        }
+    }
+
+    onDeath() {
+        if (typeof audio !== 'undefined' && audio.playExplosion) {
+            audio.playExplosion(0.5, this.x, this.y);
+        }
+        if (game) {
+            for (let i = 0; i < 15; i++) {
+                let a = Math.random() * Math.PI * 2;
+                let spd = Math.random() * 160 + 40;
+                game.particles.push(new Particle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#00e5ff', 0.4, 2.5));
+            }
+        }
+    }
+
+    update(dt, game) {
+        if (this.dead) return;
+        this.sweepTimer += dt;
+        this.blinkTimer = (this.blinkTimer + dt * 4) % (Math.PI * 2);
+        if (this.alertCooldown > 0) this.alertCooldown -= dt;
+        if (this.fireCooldown > 0) this.fireCooldown -= dt;
+
+        // Base oscillating camera sweep
+        let sweepOffset = Math.sin(this.sweepTimer * this.sweepSpeed) * this.halfFov;
+        this.angle = this.baseAngle + sweepOffset;
+
+        // Detect hostiles within scan cone & line of sight
+        this.spottedEnemies = [];
+        this.target = null;
+        let hostiles = game.getHostilesFor ? game.getHostilesFor(this) : (game.enemies || []);
+        let closestDist = this.scanRange + 10;
+
+        for (let h of hostiles) {
+            if (!h || h.dead) continue;
+            let dx = h.x - this.x;
+            let dy = h.y - this.y;
+            let dist = Math.hypot(dx, dy);
+            if (dist > this.scanRange) continue;
+
+            let targetAngle = Math.atan2(dy, dx);
+            let angleDiff = Math.abs(MathUtils.angleDifference(targetAngle, this.angle));
+            if (angleDiff <= this.halfFov) {
+                // Check Line of Sight
+                let segWalls = game.map ? game.map.getWallsAlongSegment(this.x, this.y, h.x, h.y) : [];
+                let hasLOS = !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w));
+                if (hasLOS) {
+                    this.spottedEnemies.push(h);
+                    if (dist < closestDist) {
+                        closestDist = dist;
+                        this.target = h;
+                    }
+                }
+            }
+        }
+
+        // Intruder alert
+        if (this.spottedEnemies.length > 0) {
+            if (this.alertCooldown <= 0) {
+                this.alertCooldown = 3.5;
+                if (typeof audio !== 'undefined' && audio.playPickup) {
+                    audio.playPickup('grenade');
+                }
+                if (game.floatingTexts) {
+                    let alertTxt = this.tier >= 3 ? "THERMAL LOCK!" : (this.tier >= 2 ? "HOSTILE SPOTTED [ARMED]!" : "INTRUDER DETECTED!");
+                    game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 18, alertTxt, '#ff2a5f', 1.4));
+                }
+            }
+
+            // Lock angle smoothly towards closest hostile when detected
+            if (this.target) {
+                let aimAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                let diff = MathUtils.angleDifference(aimAngle, this.angle);
+                this.angle += Math.sign(diff) * Math.min(Math.abs(diff), 3.0 * dt);
+            }
+
+            // T2: Automated Suppressed Dart Fire (Passive defense: 3.5 dmg; 1.35s cooldown)
+            if (this.tier === 2 && this.target && this.fireCooldown <= 0) {
+                this.fireCooldown = 1.35;
+                if (typeof audio !== 'undefined' && audio.playRicochet) {
+                    audio.playRicochet(this.x, this.y);
+                }
+                let aimA = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                let bulletSpec = { name: 'Dart', dmg: 3.5, speed: 2000, drag: 0.05, color: '#00e5ff' };
+                let bullet = game.spawnBullet(this.x + Math.cos(aimA) * 12, this.y + Math.sin(aimA) * 12, aimA, bulletSpec, true, true, false, false);
+                bullet.owner = this;
+                game.bullets.push(bullet);
+                game.addParticle(this.x + Math.cos(aimA)*12, this.y + Math.sin(aimA)*12, Math.cos(aimA)*120, Math.sin(aimA)*120, '#00e5ff', 0.1, 2);
+            }
+
+            // T3: Continuous Thermal Sentry Laser (Passive defense: 7.5 dps; 3 burn dps)
+            if (this.tier >= 3 && this.target) {
+                let beamDmg = 7.5 * dt;
+                if (this.target.takeDamage) {
+                    this.target.takeDamage(beamDmg, Math.atan2(this.target.y - this.y, this.target.x - this.x), 2);
+                }
+                if (this.target.burnTimer !== undefined) {
+                    this.target.burnTimer = 1.5;
+                    this.target.burnDps = 3;
+                }
+                if (Math.random() < 0.15) {
+                    let pa = Math.random() * Math.PI * 2;
+                    game.addParticle(this.target.x, this.target.y, Math.cos(pa)*60, Math.sin(pa)*60, '#ff4500', 0.15, 1.5);
+                }
+            }
+        }
+    }
+
+    draw(ctx, cam) {
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.2, this.r * 0.4);
+        
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y;
+        let hasTargets = this.spottedEnemies && this.spottedEnemies.length > 0;
+        
+        ctx.save();
+        ctx.translate(scx, scy);
+
+        // 1. In-world Holographic Scan Cone (Ultra-subtle ambient backdrop ghosting)
+        ctx.save();
+        ctx.rotate(this.angle);
+
+        let coneDist = this.scanRange;
+        let halfArc = this.halfFov;
+        let coneGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, coneDist);
+        if (hasTargets) {
+            coneGrad.addColorStop(0, 'rgba(255, 42, 95, 0.04)');
+            coneGrad.addColorStop(0.5, 'rgba(255, 42, 95, 0.018)');
+            coneGrad.addColorStop(0.85, 'rgba(255, 42, 95, 0.006)');
+            coneGrad.addColorStop(1, 'rgba(255, 42, 95, 0.0)');
+        } else {
+            coneGrad.addColorStop(0, 'rgba(0, 229, 255, 0.02)');
+            coneGrad.addColorStop(0.5, 'rgba(0, 229, 255, 0.008)');
+            coneGrad.addColorStop(0.85, 'rgba(0, 229, 255, 0.003)');
+            coneGrad.addColorStop(1, 'rgba(0, 229, 255, 0.0)');
+        }
+
+        ctx.fillStyle = coneGrad;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, coneDist, -halfArc, halfArc);
+        ctx.closePath();
+        ctx.fill();
+
+        // Subtle holographic boundary beams (Faint dashed lines)
+        ctx.strokeStyle = hasTargets ? 'rgba(255, 42, 95, 0.08)' : 'rgba(0, 229, 255, 0.04)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 8]);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(-halfArc) * coneDist * 0.9, Math.sin(-halfArc) * coneDist * 0.9);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(halfArc) * coneDist * 0.9, Math.sin(halfArc) * coneDist * 0.9);
+        ctx.stroke();
+
+        // Pulsing scan radar wave (Soft ambient radar sweep)
+        let wavePhase = (this.sweepTimer * 0.8) % 1.0;
+        let waveDist = coneDist * wavePhase;
+        ctx.strokeStyle = hasTargets ? `rgba(255, 42, 95, ${0.09 * (1.0 - wavePhase)})` : `rgba(0, 229, 255, ${0.05 * (1.0 - wavePhase)})`;
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1.0;
+        ctx.beginPath();
+        ctx.arc(0, 0, waveDist, -halfArc, halfArc);
+        ctx.stroke();
+
+        ctx.restore(); // restore from angle rotation
+
+        // 1b. T3 Thermal Laser Beam Drawing (Clean, focused energy trace)
+        if (this.tier >= 3 && this.target && !this.target.dead) {
+            let tx = this.target.x - cam.x;
+            let ty = this.target.y - cam.y;
+            let bx = Math.cos(this.angle) * 8;
+            let by = Math.sin(this.angle) * 8;
+
+            ctx.save();
+            ctx.shadowColor = '#ff2a5f';
+            ctx.shadowBlur = 4;
+            ctx.strokeStyle = 'rgba(255, 42, 95, 0.50)';
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(bx, by);
+            ctx.lineTo(tx - scx, ty - scy);
+            ctx.stroke();
+
+            // Core beam (bright white/yellow center)
+            ctx.strokeStyle = 'rgba(255, 235, 235, 0.75)';
+            ctx.lineWidth = 0.6;
+            ctx.beginPath();
+            ctx.moveTo(bx, by);
+            ctx.lineTo(tx - scx, ty - scy);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // 2. Base Mounting Plate & Bracket
+        ctx.fillStyle = '#101c28';
+        ctx.strokeStyle = '#3a5068';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // 3. Rotating Camera Head
+        ctx.save();
+        ctx.rotate(this.angle);
+
+        // Body housing (compact rounded box)
+        ctx.fillStyle = '#050c14';
+        let bodyBorderCol = this.tier >= 3 ? '#ff2a5f' : (this.tier === 2 ? '#ffb700' : '#00e5ff');
+        ctx.strokeStyle = (this.owner && this.owner.color) ? this.owner.color : bodyBorderCol;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.rect(-6, -5, 12, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // Lens cylinder
+        ctx.fillStyle = hasTargets ? '#ff2a5f' : (this.tier >= 3 ? '#ffb700' : '#00e5ff');
+        ctx.beginPath();
+        ctx.arc(6, 0, 3, -Math.PI / 2, Math.PI / 2);
+        ctx.fill();
+
+        // Blinking Red / Warning LED Status Indicator
+        let ledBrightness = hasTargets ? 1.0 : (0.4 + 0.6 * Math.abs(Math.sin(this.blinkTimer)));
+        ctx.fillStyle = hasTargets ? '#ff2a5f' : `rgba(255, 42, 95, ${ledBrightness})`;
+        ctx.shadowColor = '#ff2a5f';
+        ctx.shadowBlur = 5 * ledBrightness;
+        ctx.beginPath();
+        ctx.arc(-2, -2, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.restore();
+
+        // 4. HP Bar if damaged
+        if (this.hp < this.maxHp) {
+            let pct = Math.max(0, this.hp / this.maxHp);
+            ctx.fillStyle = '#ff2a5f';
+            ctx.fillRect(-12, -16, 24, 2.5);
+            ctx.fillStyle = '#39ff14';
+            ctx.fillRect(-12, -16, 24 * pct, 2.5);
+        }
+
+        ctx.restore();
+
+        // 5. Tactical HUD Target Diamonds over spotted hostiles (Subtle brackets)
+        if (hasTargets) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 42, 95, 0.25)';
+            ctx.lineWidth = 1.0;
+            for (let ent of this.spottedEnemies) {
+                if (!ent || ent.dead) continue;
+                let ex = ent.x - cam.x;
+                let ey = ent.y - cam.y;
+                let boxSize = (ent.r || 14) + 5;
+                ctx.strokeRect(ex - boxSize, ey - boxSize, boxSize * 2, boxSize * 2);
+                
+                // Subtle label tag
+                ctx.fillStyle = 'rgba(255, 42, 95, 0.35)';
+                ctx.font = 'bold 8px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('SPOTTED', ex, ey - boxSize - 2);
+            }
+            ctx.restore();
+        }
+    }
+}
+
 class RobotDog extends Entity {
     constructor(x, y, owner) {
         super(x, y, 14);
@@ -21277,8 +21680,21 @@ class MiniDrone extends Entity {
                 } else {
                     pushDir = Math.atan2(ent.y - this.y, ent.x - this.x);
                 }
+                let wasDeadBefore = ent.dead;
                 ent.takeDamage(damage, pushDir, 400);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                if (game && game.friendlyFireMode === 'pvp' && ent instanceof Player && ent.dead && !wasDeadBefore) {
+                    let killer = (this.owner && this.owner.owner) ? this.owner.owner : this.owner;
+                    if (killer instanceof Player && killer !== ent && !killer.dead) {
+                        killer.cash = (killer.cash || 0) + PVP_TUNING.KILL_REWARD;
+                        game.floatingTexts.push(game.spawnFloatingText(
+                            killer.x, killer.y - 28,
+                            `+ELIMINATION $${PVP_TUNING.KILL_REWARD}`, '#ff2a5f', 1.6,
+                            (Math.random() - 0.5) * 40, -70, 150, false
+                        ));
+                        if (audio && audio.playPickup) audio.playPickup('money');
+                    }
+                }
             }
         }
         
@@ -21880,37 +22296,38 @@ class TripMine {
         }
         if (this.droneCooldown > 0) this.droneCooldown -= dt;
 
-        // ONE pass over blast entities does double duty: the classic
+        // ONE pass over hostiles does double duty: the classic
         // contact trigger (unchanged behavior at every tier) AND the
-        // drone-bay's nearest-hostile scan. No extra arrays, no extra
-        // loops, no per-frame allocations -- the only added math per
-        // entity is one compare against the hypot we were computing
-        // anyway. The (expensive-ish) LOS segment query only ever runs
-        // behind the 0.5s droneCooldown throttle in launch consideration.
-        let entities = game.getBlastEntities();
+        // drone-bay's nearest-hostile scan. In non-PvP mode this queries
+        // game.enemies directly; in PvP mode it includes the opposing
+        // player and their combat assets, while properly excluding the mine's owner.
+        let hostiles = game.getHostilesFor(this);
         let deployTarget = null;
         let deployDist = MINE_TECH.DEPLOY_RANGE;
         const wantDeploy = this.drones > 0 && this.droneCooldown <= 0;
-        for (let ent of entities) {
+        for (let ent of hostiles) {
             if (ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
-            if (dist < this.r + ent.r + 15) { 
+            let entRadius = ent.r || 12;
+            if (dist < this.r + entRadius + 15) { 
                 this.explode(game);
                 return false; 
             }
-            if (wantDeploy && ent instanceof Enemy && dist < deployDist) {
-                deployDist = dist;
-                deployTarget = ent;
+            if (wantDeploy && ent.type !== 'jammer' && dist < deployDist) {
+                let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, ent.x, ent.y)
+                    .some(w => MathUtils.lineIntersectAABB(this.x, this.y, ent.x, ent.y, w));
+                if (hasLOS) {
+                    deployDist = dist;
+                    deployTarget = ent;
+                }
             }
         }
         if (deployTarget) {
-            // A failed LOS check re-arms on the same cooldown as a launch,
-            // capping this segment query at 2x/sec per mine even with a
-            // hostile parked behind a wall inside scan range.
             this.droneCooldown = MINE_TECH.DRONE_COOLDOWN;
-            const blockedLOS = game.map.getWallsAlongSegment(this.x, this.y, deployTarget.x, deployTarget.y)
-                .some(w => MathUtils.lineIntersectAABB(this.x, this.y, deployTarget.x, deployTarget.y, w));
-            if (!blockedLOS) this.launchDrone(game, deployTarget);
+            this.launchDrone(game, deployTarget);
+        } else if (wantDeploy) {
+            // Throttle LOS queries if hostiles were nearby but occluded
+            this.droneCooldown = 0.2;
         }
         return true;
     }
@@ -21974,8 +22391,21 @@ class TripMine {
             if (dist < blastRadius) {
                 if (game.blastOccluded(this.x, this.y, ent)) continue;
                 let damage = (this.blastDamage || 110) * (1.0 - dist / blastRadius);
+                let wasDeadBefore = ent.dead;
                 ent.takeDamage(damage, Math.atan2(ent.y - this.y, ent.x - this.x), 450);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                if (game && game.friendlyFireMode === 'pvp' && ent instanceof Player && ent.dead && !wasDeadBefore) {
+                    let killer = (this.owner && this.owner.owner) ? this.owner.owner : this.owner;
+                    if (killer instanceof Player && killer !== ent && !killer.dead) {
+                        killer.cash = (killer.cash || 0) + PVP_TUNING.KILL_REWARD;
+                        game.floatingTexts.push(game.spawnFloatingText(
+                            killer.x, killer.y - 28,
+                            `+ELIMINATION $${PVP_TUNING.KILL_REWARD}`, '#ff2a5f', 1.6,
+                            (Math.random() - 0.5) * 40, -70, 150, false
+                        ));
+                        if (audio && audio.playPickup) audio.playPickup('money');
+                    }
+                }
             }
         }
         
@@ -21993,6 +22423,7 @@ class TripMine {
             let angle = (i / fragments) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
             let speed = MathUtils.rand(1600, 2400);
             let b = game.spawnBullet(this.x, this.y, angle, { name: 'Pistol', dmg: 25, speed: speed, drag: 0.18, color: '#ffea00' }, true, false, false, true);
+            b.owner = this.owner;
             game.bullets.push(b);
         }
 
@@ -22906,6 +23337,10 @@ const ARMORY_UPGRADES = [
       costPerLevel: [30, 45],
       desc: 'Lvl1: REINFORCED EMPLACEMENTS -- deploy barriers flush into walls (they render bolted-in) and carry +2 more (5->7). Lvl2: RAPID EMPLACEMENT -- hold the deploy button and strafe to chain barriers end-to-end.',
       levelDescs: ['REINFORCED EMPLACEMENTS (into-wall placement, +2 max barriers)', 'RAPID EMPLACEMENT (hold-to-chain deploy)'] },
+    { key: 'unlockSecurityCamera', name: 'REQUISITION: SENTINEL CAM', maxLevel: 3,
+      costPerLevel: [20, 35, 55],
+      desc: 'Deployable surveillance and sentry cameras that sweep choke points. Lvl1: 600px range, 60° sweep, perimeter alarms. Lvl2: 1000px range, 90° sweep, automated suppressed dart defense. Lvl3: 1500px range, 120° sweep, continuous thermal sentry laser.',
+      levelDescs: ['Sentinel Cam (600px range, 60° sweep, perimeter intruder alert)', 'MK.II Auto-Dart (1000px range, 90° sweep, silenced dart launcher)', 'MK.III Thermal Sentry Array (1500px range, 120° sweep, high-power thermal laser)'] },
     { key: 'unlockOverclocks', name: 'REQUISITION: OVERCLOCKS', maxLevel: 2,
       costPerLevel: [30, 40],
       desc: 'Lvl1: standard Weapon Overclocks in the Shop. Lvl2: Extended Mags.',
@@ -23807,6 +24242,7 @@ class Game {
         this.grenades = [];
         this.mines = [];
         this.turrets = [];
+        this.securityCameras = [];
         this.dogs = [];
         this.hostages = [];      // PHASE 2: escort entities (Asset Recovery)
         this.miniDrones = [];
@@ -23877,7 +24313,7 @@ class Game {
         this.shopItemIDs = [
             'hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost', 
             'barrier', 'barrier_upgrade', 'drone', 'drone_upgrade', 'fiber_optic', 'turret', 'turret_mk2',
-            'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
+            'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'camera', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
             'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap', 'ammo_shotgun_slug',
             'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC',
             'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel', 'call_evac', 'ready'
@@ -23924,11 +24360,13 @@ class Game {
                         'border-radius: 4px',
                         'box-shadow: 0 0 20px rgba(0, 229, 255, 0.3)'
                     ].join('; ');
-                    notif.innerText = this.devModeEnabled
-                        ? '⚙ Developer Menu Enabled!'
-                        : '⚙ Developer Menu Disabled!';
+                    notif.textContent = this.devModeEnabled ? 'DEVELOPER TERMINAL UNLOCKED [~ / F1]' : 'DEVELOPER TERMINAL LOCKED';
                     document.body.appendChild(notif);
-                    setTimeout(() => notif.remove(), 2500);
+                    setTimeout(() => {
+                        notif.style.transition = 'opacity 0.5s ease-out';
+                        notif.style.opacity = '0';
+                        setTimeout(() => notif.remove(), 500);
+                    }, 2500);
                 }
             });
         }
@@ -24029,6 +24467,9 @@ class Game {
         if (this.turrets) {
             for (let i = 0; i < this.turrets.length; i++) arr.push(this.turrets[i]);
         }
+        if (this.securityCameras) {
+            for (let i = 0; i < this.securityCameras.length; i++) arr.push(this.securityCameras[i]);
+        }
         if (this.dogs) {
             for (let i = 0; i < this.dogs.length; i++) arr.push(this.dogs[i]);
         }
@@ -24072,6 +24513,9 @@ class Game {
         if (this.turrets) {
             for (let i = 0; i < this.turrets.length; i++) arr.push(this.turrets[i]);
         }
+        if (this.securityCameras) {
+            for (let i = 0; i < this.securityCameras.length; i++) arr.push(this.securityCameras[i]);
+        }
         if (this.dogs) {
             for (let i = 0; i < this.dogs.length; i++) {
                 let d = this.dogs[i];
@@ -24089,6 +24533,9 @@ class Game {
         if (this.turrets) {
             for (let i = 0; i < this.turrets.length; i++) arr.push(this.turrets[i]);
         }
+        if (this.securityCameras) {
+            for (let i = 0; i < this.securityCameras.length; i++) arr.push(this.securityCameras[i]);
+        }
         if (this.dogs) {
             for (let i = 0; i < this.dogs.length; i++) arr.push(this.dogs[i]);
         }
@@ -24105,6 +24552,9 @@ class Game {
         if (this.isTwoPlayer && this.player2) arr.push(this.player2);
         if (this.turrets) {
             for (let i = 0; i < this.turrets.length; i++) arr.push(this.turrets[i]);
+        }
+        if (this.securityCameras) {
+            for (let i = 0; i < this.securityCameras.length; i++) arr.push(this.securityCameras[i]);
         }
         if (this.dogs) {
             for (let i = 0; i < this.dogs.length; i++) arr.push(this.dogs[i]);
@@ -26083,7 +26533,7 @@ class Game {
                 }
                 if (key === 'z') {
                     cancelBarrierChain(this.player);
-                    this.player.rightSelectIdx = (this.player.rightSelectIdx + 1) % 5;
+                    this.player.rightSelectIdx = (this.player.rightSelectIdx + 1) % 6;
                 }
                 if (key === 'c') {
                     if (!tryStartBarrierChain(this.player)) useRightItem(this.player);
@@ -26573,10 +27023,10 @@ class Game {
                 // Triangle / Cross -> Scroll Right Selector
                 if (this.dpadCooldown <= 0) {
                     if (gp.buttons[3].pressed) { // Triangle / Y
-                        playerInstance.rightSelectIdx = (playerInstance.rightSelectIdx - 1 + 5) % 5;
+                        playerInstance.rightSelectIdx = (playerInstance.rightSelectIdx - 1 + 6) % 6;
                         this.dpadCooldown = 0.18;
                     } else if (gp.buttons[0].pressed) { // Cross / A
-                        playerInstance.rightSelectIdx = (playerInstance.rightSelectIdx + 1) % 5;
+                        playerInstance.rightSelectIdx = (playerInstance.rightSelectIdx + 1) % 6;
                         this.dpadCooldown = 0.18;
                     }
                 }
@@ -26657,6 +27107,7 @@ class Game {
             turret: 'btn-buy-turret', turret_mk2: 'btn-buy-turret-mk2',
             dog: 'btn-buy-dog', dog_upgrade: 'btn-buy-dog-upgrade',
             swarm_drone: 'btn-buy-swarm-drone', swarm_pack: 'btn-buy-swarm-pack',
+            camera: 'btn-buy-camera',
             ammo_shotgun: 'btn-buy-ammo-shotgun', ammo_smg_std: 'btn-buy-ammo-smg-std', ammo_smg_hp: 'btn-buy-ammo-smg-hp',
             ammo_lmg_std: 'btn-buy-ammo-lmg-std', ammo_lmg_ap: 'btn-buy-ammo-lmg-ap',
             ammo_sniper_std: 'btn-buy-ammo-sniper-std', ammo_sniper_ap: 'btn-buy-ammo-sniper-ap', ammo_pistol_hp: 'btn-buy-ammo-pistol-hp',
@@ -28411,6 +28862,52 @@ class Game {
         }
     }
 
+    placeSecurityCamera(player) {
+        if (!player || player.dead || (player.camerasCount || 0) <= 0) return;
+        
+        let cx = player.x + Math.cos(player.angle) * 40;
+        let cy = player.y + Math.sin(player.angle) * 40;
+        
+        let overlap = false;
+        for (let wall of this.map.walls) {
+            let col = MathUtils.circleIntersectAABB(cx, cy, 12, wall);
+            if (col.hit) {
+                overlap = true;
+                break;
+            }
+        }
+        
+        if (!overlap) {
+            let camData = player.camerasInventory.pop();
+            let hp = 100;
+            let maxHp = 100;
+            let tier = 1;
+            if (this.saveData && this.saveData.metaUpgrades && this.saveData.metaUpgrades.unlockSecurityCamera) {
+                tier = Math.max(1, this.saveData.metaUpgrades.unlockSecurityCamera);
+            }
+            
+            if (typeof camData === 'object' && camData !== null) {
+                hp = camData.hp || 100;
+                maxHp = camData.maxHp || 100;
+                if (camData.tier) tier = Math.max(tier, camData.tier);
+            }
+            
+            let camera = new SecurityCamera(cx, cy, player, tier);
+            camera.hp = hp;
+            camera.maxHp = maxHp;
+            if (!this.securityCameras) this.securityCameras = [];
+            this.securityCameras.push(camera);
+            audio.playPickup('weapon');
+            let pColor = (player === this.player2) ? '#ffb700' : '#00e5ff';
+            for (let i = 0; i < 12; i++) {
+                this.addParticle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.4, 2);
+            }
+            this.spawnDeployRing(cx, cy);
+        } else {
+            audio.playRicochet();
+        }
+    }
+
     // SIMULATED SECOND FLOOR: `deckOnly` splits the barrier pass in two,
     // exactly the way drawPermanentMarks already splits gore -- and for the
     // same reason. Barriers are drawn BEFORE map.draw() so wall geometry
@@ -28643,6 +29140,9 @@ class Game {
         }
         if (this.turrets) {
             for (let t of this.turrets) t.draw(this.ctx, droneCam);
+        }
+        if (this.securityCameras) {
+            for (let c of this.securityCameras) c.draw(this.ctx, droneCam);
         }
         if (this.dogs) {
             for (let d of this.dogs) d.draw(this.ctx, droneCam);
@@ -28965,6 +29465,7 @@ class Game {
         this.map.draw(this.ctx, baseCam, pw, ph, true);
         this.drawBarriers(baseCam, true);
         if (this.turrets) for (let t of this.turrets) t.draw(this.ctx, baseCam);
+        if (this.securityCameras) for (let c of this.securityCameras) c.draw(this.ctx, baseCam);
         if (this.dogs) for (let d of this.dogs) d.draw(this.ctx, baseCam);
         for (let e of this.enemies) e.draw(this.ctx, baseCam);
         player.draw(this.ctx, baseCam);
@@ -30169,6 +30670,7 @@ class Game {
         this.grenades = [];
         this.mines = [];
         this.turrets = [];
+        this.securityCameras = [];
         this.dogs = [];
         if (!this.hostages) this.hostages = []; // (reset properly in startNewGame; guard for legacy paths)
         if (this.miniDrones) {
@@ -32876,6 +33378,11 @@ class Game {
                 if (t.hp > 0) entities.push(t);
             }
         }
+        if (this.securityCameras) {
+            for (let c of this.securityCameras) {
+                if (c.hp > 0) entities.push(c);
+            }
+        }
         if (this.dogs) {
             for (let d of this.dogs) {
                 if (d.hp > 0) entities.push(d);
@@ -33034,6 +33541,16 @@ class Game {
             if (this.turrets[i].dead) {
                 this.turrets[i] = this.turrets[this.turrets.length - 1];
                 this.turrets.pop();
+            }
+        }
+
+        if (this.securityCameras) {
+            for (let i = this.securityCameras.length - 1; i >= 0; i--) {
+                this.securityCameras[i].update(dt, this);
+                if (this.securityCameras[i].dead) {
+                    this.securityCameras[i] = this.securityCameras[this.securityCameras.length - 1];
+                    this.securityCameras.pop();
+                }
             }
         }
 
@@ -34092,6 +34609,21 @@ class Game {
                 }
             }
 
+            let camBtn = document.getElementById('btn-buy-camera-' + suffix);
+            if (camBtn && !this._armoryGate(camBtn, 'unlockSecurityCamera', 1, "Security Cam (UNLOCK IN ARMORY)")) {
+                let tier = (this.saveData && this.saveData.metaUpgrades && this.saveData.metaUpgrades.unlockSecurityCamera) || 1;
+                let tierLabel = tier === 3 ? " [T3 LASER]" : (tier === 2 ? " [T2 AUTO]" : "");
+                if ((p.camerasCount || 0) >= 3) {
+                    camBtn.classList.add('maxed');
+                    camBtn.innerText = "SECURITY CAM (MAX 3)";
+                    camBtn.disabled = true;
+                } else {
+                    camBtn.classList.remove('maxed');
+                    camBtn.innerText = `Security Cam${tierLabel} ($350)`;
+                    camBtn.disabled = false;
+                }
+            }
+
             let checkAmmoCap = (id, cur, max, label) => {
                 let el = document.getElementById(id);
                 if (el) {
@@ -34243,7 +34775,8 @@ class Game {
                 drone: ['unlockFpvDrone', 1], drone_upgrade: ['unlockFpvDrone', 2], fiber_optic: ['unlockFpvDrone', 3],
                 dog: ['unlockSpotRobot', 1], dog_upgrade: ['unlockSpotRobot', 2],
                 swarm_drone: ['unlockSwarm', 1], swarm_pack: ['unlockSwarm', 2],
-                turret_mk2: ['unlockTurretMk2', 1], barrier_upgrade: ['unlockBarrierMk2', 1]
+                turret_mk2: ['unlockTurretMk2', 1], barrier_upgrade: ['unlockBarrierMk2', 1],
+                camera: ['unlockSecurityCamera', 1]
             };
             const g = GATE[type];
             if (g && (MA[g[0]] || 0) < g[1]) return;
@@ -34365,6 +34898,10 @@ class Game {
         } else if (type === 'swarm_pack' && p.cash >= 300 && p.hunterSwarmCount <= 11) {
             p.cash -= 300;
             p.hunterSwarmCount += 4;
+            audio.playPickup('weapon');
+        } else if (type === 'camera' && p.cash >= 350 && (p.camerasCount || 0) < 3) {
+            p.cash -= 350;
+            p.camerasCount = (p.camerasCount || 0) + 1;
             audio.playPickup('weapon');
         } else if (type === 'ammo_shotgun' && p.cash >= 30 && p.ammo.shotgun < p.maxAmmo.shotgun) {
             p.cash -= 30; p.ammo.shotgun = Math.min(p.maxAmmo.shotgun, p.ammo.shotgun + 12); p.ammoTypes.shotgun = 'buck';
@@ -37074,6 +37611,9 @@ class Game {
 
             // Assets targeting assets
             this.turrets.forEach(t => { if (t.owner !== owner && !t.dead) hostiles.push(t); });
+            if (this.securityCameras) {
+                this.securityCameras.forEach(c => { if (c.owner !== owner && !c.dead) hostiles.push(c); });
+            }
             this.dogs.forEach(d => { if (d.owner !== owner && !d.dead) hostiles.push(d); });
             if (this.miniDrones) {
                 this.miniDrones.forEach(md => { if (md.owner !== owner && !md.dead) hostiles.push(md); });
@@ -37675,6 +38215,9 @@ class Game {
         if (this.turrets) {
             for (let t of this.turrets) t.draw(this.ctx, cam);
         }
+        if (this.securityCameras) {
+            for (let c of this.securityCameras) c.draw(this.ctx, cam);
+        }
         if (this.hostages) {
             for (let h of this.hostages) h.draw(this.ctx, cam); // PHASE 2: escort entities
         }
@@ -38092,6 +38635,27 @@ class Game {
                     nightCtx.save();
                     nightCtx.translate(pos.x, pos.y);
                     nightCtx.rotate(turret.angle);
+                    nightCtx.drawImage(cachedTurretFlashlightCanvas, -coneRadius, -coneRadius, coneRadius * 2, coneRadius * 2);
+                    nightCtx.restore();
+                }
+            }
+
+            // 2b. Security Camera Scan Cone + Ambient
+            if (this.securityCameras) {
+                for (let camObj of this.securityCameras) {
+                    if (camObj.dead) continue;
+                    let pos = worldToCanvas(camObj.x, camObj.y);
+                    let coneRadius = (camObj.range || 260) * cam.zoom;
+                    let ambientRadius = 50 * cam.zoom;
+
+                    nightCtx.save();
+                    nightCtx.translate(pos.x, pos.y);
+                    nightCtx.drawImage(cachedAmbientLightCanvas, -ambientRadius, -ambientRadius, ambientRadius * 2, ambientRadius * 2);
+                    nightCtx.restore();
+
+                    nightCtx.save();
+                    nightCtx.translate(pos.x, pos.y);
+                    nightCtx.rotate(camObj.angle);
                     nightCtx.drawImage(cachedTurretFlashlightCanvas, -coneRadius, -coneRadius, coneRadius * 2, coneRadius * 2);
                     nightCtx.restore();
                 }
@@ -39725,8 +40289,8 @@ class TouchController {
                     let dy = e.clientY - this.hudTouchState.right.startY;
                     let indexShift = Math.round(dy / 35);
                     if (indexShift !== 0) {
-                        let newIdx = (this.hudTouchState.right.lastSelectIdx - indexShift) % 5;
-                        if (newIdx < 0) newIdx += 5;
+                        let newIdx = (this.hudTouchState.right.lastSelectIdx - indexShift) % 6;
+                        if (newIdx < 0) newIdx += 6;
                         if (game.player.rightSelectIdx !== newIdx) {
                             game.player.rightSelectIdx = newIdx;
                             if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('money');
@@ -39895,6 +40459,22 @@ class TouchController {
                 closestItemType = 'drone';
             }
         }
+
+        // Check security cameras
+        if (game.securityCameras) {
+            for (let i = 0; i < game.securityCameras.length; i++) {
+                let cam = game.securityCameras[i];
+                if (cam.owner === game.player) {
+                    let d = Math.hypot(cam.x - wx, cam.y - wy);
+                    if (d < minDist) {
+                        minDist = d;
+                        closestItem = cam;
+                        closestItemType = 'camera';
+                        closestItemIdx = i;
+                    }
+                }
+            }
+        }
         
         // If we found a valid tapped item
         if (closestItem) {
@@ -39933,6 +40513,15 @@ class TouchController {
                     game.floatingTexts.push(game.spawnFloatingText(
                         game.player.x, game.player.y - 15, `+RETRIEVED SPOT ROBOT (${Math.round(closestItem.hp)}HP)`,
                         '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
+                } else if (closestItemType === 'camera') {
+                    game.player.camerasInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, tier: closestItem.tier || 1 });
+                    game.securityCameras.splice(closestItemIdx, 1);
+                    if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        game.player.x, game.player.y - 15, `+RETRIEVED SECURITY CAM (${Math.round(closestItem.hp)}HP)`,
+                        '#00e5ff', 1.2,
                         (Math.random() - 0.5) * 60, -80, 240, true
                     ));
                 } else if (closestItemType === 'drone') {
