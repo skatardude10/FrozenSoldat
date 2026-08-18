@@ -2580,6 +2580,7 @@
                         <button class="neon-btn" onclick="game.devSpawnEnemy('comm', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Comm Officer</button>
                         <button class="neon-btn" onclick="game.devSpawnEnemy('jammer', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Jammer</button>
                         <button class="neon-btn" onclick="game.devSpawnEnemy('grunt', true)" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: var(--red); color: var(--red);">Elite Grunt</button>
+                        <button class="neon-btn" onclick="game.devSpawnStrikeTeam()" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: #ff2a5f; color: #ff2a5f;">Strike Team</button>
                     </div>
                 </div>
                 <div>
@@ -5810,6 +5811,159 @@ const TACTICAL_TUNING = {
     PUSH_SPEED_MULT: 1.25,       // speed surge while pushing an exhausted player
     PUSH_RANGE: 600              // LOS range within which the push triggers
 };
+
+// ==== STRIKE TEAM: tuning & coordination constants ====
+// Single source of truth for the Operative fireteam dynamic. Every number
+// is a starting point, not locked in stone -- balanced for a tactical
+// cadence where breaking LOS and picking high-value targets is rewarded.
+const STRIKE_TEAM = {
+    MIN_WAVE: 6,                 // first wave a strike team can roll
+    MAX_CONCURRENT: 2,           // hard cap on simultaneous live teams
+    MAX_PER_WAVE: 1,             // max teams per wave (rises to 2 at wave 14)
+    TEMPLATE_WEIGHT: 0.35,       // flat weight in _rollSquadPlan, NOT wave-scaled (keeps it an event)
+
+    LKP_FRESHNESS: 4.0,          // seconds a sighting stays "hot"
+    LKP_SEARCH_SPREAD: 240,      // px fan-out radius once LKP goes stale
+    LKP_ARRIVE_DIST: 120,        // considered "arrived at LKP"
+
+    FORMATION_SLACK: 90,         // within this of your slot -> steer at leader to prevent micro-jitter
+    FORMATION_SPREAD: 1.0,       // global multiplier on all role offsets
+    REFORM_INTERVAL: 0.5,        // squad coordination tick rate (seconds) - NOT per-frame
+
+    BOUND_INTERVAL_MIN: 2.2,     // bounding overwatch phase length
+    BOUND_INTERVAL_MAX: 3.5,
+    BOUND_HOLD_SPEED: 0.05,      // speed multiplier while holding a bound (damped speed, NOT moveTarget=self)
+    BOUND_STALL_LIMIT: 7.0,      // no progress toward LKP for this long -> force ALL-move anti-stall
+
+    WOUND_ENTER: 0.30,           // hp/maxHp at or below -> wounded
+    WOUND_EXIT: 0.55,            // hp/maxHp at or above -> recovered (hysteresis gap prevents flicker)
+    WOUND_SPEED_MULT: 0.55,      // the hobble
+    WOUND_FIRE_MULT: 1.35,       // fire interval penalty - slower, NOT disabled
+    WOUND_BLEED_TICK: 0.35,      // seconds between blood drips
+    WOUND_COVER_SAMPLES: 12,     // nav nodes sampled when picking a fallback position
+    WOUND_COVER_RADIUS: 420,     // px search radius for that fallback
+
+    HEAL_CHARGES: 2,             // per Medic, per life
+    HEAL_RANGE: 44,              // px proximity required to channel heal
+    HEAL_CHANNEL: 1.6,           // seconds; interrupted by damage to the Medic
+    HEAL_FRAC: 0.35,             // fraction of maxHp restored
+    HEAL_COOLDOWN: 8.0,          // cooldown between heals
+
+    FLUSH_RANGE: 380,            // squad must be this close to LKP to flush
+    FLUSH_COOLDOWN_MIN: 14.0,    // per squad, not per member
+    FLUSH_COOLDOWN_MAX: 20.0,
+    FLUSH_PUSH_WINDOW: 2.0,      // seconds of post-throw speed surge
+    FLUSH_PUSH_MULT: 1.35,
+    FRAG_CHARGES: 2              // per Grenadier
+};
+
+// ==== OPERATIVE ROLES: registry ====
+// Shaped so adding a new role is a single entry.
+// Note on `type`: unique 'op_*' strings isolate operatives from Enemy.update's
+// hardcoded type branches (sapper/swarmer/etc.), except 'comm' which is
+// deliberately reused by the Signalman to inherit the comm aura & visual identity.
+const OPERATIVE_ROLES = {
+    pointman: {
+        key: 'pointman', name: 'Pointman',
+        minWave: 6,
+        hp: 130, speed: 175, size: 14, color: '#00e5ff', score: 150,
+        type: 'op_pointman',
+        weapon: 'smg',
+        shieldArc: Math.PI / 3,  // 60-degree forward riot shield
+        offset: { fwd: 0, side: 0 },
+        boundGroup: 'move',
+        leaderPriority: 1,
+        skipFlashbang: true
+    },
+    rifleman: {
+        key: 'rifleman', name: 'Rifleman',
+        minWave: 6,
+        hp: 110, speed: 165, size: 13, color: '#29b6f6', score: 120,
+        type: 'op_rifleman',
+        weapon: 'pistol',
+        offset: { fwd: -40, side: 70 },
+        boundGroup: 'move',
+        leaderPriority: 3,
+        skipFlashbang: true
+    },
+    gunner: {
+        key: 'gunner', name: 'Gunner',
+        minWave: 8,
+        hp: 160, speed: 135, size: 15, color: '#ff9100', score: 200,
+        type: 'op_gunner',
+        weapon: 'lmg',
+        offset: { fwd: -110, side: 50 },
+        boundGroup: 'cover',
+        leaderPriority: 4,
+        skipFlashbang: true
+    },
+    medic: {
+        key: 'medic', name: 'Medic',
+        minWave: 10,
+        hp: 95, speed: 170, size: 12, color: '#00e676', score: 250,
+        type: 'op_medic',
+        weapon: 'pistol',
+        offset: { fwd: -130, side: -40 },
+        boundGroup: 'move',
+        leaderPriority: 5,
+        skipFlashbang: true
+    },
+    grenadier: {
+        key: 'grenadier', name: 'Grenadier',
+        minWave: 12,
+        hp: 125, speed: 155, size: 14, color: '#ff5722', score: 180,
+        type: 'op_grenadier',
+        weapon: 'shotgun',
+        offset: { fwd: -90, side: 90 },
+        boundGroup: 'move',
+        leaderPriority: 4,
+        skipFlashbang: true
+    },
+    marksman: {
+        key: 'marksman', name: 'Marksman',
+        minWave: 14,
+        hp: 90, speed: 145, size: 12, color: '#e040fb', score: 220,
+        type: 'op_marksman',
+        weapon: 'sniper',
+        offset: { fwd: -260, side: 120 },
+        boundGroup: 'cover',
+        leaderPriority: 4,
+        skipFlashbang: true
+    },
+    breacher: {
+        key: 'breacher', name: 'Breacher',
+        minWave: 16,
+        hp: 140, speed: 180, size: 14, color: '#ffd600', score: 190,
+        type: 'op_breacher',
+        weapon: 'shotgun',
+        offset: { fwd: -30, side: 60 },
+        boundGroup: 'move',
+        leaderPriority: 2,
+        skipFlashbang: false // Breacher owns flashbangs
+    },
+    signalman: {
+        key: 'signalman', name: 'Signalman',
+        minWave: 18,
+        hp: 105, speed: 140, size: 13, color: '#ffab00', score: 280,
+        type: 'comm', // Reuses comm type deliberately for skittish standoff, aura broadcast & amber halo
+        weapon: 'pistol',
+        offset: { fwd: -200, side: -80 },
+        boundGroup: 'cover',
+        leaderPriority: 5,
+        skipFlashbang: true
+    }
+};
+
+const STRIKE_TEMPLATES = [
+    // [minWave, weightFn, roles, name]
+    [6,  (w) => 1.0, ['pointman', 'rifleman', 'rifleman'], 'Recon Team'],
+    [8,  (w) => 1.2, ['pointman', 'gunner', 'rifleman'], 'Assault Team'],
+    [10, (w) => 1.0, ['pointman', 'rifleman', 'medic'], 'Support Element'],
+    [12, (w) => 1.0, ['pointman', 'grenadier', 'gunner', 'medic'], 'Fireteam Alpha'],
+    [14, (w) => 1.1, ['pointman', 'marksman', 'gunner', 'medic'], 'Hunter Team'],
+    [16, (w) => 1.2, ['breacher', 'pointman', 'grenadier', 'medic'], 'Breach Team'],
+    [18, (w) => 1.0, ['breacher', 'marksman', 'gunner', 'signalman'], 'Command Element']
+];
 
 // ==== TACTICAL PERKS (Phase 3): single perk registry ====
 // grantRandomPerk() and generatePerkChoices() used to carry two hand-copied
@@ -15305,6 +15459,32 @@ class Enemy extends Entity {
                 }
             }
 
+            // ==== STRIKE TEAM: subclass movement hook ====
+            // The LAST link in the moveTargetX/Y override chain, and the ONE
+            // extension point for subclass steering. Base Enemy returns null
+            // (see _tacticalMoveTarget below), so every existing enemy type
+            // is byte-identical to before this hook existed -- the branch is
+            // a single null check.
+            //
+            // It sits here, at the end, so a subclass override wins over the
+            // flanker arc and the skittish standoff. The two overrides that
+            // must NOT be beaten (the final-kill runner, and drone flight)
+            // are deferred to by the implementation itself rather than by
+            // ordering: Operative._tacticalMoveTarget returns null whenever
+            // finalKillRole or cachedRunFromDrone is set. See the priority
+            // ladder comment there.
+            //
+            // Movement-only, like every other link in this chain: it writes
+            // moveTargetX/Y and NEVER targetX/targetY, so combat ranging
+            // (distToTarget, the 240px back-off, fire() gating) stays
+            // pointed at the real target -- the exact separation the
+            // moveTargetX comment above documents as load-bearing.
+            const _tmt = this._tacticalMoveTarget(targetX, targetY, distToTarget, hasLOS, target, runFromDrone);
+            if (_tmt) {
+                moveTargetX = Math.max(40, Math.min(game.mapW - 40, _tmt.x));
+                moveTargetY = Math.max(40, Math.min(game.mapH - 40, _tmt.y));
+            }
+
             // Pathfinding move angle -- uses moveTargetX/Y (which is either
             // the real combat target or, in operator mode while sneaking,
             // the cover-route waypoint -- see moveTargetX/Y assignment
@@ -15358,7 +15538,22 @@ class Enemy extends Entity {
                 // target share a short-TTL cached path keyed on coarse
                 // start/end cells -- a swarm wave stops paying one full A*
                 // per swarmer per AI tick. Other types keep exact paths.
-                let path = (this.type === 'swarmer')
+                // STRIKE TEAM: operatives opt into the same coarse-keyed
+                // shared-path cache swarmers use (_sharedPathOk is set only
+                // in Operative.init; it is absent/false on every other enemy,
+                // so this branch is byte-identical for them).
+                //
+                // Why it matters here: a fireteam only pays A* when its
+                // destination is BLOCKED, which in practice means corridors
+                // -- and in a corridor every member is routing toward the
+                // same leader or the same LKP, so their 200px start/end cell
+                // keys collide and the whole squad shares one solve. In open
+                // ground the slot usually has direct LOS and no path is
+                // computed at all. Without this, seven members solving seven
+                // distinct formation slots is seven full A* per AI tick,
+                // and _findNearestClearNode sorts every nav node twice per
+                // call.
+                let path = (this.type === 'swarmer' || this._sharedPathOk)
                     ? game.map.getSharedPath(this.x, this.y, pathTargetX, pathTargetY, checkWalls)
                     : game.map.findPath(this.x, this.y, pathTargetX, pathTargetY, checkWalls);
                 if (path && path.length > 0) {
@@ -15836,6 +16031,27 @@ class Enemy extends Entity {
         this.updatePhysics(dt, nearbyWalls);
     }
 
+    // ==== STRIKE TEAM: subclass steering extension point ====
+    // Returns {x, y} to override this enemy's MOVEMENT destination for this
+    // AI tick, or null to keep whatever the standard chain decided.
+    //
+    // Base implementation returns null unconditionally, so the call site in
+    // update() costs one null check and every existing enemy behaves exactly
+    // as it did before. Operative overrides this; nothing else does.
+    //
+    // Contract for any future override:
+    //  - Return a WORLD position, not an angle. The caller clamps to map
+    //    bounds and feeds it to the existing pathfinding/moveHasLOS logic.
+    //  - Never touch targetX/targetY, this.angle, or this.speed from here.
+    //    This is a steering hook only.
+    //  - Return null to defer -- that is how the final-kill runner and
+    //    drone-flee overrides stay authoritative.
+    //  - It runs on the 30-frame AI stagger, not per frame. Keep it cheap
+    //    and do not allocate per call beyond the single returned object.
+    _tacticalMoveTarget(targetX, targetY, distToTarget, hasLOS, target, runFromDrone) {
+        return null;
+    }
+
     // ==== FPV OPERATOR MODE: AI overlay implementation ====
     // Called once per throttled AI tick (same 30-frame stagger as the rest
     // of update()) from the shouldUpdateAI block above. Entirely separate
@@ -16084,16 +16300,28 @@ class Enemy extends Entity {
             let pellets = 6;
             for (let i = 0; i < pellets; i++) {
                 let spreadAngle = this.angle + (Math.random() - 0.5) * 0.28;
-                let bulletSpec = { name: 'Shotgun', dmg: 6, speed: 1600, drag: 0.2, color: '#ff5722' };
+                let bulletSpec = { name: 'Shotgun', dmg: 6, speed: 1600, drag: 0.2, color: this.color || '#ff5722' };
                 game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-                game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, '#ff5722', 0.04, 2);
+                game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, this.color || '#ff5722', 0.04, 2);
             }
         } else if (this.weaponType === 'sniper') {
             audio.playShoot('Sniper', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.02;
-            let bulletSpec = { name: 'Sniper', dmg: 40, speed: 3000, drag: 0.02, color: '#f50057' };
+            let bulletSpec = { name: 'Sniper', dmg: 40, speed: 3000, drag: 0.02, color: this.color || '#f50057' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*500, Math.sin(spreadAngle)*500, '#f50057', 0.05, 3.5);
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*500, Math.sin(spreadAngle)*500, this.color || '#f50057', 0.05, 3.5);
+        } else if (this.weaponType === 'smg') {
+            audio.playShoot('SMG', this.x, this.y);
+            let spreadAngle = this.angle + (Math.random() - 0.5) * 0.16;
+            let bulletSpec = { name: 'SMG', dmg: 7, speed: 2200, drag: 0.1, color: this.color || '#00e5ff' };
+            game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, this.color || '#00e5ff', 0.04, 2.5);
+        } else if (this.weaponType === 'lmg') {
+            audio.playShoot('LMG', this.x, this.y);
+            let spreadAngle = this.angle + (Math.random() - 0.5) * 0.22;
+            let bulletSpec = { name: 'LMG', dmg: 11, speed: 2400, drag: 0.05, color: this.color || '#ff9100' };
+            game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*450, Math.sin(spreadAngle)*450, this.color || '#ff9100', 0.05, 3);
         } else if (this.weaponType === 'heavy_pistol') {
             audio.playShoot('Pistol', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.10;
@@ -16103,9 +16331,9 @@ class Enemy extends Entity {
         } else {
             audio.playShoot('Pistol', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.12;
-            let bulletSpec = { name: 'Pistol', dmg: 8, speed: 1800, drag: 0.1, color: '#ff2a5f' };
+            let bulletSpec = { name: 'Pistol', dmg: 8, speed: 1800, drag: 0.1, color: this.color || '#ff2a5f' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, '#ff2a5f', 0.04, 3);
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, this.color || '#ff2a5f', 0.04, 3);
         }
     }
     
@@ -16335,7 +16563,23 @@ class Enemy extends Entity {
             let forehandX = 11;
             let weaponColor = '#00e5ff';
 
-            if (this.weaponType === 'heavy_pistol') {
+            if (this.weaponType === 'smg') {
+                barrelLen = 14;
+                bh = 3.5;
+                receiverLen = 9;
+                rh = 6;
+                gripX = 8;
+                forehandX = 11;
+                weaponColor = '#00e5ff';
+            } else if (this.weaponType === 'lmg') {
+                barrelLen = 28;
+                bh = 4.5;
+                receiverLen = 12;
+                rh = 7;
+                gripX = 9;
+                forehandX = 16;
+                weaponColor = '#ff9100';
+            } else if (this.weaponType === 'heavy_pistol') {
                 barrelLen = 18;
                 bh = 4;
                 receiverLen = 8;
@@ -16672,6 +16916,752 @@ class Enemy extends Entity {
         if (game && (isLastEnemy || this.isElite)) {
             game.triggerGloryKill(this);
         }
+    }
+}
+
+// ==== STRIKE TEAM: Tactical Squad Coordinator ====
+class TacticalSquad {
+    static _nextId = 1;
+
+    constructor(compKey = 'assault') {
+        this.id = TacticalSquad._nextId++;
+        this.compKey = compKey;
+        this.members = [];
+        this.leader = null;
+        this.lkp = { x: 0, y: 0, age: 0, verified: false };
+        this.state = 'ADVANCE';
+        this.boundPhase = 'MOVE';
+        this.boundTimer = MathUtils.rand(STRIKE_TEAM.BOUND_INTERVAL_MIN, STRIKE_TEAM.BOUND_INTERVAL_MAX);
+        this.stallTimer = 0;
+        this.flushCooldown = MathUtils.rand(STRIKE_TEAM.FLUSH_COOLDOWN_MIN, STRIKE_TEAM.FLUSH_COOLDOWN_MAX);
+        this.flushPushTimer = 0;
+        this.reformTimer = 0;
+        this.lastLeaderPos = { x: 0, y: 0 };
+        this.lastCalloutTime = 0;
+        this.lkpSeeded = false;   // see the seeding block in update()
+    }
+
+    triggerRadioCallout(speaker, text, color = '#00e5ff', game) {
+        if (!speaker || speaker.dead || !game) return;
+        const now = game.gameTime || 0;
+        if (now - this.lastCalloutTime < 1.4) return;
+        this.lastCalloutTime = now;
+        const roleTag = speaker.roleKey ? speaker.roleKey.slice(0, 3).toUpperCase() : 'OP';
+        const tag = `[ALPHA-${roleTag}] `;
+        game.floatingTexts.push(game.spawnFloatingText(
+            speaker.x, speaker.y - 36,
+            tag + text,
+            color, 1.8, 0, -25, 180, true
+        ));
+        if (audio && audio.playBakedSound) {
+            audio.playBakedSound('bolt_clack', audio.sfxGain, 0.25);
+        }
+    }
+
+    update(dt, game) {
+        if (!game) return;
+
+
+        // 1. Prune dead members IN PLACE.
+        // Was: this.members.filter(m => ... && game.enemies.includes(m)).
+        // That allocated a fresh array every tick AND ran an O(enemies)
+        // linear scan per member -- the exact allocation-churn + O(n*m)
+        // pattern this codebase has repeatedly engineered out (see
+        // _entitiesScratch and getHostilesFor's no-copy contract).
+        // A dead operative is also detached from its squad by the
+        // death-cleanup loop, so `.dead` alone is a sufficient test.
+        let live = 0;
+        for (let i = 0; i < this.members.length; i++) {
+            const m = this.members[i];
+            if (m && !m.dead) this.members[live++] = m;
+        }
+        this.members.length = live;
+        if (live === 0) return;
+
+        // 1b. LKP seeding (runs once, after we know we have live members).
+        // lkp starts at {0,0} and the movement ladder treats a young LKP as
+        // followable -- so without this an unseeded team walks its blind
+        // members to the top-left MAP CORNER. Seed from the player nearest
+        // the squad and leave verified=false: the team advances on the fight
+        // the moment it lands, but is honestly flagged as unconfirmed until
+        // somebody actually gets eyes on.
+        if (!this.lkpSeeded) {
+            this.lkpSeeded = true;
+            const ref = this.members[0];
+            let seed = null, seedD = Infinity;
+            for (const p of [game.player, game.player2]) {
+                if (!p || p.dead) continue;
+                const d = Math.hypot(p.x - ref.x, p.y - ref.y);
+                if (d < seedD) { seedD = d; seed = p; }
+            }
+            this.lastLeaderPos.x = ref.x;
+            this.lastLeaderPos.y = ref.y;
+            if (seed) {
+                this.lkp.x = seed.x; this.lkp.y = seed.y;
+                this.lkp.age = 0; this.lkp.verified = false;
+            } else {
+                // No living player -> no meaningful LKP. Age it out so the
+                // ladder returns null and stock target selection
+                // (turrets/dogs) takes over.
+                this.lkp.age = STRIKE_TEAM.LKP_FRESHNESS * 99;
+            }
+        }
+
+        // 2. Dynamic leader election based on leaderPriority (1 = Pointman, 2 = Breacher, etc.)
+        // Single min-scan rather than a full sort every tick: we only need
+        // the best member, not a totally ordered list, and re-sorting churned
+        // member order for no consumer.
+        const oldLeader = this.leader;
+        let best = this.members[0];
+        let bestP = (best.role && best.role.leaderPriority) || 99;
+        for (let i = 1; i < this.members.length; i++) {
+            const p = (this.members[i].role && this.members[i].role.leaderPriority) || 99;
+            if (p < bestP) { bestP = p; best = this.members[i]; }
+        }
+        this.leader = best;
+
+        if (oldLeader && oldLeader !== this.leader && oldLeader.dead) {
+            this.triggerRadioCallout(this.leader, 'LEADER DOWN! REGROUP ON ME!', '#ff2a5f', game);
+            // Force an immediate AI recompute on every member instead of
+            // waiting out the 30-frame stagger -- the established idiom for
+            // "this decision changed, re-tick now" (see _relocateStuckEnemy).
+            for (let i = 0; i < this.members.length; i++) this.members[i].cachedMoveAngle = undefined;
+        }
+
+        // 3. LKP maintenance (shared awareness).
+        // Gated on the sighted entity actually being a PLAYER: cachedTarget
+        // can be a turret, dog or security camera, and treating a turret
+        // sighting as "we know where the operator is" would send the whole
+        // squad to the wrong place.
+        let directLOS = false;
+        let visiblePlayer = null;
+
+        for (const m of this.members) {
+            if (m.cachedHasLOS && m.cachedTarget && !m.cachedTarget.dead && (m.cachedTarget instanceof Player)) {
+                directLOS = true;
+                visiblePlayer = m.cachedTarget;
+                break;
+            }
+        }
+
+        if (directLOS && visiblePlayer) {
+            this.lkp.x = visiblePlayer.x;
+            this.lkp.y = visiblePlayer.y;
+            this.lkp.age = 0;
+            this.lkp.verified = true;
+            this.state = 'ENGAGE';
+        } else {
+            this.lkp.age += dt;
+            if (this.lkp.age > STRIKE_TEAM.LKP_FRESHNESS) {
+                this.lkp.verified = false;
+                // Stale sighting: the squad spreads to search instead of
+                // holding formation on a position nobody can confirm. The
+                // movement ladder reads this state for its formation branch.
+                if (this.lkp.age > STRIKE_TEAM.LKP_FRESHNESS * 2) this.state = 'SEARCH';
+            }
+        }
+
+        // 4. Bounding overwatch toggle & anti-stall
+        this.boundTimer -= dt;
+        if (this.boundTimer <= 0) {
+            // 'ALL' (set by the anti-stall valve) resolves back into the
+            // normal two-phase alternation on the next flip.
+            this.boundPhase = (this.boundPhase === 'MOVE' ? 'COVER' : 'MOVE');
+            this.boundTimer = MathUtils.rand(STRIKE_TEAM.BOUND_INTERVAL_MIN, STRIKE_TEAM.BOUND_INTERVAL_MAX);
+            if (this.boundPhase === 'COVER' && Math.random() < 0.3) {
+                const gunner = this.members.find(m => m.roleKey === 'gunner' || m.roleKey === 'support');
+                if (gunner) this.triggerRadioCallout(gunner, 'LAYING DOWN SUPPRESSIVE FIRE!', '#ff9100', game);
+            }
+        }
+
+        // Stall check
+        if (this.leader) {
+            const distMoved = Math.hypot(this.leader.x - this.lastLeaderPos.x, this.leader.y - this.lastLeaderPos.y);
+            if (distMoved < 20) {
+                this.stallTimer += dt;
+            } else {
+                this.stallTimer = 0;
+                this.lastLeaderPos.x = this.leader.x;
+                this.lastLeaderPos.y = this.leader.y;
+            }
+            if (this.stallTimer >= STRIKE_TEAM.BOUND_STALL_LIMIT) {
+                // Anti-stall valve (mirrors the Operator mode's anti-turtle
+                // valve). 'ALL' releases BOTH bound groups, not just MOVE --
+                // setting 'MOVE' here only unblocked the move group, so a
+                // squad stalled because its cover group was pinned stayed
+                // stalled. Cleared on the next phase flip below.
+                this.boundPhase = 'ALL';
+                this.stallTimer = 0;
+                this.boundTimer = MathUtils.rand(STRIKE_TEAM.BOUND_INTERVAL_MIN, STRIKE_TEAM.BOUND_INTERVAL_MAX);
+            }
+        }
+
+        // 5. Tactical Flush (Grenadier / Breacher)
+        this.flushCooldown -= dt;
+        if (this.flushPushTimer > 0) this.flushPushTimer -= dt;
+
+        if (this.flushCooldown <= 0 && this.lkp.verified) {
+            const distToLKP = Math.hypot(this.leader.x - this.lkp.x, this.leader.y - this.lkp.y);
+            if (distToLKP < STRIKE_TEAM.FLUSH_RANGE && !directLOS) {
+                const breacher = this.members.find(m => m.roleKey === 'breacher' && (!m.flashCooldown || m.flashCooldown <= 0));
+                const grenadier = this.members.find(m => m.roleKey === 'grenadier' && (m._fragCharges > 0));
+
+                if (breacher) {
+                    const angle = Math.atan2(this.lkp.y - breacher.y, this.lkp.x - breacher.x);
+                    const throwSpeed = 480;
+                    const vx = Math.cos(angle) * throwSpeed;
+                    const vy = Math.sin(angle) * throwSpeed;
+                    game.grenades.push(game.spawnFlashbang(breacher.x, breacher.y, vx, vy));
+                    // Re-arm to the STOCK random-flashbang band, not a short
+                    // 12s timer. The base Enemy.update flashbang block fires
+                    // on its own whenever flashCooldown !== undefined and
+                    // reaches zero, so a short value here made the Breacher
+                    // throw twice: once on the squad flush, once on the stock
+                    // timer right behind it.
+                    breacher.flashCooldown = MathUtils.rand(40, 75);
+                    this.flushCooldown = MathUtils.rand(STRIKE_TEAM.FLUSH_COOLDOWN_MIN, STRIKE_TEAM.FLUSH_COOLDOWN_MAX);
+                    this.flushPushTimer = STRIKE_TEAM.FLUSH_PUSH_WINDOW;
+                    this.triggerRadioCallout(breacher, 'FLASH OUT! PUSH IN!', '#ffd600', game);
+                } else if (grenadier) {
+                    const angle = Math.atan2(this.lkp.y - grenadier.y, this.lkp.x - grenadier.x);
+                    const throwSpeed = 420;
+                    const vx = Math.cos(angle) * throwSpeed;
+                    const vy = Math.sin(angle) * throwSpeed;
+                    // Route through the POOLED factory. The previous version
+                    // called `new EnemyFragGrenade(...)` directly (bypassing
+                    // inactiveEnemyFrags recycling, with an ignored 5th arg)
+                    // and then created `inactiveEnemyFragGrenades` -- a
+                    // misspelled array nothing ever reads.
+                    game.grenades.push(game.spawnEnemyFragGrenade(grenadier.x, grenadier.y, vx, vy));
+                    grenadier._fragCharges--;
+                    this.flushCooldown = MathUtils.rand(STRIKE_TEAM.FLUSH_COOLDOWN_MIN, STRIKE_TEAM.FLUSH_COOLDOWN_MAX);
+                    this.flushPushTimer = STRIKE_TEAM.FLUSH_PUSH_WINDOW;
+                    this.triggerRadioCallout(grenadier, 'FRAG OUT! CLEAR THE SECTOR!', '#ff5722', game);
+                    audio.playShoot('Shotgun', grenadier.x, grenadier.y); // launch thump (bombardier precedent)
+                }
+            }
+        }
+
+        // 6. Slot calculation (every REFORM_INTERVAL = 0.5s)
+        this.reformTimer -= dt;
+        if (this.reformTimer <= 0 && this.leader) {
+            this.reformTimer = STRIKE_TEAM.REFORM_INTERVAL;
+            // Formation is oriented on where the leader is HEADING, not where
+            // its body art happens to be facing. cachedMoveAngle is the
+            // steering angle; this.angle is cachedAimAngle, which diverges
+            // during a window shot and would twist the whole formation.
+            const lAngle = directLOS && visiblePlayer
+                ? Math.atan2(visiblePlayer.y - this.leader.y, visiblePlayer.x - this.leader.x)
+                : (this.leader.cachedMoveAngle !== undefined ? this.leader.cachedMoveAngle : this.leader.angle);
+
+            for (const m of this.members) {
+                if (m === this.leader) {
+                    m._slotX = this.leader.x;
+                    m._slotY = this.leader.y;
+                    continue;
+                }
+                const off = (m.role && m.role.offset) || { fwd: -40, side: 40 };
+                const fwd = off.fwd * STRIKE_TEAM.FORMATION_SPREAD;
+                const side = off.side * STRIKE_TEAM.FORMATION_SPREAD;
+                const cosA = Math.cos(lAngle);
+                const sinA = Math.sin(lAngle);
+                let sx = this.leader.x + cosA * fwd - sinA * side;
+                let sy = this.leader.y + sinA * fwd + cosA * side;
+                sx = MathUtils.clamp(sx, 50, game.mapW - 50);
+                sy = MathUtils.clamp(sy, 50, game.mapH - 50);
+                m._slotX = sx;
+                m._slotY = sy;
+            }
+        }
+    }
+}
+
+// ==== STRIKE TEAM: Operative Entity Class ====
+// Extends Enemy to inherit standard bullet collision, targeting, damage handling,
+// barriers, and run ledger integration.
+// Managed via a dedicated pool (this.inactiveOperatives) and spawnOperative() factory.
+// NOTE: Operative must NEVER define `maxStamina` to avoid colliding with the
+// implicit Player discriminator (guide §5).
+class Operative extends Enemy {
+    constructor(x, y, roleKey, squad) {
+        const role = OPERATIVE_ROLES[roleKey] || OPERATIVE_ROLES.rifleman;
+        super(x, y, {
+            hp: role.hp,
+            speed: role.speed,
+            color: role.color,
+            type: role.type,
+            score: role.score,
+            size: role.size,
+            weapon: role.weapon,
+            shieldArc: role.shieldArc || 0
+        });
+        this.init(x, y, roleKey, squad);
+    }
+
+    init(x, y, roleKey, squad) {
+        const role = OPERATIVE_ROLES[roleKey] || OPERATIVE_ROLES.rifleman;
+        super.init(x, y, {
+            hp: role.hp,
+            speed: role.speed,
+            color: role.color,
+            type: role.type,
+            score: role.score,
+            size: role.size,
+            weapon: role.weapon,
+            shieldArc: role.shieldArc || 0
+        });
+
+        this.squad = squad || null;
+        this.roleKey = roleKey;
+        this.role = role;
+        this.weaponType = role.weapon || 'pistol';
+
+        // Squad & role state reset (crucial for pooled reuse)
+        this.wounded = false;
+        this._holdTimer = 0;
+        this._healCharges = (roleKey === 'medic') ? STRIKE_TEAM.HEAL_CHARGES : 0;
+        this._healCooldown = 0;
+        this._healChannel = 0;
+        this._healTarget = null;
+        this._lastHpSnapshot = this.hp;
+        this._fragCharges = (roleKey === 'grenadier') ? STRIKE_TEAM.FRAG_CHARGES : 0;
+        this._coverPoint = null;
+        this._coverTimer = 0;
+        this._burstLeft = 0;
+        this._burstCooldown = 0;
+        this._burstTimer = 0;
+        this._sharedPathOk = true;
+        // The Signalman deliberately reuses type 'comm' to inherit the aura
+        // broadcast and comm identity art -- but Enemy.init() also derives
+        // isSkittish from that same type, and the skittish standoff writes
+        // moveTargetX/Y, which would fight the formation ladder for the one
+        // role that has the deepest rear slot anyway (fwd: -200). Its offset
+        // already encodes "stay back", so the generic 620px standoff is
+        // redundant here. The aura block keys off this.type and is unaffected.
+        this.isSkittish = false;
+        this._slotX = x;
+        this._slotY = y;
+        this._bleedTimer = 0;
+        this.shieldArc = role.shieldArc || 0;
+
+        // Flashbang discipline: Only breachers throw flashbangs
+        if (role.skipFlashbang) {
+            this.flashCooldown = undefined;
+        } else {
+            this.flashCooldown = 0;
+        }
+    }
+
+    takeDamage(amt, pushDir, pushForce) {
+        if (this.dead) return;
+        // SHIELD: deliberately NOT handled here. The Pointman's frontal arc
+        // rides the SAME shieldArcHalf branch in Bullet.update's hit chain
+        // that the riot-phalanx grunt already uses -- Enemy.init() sets
+        // this.shieldArcHalf from config.shieldArc, which Operative.init()
+        // passes through, so it works with zero extra code.
+        //
+        // This is a load-bearing design choice, not an oversight. Blocking
+        // inside takeDamage() would make the shield stop EXPLOSIONS, MELEE
+        // and dog bites too, which is exactly the opposite of the existing
+        // riot-shield contract ("explosions, melee, and the dog ignore it,
+        // so flanking and splash are the intended counters"). Keeping it in
+        // the bullet chain preserves that counter-play and keeps one
+        // implementation instead of two that can drift.
+        //
+        // (The previous implementation here called MathUtils.angleDiff --
+        // a method that does not exist; the correct name is
+        // angleDifference. It threw on every frontal hit, which aborted
+        // super.takeDamage() AND the rest of that frame's bullet collision
+        // loop, making the Pointman fully immune from the front.)
+
+        // Damage interrupts medic heal channeling:
+        if (this.roleKey === 'medic' && this._healChannel > 0) {
+            this._healChannel = 0;
+            this._healTarget = null;
+        }
+
+        super.takeDamage(amt, pushDir, pushForce);
+    }
+
+    // ==== STRIKE TEAM: cover selection ====
+    // map.coverGraph exists ONLY on the Operator corridor map (MapGen case
+    // 11), so standard maps have zero cover nodes and cover has to be
+    // DERIVED. Definition used here: a nav node near me whose sightline to
+    // the threat is broken by a wall.
+    //
+    // Same sample-and-validate idiom as the patrol-beat picker and
+    // _pickSquadAnchor. Cost is bounded: WOUND_COVER_SAMPLES candidates,
+    // one segment-filtered wall scan each, and it only runs on entering the
+    // wounded state or every _coverTimer seconds after -- never per frame.
+    // Returns null if nothing qualifies, which correctly means "stand and
+    // fight" rather than running blindly into the open.
+    _findCoverPoint(threatX, threatY) {
+        if (typeof game === 'undefined' || !game || !game.map || !game.map.navNodes) return null;
+        const nodes = game.map.navNodes;
+        if (!nodes.length) return null;
+        const R = STRIKE_TEAM.WOUND_COVER_RADIUS;
+        const RSq = R * R;
+        let best = null, bestDSq = Infinity;
+        let tried = 0;
+        // Stride the node list so samples are spread across the map region
+        // instead of clustered at one end of the array.
+        const stride = Math.max(1, Math.floor(nodes.length / (STRIKE_TEAM.WOUND_COVER_SAMPLES * 4)));
+        const offset = (this._aiStaggerId || 0) % stride;
+        for (let i = offset; i < nodes.length && tried < STRIKE_TEAM.WOUND_COVER_SAMPLES; i += stride) {
+            const n = nodes[i];
+            if (n.blocked) continue;
+            const dx = n.x - this.x, dy = n.y - this.y;
+            const dSq = dx * dx + dy * dy;
+            if (dSq > RSq || dSq < 3600) continue; // too far, or basically where I already am
+            tried++;
+            if (dSq >= bestDSq) continue;
+            // Cover == the threat CANNOT see this node.
+            const segWalls = game.map.getWallsAlongSegment(n.x, n.y, threatX, threatY);
+            let blockedSight = false;
+            for (let w = 0; w < segWalls.length; w++) {
+                if (MathUtils.lineIntersectAABB(n.x, n.y, threatX, threatY, segWalls[w])) { blockedSight = true; break; }
+            }
+            if (blockedSight) { best = n; bestDSq = dSq; }
+        }
+        return best ? { x: best.x, y: best.y } : null;
+    }
+
+    // ==== STRIKE TEAM: movement priority ladder ====
+    // The single steering brain for an operative. Deliberately ONE
+    // contiguous if/else ladder rather than scattered overrides -- the base
+    // Enemy class already stacks five moveTarget overrides that silently
+    // overwrite each other in source order, and adding more of those is how
+    // a Medic silently stops healing because some other branch stole its
+    // steer. One ladder, one place, readable top to bottom.
+    //
+    // Priority (first match wins):
+    //   0. defer  -- drone flee / final-kill runner keep their overrides
+    //   1. wounded -> fall back to derived cover
+    //   2. medic   -> move to the ally being healed
+    //   3. bound hold -> defer steering (speed is damped in update(), NOT
+    //                    steering: moveTarget=self would give atan2(0,0)=0
+    //                    and face every holding operative due east)
+    //   4. formation slot (unless already inside FORMATION_SLACK)
+    //   5. LKP / search fan-out when this member personally has no LOS
+    //   6. null -> stock behavior (I can see them; just fight)
+    _tacticalMoveTarget(targetX, targetY, distToTarget, hasLOS, target, runFromDrone) {
+        // 0. Defer to the overrides that must stay authoritative.
+        if (this.finalKillRole || runFromDrone) return null;
+
+        const squad = this.squad;
+
+        // 1. Wounded: break contact toward derived cover.
+        if (this.wounded) {
+            this._coverTimer -= (1 / 60) * 30; // one throttled AI tick's worth
+            if (!this._coverPoint || this._coverTimer <= 0) {
+                this._coverTimer = 2.0;
+                this._coverPoint = this._findCoverPoint(targetX, targetY);
+            }
+            if (this._coverPoint) {
+                const cdx = this._coverPoint.x - this.x, cdy = this._coverPoint.y - this.y;
+                if (cdx * cdx + cdy * cdy > 3600) return this._coverPoint;
+            }
+            // No cover found (or already there) -- stand and fight. Still
+            // dangerous: the fire-rate penalty in update() is the cost, not
+            // a disarm.
+            return null;
+        }
+
+        if (!squad) return null;
+
+        // 2. Medic en route to a heal.
+        if (this.roleKey === 'medic' && this._healTarget && !this._healTarget.dead) {
+            return { x: this._healTarget.x, y: this._healTarget.y };
+        }
+
+        // 3. Holding a bound -- speed is damped in update(); do not steer.
+        if (this._holdTimer > 0) return null;
+
+        // 4. Formation slot.
+        const leader = squad.leader;
+        if (leader && leader !== this && !leader.dead && squad.state !== 'SEARCH') {
+            const sdx = this._slotX - this.x, sdy = this._slotY - this.y;
+            const slackSq = STRIKE_TEAM.FORMATION_SLACK * STRIKE_TEAM.FORMATION_SLACK;
+            if (sdx * sdx + sdy * sdy > slackSq) {
+                return { x: this._slotX, y: this._slotY };
+            }
+            // Inside my slot: follow the leader directly. Prevents jitter,
+            // and means a squad in a corridor files behind the pointman
+            // instead of each man solving his own A* to an offset point.
+            if (!hasLOS) return { x: leader.x, y: leader.y };
+            return null;
+        }
+
+        // 5. No personal LOS -> advance on the squad's last known position.
+        //    THIS is the corner-checking behaviour: a member who cannot see
+        //    the player walks to where the squad last saw them, rather than
+        //    tracking live coordinates through a wall.
+        if (!hasLOS && squad.lkp && (squad.lkp.verified || squad.lkp.age < STRIKE_TEAM.LKP_FRESHNESS * 2)) {
+            const ldx = squad.lkp.x - this.x, ldy = squad.lkp.y - this.y;
+            const arrive = STRIKE_TEAM.LKP_ARRIVE_DIST;
+            if (ldx * ldx + ldy * ldy > arrive * arrive) {
+                return { x: squad.lkp.x, y: squad.lkp.y };
+            }
+            // Arrived and still nothing: fan out around the LKP to search.
+            // Bearing is derived from _aiStaggerId so it is stable per
+            // member instead of jittering every tick.
+            const ang = ((this._aiStaggerId || 0) % 8) * (Math.PI / 4);
+            return {
+                x: squad.lkp.x + Math.cos(ang) * STRIKE_TEAM.LKP_SEARCH_SPREAD,
+                y: squad.lkp.y + Math.sin(ang) * STRIKE_TEAM.LKP_SEARCH_SPREAD
+            };
+        }
+
+        // 6. I can see them. Stock behavior.
+        return null;
+    }
+
+    update(dt, player, walls, gameTime, allEnemies) {
+        if (this.dead) return;
+
+        // Wounded check & hysteresis:
+        const hpRatio = this.hp / this.maxHp;
+        if (!this.wounded && hpRatio <= STRIKE_TEAM.WOUND_ENTER) {
+            this.wounded = true;
+            if (this.squad && typeof game !== 'undefined' && game) {
+                this.squad.triggerRadioCallout(this, 'I\'M HIT! NEED MEDIC!', '#ff2a5f', game);
+            }
+        } else if (this.wounded && hpRatio >= STRIKE_TEAM.WOUND_EXIT) {
+            this.wounded = false;
+        }
+
+        // Wounded bleeding particle
+        if (this.wounded && typeof game !== 'undefined' && game) {
+            this._bleedTimer -= dt;
+            if (this._bleedTimer <= 0) {
+                this._bleedTimer = STRIKE_TEAM.WOUND_BLEED_TICK;
+                game.addParticle(this.x, this.y, MathUtils.rand(-10, 10), MathUtils.rand(-10, 10), '#8a0303', 0.6, 2.5);
+            }
+        }
+
+        // ---- Medic healing behavior ----
+        // _healTarget is the field the movement ladder reads (priority 2) to
+        // actually WALK to the casualty. The previous version wrote
+        // _slotX/_slotY here instead, which nothing consumed, so the medic
+        // only ever healed on accidental contact.
+        if (this.roleKey === 'medic' && typeof game !== 'undefined' && game) {
+            if (this._healCooldown > 0) this._healCooldown -= dt;
+            let lowestAlly = null;
+            if (this._healCharges > 0 && this._healCooldown <= 0 && this.squad) {
+                let lowestHpFrac = 0.99;
+                for (const m of this.squad.members) {
+                    if (m === this || m.dead) continue;
+                    const frac = m.hp / m.maxHp;
+                    if (frac < lowestHpFrac) {
+                        lowestHpFrac = frac;
+                        lowestAlly = m;
+                    }
+                }
+                if (lowestAlly && lowestHpFrac > 0.75) lowestAlly = null;
+            }
+
+            if (lowestAlly) {
+                this._healTarget = lowestAlly;
+                const hdx = lowestAlly.x - this.x, hdy = lowestAlly.y - this.y;
+                if (hdx * hdx + hdy * hdy <= STRIKE_TEAM.HEAL_RANGE * STRIKE_TEAM.HEAL_RANGE) {
+                    this._healChannel += dt;
+                    game.addParticle(lowestAlly.x + MathUtils.rand(-12, 12), lowestAlly.y + MathUtils.rand(-12, 12), 0, -30, '#00e676', 0.35, 2);
+                    if (this._healChannel >= STRIKE_TEAM.HEAL_CHANNEL) {
+                        // Direct hp write, deliberately NOT takeDamage() with a
+                        // negative amount -- that would run the armor branch,
+                        // the ledger hook, the Blood Wager check and the
+                        // patrol-break, all of which are wrong for a heal.
+                        lowestAlly.hp = Math.min(lowestAlly.maxHp, lowestAlly.hp + Math.round(lowestAlly.maxHp * STRIKE_TEAM.HEAL_FRAC));
+                        if (lowestAlly.hp >= lowestAlly.maxHp * STRIKE_TEAM.WOUND_EXIT) lowestAlly.wounded = false;
+                        this._healCharges--;
+                        this._healCooldown = STRIKE_TEAM.HEAL_COOLDOWN;
+                        this._healChannel = 0;
+                        this._healTarget = null;
+                        if (this.squad) this.squad.triggerRadioCallout(this, 'STIM APPLIED! YOU\'RE GOOD!', '#00e676', game);
+                        // 'pickup_money' is a real baked key; 'pickup_health'
+                        // is not (playBakedSound silently no-ops on unknown
+                        // names, so the old call made no sound at all).
+                        if (typeof audio !== 'undefined' && audio && audio.playPickup) audio.playPickup('money');
+                    }
+                } else {
+                    this._healChannel = 0; // out of range: channel does not persist
+                }
+            } else {
+                this._healTarget = null;
+                this._healChannel = 0;
+            }
+        }
+
+        // ---- Bounding overwatch hold ----
+        // Set the hold flag from the squad's current bound phase. Consumed as
+        // a SPEED DAMP below and as a "defer steering" branch in the movement
+        // ladder -- never as moveTarget = own position, which would make
+        // atan2(0,0) === 0 and point every holding operative due east.
+        this._holdTimer = 0;
+        if (this.squad && this.role && this.squad.boundPhase !== 'ALL' && !this.wounded) {
+            const myGroup = (this.role.boundGroup === 'cover') ? 'COVER' : 'MOVE';
+            if (this.squad.boundPhase !== myGroup && this.squad.state === 'ENGAGE') {
+                this._holdTimer = 1;
+            }
+        }
+
+        // ---- Gunner suppression burst ----
+        // Reuses Enemy.fire() verbatim rather than adding a weapon type: the
+        // identity is the RHYTHM (a tight burst, then a long recovery), not
+        // the projectile. Re-checks suppressedTimer / fireHoldTimer on EVERY
+        // shot, because those gates live at the base class's fire() call site
+        // and a burst loop would otherwise drive straight through a
+        // Suppressing Fire perk proc.
+        if (this.roleKey === 'gunner' && typeof game !== 'undefined' && game) {
+            if (this._burstCooldown > 0) this._burstCooldown -= dt;
+            if (this._burstLeft > 0) {
+                this._burstTimer = (this._burstTimer || 0) - dt;
+                if (this._burstTimer <= 0) {
+                    if (this.suppressedTimer > 0 || this.fireHoldTimer > 0 || !this.cachedHasLOS || this.cachedRunFromDrone) {
+                        this._burstLeft = 0;               // burst breaks cleanly
+                        this._burstCooldown = 1.2;
+                    } else {
+                        this.fire(game);
+                        this._burstLeft--;
+                        this._burstTimer = 0.09;
+                        if (this._burstLeft <= 0) this._burstCooldown = MathUtils.rand(2.2, 3.2);
+                    }
+                }
+            } else if (this._burstCooldown <= 0 && this.cachedHasLOS && !this.cachedRunFromDrone &&
+                       this.suppressedTimer <= 0 && this.fireHoldTimer <= 0 &&
+                       this.cachedDistToTarget < 900) {
+                this._burstLeft = 5;
+                this._burstTimer = 0;
+                this.lastFire = gameTime; // suppress the stock cadence while bursting
+            }
+        }
+
+        // ---- Speed modifiers ----
+        // Stacked onto this.speed for the duration of super.update() and
+        // restored immediately after, so the base stat never drifts.
+        const origSpeed = this.speed;
+        const origFireRate = this.fireRate;
+        if (this.wounded) {
+            this.speed *= STRIKE_TEAM.WOUND_SPEED_MULT;
+            // The hobble is slower, NOT disarmed -- a wounded operative that
+            // stops shooting is free XP and kills the tension the wounded
+            // window is supposed to create.
+            this.fireRate *= STRIKE_TEAM.WOUND_FIRE_MULT;
+        }
+        if (this._holdTimer > 0) {
+            this.speed *= STRIKE_TEAM.BOUND_HOLD_SPEED;
+        } else if (this.squad && this.squad.flushPushTimer > 0) {
+            this.speed *= STRIKE_TEAM.FLUSH_PUSH_MULT;
+        }
+        if (this.roleKey === 'gunner' && (this._burstLeft > 0 || this._burstCooldown > 0)) {
+            // The burst loop owns the Gunner's trigger for the whole cycle:
+            // during the burst AND through the recovery window. Suppressing
+            // only during the burst let the stock cadence resume the instant
+            // the burst ended, which erased the burst-then-silence rhythm
+            // that IS the Gunner's identity.
+            this.fireRate = 9999;
+        }
+
+        // Run base Enemy update (handles pathfinding, separation, LOS, wall collision, firing)
+        super.update(dt, player, walls, gameTime, allEnemies);
+        this.speed = origSpeed;
+        this.fireRate = origFireRate;
+    }
+
+    draw(ctx, cam) {
+        if (this.opacity <= 0.01) return;
+        super.draw(ctx, cam);
+
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y;
+
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(this.angle);
+        // Enemy.draw() resets globalAlpha to 1.0 before returning, so role
+        // art has to re-apply the fade or shields and insignia pop through
+        // the fog-of-war a full opacity ramp before the body they belong to.
+        ctx.globalAlpha = this.opacity;
+
+        // 1. Pointman: Forward riot shield.
+        // NOTE: the arc drawn here MUST match shieldArcHalf, the value the
+        // bullet hit chain actually tests -- the visual IS the hitbox, same
+        // contract as the riot-phalanx grunt. The previous version drew
+        // (shieldArc * 0.5), i.e. a 60-degree total arc against a 120-degree
+        // hitbox, so shots that visibly cleared the shield were still
+        // blocked. PERF: no shadowBlur here (see the elite-glow bake comment
+        // in Enemy.draw) -- per-entity gaussian blur is a known measured
+        // cost in this renderer; a second offset stroke reads as a glow for
+        // free.
+        if (this.shieldArcHalf > 0) {
+            ctx.save();
+            const halfArc = this.shieldArcHalf;
+            const blocked = this._shieldFlash > 0;
+            ctx.strokeStyle = blocked ? '#ffffff' : '#00e5ff';
+            ctx.lineWidth = blocked ? 5 : 3.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.r + 6, -halfArc, halfArc);
+            ctx.stroke();
+            ctx.strokeStyle = blocked ? '#e0f7fa' : 'rgba(255, 255, 255, 0.7)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.r + 4, -halfArc * 0.85, halfArc * 0.85);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // 2. Medic: Medical Cross insignia on back
+        if (this.roleKey === 'medic') {
+            ctx.save();
+            ctx.fillStyle = '#00e676';
+            const cx = -this.r * 0.4;
+            ctx.fillRect(cx - 1.5, -4, 3, 8);
+            ctx.fillRect(cx - 4, -1.5, 8, 3);
+            ctx.restore();
+        }
+
+        // 3. Breacher: Heavy Armor Plates
+        if (this.roleKey === 'breacher') {
+            ctx.save();
+            ctx.strokeStyle = '#ffd600';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(-this.r * 0.2, 0, this.r * 0.9, Math.PI * 0.6, Math.PI * 1.4);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // 4. Marksman: Laser Sight (when target in sight).
+        // PERF: no shadowBlur -- see the shield note above. The dashed line
+        // already reads clearly against the dark floor.
+        // The line is drawn in the rotated body space, so it follows
+        // this.angle (cachedAimAngle) -- which is exactly where the round
+        // will go. Length is clamped so a long open sightline can't stretch
+        // the tell across the whole map.
+        if (this.roleKey === 'marksman' && this.cachedHasLOS && this.cachedTarget && !this.cachedTarget.dead) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(224, 64, 251, 0.75)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([8, 4]);
+            ctx.beginPath();
+            ctx.moveTo(this.r + 15, 0);
+            ctx.lineTo(Math.min(this.cachedDistToTarget || 400, 1400), 0);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // 5. Wounded tactical indicator:
+        if (this.wounded) {
+            ctx.save();
+            ctx.strokeStyle = '#ff2a5f';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.r + 3, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        ctx.restore();
     }
 }
 
@@ -24356,6 +25346,7 @@ class Game {
         this.hudState = {};
         this.inactiveBullets = [];
         this.inactiveEnemies = [];
+        this.inactiveOperatives = [];
         this.inactiveFloatingTexts = [];
         this.inactiveItems = [];
         this.inactiveShrapnelGrenades = [];
@@ -24757,6 +25748,82 @@ class Game {
         return e;
     }
 
+    // ==== STRIKE TEAM: Operative object factory & pool dispatcher ====
+    // Separate pool from grunts (inactiveOperatives vs inactiveEnemies) to
+    // prevent pool poisoning. Assigns _aiStaggerId identically to spawnEnemy().
+    spawnOperative(x, y, roleKey, squad) {
+        let e;
+        if (this.inactiveOperatives && this.inactiveOperatives.length > 0) {
+            e = this.inactiveOperatives.pop();
+            e.init(x, y, roleKey, squad);
+        } else {
+            e = new Operative(x, y, roleKey, squad);
+        }
+        // Stable AI stagger id assigned fresh per spawn
+        e._aiStaggerId = this.nextAiStaggerId++;
+        e.opAI = null;
+        e.operatorExposedTimer = 0;
+        return e;
+    }
+
+    _spawnStrikeTeamMember(roleKey, anchor, squad) {
+        const SPAWN_WALL_CHECK_R = 18;
+        let ex = anchor.x, ey = anchor.y;
+        for (let attempts = 0; attempts < 8; attempts++) {
+            let jx = anchor.x + (Math.random() - 0.5) * 2 * TACTICAL_TUNING.SQUAD_JITTER;
+            let jy = anchor.y + (Math.random() - 0.5) * 2 * TACTICAL_TUNING.SQUAD_JITTER;
+            jx = Math.max(50, Math.min(this.mapW - 50, jx));
+            jy = Math.max(50, Math.min(this.mapH - 50, jy));
+            let ok = true;
+            if (this.player && !this.player.dead && Math.hypot(this.player.x - jx, this.player.y - jy) < 300) ok = false;
+            if (ok && this.isTwoPlayer && this.player2 && !this.player2.dead && Math.hypot(this.player2.x - jx, this.player2.y - jy) < 300) ok = false;
+            if (ok) {
+                let nearbyWalls = this.map.getWallsNear(jx, jy);
+                for (let wall of nearbyWalls) {
+                    if (MathUtils.circleIntersectAABB(jx, jy, SPAWN_WALL_CHECK_R, wall).hit) { ok = false; break; }
+                }
+            }
+            if (ok) { ex = jx; ey = jy; break; }
+        }
+
+        let op = this.spawnOperative(ex, ey, roleKey, squad);
+        const iw = this._spawnIntensityWave();
+        let scaleHP = 1.0 + (iw - 1) * 0.04;
+        let scaleSpeed = Math.min(TACTICAL_TUNING.SPEED_SCALE_MAX, 1.0 + (iw - 1) * 0.015);
+        op.hp = Math.round(op.hp * scaleHP);
+        op.maxHp = op.hp;
+        op.speed = op.speed * scaleSpeed;
+
+        if (squad && squad.members) squad.members.push(op);
+        this.enemies.push(op);
+        // GUARD: never drive the wave budget negative. The dev spawner calls
+        // this outside the wave faucet, and wave clear tests
+        // `enemiesToSpawn === 0` exactly -- a negative value makes that test
+        // permanently false and the wave can never end.
+        if (this.enemiesToSpawn > 0) this.enemiesToSpawn--;
+        return op;
+    }
+
+    _spawnStrikeTeam(anchorX, anchorY, compKey = 'assault') {
+        const squad = new TacticalSquad(compKey);
+        const comp = (typeof STRIKE_TEMPLATES !== 'undefined' && STRIKE_TEMPLATES.find(t => t[3] && t[3].toLowerCase().includes(compKey.toLowerCase())))
+            || (typeof STRIKE_TEMPLATES !== 'undefined' ? STRIKE_TEMPLATES[0] : null);
+        const roles = comp ? comp[2] : ['pointman', 'rifleman', 'gunner', 'medic'];
+        const anchor = { x: anchorX, y: anchorY };
+
+        for (const roleKey of roles) {
+            this._spawnStrikeTeamMember(roleKey, anchor, squad);
+        }
+
+        if (this.floatingTexts) {
+            this.floatingTexts.push(this.spawnFloatingText(
+                anchorX, anchorY - 50,
+                '⚠️ HOSTILE STRIKE TEAM INBOUND', '#ff2a5f', 3.0, 0, -20, 180, true
+            ));
+        }
+        return squad;
+    }
+
     // FPV OPERATOR MODE spawn scheduler. Replaces the stock single-enemy
     // spawn tick entirely for operator waves. Key differences (see
     // FPV_OPERATOR_SPEC.md section 6):
@@ -24974,6 +26041,8 @@ class Game {
         this.pendingBossKey = null;
         this.spawnTimer = 0;
         this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: EXTRACTION_TUNING.INSERTION_PREP + 2.0 };
+        this._strikeTeams = [];
+        this._strikeTeamsThisWave = 0;
         for (const p of [this.player, this.player2]) if (p) p.carriedIntel = 0;
         // PHASE 2: announce the OP, not a hardcoded uplink briefing.
         const _mn = (this.runConfig && this.runConfig.missionId && MISSIONS[this.runConfig.missionId])
@@ -25265,6 +26334,40 @@ class Game {
             let n = 4 + Math.floor(Math.random() * 3);
             return new Array(n).fill('swarmer');
         }
+
+        // ==== STRIKE TEAM roll: coordinated spec-ops fireteam ====
+        // Three independent gates, all deliberate:
+        //  - MAX_CONCURRENT bounds how many teams are ALIVE at once.
+        //  - MAX_PER_WAVE bounds how many are SPAWNED this wave. These are
+        //    different questions: the previous version tested live count
+        //    against both, so killing a team immediately re-armed the roll
+        //    and one wave could field far more teams than intended.
+        //  - Boss waves are excluded: a scripted boss plus a coordinated
+        //    fireteam makes wave pacing unpredictable in the wrong way, the
+        //    same reasoning that stops bosses from also rolling a mutator.
+        const liveTeams = (this._strikeTeams ? this._strikeTeams.length : 0);
+        const spawnedThisWave = this._strikeTeamsThisWave || 0;
+        const perWaveCap = (w >= 14 ? 2 : STRIKE_TEAM.MAX_PER_WAVE);
+        if (!this.isBossWave
+            && liveTeams < STRIKE_TEAM.MAX_CONCURRENT
+            && spawnedThisWave < perWaveCap
+            && w >= STRIKE_TEAM.MIN_WAVE) {
+            const strikePool = STRIKE_TEMPLATES.filter(t => w >= t[0]);
+            if (strikePool.length > 0 && Math.random() < STRIKE_TEAM.TEMPLATE_WEIGHT) {
+                const chosen = strikePool[Math.floor(Math.random() * strikePool.length)];
+                // Only commit if the whole team fits in the remaining wave
+                // budget. Without this the staged-plan truncation below can
+                // cut a 4-man Breach Team down to one man while the contact
+                // ping still announces a full team.
+                if (chosen[2].length <= this.enemiesToSpawn) {
+                    const plan = chosen[2].map(r => 'op_' + r);
+                    plan.isStrikeTeam = true;
+                    plan.compName = chosen[3] || 'Strike Team';
+                    return plan;
+                }
+            }
+        }
+
         // [minWave, weightFn, members] -- weights favor heavier squads later.
         const templates = [
             [1,  () => Math.max(0.5, 3.0 - w * 0.25), ['grunt', 'grunt', 'grunt']],
@@ -25446,18 +26549,25 @@ class Game {
         if (ss.plan.length > 0) {
             ss.memberTimer -= dt;
             if (ss.memberTimer <= 0 && this.enemiesToSpawn > 0) {
-                let e = this._spawnSquadMember(ss.plan.shift(), ss.anchor);
-                // Phase 2: role assignment. The squad's pointman always goes
-                // direct; the rest roll a wave-scaled chance to be flankers,
-                // alternating sides so a squad envelops instead of stacking
-                // on one shoulder. Swarmers/sappers keep their own behavior.
-                if (e && e.type !== 'swarmer' && e.type !== 'sapper') {
-                    let isPointman = (ss.rolesAssigned || 0) === 0;
-                    let flankChance = Math.min(TACTICAL_TUNING.FLANK_MAX,
-                        TACTICAL_TUNING.FLANK_BASE + this._spawnIntensityWave() * TACTICAL_TUNING.FLANK_PER_WAVE);
-                    if (!isPointman && Math.random() < flankChance) {
-                        ss.flankSide = -(ss.flankSide || 1);
-                        e.tactic = ss.flankSide > 0 ? 'flank_right' : 'flank_left';
+                const memberKey = ss.plan.shift();
+                let e;
+                if (memberKey.startsWith('op_')) {
+                    const roleKey = memberKey.slice(3);
+                    e = this._spawnStrikeTeamMember(roleKey, ss.anchor, ss.currentSquad);
+                } else {
+                    e = this._spawnSquadMember(memberKey, ss.anchor);
+                    // Phase 2: role assignment. The squad's pointman always goes
+                    // direct; the rest roll a wave-scaled chance to be flankers,
+                    // alternating sides so a squad envelops instead of stacking
+                    // on one shoulder. Swarmers/sappers keep their own behavior.
+                    if (e && e.type !== 'swarmer' && e.type !== 'sapper') {
+                        let isPointman = (ss.rolesAssigned || 0) === 0;
+                        let flankChance = Math.min(TACTICAL_TUNING.FLANK_MAX,
+                            TACTICAL_TUNING.FLANK_BASE + this._spawnIntensityWave() * TACTICAL_TUNING.FLANK_PER_WAVE);
+                        if (!isPointman && Math.random() < flankChance) {
+                            ss.flankSide = -(ss.flankSide || 1);
+                            e.tactic = ss.flankSide > 0 ? 'flank_right' : 'flank_left';
+                        }
                     }
                 }
                 ss.rolesAssigned = (ss.rolesAssigned || 0) + 1;
@@ -25488,6 +26598,20 @@ class Game {
         ss.rolesAssigned = 0;
         ss.anchor = this._pickSquadAnchor();
         ss.memberTimer = 0; // first member releases this frame
+
+        ss.isStrikeTeam = !!plan.isStrikeTeam;
+        ss.compName = plan.compName || 'Strike Team';
+        if (ss.isStrikeTeam) {
+            ss.currentSquad = new TacticalSquad(ss.compName);
+            if (!this._strikeTeams) this._strikeTeams = [];
+            this._strikeTeams.push(ss.currentSquad);
+            // Per-wave spawn counter (distinct from the live-team count).
+            // Reset alongside squadState in startNextWave().
+            this._strikeTeamsThisWave = (this._strikeTeamsThisWave || 0) + 1;
+        } else {
+            ss.currentSquad = null;
+        }
+
         // PHASE 1: extraction squad cadence is the heat tier's, not the
         // fixed wave-mode band -- CALM is sparse, OVERRUN is relentless.
         if (this.extractionMode) {
@@ -25501,13 +26625,20 @@ class Game {
         // tactical instead of chaotic (handoff lever #6). World-space text
         // above each living player + a quiet radio-blip.
         if (TACTICAL_TUNING.CONTACT_PING) {
-            let msg = 'CONTACT: ' + ss.anchor.bearing;
+            let msg = ss.isStrikeTeam ? ('⚠️ ' + ss.compName.toUpperCase() + ': ' + ss.anchor.bearing) : ('CONTACT: ' + ss.anchor.bearing);
+            let col = ss.isStrikeTeam ? '#ff2a5f' : '#ffb700';
             for (let p of [this.player, this.isTwoPlayer ? this.player2 : null]) {
                 if (p && !p.dead) {
-                    this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 42, msg, '#ffb700', 1.6, 0, -30, 200, true));
+                    this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 42, msg, col, 2.0, 0, -30, 200, true));
                 }
             }
-            if (audio) audio.playBakedSound('bolt_clack', audio.sfxGain, 0.35);
+            if (audio) {
+                if (ss.isStrikeTeam && audio.playFlashbangRing) {
+                    audio.playFlashbangRing();
+                } else {
+                    audio.playBakedSound('bolt_clack', audio.sfxGain, 0.35);
+                }
+            }
         }
     }
 
@@ -30552,6 +31683,8 @@ class Game {
             takeTwoBought: false,
             activeWager: null   // { wavesRemaining, failed }
         };
+        this._strikeTeams = [];
+        this._strikeTeamsThisWave = 0;
         this.intelEarnedThisRun = 0;
         // JULY item 8: final-kill event state is run-scoped -- a runner that
         // escaped in a PREVIOUS run must not reinforce this run's wave 1.
@@ -30715,7 +31848,16 @@ class Game {
             // matching guard in the death-cleanup loop below), but this
             // reset path guards it too since it's cheap insurance.
             for (let e of this.enemies) {
-                if (!(e instanceof Boss)) {
+                if (e instanceof Operative) {
+                    e.target = null;
+                    e.waypoint = null;
+                    e.cachedTarget = null;
+                    e.opAI = null;
+                    e.squad = null;
+                    e._coverPoint = null;
+                    e._healTarget = null;
+                    if (this.inactiveOperatives) this.inactiveOperatives.push(e);
+                } else if (!(e instanceof Boss)) {
                     // Sterilize cached references before parking this object
                     // in the pool -- see the per-death cleanup loop below for
                     // the full rationale (same fix, applied to the bulk
@@ -31006,6 +32148,8 @@ class Game {
             this.prepTimer = 0;
             this.spawnTimer = 0;
             this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: 0.5 };
+            this._strikeTeams = [];
+            this._strikeTeamsThisWave = 0;
             this.updateHUD();
             return;
         }
@@ -31107,6 +32251,8 @@ class Game {
         // TACTICAL WAVES: fresh squad-release state each wave. Short initial
         // gap so the first squad arrives right after the prep timer ends.
         this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: 0.5 };
+        this._strikeTeams = [];
+        this._strikeTeamsThisWave = 0;
         this.updateHUD();
     }
 
@@ -32931,6 +34077,22 @@ class Game {
         this.toggleDevDashboard();
     }
 
+    devSpawnStrikeTeam(compKey = 'assault') {
+        this.taintRunEligibility('dev_spawn'); // PHASE 0
+        if (this.player) {
+            let spawnX = this.player.x + Math.cos(this.player.angle) * 200;
+            let spawnY = this.player.y + Math.sin(this.player.angle) * 200;
+            spawnX = Math.max(80, Math.min(this.mapW - 80, spawnX));
+            spawnY = Math.max(80, Math.min(this.mapH - 80, spawnY));
+            const team = this._spawnStrikeTeam(spawnX, spawnY, compKey);
+            if (team && this._strikeTeams) {
+                this._strikeTeams.push(team);
+            }
+            if (audio) audio.playPickup('money');
+        }
+        this.toggleDevDashboard();
+    }
+
     // Dev-menu boss spawner. Reads BossTypes directly, so it automatically
     // picks up any new boss added to that registry -- no per-boss wiring
     // needed here beyond the one registry entry.
@@ -33398,6 +34560,23 @@ class Game {
             bucket.push(e);
         }
 
+        // ==== STRIKE TEAM: squad coordination tick ====
+        // Runs BEFORE the enemy update loop, deliberately. Squad outputs
+        // (leader, formation slots, LKP, bound phase) are consumed by each
+        // Operative's movement ladder during e.update() below, so ticking
+        // after the loop would make every member act on last frame's squad
+        // state -- a one-frame lag in leader promotion and slot assignment.
+        if (this._strikeTeams && this._strikeTeams.length > 0) {
+            for (let i = this._strikeTeams.length - 1; i >= 0; i--) {
+                const team = this._strikeTeams[i];
+                team.update(dt, this);
+                if (team.members.length === 0) {
+                    this._strikeTeams[i] = this._strikeTeams[this._strikeTeams.length - 1];
+                    this._strikeTeams.pop();
+                }
+            }
+        }
+
         for (let e of this.enemies) {
             let enemyDt = dt;
             if (e.chaosDraftModifier === 'enraged' && e.hp < e.maxHp * 0.5) {
@@ -33409,6 +34588,7 @@ class Game {
             if (e.finalKillRole === 'runner') enemyDt *= 1.35;
             e.update(enemyDt, this.player, this.map.walls, this.gameTime, this.enemies);
         }
+
 
         if (this.bossDrones && this.bossDrones.length > 0) {
             for (let i = this.bossDrones.length - 1; i >= 0; i--) {
@@ -33589,8 +34769,15 @@ class Game {
                     if (!this.inactiveFlashbangs) this.inactiveFlashbangs = [];
                     this.inactiveFlashbangs.push(g);
                 } else if (g instanceof EnemyFragGrenade) {
-                    if (!this.inactiveEnemyFragGrenades) this.inactiveEnemyFragGrenades = [];
-                    this.inactiveEnemyFragGrenades.push(g);
+                    // PRE-EXISTING BUG (fixed): this parked spent frags in
+                    // `inactiveEnemyFragGrenades`, but spawnEnemyFragGrenade()
+                    // pops from `inactiveEnemyFrags` -- so nothing was ever
+                    // recycled and the misnamed array grew unbounded for the
+                    // life of the run. Latent while the Infiltrator boss was
+                    // the only thrower; the Strike Team Grenadier makes it
+                    // matter, so the names are reconciled here.
+                    if (!this.inactiveEnemyFrags) this.inactiveEnemyFrags = [];
+                    this.inactiveEnemyFrags.push(g);
                 }
                 this.grenades[i] = this.grenades[this.grenades.length - 1];
                 this.grenades.pop();
@@ -33828,7 +35015,14 @@ class Game {
                 e.waypoint = null;
                 e.cachedTarget = null;
                 e.opAI = null;
-                this.inactiveEnemies.push(e);
+                if (e instanceof Operative) {
+                    e.squad = null;
+                    e._coverPoint = null;
+                    e._healTarget = null;
+                    if (this.inactiveOperatives) this.inactiveOperatives.push(e);
+                } else {
+                    this.inactiveEnemies.push(e);
+                }
                 this.enemies[i] = this.enemies[this.enemies.length - 1];
                 this.enemies.pop();
             }
@@ -34076,7 +35270,14 @@ class Game {
                 e.finalKillRole = null; e._fleePoint = null;
                 const idx = this.enemies.indexOf(e);
                 if (idx !== -1) {
-                    this.inactiveEnemies.push(e);
+                    if (e instanceof Operative) {
+                        e.squad = null;
+                        e._coverPoint = null;
+                        e._healTarget = null;
+                        if (this.inactiveOperatives) this.inactiveOperatives.push(e);
+                    } else {
+                        this.inactiveEnemies.push(e);
+                    }
                     this.enemies[idx] = this.enemies[this.enemies.length - 1];
                     this.enemies.pop();
                 }
