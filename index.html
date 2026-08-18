@@ -17591,7 +17591,8 @@ class BossDrone {
         this.x = x; this.y = y;
         this.vx = 0; this.vy = 0;
         this.r = 7;
-        this.hp = 1;
+        this.hp = 25;
+        this.maxHp = 25;
         this.dead = false;
         this.owner = owner;
         this.speed = 240;
@@ -17603,9 +17604,12 @@ class BossDrone {
     // feel like a legitimate kill, with a scorch mark and a bit of punch,
     // just scaled well below the boss's own weapons since these are meant
     // to be individually cheap threats, not mini-bosses in their own right.
-    takeDamage() {
+    takeDamage(amt = 25) {
         if (this.dead) return;
-        this.explode(false);
+        this.hp -= amt;
+        if (this.hp <= 0) {
+            this.explode(false);
+        }
     }
     explode(hitPlayer) {
         if (this.dead) return;
@@ -17670,6 +17674,25 @@ class BossDrone {
         this.x += this.vx * dt;
         this.y += this.vy * dt;
 
+        if (game.barriers && game.barriers.length > 0) {
+            for (let j = game.barriers.length - 1; j >= 0; j--) {
+                let bar = game.barriers[j];
+                let barCol = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
+                if (barCol.hit) {
+                    bar.hp -= 40;
+                    for (let c = 0; c < 4; c++) {
+                        game.addParticle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#00e5ff', 0.4, 2);
+                    }
+                    if (bar.hp <= 0) {
+                        game.barriers.splice(j, 1);
+                        if (audio && audio.playExplosion) audio.playExplosion(1.0, this.x, this.y);
+                    }
+                    this.explode(false);
+                    return;
+                }
+            }
+        }
+
         if (bestDist < this.r + target.r + 4) {
             this.explode(true);
             // Direct contact hits harder than the splash-only shot-down
@@ -17721,7 +17744,8 @@ class HostileMiniDrone {
         this.x = x; this.y = y;
         this.vx = 0; this.vy = 0;
         this.r = 5.5;
-        this.hp = 1;
+        this.hp = 25;
+        this.maxHp = 25;
         this.dead = false;
         this.owner = owner;
         this.life = 16;
@@ -17730,9 +17754,12 @@ class HostileMiniDrone {
         this._repathTimer = 0;
         this._wp = null;
     }
-    takeDamage() {
+    takeDamage(amt = 25) {
         if (this.dead) return;
-        this.explode(false);
+        this.hp -= amt;
+        if (this.hp <= 0) {
+            this.explode(false);
+        }
     }
     explode(hitPlayer) {
         if (this.dead) return;
@@ -17848,6 +17875,25 @@ class HostileMiniDrone {
         this.y = MathUtils.clamp(this.y, this.r, game.mapH - this.r);
         let spd = Math.hypot(this.vx, this.vy);
         if (spd > 10) this.angle = Math.atan2(this.vy, this.vx);
+
+        if (game.barriers && game.barriers.length > 0) {
+            for (let j = game.barriers.length - 1; j >= 0; j--) {
+                let bar = game.barriers[j];
+                let barCol = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
+                if (barCol.hit) {
+                    bar.hp -= 40;
+                    for (let c = 0; c < 4; c++) {
+                        game.addParticle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#00e5ff', 0.4, 2);
+                    }
+                    if (bar.hp <= 0) {
+                        game.barriers.splice(j, 1);
+                        if (audio && audio.playExplosion) audio.playExplosion(1.0, this.x, this.y);
+                    }
+                    this.explode(false);
+                    return;
+                }
+            }
+        }
 
         if (bestDist < this.r + target.r + 3) {
             let angleToTarget = Math.atan2(target.y - this.y, target.x - this.x);
@@ -18898,8 +18944,9 @@ class Bullet {
                     if (d.dead) continue;
                     let dx = this.x - d.x;
                     let dy = this.y - d.y;
-                    if (dx * dx + dy * dy < d.r * d.r) {
-                        d.takeDamage();
+                    let hitR = (d.r || 6) + 4;
+                    if (dx * dx + dy * dy < hitR * hitR) {
+                        d.takeDamage(this.dmg);
                         this.active = false;
                         hitRegistered = true;
                         break;
@@ -20591,6 +20638,18 @@ class RobotDog extends Entity {
                 if (!hasLOS) continue;
                 if (d < 800) activeThreatCount++;
                 if (d < closestDist) { closestDist = d; closestHostile = enemy; }
+            }
+
+            if (game.bossDrones && game.bossDrones.length > 0) {
+                for (let drone of game.bossDrones) {
+                    if (drone.dead) continue;
+                    let d = Math.hypot(drone.x - this.x, drone.y - this.y);
+                    let midX = (this.x + drone.x) / 2, midY = (this.y + drone.y) / 2;
+                    let localWalls = game.map.getWallsNear(midX, midY);
+                    if (localWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, drone.x, drone.y, w))) continue;
+                    if (d < 800) activeThreatCount++;
+                    if (d < closestDist) { closestDist = d; closestHostile = drone; }
+                }
             }
 
             // PvP mode adds a handful of extra targetable assets (the
@@ -24452,6 +24511,11 @@ class Game {
         for (let i = 0; i < this.enemies.length; i++) {
             arr.push(this.enemies[i]);
         }
+        if (this.bossDrones && this.bossDrones.length > 0) {
+            for (let i = 0; i < this.bossDrones.length; i++) {
+                if (!this.bossDrones[i].dead) arr.push(this.bossDrones[i]);
+            }
+        }
         
         if (this.friendlyFireMode === 'off') {
             return arr;
@@ -24490,6 +24554,11 @@ class Game {
         
         for (let i = 0; i < this.enemies.length; i++) {
             arr.push(this.enemies[i]);
+        }
+        if (this.bossDrones && this.bossDrones.length > 0) {
+            for (let i = 0; i < this.bossDrones.length; i++) {
+                if (!this.bossDrones[i].dead) arr.push(this.bossDrones[i]);
+            }
         }
         if (this.friendlyFireMode !== 'off') {
             if (this.player && this.player !== shooter) arr.push(this.player);
@@ -37592,15 +37661,26 @@ class Game {
     }
 
     getHostilesFor(entity) {
-        // PERF + CONTRACT: in non-PvP mode this returns this.enemies
-        // DIRECTLY (no copy). It used to spread-clone the full enemies
-        // array on every call, and it's called per frame by every turret,
-        // mini-drone, and dog -- pure allocation churn since every caller
-        // only iterates the result. Callers MUST treat the return value as
-        // read-only (all current callers do; verified). PvP mode still
-        // builds a fresh combined array because it has to merge lists.
-        if (this.friendlyFireMode !== 'pvp') return this.enemies;
+        // PERF + CONTRACT: in non-PvP mode when no bossDrones are active, return this.enemies
+        // DIRECTLY (no allocation/copy). When bossDrones are active, populate and return
+        // a shared scratch array to avoid per-call allocations.
+        const hasBossDrones = this.bossDrones && this.bossDrones.length > 0;
+        if (this.friendlyFireMode !== 'pvp') {
+            if (!hasBossDrones) return this.enemies;
+            let hostiles = this._hostilesScratch || (this._hostilesScratch = []);
+            hostiles.length = 0;
+            for (let i = 0; i < this.enemies.length; i++) hostiles.push(this.enemies[i]);
+            for (let i = 0; i < this.bossDrones.length; i++) {
+                if (!this.bossDrones[i].dead) hostiles.push(this.bossDrones[i]);
+            }
+            return hostiles;
+        }
         let hostiles = [...this.enemies];
+        if (hasBossDrones) {
+            for (let i = 0; i < this.bossDrones.length; i++) {
+                if (!this.bossDrones[i].dead) hostiles.push(this.bossDrones[i]);
+            }
+        }
         if (this.friendlyFireMode === 'pvp') {
             const owner = entity.owner || entity;
             const otherPlayer = (owner === this.player) ? this.player2 : this.player;
