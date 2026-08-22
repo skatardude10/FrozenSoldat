@@ -625,7 +625,7 @@
     }
     #crosshair-p2::before { top: 11px; left: 2px; width: 20px; height: 2px; }
     #crosshair-p2::after { top: 2px; left: 11px; width: 2px; height: 20px; }
-    
+
     input[type="range"] {
         accent-color: var(--neon-blue);
     }
@@ -5862,11 +5862,17 @@ const STRIKE_TEAM = {
 // Note on `type`: unique 'op_*' strings isolate operatives from Enemy.update's
 // hardcoded type branches (sapper/swarmer/etc.), except 'comm' which is
 // deliberately reused by the Signalman to inherit the comm aura & visual identity.
+// G4 (operative rework): the strike team now reads as a fast, small, dark unit
+// -- swarmer-sized (size 9, was 12-15), ~2.5x speed (338-450 px/s, was 135-180),
+// and dark-slate bodies. Each role's bright color moved to its TRACER
+// (tracerColor, consumed by Enemy.fire) so you track these elites by their
+// color-coded gunfire, not their (now muted) body. HP / score / weapon /
+// formation / shieldArc are unchanged.
 const OPERATIVE_ROLES = {
     pointman: {
         key: 'pointman', name: 'Pointman',
         minWave: 6,
-        hp: 130, speed: 175, size: 14, color: '#00e5ff', score: 150,
+        hp: 130, speed: 438, size: 9, color: '#5c6b7a', tracerColor: '#00e5ff', score: 150,
         type: 'op_pointman',
         weapon: 'smg',
         shieldArc: Math.PI / 3,  // 60-degree forward riot shield
@@ -5878,7 +5884,7 @@ const OPERATIVE_ROLES = {
     rifleman: {
         key: 'rifleman', name: 'Rifleman',
         minWave: 6,
-        hp: 110, speed: 165, size: 13, color: '#29b6f6', score: 120,
+        hp: 110, speed: 413, size: 9, color: '#546273', tracerColor: '#29b6f6', score: 120,
         type: 'op_rifleman',
         weapon: 'pistol',
         offset: { fwd: -40, side: 70 },
@@ -5889,7 +5895,7 @@ const OPERATIVE_ROLES = {
     gunner: {
         key: 'gunner', name: 'Gunner',
         minWave: 8,
-        hp: 160, speed: 135, size: 15, color: '#ff9100', score: 200,
+        hp: 160, speed: 338, size: 9, color: '#5f5a6b', tracerColor: '#ff9100', score: 200,
         type: 'op_gunner',
         weapon: 'lmg',
         offset: { fwd: -110, side: 50 },
@@ -5900,7 +5906,7 @@ const OPERATIVE_ROLES = {
     medic: {
         key: 'medic', name: 'Medic',
         minWave: 10,
-        hp: 95, speed: 170, size: 12, color: '#00e676', score: 250,
+        hp: 95, speed: 425, size: 9, color: '#4f6a5b', tracerColor: '#00e676', score: 250,
         type: 'op_medic',
         weapon: 'pistol',
         offset: { fwd: -130, side: -40 },
@@ -5911,7 +5917,7 @@ const OPERATIVE_ROLES = {
     grenadier: {
         key: 'grenadier', name: 'Grenadier',
         minWave: 12,
-        hp: 125, speed: 155, size: 14, color: '#ff5722', score: 180,
+        hp: 125, speed: 388, size: 9, color: '#6b5a52', tracerColor: '#ff5722', score: 180,
         type: 'op_grenadier',
         weapon: 'shotgun',
         offset: { fwd: -90, side: 90 },
@@ -5922,7 +5928,7 @@ const OPERATIVE_ROLES = {
     marksman: {
         key: 'marksman', name: 'Marksman',
         minWave: 14,
-        hp: 90, speed: 145, size: 12, color: '#e040fb', score: 220,
+        hp: 90, speed: 363, size: 9, color: '#585f70', tracerColor: '#e040fb', score: 220,
         type: 'op_marksman',
         weapon: 'sniper',
         offset: { fwd: -260, side: 120 },
@@ -5933,7 +5939,7 @@ const OPERATIVE_ROLES = {
     breacher: {
         key: 'breacher', name: 'Breacher',
         minWave: 16,
-        hp: 140, speed: 180, size: 14, color: '#ffd600', score: 190,
+        hp: 140, speed: 450, size: 9, color: '#6b664f', tracerColor: '#ffd600', score: 190,
         type: 'op_breacher',
         weapon: 'shotgun',
         offset: { fwd: -30, side: 60 },
@@ -5944,7 +5950,7 @@ const OPERATIVE_ROLES = {
     signalman: {
         key: 'signalman', name: 'Signalman',
         minWave: 18,
-        hp: 105, speed: 140, size: 13, color: '#ffab00', score: 280,
+        hp: 105, speed: 350, size: 9, color: '#6a5a64', tracerColor: '#ffab00', score: 280,
         type: 'comm', // Reuses comm type deliberately for skittish standoff, aura broadcast & amber halo
         weapon: 'pistol',
         offset: { fwd: -200, side: -80 },
@@ -6357,7 +6363,14 @@ class Camera {
                 if (Math.abs(this.zoomPunch) < 0.001) this.zoomPunch = 0;
             }
             if (this.screenShake > 0) {
-                this.screenShake -= dt * 25;
+                // INTENSITY CEILING: no shake -- single blast or chained barrel
+                // cascade -- may exceed this peak, so big explosions stay punchy
+                // but never disorienting.
+                if (this.screenShake > 30) this.screenShake = 30;
+                // NON-LINEAR SETTLE: the screenShake*3 term makes large shakes
+                // collapse fast (~0.4s) while tiny ones (recoil, flyby) remain a
+                // sharp instant tick. Peaks are preserved, only the long tail is cut.
+                this.screenShake -= dt * (25 + this.screenShake * 3);
                 if (this.screenShake < 0) this.screenShake = 0;
             }
         } else {
@@ -11980,18 +11993,36 @@ const AIM_WEIGHT = {
     // a held rifle never goes perfectly rigid, and keeping a faint residual
     // wobble even at full focus keeps the reticle feeling alive.
     IDLE_SWAY_FOCUSED_DEG: 0.06,
-    IDLE_SWAY_ENGAGE_DELAY: 0.7,   // seconds of stillness before focus starts engaging
-    // Ramp duration lengthened 1.0 -> 2.2s so the (now-stronger) baseline
-    // sway actually has time to be felt before focus steadies it out --
-    // previously it settled almost as soon as it appeared.
-    IDLE_SWAY_FADE_TIME: 2.2,       // seconds for focus to ramp 0 -> 1 once engaged, at full health
+    // Short engage delay: focus comes on fast enough to feel during a fight
+    // (was 0.7s -- combined with the fade time the total ramp is now ~2s).
+    IDLE_SWAY_ENGAGE_DELAY: 0.15,  // seconds of stillness before focus starts engaging
+    // Ramp duration -- with the 0.15s engage delay above the total 0->1 ramp
+    // is ~2s. (Was 2.2s + 0.7s delay = 2.9s, too slow to ever notice.)
+    IDLE_SWAY_FADE_TIME: 1.85,     // seconds for focus to ramp 0 -> 1 once engaged, at full health
     // Health scaling: same idea as IDLE_SWAY_HEALTH_MAX_MULT above, but for
     // TIME instead of amplitude -- steadying your aim takes longer the more
     // hurt you are (shaky hands), up to this multiplier on the fade time at
     // 0 hp. Recomputed every frame, so taking a hit mid-focus genuinely
     // extends how much longer you need to hold still.
     IDLE_SWAY_HEALTH_FADE_MAX_MULT: 1.6,
-    IDLE_SWAY_STILL_THRESHOLD_DEG: 0.6, // target-angle delta below which we count as "still" this frame
+    // Framerate-independent "still" test: the aim may DRIFT at up to this many
+    // degrees PER SECOND and still count as focused (steady). Replaces the old
+    // flat 0.6deg PER-FRAME threshold, which scaled with fps -- at low fps a
+    // dropped frame made any small hand tremor read as "moving", so the still
+    // timer reset every frame and focus never actually engaged. Now the same
+    // physical aim behaves identically at 30/60/144fps. Natural idle tremor
+    // sits well under this; a deliberate fast slew (re-aiming at a new target)
+    // breaks it, which is the intended "steady your aim to focus" feel.
+    FOCUS_STILL_RATE_DEG_PER_SEC: 30,
+    // --- Focus LOCK visual (G1, the "you locked on" beat). The steady 0->1
+    // ramp above is sub-perceptual on the beam by itself (a sub-pixel beam
+    // narrowed a bit more is invisible), so focus gets a DISCRETE cue: when
+    // focusLevel first crosses FOCUS_LOCK_THRESHOLD upward, the laser fires a
+    // one-shot white flash (focusFlash spikes to 1, decays over FOCUS_FLASH_TIME
+    // s) and then holds a solid white core for as long as it stays above the
+    // threshold. Draw-only -- consumed by the laser block, no sim effect.
+    FOCUS_LOCK_THRESHOLD: 0.6,   // focusLevel at which the lock engages
+    FOCUS_FLASH_TIME: 0.25,      // seconds for the one-shot lock flash to decay
 
     // --- Focus rewards: same envelope drives all three, so the payoff for
     // holding an angle reads as one coherent "steadying down the sights"
@@ -12525,6 +12556,7 @@ class Player extends Entity {
         this.energyDrinkTimer = 0; 
         this.isExhausted = false; // State tracks zero stamina depletion locks
         this.flashOpacity = 0;
+        this._wasClutch = false; // G3: edge-detect the one-shot CLUTCH announce (was this player in clutch last frame?)
         
         this.inventory = [{ ...Weapons.pistol }];
         this.weaponIdx = 0;
@@ -12586,6 +12618,11 @@ class Player extends Entity {
 
         // --- Focus state (see AIM_WEIGHT.FOCUS_* + updateAimWeight() tail) ---
         this.focusLevel = 0;
+        // G1 lock cue: _wasFocused edge-detects the upward crossing of the lock
+        // threshold (like _wasClutch for G3); focusFlash is the one-shot white
+        // flash that spikes to 1 on lock and decays, consumed by the laser draw.
+        this._wasFocused = false;
+        this.focusFlash = 0;
     }
     
     get camera() {
@@ -12780,6 +12817,21 @@ class Player extends Entity {
         // Turn-rate-capped chase + recoil/flinch/sway perturbations.
         // Sets this.angle to the final "actual" aim angle for this frame.
         this.updateAimWeight(dt, chaseTargetAngle);
+
+        // G3 (CLUTCH indicator): the sim already grants a fire-rate + speed buff
+        // when a player drops below 20% HP (clutchFireRateBuff / clutchSpeedBuff,
+        // same threshold). The sustained in-game cue lives on the LASER -- the
+        // Laser-Only aim paradigm hides the DOM reticle in play, so the beam is
+        // the only state surface (see the g3Clutch mods in the laser draw block:
+        // brighter + reaches further + shifts white). This block only fires the
+        // one-shot "CLUTCH" ping the instant the player crosses the line
+        // (edge-detected via _wasClutch, so it never repeats while they stay low,
+        // and re-fires on a fresh dip).
+        let _inClutch = !this.dead && (this.hp / this.maxHp < 0.20);
+        if (_inClutch && !this._wasClutch && game.spawnFloatingText) {
+            game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 15, "CLUTCH", '#ff2a5f', 1.2));
+        }
+        this._wasClutch = _inClutch;
 
         if (gpAimed) {
             // No real OS cursor for gamepad aim -- project a virtual crosshair
@@ -13971,7 +14023,13 @@ class Player extends Entity {
         let swayFadeTime = AIM_WEIGHT.IDLE_SWAY_FADE_TIME *
             (1 + healthPenalty * (AIM_WEIGHT.IDLE_SWAY_HEALTH_FADE_MAX_MULT - 1));
 
-        let stillThreshold = AIM_WEIGHT.IDLE_SWAY_STILL_THRESHOLD_DEG * Math.PI / 180;
+        // Framerate-independent "still" gate: compare the aim's angular RATE
+        // (deg/s) against FOCUS_STILL_RATE_DEG_PER_SEC instead of a flat
+        // per-frame delta. dtSafe floors dt so a spike frame can't make the
+        // per-frame delta (and thus the effective threshold) blow up to zero.
+        // One multiply, no division -- same cost as the old per-frame test.
+        let dtSafe = Math.max(dt, 1 / 240);
+        let stillThreshold = AIM_WEIGHT.FOCUS_STILL_RATE_DEG_PER_SEC * dtSafe * Math.PI / 180;
         let targetDelta = Math.abs(MathUtils.angleDifference(targetAngle, this._aimLastTargetAngle ?? targetAngle));
         this._aimLastTargetAngle = targetAngle;
         // Focus (see AIM_WEIGHT.FOCUS_*) rides this same still-aim signal, so
@@ -13992,6 +14050,13 @@ class Player extends Entity {
         // Consumed at bullet-spawn time in Bullet.init() (speed/damage) and
         // in Player.fire() (spread tightening).
         this.focusLevel = swayEnvelope;
+        // G1 lock cue (draw-only): edge-detect the upward crossing of the lock
+        // threshold -> spike focusFlash to 1; it decays over FOCUS_FLASH_TIME.
+        // No gameplay effect -- purely the "you locked on" beat for the laser.
+        let _focused = swayEnvelope >= AIM_WEIGHT.FOCUS_LOCK_THRESHOLD;
+        if (_focused && !this._wasFocused) this.focusFlash = 1;
+        this._wasFocused = _focused;
+        this.focusFlash = Math.max(0, this.focusFlash - dt / AIM_WEIGHT.FOCUS_FLASH_TIME);
         // Sway amplitude interpolates DOWN from the (health-scaled) baseline
         // toward the fixed focused floor as swayEnvelope ramps 0 -> 1, so an
         // un-focused aim (moving, tracking, or just briefly still) always
@@ -14254,7 +14319,7 @@ class Player extends Entity {
         this.vx -= Math.cos(this.angle) * recoilForce;
         this.vy -= Math.sin(this.angle) * recoilForce;
         if (this.camera) {
-            this.camera.screenShake = Math.max(this.camera.screenShake, this.weapon.name === 'Sniper' ? 32 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : 5);
+            this.camera.screenShake = Math.max(this.camera.screenShake, this.weapon.name === 'Sniper' ? 18 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : 5);
         }
         // Aim Weight: every shot nudges the reticle two ways. A spring
         // impulse gives each shot its own snappy kick-and-rebound texture.
@@ -14415,7 +14480,10 @@ class Player extends Entity {
         this.stamina = Math.max(0, this.stamina - amt * 0.5); // Shock takes away stamina instantly
         this.damageFlashIntensity = 1.0; // Trigger damage flash
         if (this.camera && amt > 0) {
-            this.camera.screenShake = Math.max(this.camera.screenShake, 10 + amt * 1.5);
+            // Bounded damage shake: was `10 + amt*1.5` (unbounded) -- a 250-dmg
+            // barrel at point-blank shook the screen for ~15s. Capped at 28
+            // (<=1.1s) with a gentler slope so light hits stay snappy.
+            this.camera.screenShake = Math.max(this.camera.screenShake, Math.min(28, 6 + amt * 0.8));
         }
         if (amt > 0) {
             // Aim Weight: getting shot knocks the reticle off briefly, right
@@ -15787,7 +15855,7 @@ class Enemy extends Entity {
                             this.dead = true;
                             this.onDeath();
                             audio.playExplosion(1.0, this.x, this.y);
-                            game.applyExplosionShake(this.x, this.y, 30, 100);
+                            game.applyExplosionShake(this.x, this.y, 22, 100);
                             game.spawnShockwave(this.x, this.y, 100, 0.25);
                             game.camera.punchZoom(0.05);
                             if (game.camera2) game.camera2.punchZoom(0.05);
@@ -15810,7 +15878,7 @@ class Enemy extends Entity {
                             this.dead = true;
                             this.onDeath();
                             audio.playExplosion(1.0, this.x, this.y);
-                            game.applyExplosionShake(this.x, this.y, 30, 100);
+                            game.applyExplosionShake(this.x, this.y, 22, 100);
                             game.spawnShockwave(this.x, this.y, 100, 0.25);
                             game.camera.punchZoom(0.05);
                             if (game.camera2) game.camera2.punchZoom(0.05);
@@ -15927,7 +15995,7 @@ class Enemy extends Entity {
                 let ly = bt.y + (bt.vy || 0) * 0.35 + MathUtils.rand(-30, 30);
                 lx = Math.max(50, Math.min(game.mapW - 50, lx));
                 ly = Math.max(50, Math.min(game.mapH - 50, ly));
-                game.grenades.push(new MortarMarker(lx, ly, 1.9, 58, 34));
+                game.grenades.push(game.spawnMortarMarker(lx, ly, 1.9, 58, 34));
                 audio.playShoot('Shotgun', this.x, this.y);
                 for (let c = 0; c < 5; c++) {
                     game.addParticle(this.x, this.y, MathUtils.rand(-60, 60), MathUtils.rand(-160, -60), '#b388ff', 0.35, 2.5);
@@ -16300,28 +16368,28 @@ class Enemy extends Entity {
             let pellets = 6;
             for (let i = 0; i < pellets; i++) {
                 let spreadAngle = this.angle + (Math.random() - 0.5) * 0.28;
-                let bulletSpec = { name: 'Shotgun', dmg: 6, speed: 1600, drag: 0.2, color: this.color || '#ff5722' };
+                let bulletSpec = { name: 'Shotgun', dmg: 6, speed: 1600, drag: 0.2, color: this.tracerColor || this.color || '#ff5722' };
                 game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-                game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, this.color || '#ff5722', 0.04, 2);
+                game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, this.tracerColor || this.color || '#ff5722', 0.04, 2);
             }
         } else if (this.weaponType === 'sniper') {
             audio.playShoot('Sniper', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.02;
-            let bulletSpec = { name: 'Sniper', dmg: 40, speed: 3000, drag: 0.02, color: this.color || '#f50057' };
+            let bulletSpec = { name: 'Sniper', dmg: 40, speed: 3000, drag: 0.02, color: this.tracerColor || this.color || '#f50057' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*500, Math.sin(spreadAngle)*500, this.color || '#f50057', 0.05, 3.5);
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*500, Math.sin(spreadAngle)*500, this.tracerColor || this.color || '#f50057', 0.05, 3.5);
         } else if (this.weaponType === 'smg') {
             audio.playShoot('SMG', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.16;
-            let bulletSpec = { name: 'SMG', dmg: 7, speed: 2200, drag: 0.1, color: this.color || '#00e5ff' };
+            let bulletSpec = { name: 'SMG', dmg: 7, speed: 2200, drag: 0.1, color: this.tracerColor || this.color || '#00e5ff' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, this.color || '#00e5ff', 0.04, 2.5);
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, this.tracerColor || this.color || '#00e5ff', 0.04, 2.5);
         } else if (this.weaponType === 'lmg') {
             audio.playShoot('LMG', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.22;
-            let bulletSpec = { name: 'LMG', dmg: 11, speed: 2400, drag: 0.05, color: this.color || '#ff9100' };
+            let bulletSpec = { name: 'LMG', dmg: 11, speed: 2400, drag: 0.05, color: this.tracerColor || this.color || '#ff9100' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*450, Math.sin(spreadAngle)*450, this.color || '#ff9100', 0.05, 3);
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*450, Math.sin(spreadAngle)*450, this.tracerColor || this.color || '#ff9100', 0.05, 3);
         } else if (this.weaponType === 'heavy_pistol') {
             audio.playShoot('Pistol', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.10;
@@ -16331,9 +16399,9 @@ class Enemy extends Entity {
         } else {
             audio.playShoot('Pistol', this.x, this.y);
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.12;
-            let bulletSpec = { name: 'Pistol', dmg: 8, speed: 1800, drag: 0.1, color: this.color || '#ff2a5f' };
+            let bulletSpec = { name: 'Pistol', dmg: 8, speed: 1800, drag: 0.1, color: this.tracerColor || this.color || '#ff2a5f' };
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, false, false, false, false));
-            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, this.color || '#ff2a5f', 0.04, 3);
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, this.tracerColor || this.color || '#ff2a5f', 0.04, 3);
         }
     }
     
@@ -17214,6 +17282,7 @@ class Operative extends Enemy {
         this.squad = squad || null;
         this.roleKey = roleKey;
         this.role = role;
+        this.tracerColor = role.tracerColor || role.color; // G4: bright per-role tracer; the body is dark slate
         this.weaponType = role.weapon || 'pistol';
 
         // Squad & role state reset (crucial for pooled reuse)
@@ -17786,7 +17855,7 @@ class Boss extends Enemy {
             game.items.push(game.spawnItem(this.x + MathUtils.rand(-40, 40), this.y + MathUtils.rand(-40, 40), 'money'));
         }
 
-        game.applyExplosionShake(this.x, this.y, 45, 260);
+        game.applyExplosionShake(this.x, this.y, 30, 260);
         game.spawnShockwave(this.x, this.y, 260, 0.35);
         game.camera.punchZoom(0.1);
         if (game.camera2) game.camera2.punchZoom(0.1);
@@ -18302,7 +18371,7 @@ class ApcBoss extends Boss {
                 let roofWorldY = this.y + Math.sin(this.angle) * roof.offX + Math.cos(this.angle) * roof.offY;
                 let fireAngle = Math.atan2(target.y - roofWorldY, target.x - roofWorldX) + (Math.random() - 0.5) * 0.06;
                 if (!game.grenades) game.grenades = [];
-                game.grenades.push(new HeCannonShell(roofWorldX, roofWorldY, Math.cos(fireAngle) * 1500, Math.sin(fireAngle) * 1500));
+                game.grenades.push(game.spawnHeCannonShell(roofWorldX, roofWorldY, Math.cos(fireAngle) * 1500, Math.sin(fireAngle) * 1500));
                 audio.playShoot('M1A', roofWorldX, roofWorldY);
                 game.applyExplosionShake(roofWorldX, roofWorldY, 6, 60);
                 this.muzzleFlashTimer = 0.04;
@@ -19081,6 +19150,12 @@ class SpotBoss extends Boss {
 // drawn for free through the existing loop.
 class MortarMarker {
     constructor(x, y, warningTime = 1.6, radius = 70, dmg = 52) {
+        this.init(x, y, warningTime, radius, dmg);
+    }
+    // PERF (BUG-010 / fix P5): poolable revive path -- the same
+    // constructor-delegates-to-init shape ShrapnelGrenade uses, so the
+    // driver can park spent markers and the factory can re-init them.
+    init(x, y, warningTime = 1.6, radius = 70, dmg = 52) {
         this.x = x; this.y = y;
         this.vx = 0; this.vy = 0; // grenades-array contract expects these for getWallsNear(g.x,g.y) style lookups elsewhere; unused for actual movement
         this.r = radius;
@@ -19098,7 +19173,7 @@ class MortarMarker {
     }
     explode(game) {
         audio.playExplosion(1.0, this.x, this.y);
-        game.applyExplosionShake(this.x, this.y, 28, this.r * 1.5);
+        game.applyExplosionShake(this.x, this.y, 22, this.r * 1.5);
         game.spawnShockwave(this.x, this.y, this.r * 1.3, 0.3);
 
         let targets = game.getEnemyBulletBlastEntities();
@@ -19248,7 +19323,7 @@ class SniperWalkerBoss extends Boss {
                 let lx = baseX + Math.cos(offAngle) * offDist;
                 let ly = baseY + Math.sin(offAngle) * offDist;
                 let warn = 1.6 + i * 0.25;
-                game.grenades.push(new MortarMarker(lx, ly, warn, 85));
+                game.grenades.push(game.spawnMortarMarker(lx, ly, warn, 85));
             }
             game.floatingTexts.push(game.spawnFloatingText(
                 this.x, this.y - 40, shellCount > 2 ? 'MORTAR BARRAGE INBOUND' : 'MORTAR INBOUND', this.color, 1.4, 0, -60, 100, false
@@ -20727,7 +20802,7 @@ class FPVDrone {
         this.stopAudio();
         
         audio.playExplosion(1.0, this.x, this.y);
-        game.applyExplosionShake(this.x, this.y, 50, 300);
+        game.applyExplosionShake(this.x, this.y, 30, 300);
         
         game.spawnShockwave(this.x, this.y, 300 * 1.2, 0.3);
         game.camera.punchZoom(0.12);
@@ -21348,20 +21423,22 @@ class SecurityCamera extends Entity {
 
         let coneDist = this.scanRange;
         let halfArc = this.halfFov;
-        let coneGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, coneDist);
+        // PERF (BUG-013 / fix P1): idle cones used a per-camera createRadialGradient
+        // whose per-pixel evaluation across stacked 1500px wedges was the superlinear
+        // herd cost (H1a: ~350 ms/frame at 100 cams). At these alphas (0.02 -> 0)
+        // the falloff is visually imperceptible, so idle wedges are a flat fill;
+        // only the target-state red cone keeps the gradient (few exist at once).
         if (hasTargets) {
+            let coneGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, coneDist);
             coneGrad.addColorStop(0, 'rgba(255, 42, 95, 0.04)');
             coneGrad.addColorStop(0.5, 'rgba(255, 42, 95, 0.018)');
             coneGrad.addColorStop(0.85, 'rgba(255, 42, 95, 0.006)');
             coneGrad.addColorStop(1, 'rgba(255, 42, 95, 0.0)');
+            ctx.fillStyle = coneGrad;
         } else {
-            coneGrad.addColorStop(0, 'rgba(0, 229, 255, 0.02)');
-            coneGrad.addColorStop(0.5, 'rgba(0, 229, 255, 0.008)');
-            coneGrad.addColorStop(0.85, 'rgba(0, 229, 255, 0.003)');
-            coneGrad.addColorStop(1, 'rgba(0, 229, 255, 0.0)');
+            ctx.fillStyle = 'rgba(0, 229, 255, 0.008)';
         }
 
-        ctx.fillStyle = coneGrad;
         ctx.beginPath();
         ctx.moveTo(0, 0);
         ctx.arc(0, 0, coneDist, -halfArc, halfArc);
@@ -21399,18 +21476,21 @@ class SecurityCamera extends Entity {
             let by = Math.sin(this.angle) * 8;
 
             ctx.save();
-            ctx.shadowColor = '#ff2a5f';
-            ctx.shadowBlur = 4;
-            ctx.strokeStyle = 'rgba(255, 42, 95, 0.50)';
-            ctx.lineWidth = 1.6;
+            // PERF (BUG-013 / fix P2): the per-stroke shadowBlur was the
+            // saturated-laser tail (H1b: 49% of frames >= 400 ms, max 781 ms) and
+            // the prime real-GPU cost. The two-tone core still reads as a beam;
+            // the outer stroke is slightly thicker and brighter to keep the glow
+            // silhouette without the blur pass.
+            ctx.strokeStyle = 'rgba(255, 42, 95, 0.60)';
+            ctx.lineWidth = 2.0;
             ctx.beginPath();
             ctx.moveTo(bx, by);
             ctx.lineTo(tx - scx, ty - scy);
             ctx.stroke();
 
             // Core beam (bright white/yellow center)
-            ctx.strokeStyle = 'rgba(255, 235, 235, 0.75)';
-            ctx.lineWidth = 0.6;
+            ctx.strokeStyle = 'rgba(255, 235, 235, 0.80)';
+            ctx.lineWidth = 0.7;
             ctx.beginPath();
             ctx.moveTo(bx, by);
             ctx.lineTo(tx - scx, ty - scy);
@@ -22879,7 +22959,7 @@ class ShrapnelGrenade {
     }
     explode(game) {
         audio.playExplosion(1.0, this.x, this.y);
-        game.applyExplosionShake(this.x, this.y, 35, 180);
+        game.applyExplosionShake(this.x, this.y, 24, 180);
         
         // PHASE 4 (BREACHER kit): radiusMult scales the whole blast --
         // damage falloff, shockwave, wall damage and barrel triggering all
@@ -22972,6 +23052,10 @@ class ShrapnelGrenade {
 // route through Bullet's perk-gated explosive-rounds path at all.
 class HeCannonShell {
     constructor(x, y, vx, vy) {
+        this.init(x, y, vx, vy);
+    }
+    // PERF (BUG-010 / fix P5): poolable revive path (see MortarMarker).
+    init(x, y, vx, vy) {
         this.x = x; this.y = y; this.vx = vx; this.vy = vy;
         this.r = 5;
         this.life = 2.5; // safety timeout if it somehow never hits anything
@@ -23112,7 +23196,7 @@ class EnemyFragGrenade {
     }
     explode(game) {
         audio.playExplosion(0.9, this.x, this.y);
-        game.applyExplosionShake(this.x, this.y, 25, 150);
+        game.applyExplosionShake(this.x, this.y, 20, 150);
         game.spawnShockwave(this.x, this.y, 150, 0.28);
 
         let blastRadius = 150;
@@ -23238,7 +23322,13 @@ class Flashbang {
             if (p.dead) continue;
             let dist = Math.hypot(p.x - this.x, p.y - this.y);
             if (dist < flashRadius) {
-                let hasLOS = !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, p.x, p.y, w));
+                // PERF (BUG-014 / fix P6): was a full `game.map.walls` scan
+                // -- the one LOS in the game that skipped the spatial hash.
+                // getWallsAlongSegment is a strict superset of every wall
+                // this segment can hit (both endpoints are in-bounds
+                // entities), so the per-wall test below is unchanged and
+                // `hasLOS` is computed identically on a far smaller list.
+                let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, p.x, p.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, p.x, p.y, w));
                 if (hasLOS) {
                     let intensity = 1.0 - (dist / flashRadius) * 0.5;
                     p.flashOpacity = Math.max(p.flashOpacity || 0, intensity);
@@ -23254,7 +23344,9 @@ class Flashbang {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < 150) {
-                let hasLOS = !game.map.walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, ent.x, ent.y, w));
+                // PERF (BUG-014 / fix P6): spatial-hash-filtered LOS (see
+                // the player check above) -- behavior-identical, smaller list.
+                let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, ent.x, ent.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, ent.x, ent.y, w));
                 if (hasLOS) {
                     let dmg = 15 * (1.0 - dist / 150);
                     ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 50);
@@ -23419,7 +23511,7 @@ class TripMine {
         // (140 / 110), so unupgraded mines are byte-identical.
         let blastRadius = this.blastRadius || 140;
         audio.playExplosion(1.0, this.x, this.y);
-        game.applyExplosionShake(this.x, this.y, 30, blastRadius);
+        game.applyExplosionShake(this.x, this.y, 22, blastRadius);
         
         game.spawnShockwave(this.x, this.y, blastRadius * 1.2, 0.3);
         game.camera.punchZoom(0.06);
@@ -23832,7 +23924,7 @@ class ExplosiveBarrel {
         this.dead = true;
 
         audio.playExplosion(1.0, this.x, this.y);
-        game.applyExplosionShake(this.x, this.y, 50, 300);
+        game.applyExplosionShake(this.x, this.y, 30, 300);
         game.spawnShockwave(this.x, this.y, 300 * 1.2, 0.3);
         game.camera.punchZoom(0.12);
         if (game.camera2) game.camera2.punchZoom(0.12);
@@ -25352,6 +25444,10 @@ class Game {
         this.inactiveShrapnelGrenades = [];
         this.inactiveFlashbangs = [];
         this.inactiveEnemyFrags = [];
+        // PERF (BUG-010 / fix P5): boss-only ordnance pools -- same
+        // class-keyed round-trip as the thrown trio above.
+        this.inactiveHeCannonShells = [];
+        this.inactiveMortarMarkers = [];
         // Ever-incrementing id source for the AI update stagger (see
         // spawnEnemy/RobotDog and the shouldUpdateAI checks in
         // Enemy.update/RobotDog.update). Deliberately never reset/reused --
@@ -25700,6 +25796,37 @@ class Game {
             g.init(x, y, vx, vy);
         } else {
             g = new EnemyFragGrenade(x, y, vx, vy);
+        }
+        return g;
+    }
+
+    // PERF (BUG-010 / fix P5): these two were allocated fresh on every
+    // boss fire (no pool, no park branch) -- they now round-trip through
+    // class-keyed pools exactly like the thrown trio.
+    spawnHeCannonShell(x, y, vx, vy) {
+        if (!this.inactiveHeCannonShells) {
+            this.inactiveHeCannonShells = [];
+        }
+        let g;
+        if (this.inactiveHeCannonShells.length > 0) {
+            g = this.inactiveHeCannonShells.pop();
+            g.init(x, y, vx, vy);
+        } else {
+            g = new HeCannonShell(x, y, vx, vy);
+        }
+        return g;
+    }
+
+    spawnMortarMarker(x, y, warningTime = 1.6, radius = 70, dmg = 52) {
+        if (!this.inactiveMortarMarkers) {
+            this.inactiveMortarMarkers = [];
+        }
+        let g;
+        if (this.inactiveMortarMarkers.length > 0) {
+            g = this.inactiveMortarMarkers.pop();
+            g.init(x, y, warningTime, radius, dmg);
+        } else {
+            g = new MortarMarker(x, y, warningTime, radius, dmg);
         }
         return g;
     }
@@ -27036,6 +27163,12 @@ class Game {
         if (this.camera2) this.camera2.punchZoom(0.14);
         // Chromatic aberration flash on glory kill
         this.triggerChromaticAberration(0.5);
+        // G2 (glory-kill impact freeze): a short hard hit-stop layered on top of
+        // the slow-mo above -- the kill "lands" as a ~50ms freeze-frame before the
+        // 0.08x time-scale reveal plays out. hitPauseTimer is decremented by RAW dt
+        // in the loop (not scaledDt), so this is a true 0.05s wall-clock freeze,
+        // independent of the slow-mo. Reuses the shared triggerHitStop() helper.
+        this.triggerHitStop(0.05);
     }
 
     spawnBarrelFX(x, y, angle, z = 0) {
@@ -30342,7 +30475,14 @@ class Game {
             for (let t of this.turrets) t.draw(this.ctx, droneCam);
         }
         if (this.securityCameras) {
-            for (let c of this.securityCameras) c.draw(this.ctx, droneCam);
+            for (let c of this.securityCameras) {
+                // PERF (BUG-013 / fix P4): same cone-reach viewport cull
+                // as the main drawViewport camera loop.
+                let cullM = c.scanRange + c.r;
+                if (c.x < droneCam.x - cullM || c.x > droneCam.x + visibleW + cullM ||
+                    c.y < droneCam.y - cullM || c.y > droneCam.y + visibleH + cullM) continue;
+                c.draw(this.ctx, droneCam);
+            }
         }
         if (this.dogs) {
             for (let d of this.dogs) d.draw(this.ctx, droneCam);
@@ -34778,6 +34918,16 @@ class Game {
                     // matter, so the names are reconciled here.
                     if (!this.inactiveEnemyFrags) this.inactiveEnemyFrags = [];
                     this.inactiveEnemyFrags.push(g);
+                } else if (g instanceof HeCannonShell) {
+                    // PERF (BUG-010 / fix P5): park branch for the boss
+                    // HE shell pool (see spawnHeCannonShell).
+                    if (!this.inactiveHeCannonShells) this.inactiveHeCannonShells = [];
+                    this.inactiveHeCannonShells.push(g);
+                } else if (g instanceof MortarMarker) {
+                    // PERF (BUG-010 / fix P5): park branch for the
+                    // mortar-marker pool (see spawnMortarMarker).
+                    if (!this.inactiveMortarMarkers) this.inactiveMortarMarkers = [];
+                    this.inactiveMortarMarkers.push(g);
                 }
                 this.grenades[i] = this.grenades[this.grenades.length - 1];
                 this.grenades.pop();
@@ -35306,7 +35456,7 @@ class Game {
                         const t = alive[Math.floor(Math.random() * alive.length)];
                         const mx = t.x + (t.vx || 0) * 0.5 + (Math.random() - 0.5) * 90;
                         const my = t.y + (t.vy || 0) * 0.5 + (Math.random() - 0.5) * 90;
-                        this.grenades.push(new MortarMarker(
+                        this.grenades.push(this.spawnMortarMarker(
                             MathUtils.clamp(mx, 40, this.mapW - 40),
                             MathUtils.clamp(my, 40, this.mapH - 40), 1.6, 80));
                     }
@@ -39017,77 +39167,95 @@ class Game {
         const hasPlat = !!(this.map && this.map.platforms && this.map.platforms.length);
         if (deckOnly && !hasPlat) return;
         const onDeck = (x, y) => this.map.floorAt(x, y) === 2;
+        // PERF (BUG-013 / fix P3): measured 5.48 ms/frame (97% of spike
+        // frames) as marks accumulate -- one beginPath/fill (+ save/restore
+        // for casings) per mark. Consecutive marks sharing
+        // (type,color,alpha) now paint through ONE shared path/fill
+        // (run-length batching). Draw order stays strictly array/append
+        // order -- see spawnScorchMark's layering note, which depends on
+        // the painter's algorithm -- so only the fill() call count drops,
+        // never the stacking.
+        let runKey = null, runC = null, runA = null;
+        const flushRun = () => {
+            if (runKey !== null) {
+                ctx.globalAlpha = runA;
+                ctx.fillStyle = runC;
+                ctx.fill();
+                runKey = null;
+            }
+        };
+        const enterRun = (key, c, a) => {
+            if (runKey !== key) {
+                flushRun();
+                runKey = key; runC = c; runA = a;
+                ctx.beginPath();
+            }
+        };
+        const addCircle = (x, y, r) => {
+            ctx.moveTo(x - cam.x + r, y - cam.y);
+            ctx.arc(x - cam.x, y - cam.y, r, 0, Math.PI * 2);
+        };
+        // Rotated w×h rect about (x,y) as raw corners -- replaces the
+        // per-casing save/translate/rotate/fillRect/restore pair.
+        const addRect = (x, y, rot, w, h) => {
+            const cs = Math.cos(rot), sn = Math.sin(rot), hw = w * 0.5, hh = h * 0.5;
+            let lx = -hw, ly = -hh;
+            ctx.moveTo(x - cam.x + cs * lx - sn * ly, y - cam.y + sn * lx + cs * ly);
+            lx = hw;
+            ctx.lineTo(x - cam.x + cs * lx - sn * ly, y - cam.y + sn * lx + cs * ly);
+            ly = hh;
+            ctx.lineTo(x - cam.x + cs * lx - sn * ly, y - cam.y + sn * lx + cs * ly);
+            lx = -hw;
+            ctx.lineTo(x - cam.x + cs * lx - sn * ly, y - cam.y + sn * lx + cs * ly);
+            ctx.closePath();
+        };
+
         // JULY item 2: casings live in their own capped array now (see
         // _pushPermanentMark) -- drawn first in the same ground pass, a
         // touch dimmer than before (0.5 vs 0.65) so brass reads as texture
         // under loot rather than competing with it.
         if (this.casingMarks && this.casingMarks.length) {
-            ctx.globalAlpha = 0.5;
             for (let m of this.casingMarks) {
                 if (m.x < cam.x - 8 || m.x > cam.x + viewW + 8 || m.y < cam.y - 8 || m.y > cam.y + viewH + 8) continue;
                 if (hasPlat && onDeck(m.x, m.y) !== !!deckOnly) continue;
-                ctx.fillStyle = m.c;
-                ctx.save();
-                ctx.translate(m.x - cam.x, m.y - cam.y);
-                ctx.rotate(m.a);
-                ctx.fillRect(-2, -0.75, 4, 1.5);
-                ctx.restore();
+                enterRun('casing|' + m.c, m.c, 0.5);
+                addRect(m.x, m.y, m.a, 4, 1.5);
             }
-            ctx.globalAlpha = 1;
+            flushRun();
         }
         for (let m of this.permanentMarks) {
             let margin = 30 + (m.r || 0);
             if (m.x < cam.x - margin || m.x > cam.x + viewW + margin || m.y < cam.y - margin || m.y > cam.y + viewH + margin) continue;
             if (hasPlat && onDeck(m.x, m.y) !== !!deckOnly) continue;
 
-            ctx.fillStyle = m.c;
             if (m.type === 'blood') {
                 // Was 0.65 -- with heavy splatter built up by wave 20-30+,
                 // that was washing out live players standing in it. 0.3
                 // keeps blood readable as ground texture without competing
                 // with player/enemy sprites for visual priority.
-                ctx.globalAlpha = 0.3;
-                ctx.beginPath();
-                ctx.arc(m.x - cam.x, m.y - cam.y, m.r, 0, Math.PI*2);
-                ctx.fill();
+                enterRun('blood|' + m.c, m.c, 0.3);
+                addCircle(m.x, m.y, m.r);
             } else if (m.type === 'casing') {
-                ctx.globalAlpha = 0.65;
-                ctx.save();
-                ctx.translate(m.x - cam.x, m.y - cam.y);
-                ctx.rotate(m.a);
-                ctx.fillRect(-2, -0.75, 4, 1.5);
-                ctx.restore();
+                enterRun('casing|' + m.c, m.c, 0.65);
+                addRect(m.x, m.y, m.a, 4, 1.5);
             } else if (m.type === 'trail') {
-                ctx.globalAlpha = m.a;
-                ctx.beginPath();
-                ctx.arc(m.x - cam.x, m.y - cam.y, m.r, 0, Math.PI*2);
-                ctx.fill();
+                enterRun('trail|' + m.c + '|' + m.a, m.c, m.a);
+                addCircle(m.x, m.y, m.r);
             } else if (m.type === 'debris') {
-                ctx.globalAlpha = m.a;
-                ctx.beginPath();
-                for (let circ of m.circs) {
-                    ctx.moveTo(m.x + circ.ox + circ.r - cam.x, m.y + circ.oy - cam.y);
-                    ctx.arc(m.x + circ.ox - cam.x, m.y + circ.oy - cam.y, circ.r, 0, Math.PI*2);
-                }
-                ctx.fill();
+                enterRun('debris|' + m.c + '|' + m.a, m.c, m.a);
+                for (let circ of m.circs) addCircle(m.x + circ.ox, m.y + circ.oy, circ.r);
             } else if (m.type === 'scorch') {
                 // Charred pothole: a dark irregular blotch cluster plus a
                 // faint soot-fade ring so it reads as scorched ground rather
-                // than a flat black circle.
-                ctx.globalAlpha = m.a;
-                ctx.fillStyle = '#0a0806';
-                ctx.beginPath();
-                for (let b of m.blotches) {
-                    ctx.moveTo(m.x + b.ox + b.r - cam.x, m.y + b.oy - cam.y);
-                    ctx.arc(m.x + b.ox - cam.x, m.y + b.oy - cam.y, b.r, 0, Math.PI*2);
-                }
-                ctx.fill();
-
-                ctx.globalAlpha = m.a * 0.35;
+                // than a flat black circle. Blotches join the shared
+                // flat-fill run; the ring keeps its own cached-gradient pass.
+                enterRun('scorch|' + m.a, '#0a0806', m.a);
+                for (let b of m.blotches) addCircle(m.x + b.ox, m.y + b.oy, b.r);
+                flushRun();
                 // PERF: this gradient's colors/falloff never change once a
                 // scorch mark exists -- only its camera-relative screen
                 // position does, and the fade-over-time is already handled
-                // by the globalAlpha multiplier above. Recreating it from
+                // by the globalAlpha multiplier below. Recreating it from
                 // scratch every frame for every on-screen scorch mark (and
                 // there can easily be dozens after a long fight, since
                 // these are permanent) was one of the single biggest
@@ -39106,6 +39274,7 @@ class Game {
                 }
                 ctx.save();
                 ctx.translate(m.x - cam.x, m.y - cam.y);
+                ctx.globalAlpha = m.a * 0.35;
                 ctx.fillStyle = m._glowGradient;
                 ctx.beginPath();
                 ctx.arc(0, 0, m.r * 1.4, 0, Math.PI * 2);
@@ -39113,6 +39282,7 @@ class Game {
                 ctx.restore();
             }
         }
+        flushRun();
         ctx.globalAlpha = 1.0;
     }
 
@@ -39261,6 +39431,34 @@ class Game {
                 let startAlpha = lt.peakAlpha;
                 let opacityMult = p.isSprinting ? AIM_WEIGHT.LOW_READY_LASER_ALPHA_MULT : 1.0;
                 let laserRGB = lt.rgb; // PHASE 3: prism array custom colors (defaults preserved)
+                // G1 (focus cue) + G3 (clutch cue), both on the laser. The Laser-Only
+                // aim paradigm hides the DOM reticle in live play, so the beam is the
+                // ONLY place a player "state" cue can live. focusLevel (0..1) is the
+                // aim-stability value the sim already rewards; clutch (hp<20%) is the
+                // fire-rate/speed buff the sim already grants. FOCUS reads as precision
+                // (tighter), CLUTCH reads as survival reach (further + brighter); both
+                // also shift toward white, so a focused AND clutching beam is hottest.
+                // All mods are multiplicative and independent of `collim`, so the
+                // collimation ordering invariant (a wide beam stays dimmer + shorter +
+                // wider than a tight one) is preserved -- each just scales uniformly.
+                // Draw-only: no sim change.
+                let g1Focus = MathUtils.clamp(p.focusLevel ?? 0, 0, 1);
+                let g3Clutch = (!p.dead && p.hp / p.maxHp < 0.20) ? 1 : 0;
+                let g1Flash = MathUtils.clamp(p.focusFlash ?? 0, 0, 1);
+                // G1 white core is a STEP, not a lerp: quadratic in focus so it
+                // stays ~0 until near full focus, then jumps to a solid white
+                // core; the one-shot lock flash (focusFlash) spikes it to near
+                // pure white for the "you locked on" beat.
+                let _whiteAmt = Math.min(0.95,
+                    g1Focus * g1Focus * 0.6 + 0.5 * g1Flash + 0.25 * g3Clutch);
+                if (_whiteAmt > 0) {
+                    let _c = laserRGB.split(',');
+                    for (let i = 0; i < 3; i++) {
+                        let v = Number(_c[i]);
+                        _c[i] = Math.round(v + (255 - v) * _whiteAmt);
+                    }
+                    laserRGB = _c.join(',');
+                }
 
                 // Collimation: 1 = focused/tight, 0 = just fired/wide. Drives
                 // THREE things together, not just angle -- a wider,
@@ -39273,11 +39471,21 @@ class Game {
                 let halfAngleDeg = lt.wideDeg +
                     (lt.tightDeg - lt.wideDeg) * collim; // PHASE 3: upgrade-tier divergence
                 let halfAngle = halfAngleDeg * Math.PI / 180;
+                // G1: narrower at full focus. Multiplicative on halfAngle, so the
+                // beam (visHalfWidth) and the aim dot (dotHalfWidth) narrow by the
+                // SAME factor -- both derive from tan(halfAngle), so invariant 10
+                // (beam and dot always agree on width) holds by construction.
+                halfAngle *= (1 - 0.35 * g1Focus);
                 // Effective range collapses toward WIDE_EFFECTIVE_RANGE as
                 // collimation drops -- a diverged beam physically can't
                 // carry as far, independent of the map's actual 1700px cap.
                 let effectiveMaxRange = AIM_WEIGHT.WIDE_EFFECTIVE_RANGE +
                     (maxLaserDist - AIM_WEIGHT.WIDE_EFFECTIVE_RANGE) * collim;
+                // G3 (clutch): the beam carries ~35% further while in clutch -- the
+                // fade range stretches, so it stays visible longer and reaches farther
+                // in open space. This only extends the VISUAL fade, not the raycast:
+                // the aim dot stays at the true hit point, so the aim ref never lies.
+                effectiveMaxRange *= (1 + 0.35 * g3Clutch);
                 // Peak brightness at the muzzle itself also drops -- same
                 // total energy, spread thinner. Uses a DELAYED curve
                 // (collim^EXPONENT), not the same linear collim the angle/
@@ -39295,6 +39503,9 @@ class Game {
                 let peakAlphaMult = AIM_WEIGHT.WIDE_PEAK_ALPHA_MULT +
                     (1 - AIM_WEIGHT.WIDE_PEAK_ALPHA_MULT) * brightnessT;
                 let peakAlpha = startAlpha * opacityMult * peakAlphaMult;
+                // G1: brighter at full focus. G3: brighter while in clutch. (beam +
+                // dot, which both read peakAlpha). Canvas clamps alpha to 1, no overflow.
+                peakAlpha *= (1 + 0.5 * g1Focus) * (1 + 0.35 * g3Clutch) * (1 + 0.6 * g1Flash);
 
                 // Falloff is a fraction of effectiveMaxRange (NOT the map's
                 // flat 1700 cap) -- 0px = full brightness, half of the
@@ -39319,7 +39530,10 @@ class Game {
                 let apexX = lStartX - cam.x, apexY = lStartY - cam.y - pz;
                 let visX = lStartX + Math.cos(laserAngle) * visibleRange - cam.x;
                 let visY = lStartY + Math.sin(laserAngle) * visibleRange - cam.y - pz;
-                let visHalfWidth = Math.max(1.2, visibleRange * Math.tan(halfAngle));
+                // G1 lock flash: bump the min half-width so the beam visibly
+                // THICKENS for the ~0.25s pulse -- a brightening alone on a
+                // sub-pixel beam is easy to miss, but a width pulse reads clearly.
+                let visHalfWidth = Math.max(1.2 + 2.5 * g1Flash, visibleRange * Math.tan(halfAngle));
                 let farAx = visX + perpX * visHalfWidth, farAy = visY + perpY * visHalfWidth;
                 let farBx = visX - perpX * visHalfWidth, farBy = visY - perpY * visHalfWidth;
 
@@ -39363,7 +39577,7 @@ class Game {
                 // visibility -- at tight/focused angles the true computed
                 // width was thin enough that the dot barely registered as
                 // a dot at all.
-                let dotHalfWidth = Math.max(1.2, dist * Math.tan(halfAngle)) * AIM_WEIGHT.DOT_RADIUS_MULT;
+                let dotHalfWidth = (Math.max(1.2, dist * Math.tan(halfAngle)) + 2.5 * g1Flash) * AIM_WEIGHT.DOT_RADIUS_MULT;
                 let dotAlpha = Math.min(0.95, peakAlpha * falloff * AIM_WEIGHT.DOT_ALPHA_BOOST);
                 if (dotAlpha > 0.01) {
                     this.ctx.save();
@@ -39497,7 +39711,18 @@ class Game {
             for (let t of this.turrets) t.draw(this.ctx, cam);
         }
         if (this.securityCameras) {
-            for (let c of this.securityCameras) c.draw(this.ctx, cam);
+            for (let c of this.securityCameras) {
+                // PERF (BUG-013 / fix P4): cameras were the one entity
+                // layer with no viewport cull. The cone a camera draws
+                // reaches scanRange (600-1500) from its body, so the
+                // margin is the cone's max reach -- the same expanded-
+                // rect test the enemy loop above uses, which only culls
+                // once the whole cone circle is off-screen.
+                let cullM = c.scanRange + c.r;
+                if (c.x < cam.x - cullM || c.x > cam.x + visibleW + cullM ||
+                    c.y < cam.y - cullM || c.y > cam.y + visibleH + cullM) continue;
+                c.draw(this.ctx, cam);
+            }
         }
         if (this.hostages) {
             for (let h of this.hostages) h.draw(this.ctx, cam); // PHASE 2: escort entities
