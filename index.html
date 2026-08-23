@@ -5875,7 +5875,7 @@ const OPERATIVE_ROLES = {
         hp: 130, speed: 438, size: 9, color: '#5c6b7a', tracerColor: '#00e5ff', score: 150,
         type: 'op_pointman',
         weapon: 'smg',
-        shieldArc: Math.PI / 3,  // 60-degree forward riot shield
+        shieldArc: 25 * Math.PI / 180,  // 25-degree HALF-arc = 50-degree total forward shield (was 60-degree half / 120-degree total); hit test + arc draw both read this, so visual == hitbox
         offset: { fwd: 0, side: 0 },
         boundGroup: 'move',
         leaderPriority: 1,
@@ -25265,6 +25265,26 @@ function setCrosshairPos(el, x, y) {
     el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0) translate(-50%,-50%)';
 }
 
+// TILED DECAL LAYER for permanent ground marks (blood / trail / debris /
+// scorch). Each mark is stamped ONCE into a small offscreen tile canvas the
+// moment it's created; thereafter every live tile is blitted with a single
+// drawImage per frame instead of re-stroking each mark's path. Tiles do NOT
+// fade by time -- they persist for the whole run until their layer's tile
+// budget (derived from the "Max Marks" setting, see _decalCap) is exceeded,
+// then the coldest tile is LRU-evicted. The budget bounds total tiles (memory)
+// and the viewport cull bounds per-frame cost to O(visible tiles), not
+// O(all marks). See Game._stampMark / Game.drawPermanentMarks / _decalCap.
+const MARK_TILES = {
+    SIZE: 256,       // world units per tile edge
+    // Lifetime is now COUNT-based, not time-based: a tile lives for the whole
+    // run until the layer's tile budget (derived from the "Max Marks" setting,
+    // see _decalCap) is exceeded, then the coldest (least-recently-stamped)
+    // tile is LRU-evicted. No fade -- decals persist until evicted.
+    MIN_TILES: 32,      // floor on the budget when "Max Marks" is ~0
+    MAX_TILES: 2048,    // hard memory ceiling per layer (~256 MB; raised from 1024)
+    MARKS_PER_TILE: 20  // "Max Marks" -> tile budget divisor (30000 default -> 1500)
+};
+
 class Game {
     constructor() {
         if (!Game._vignetteCache) {
@@ -25299,6 +25319,7 @@ class Game {
         this._sepTouched = [];
         this.permanentMarks = [];
         this.casingMarks = [];   // JULY item 2: dedicated capped casing FIFO
+        this.groundTiles = new Map(); this.deckTiles = new Map(); // tiled decal layer (see MARK_TILES)
         // Cap on blood/casing/debris/scorch marks kept on the ground at
         // once (see _pushPermanentMark). Was a hardcoded 3000, which at
         // higher wave counts was trimming visible gore before it should
@@ -31865,6 +31886,7 @@ class Game {
         this.mapH = this.map.height;
         this.permanentMarks = [];
         this.casingMarks = [];   // JULY item 2: dedicated capped casing FIFO
+        if (this.groundTiles) this.groundTiles.clear(); if (this.deckTiles) this.deckTiles.clear(); // drop old decal tiles on new map
         
         this.friendlyFire = true;
         this.p1Ready = false;
@@ -32043,6 +32065,7 @@ class Game {
         this.barriers = [];
         this.permanentMarks = [];
         this.casingMarks = [];   // JULY item 2: dedicated capped casing FIFO
+        if (this.groundTiles) this.groundTiles.clear(); if (this.deckTiles) this.deckTiles.clear(); // drop old decal tiles on reset
         this.explosiveBarrels = [];
         this.pendingBarrelChains = []; // queued chain-reaction fuses (see ExplosiveBarrel.explode)
         this.pendingActions = []; // generalized game-time deferred actions (see queueGameTimeAction)
@@ -39117,27 +39140,94 @@ class Game {
     }
 
     // Shared entry point for adding a blood/casing/trail/debris/scorch mark.
-    // Two things this fixes vs. the old per-call-site "push then maybe
-    // shift()" pattern:
-    //  1. shift() removes exactly one element and is O(n) (it re-indexes the
-    //     entire remaining array) -- doing that on every single overflow,
-    //     potentially many times per frame during a big firefight, is a real
-    //     per-frame cost that grows with how much blood/debris is on the
-    //     ground. Trimming a whole chunk at once amortizes that cost to
-    //     effectively free.
-    //  2. The old cap check only ran on SOME of the push sites -- corpse
-    //     "trail" marks (spawned every frame while a debris chunk is still
-    //     flying) never checked the cap at all, so a big explosion with lots
-    //     of airborne debris could grow this array unbounded until some
-    //     unrelated blood/casing mark happened to trigger a trim. Routing
-    //     every mark through here means the cap always applies.
+    // (Historical: this used to be the single choke point enforcing the
+    // maxPermanentMarks count cap on the permanentMarks array via a bulk
+    // splice-trim. The mark path now stamps into the tiled decal layer below,
+    // which sheds tiles by COUNT (LRU at the "Max Marks"-derived budget, see
+    // _decalCap) -- so maxPermanentMarks is meaningful again, and the only
+    // other count trim left is the casing FIFO.)
+    // TILED DECAL LAYER (see MARK_TILES): stamps a permanent mark into the
+    // offscreen tile(s) it overlaps, exactly once. drawPermanentMarks then
+    // blits each live tile with a single drawImage -- no per-mark path
+    // re-stroke, no O(all marks) cull-scan.
+    _getGroundTiles() { if (!this.groundTiles) this.groundTiles = new Map(); return this.groundTiles; }
+    _getDeckTiles() { if (!this.deckTiles) this.deckTiles = new Map(); return this.deckTiles; }
+    // Tile budget for a decal layer, derived from the player-facing "Max Marks"
+    // setting so that slider actually governs gore/scorch persistence (before
+    // this it only capped the shell-casing FIFO). Clamped to [MIN_TILES,
+    // MAX_TILES] for a memory floor/ceiling. Cheap: a few Math ops per stamp.
+    _decalCap() {
+        const m = this.maxPermanentMarks || 0;
+        return Math.max(MARK_TILES.MIN_TILES,
+            Math.min(MARK_TILES.MAX_TILES, Math.round(m / MARK_TILES.MARKS_PER_TILE)));
+    }
+    _makeTile(tx, ty) {
+        const cv = document.createElement('canvas');
+        cv.width = MARK_TILES.SIZE; cv.height = MARK_TILES.SIZE;
+        return { cv, tctx: cv.getContext('2d'), x: tx * MARK_TILES.SIZE, y: ty * MARK_TILES.SIZE, lastTouched: performance.now() };
+    }
+    _stampMarkIntoTile(tile, mark) {
+        const c = tile.tctx, lx = mark.x - tile.x, ly = mark.y - tile.y;
+        if (mark.type === 'blood') {
+            c.globalAlpha = 0.3; c.fillStyle = mark.c;
+            c.beginPath(); c.arc(lx, ly, mark.r, 0, Math.PI * 2); c.fill();
+        } else if (mark.type === 'trail') {
+            c.globalAlpha = mark.a; c.fillStyle = mark.c;
+            c.beginPath(); c.arc(lx, ly, mark.r, 0, Math.PI * 2); c.fill();
+        } else if (mark.type === 'debris') {
+            c.globalAlpha = mark.a; c.fillStyle = mark.c;
+            c.beginPath();
+            for (let cc of mark.circs) { c.moveTo(lx + cc.ox + cc.r, ly + cc.oy); c.arc(lx + cc.ox, ly + cc.oy, cc.r, 0, Math.PI * 2); }
+            c.fill();
+        } else if (mark.type === 'scorch') {
+            c.globalAlpha = mark.a; c.fillStyle = '#0a0806';
+            c.beginPath();
+            for (let b of mark.blotches) { c.moveTo(lx + b.ox + b.r, ly + b.oy); c.arc(lx + b.ox, ly + b.oy, b.r, 0, Math.PI * 2); }
+            c.fill();
+            const g = c.createRadialGradient(lx, ly, 0, lx, ly, mark.r * 1.4);
+            g.addColorStop(0, 'rgba(20, 14, 8, 0.8)');
+            g.addColorStop(1, 'rgba(20, 14, 8, 0)');
+            c.globalAlpha = mark.a * 0.35; c.fillStyle = g;
+            c.beginPath(); c.arc(lx, ly, mark.r * 1.4, 0, Math.PI * 2); c.fill();
+        }
+        c.globalAlpha = 1;
+    }
+    _stampMark(mark) {
+        const hasPlat = !!(this.map && this.map.platforms && this.map.platforms.length);
+        const isDeck = hasPlat && this.map.floorAt(mark.x, mark.y) === 2;
+        const map = isDeck ? this._getDeckTiles() : this._getGroundTiles();
+        const cap = this._decalCap(); // tile budget for this stamp (slider-driven, see _decalCap)
+        // stamp into every tile the mark's bounding box overlaps (a small mark
+        // lands in one; one straddling an edge lands in up to four, and each
+        // tile canvas clips its own [0,SIZE]^2 so the split is seamless).
+        let rad = mark.r || 0;
+        if (mark.circs) for (let cc of mark.circs) rad = Math.max(rad, Math.abs(cc.ox) + Math.abs(cc.oy) + cc.r);
+        if (mark.blotches) for (let b of mark.blotches) rad = Math.max(rad, Math.abs(b.ox) + Math.abs(b.oy) + b.r);
+        rad += 8;
+        const x0 = Math.floor((mark.x - rad) / MARK_TILES.SIZE), x1 = Math.floor((mark.x + rad) / MARK_TILES.SIZE);
+        const y0 = Math.floor((mark.y - rad) / MARK_TILES.SIZE), y1 = Math.floor((mark.y + rad) / MARK_TILES.SIZE);
+        for (let ty = y0; ty <= y1; ty++) {
+            for (let tx = x0; tx <= x1; tx++) {
+                const key = tx + '|' + ty;
+                let tile = map.get(key);
+                if (!tile) { tile = this._makeTile(tx, ty); map.set(key, tile); while (map.size > cap) this._evictColdest(map); }
+                tile.lastTouched = performance.now();
+                this._stampMarkIntoTile(tile, mark);
+            }
+        }
+    }
+    _evictColdest(map) {
+        let ck = null, ct = Infinity;
+        for (const [k, t] of map) if (t.lastTouched < ct) { ct = t.lastTouched; ck = k; }
+        if (ck !== null) map.delete(ck);
+    }
     _pushPermanentMark(mark) {
-        // JULY item 2 (casing clutter cap): shell casings get their OWN
-        // small FIFO instead of sharing the 30,000-mark pool -- sustained
-        // auto fire was carpeting the ground in brass dense enough to bury
-        // ground loot. 400 keeps the "spent brass everywhere" flavor of a
-        // firefight's immediate area while old casings quietly age out.
-        // Blood/scorch/debris keep the big user-tunable pool untouched.
+        // JULY item 2 (casing clutter cap): shell casings keep their OWN small
+        // FIFO (casingMarks, <=400) -- cheap enough to still cull-scan per frame
+        // in drawPermanentMarks. Blood / trail / debris / scorch now stamp into
+        // the count-capped tiled decal layer (MARK_TILES, LRU at the "Max Marks"
+        // budget, no time fade) instead of the old 30,000-mark pool, which is
+        // what made drawPermanentMarks O(all marks).
         if (mark.type === 'casing') {
             if (!this.casingMarks) this.casingMarks = [];
             this.casingMarks.push(mark);
@@ -39147,12 +39237,7 @@ class Game {
             }
             return;
         }
-        this.permanentMarks.push(mark);
-        const CAP = this.maxPermanentMarks;
-        const TRIM_CHUNK = 500;
-        if (this.permanentMarks.length > CAP + TRIM_CHUNK) {
-            this.permanentMarks.splice(0, this.permanentMarks.length - CAP);
-        }
+        this._stampMark(mark);
     }
 
     // SIMULATED SECOND FLOOR: `deckOnly` splits this into two passes. Ground
@@ -39167,14 +39252,13 @@ class Game {
         const hasPlat = !!(this.map && this.map.platforms && this.map.platforms.length);
         if (deckOnly && !hasPlat) return;
         const onDeck = (x, y) => this.map.floorAt(x, y) === 2;
-        // PERF (BUG-013 / fix P3): measured 5.48 ms/frame (97% of spike
-        // frames) as marks accumulate -- one beginPath/fill (+ save/restore
-        // for casings) per mark. Consecutive marks sharing
-        // (type,color,alpha) now paint through ONE shared path/fill
-        // (run-length batching). Draw order stays strictly array/append
-        // order -- see spawnScorchMark's layering note, which depends on
-        // the painter's algorithm -- so only the fill() call count drops,
-        // never the stacking.
+        // PERF history (BUG-013 / fix P3): this pass once measured 5.48
+        // ms/frame as marks accumulated (one beginPath/fill per mark). P3
+        // added run-length batching; the tiled decal layer (MARK_TILES) now
+        // replaces the whole mark path -- blood/trail/debris/scorch are
+        // stamped into offscreen tiles once and blitted below. The helpers
+        // beneath (flushRun/enterRun/addRect) now serve only the casing
+        // pass now (blood/trail/debris/scorch moved to the tile layer).
         let runKey = null, runC = null, runA = null;
         const flushRun = () => {
             if (runKey !== null) {
@@ -39190,10 +39274,6 @@ class Game {
                 runKey = key; runC = c; runA = a;
                 ctx.beginPath();
             }
-        };
-        const addCircle = (x, y, r) => {
-            ctx.moveTo(x - cam.x + r, y - cam.y);
-            ctx.arc(x - cam.x, y - cam.y, r, 0, Math.PI * 2);
         };
         // Rotated w×h rect about (x,y) as raw corners -- replaces the
         // per-casing save/translate/rotate/fillRect/restore pair.
@@ -39223,67 +39303,26 @@ class Game {
             }
             flushRun();
         }
-        for (let m of this.permanentMarks) {
-            let margin = 30 + (m.r || 0);
-            if (m.x < cam.x - margin || m.x > cam.x + viewW + margin || m.y < cam.y - margin || m.y > cam.y + viewH + margin) continue;
-            if (hasPlat && onDeck(m.x, m.y) !== !!deckOnly) continue;
-
-            if (m.type === 'blood') {
-                // Was 0.65 -- with heavy splatter built up by wave 20-30+,
-                // that was washing out live players standing in it. 0.3
-                // keeps blood readable as ground texture without competing
-                // with player/enemy sprites for visual priority.
-                enterRun('blood|' + m.c, m.c, 0.3);
-                addCircle(m.x, m.y, m.r);
-            } else if (m.type === 'casing') {
-                enterRun('casing|' + m.c, m.c, 0.65);
-                addRect(m.x, m.y, m.a, 4, 1.5);
-            } else if (m.type === 'trail') {
-                enterRun('trail|' + m.c + '|' + m.a, m.c, m.a);
-                addCircle(m.x, m.y, m.r);
-            } else if (m.type === 'debris') {
-                enterRun('debris|' + m.c + '|' + m.a, m.c, m.a);
-                for (let circ of m.circs) addCircle(m.x + circ.ox, m.y + circ.oy, circ.r);
-            } else if (m.type === 'scorch') {
-                // Charred pothole: a dark irregular blotch cluster plus a
-                // faint soot-fade ring so it reads as scorched ground rather
-                // than a flat black circle. Blotches join the shared
-                // flat-fill run; the ring keeps its own cached-gradient pass.
-                enterRun('scorch|' + m.a, '#0a0806', m.a);
-                for (let b of m.blotches) addCircle(m.x + b.ox, m.y + b.oy, b.r);
-                flushRun();
-                // PERF: this gradient's colors/falloff never change once a
-                // scorch mark exists -- only its camera-relative screen
-                // position does, and the fade-over-time is already handled
-                // by the globalAlpha multiplier below. Recreating it from
-                // scratch every frame for every on-screen scorch mark (and
-                // there can easily be dozens after a long fight, since
-                // these are permanent) was one of the single biggest
-                // sources of per-frame canvas churn found while profiling
-                // (over 1000 gradient allocations/frame in one stress
-                // test). Cache it once in mark-local coordinates and just
-                // translate into place each frame instead -- canvas
-                // gradients are painted using whatever transform is active
-                // at fill() time, so re-centering the SAME cached gradient
-                // via translate() tracks the camera correctly with zero
-                // visual difference from recreating it fresh.
-                if (!m._glowGradient) {
-                    m._glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, m.r * 1.4);
-                    m._glowGradient.addColorStop(0, 'rgba(20, 14, 8, 0.8)');
-                    m._glowGradient.addColorStop(1, 'rgba(20, 14, 8, 0)');
-                }
-                ctx.save();
-                ctx.translate(m.x - cam.x, m.y - cam.y);
-                ctx.globalAlpha = m.a * 0.35;
-                ctx.fillStyle = m._glowGradient;
-                ctx.beginPath();
-                ctx.arc(0, 0, m.r * 1.4, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
+        // TILED DECAL LAYER: blit each visible live tile with a single
+        // drawImage at full alpha -- no time fade. Lifetime is count/LRU: a
+        // tile lives until its layer's budget (from the "Max Marks" setting,
+        // see _decalCap) is exceeded, then _stampMark LRU-evicts the coldest
+        // tile. Replaces the old O(all marks) cull-scan + per-mark path
+        // re-stroke; frame cost stays O(visible tiles) via the cull below.
+        // globalAlpha is pinned to 1 here so leftover state from the casing
+        // pass above can't leak into the blits.
+        const tiles = deckOnly ? this.deckTiles : this.groundTiles;
+        if (tiles && tiles.size) {
+            const size = MARK_TILES.SIZE;
+            const minWX = cam.x - size, maxWX = cam.x + viewW + size;
+            const minWY = cam.y - size, maxWY = cam.y + viewH + size;
+            ctx.globalAlpha = 1; // full alpha: no time fade (lifetime is count/LRU -- see MARK_TILES / _decalCap)
+            for (const [, tile] of tiles) {
+                if (tile.x + size < minWX || tile.x > maxWX || tile.y + size < minWY || tile.y > maxWY) continue;
+                ctx.drawImage(tile.cv, tile.x - cam.x, tile.y - cam.y, size, size);
             }
         }
-        flushRun();
-        ctx.globalAlpha = 1.0;
+        ctx.globalAlpha = 1;
     }
 
     drawViewport(cam, player, isPlayer2 = false) {
