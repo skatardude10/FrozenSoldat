@@ -1877,6 +1877,24 @@
                     <input type="range" id="sld-max-marks" min="0" max="300000" step="1000" value="30000" style="width: 100%; cursor: pointer;" oninput="game.setMaxPermanentMarks(this.value)">
                     <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 30,000 &nbsp;|&nbsp; Range: 0 – 300,000</div>
                 </div>
+
+                <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold; margin-top: 16px;">RENDER RESOLUTION</p>
+                <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left;">
+                    <div style="font-size: 10px; color: #a9c2c7; margin-bottom: 14px; line-height: 1.5;">
+                        Render the game at a lower internal resolution and upscale it to the screen. Lower settings cut GPU load for smoother long sessions on a weaker or busy graphics card (at the cost of a slightly softer image). 100% is the native look.
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
+                        <span>RENDER SCALE:</span>
+                        <span id="lbl-render-scale">100%</span>
+                    </div>
+                    <select id="opt-render-scale" onchange="game.setRenderScale(this.value)" style="width: 100%; cursor: pointer; background: #0a1420; color: #e8f6ff; border: 1px solid rgba(0, 229, 255, 0.3); padding: 7px; border-radius: 4px; font-size: 12px;">
+                        <option value="100" selected>100% (Native)</option>
+                        <option value="90">90%</option>
+                        <option value="75">75%</option>
+                        <option value="66">66%</option>
+                    </select>
+                    <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 100% &nbsp;|&nbsp; Lower = less GPU load, softer image</div>
+                </div>
             </div>
 
             <!-- Settings sub-tab: DATA (JULY item 3 -- save export/import moved
@@ -2407,6 +2425,22 @@
                 </div>
                 <input type="range" id="sld-max-marks-pause" min="0" max="300000" step="1000" value="30000" style="width: 100%; cursor: pointer;" oninput="game.setMaxPermanentMarks(this.value)">
                 <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 30,000 &nbsp;|&nbsp; Range: 0 – 300,000</div>
+            </div>
+            <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left;">
+                <div style="font-size: 10px; color: #a9c2c7; margin-bottom: 14px; line-height: 1.5;">
+                    Render resolution (mid-mission). Lower it here if things start chugging deep into a long run on a busy graphics card.
+                </div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
+                    <span>RENDER SCALE:</span>
+                    <span id="lbl-render-scale-pause">100%</span>
+                </div>
+                <select id="opt-render-scale-pause" onchange="game.setRenderScale(this.value)" style="width: 100%; cursor: pointer; background: #0a1420; color: #e8f6ff; border: 1px solid rgba(0, 229, 255, 0.3); padding: 7px; border-radius: 4px; font-size: 12px;">
+                    <option value="100" selected>100% (Native)</option>
+                    <option value="90">90%</option>
+                    <option value="75">75%</option>
+                    <option value="66">66%</option>
+                </select>
+                <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 100% &nbsp;|&nbsp; Lower = less GPU load, softer image</div>
             </div>
         </div>
         
@@ -5068,6 +5102,12 @@ class MusicEngine {
         
         osc.start(time);
         osc.stop(time + 0.15);
+        // PERF: one-shot chain — free it when the note ends. Without this the
+        // finished nodes stay connected to musicGain forever (hundreds of
+        // nodes/sec on a dense track): a linearly growing retained heap and a
+        // growing audio-thread graph, both of which show up as long-session
+        // micro-stutter. Same idiom as the SFX one-shots above.
+        osc.onended = () => { osc.disconnect(); gain.disconnect(); };
     }
     
     duckPump(time) {
@@ -5095,6 +5135,7 @@ class MusicEngine {
         
         osc.start(time);
         osc.stop(time + 0.1);
+        osc.onended = () => { osc.disconnect(); gain.disconnect(); };
     }
     
     playAmbientKick(time) {
@@ -5114,6 +5155,7 @@ class MusicEngine {
         
         osc.start(time);
         osc.stop(time + 0.3);
+        osc.onended = () => { osc.disconnect(); gain.disconnect(); };
     }
     
     playHat(time, vol = 0.07) {
@@ -5140,6 +5182,7 @@ class MusicEngine {
         
         source.start(time);
         source.stop(time + 0.05);
+        source.onended = () => { source.disconnect(); filter.disconnect(); gain.disconnect(); pan.disconnect(); };
     }
     
     playRimshot(time) {
@@ -5159,6 +5202,7 @@ class MusicEngine {
         
         osc.start(time);
         osc.stop(time + 0.05);
+        osc.onended = () => { osc.disconnect(); gain.disconnect(); };
     }
     
     playPad(chord, time) {
@@ -5178,6 +5222,12 @@ class MusicEngine {
         gain.gain.exponentialRampToValueAtTime(targetGain, time + 0.8);
         gain.gain.exponentialRampToValueAtTime(0.001, time + 2.8);
         
+        // One-shot chord: free each voice's pair when it ends, and the shared
+        // filter/gain once the last of the 2*chord.length voices is done.
+        let endedVoices = 0;
+        const releaseShared = () => {
+            if (++endedVoices === chord.length * 2) { filter.disconnect(); gain.disconnect(); }
+        };
         chord.forEach(note => {
             const osc1 = audio.ctx.createOscillator();
             const osc2 = audio.ctx.createOscillator();
@@ -5208,8 +5258,10 @@ class MusicEngine {
             osc2.start(time);
             osc1.stop(time + 3.0);
             osc2.stop(time + 3.0);
+            osc1.onended = () => { osc1.disconnect(); pan1.disconnect(); releaseShared(); };
+            osc2.onended = () => { osc2.disconnect(); pan2.disconnect(); releaseShared(); };
         });
-        
+
         filter.connect(gain);
         gain.connect(this.duckBus || audio.musicGain);
         if (this.delayNode) gain.connect(this.delayNode); // Drown the pad in delay
@@ -5254,6 +5306,7 @@ class MusicEngine {
         osc2.start(time);
         osc1.stop(time + 0.18);
         osc2.stop(time + 0.18);
+        osc1.onended = () => { osc1.disconnect(); osc2.disconnect(); filter.disconnect(); gain.disconnect(); };
     }
     
     playLead(note, time) {
@@ -5302,6 +5355,11 @@ class MusicEngine {
         osc2.start(time);
         osc1.stop(time + 0.3);
         osc2.stop(time + 0.3);
+        osc1.onended = () => {
+            lfo.disconnect(); lfoGain.disconnect();
+            osc1.disconnect(); osc2.disconnect();
+            filter.disconnect(); gain.disconnect(); pan.disconnect();
+        };
     }
 
     playActionSnare(time) {
@@ -5340,6 +5398,10 @@ class MusicEngine {
         noiseSource.stop(time + 0.15);
         bodyOsc.start(time);
         bodyOsc.stop(time + 0.15);
+        noiseSource.onended = () => {
+            noiseSource.disconnect(); noiseFilter.disconnect(); noiseGain.disconnect();
+            bodyOsc.disconnect(); bodyGain.disconnect();
+        };
     }
     
     playHeartbeat(time, volume, isFirst) {
@@ -5363,6 +5425,7 @@ class MusicEngine {
         
         osc.start(time);
         osc.stop(time + duration + 0.02);
+        osc.onended = () => { osc.disconnect(); gain.disconnect(); };
     }
 }
 
@@ -7543,7 +7606,17 @@ class MapGen {
         this._wallQueryId = (this._wallQueryId || 0) + 1;
         let qid = this._wallQueryId;
 
-        let nearbyWalls = [];
+        // CONTRACT (no-copy): returns a SHARED scratch array BY REFERENCE.
+        // Callers must consume it synchronously and must never retain,
+        // mutate, or sort it across the next call to getWallsNear() or
+        // getWallsAlongSegment() — the same backing array comes back
+        // (length reset, capacity retained, so steady state allocates
+        // nothing per call). Same change-class as getHostilesFor's
+        // _hostilesScratch (invariant 22). Audited: every call site reads
+        // the result in the same synchronous scope and none re-enters a
+        // spatial query while iterating a prior result.
+        let nearbyWalls = this._nearScratch || (this._nearScratch = []);
+        nearbyWalls.length = 0;
         for (let r = Math.max(0, row - 1); r <= Math.min(this.gridRows - 1, row + 1); r++) {
             for (let c = Math.max(0, col - 1); c <= Math.min(this.gridCols - 1, col + 1); c++) {
                 let cellWalls = this.spatialGrid[r][c];
@@ -7584,7 +7657,12 @@ class MapGen {
     getWallsAlongSegment(x1, y1, x2, y2) {
         this._wallQueryId = (this._wallQueryId || 0) + 1;
         let qid = this._wallQueryId;
-        let out = [];
+        // CONTRACT (no-copy): shared scratch, BY REFERENCE — same rules as
+        // getWallsNear(). Kept on a SEPARATE backing array so a caller that
+        // holds a point-query result while issuing a segment query (or vice
+        // versa) in one frame never clobbers the other.
+        let out = this._segScratch || (this._segScratch = []);
+        out.length = 0;
 
         let dx = x2 - x1, dy = y2 - y1;
         let len = Math.hypot(dx, dy);
@@ -25312,8 +25390,34 @@ class Game {
         this.operatorShopTimerEl = document.getElementById('operator-shop-timer');
         this.width = window.innerWidth;
         this.height = window.innerHeight;
-        this.canvas.width = this.width; this.canvas.height = this.height;
-        
+        // --- Render scale (PERF #1, 2026-08-23) ---
+        // The backing store is this.width/this.height (CSS px) times renderScale.
+        // All drawing stays in CSS-px coordinates; a base transform in draw() maps
+        // that space into the (smaller) backing store and the browser upscales.
+        // 1.0 (default) is byte-for-byte today's 1:1 behavior. User-togglable
+        // 100/90/75/66% via the options menu (setRenderScale); persisted to
+        // saveData.renderScale. Lower = less GPU fill-rate = more headroom on a
+        // VRAM-pressured box (the long-session micro-stutter is environmental).
+        this.renderScale = 1;
+        // Scale factor of the CSS-px drawing space into the CURRENT render
+        // target's pixels. This is renderScale while drawing to the main
+        // canvas, but drawViewportWithAberration swaps this.ctx to a
+        // half-size offscreen buffer, and code that has to blit in raw
+        // screen space needs the base of whatever target it is actually
+        // drawing into -- not the main canvas's. Anything that calls
+        // setTransform() to escape the world transform, or that reads
+        // ctx.getTransform() to convert world -> screen px, must use this
+        // rather than this.renderScale. Kept in lockstep with this.ctx: any
+        // future code that swaps the ctx handle must swap this too.
+        this._screenBase = 1;
+        // True only while the world pass is redirected into the aberration
+        // buffer. That buffer is viewport-LOCAL (no P2 half-screen translate
+        // baked in), so screen-space blits inside drawViewport need to know
+        // which target they are in. Set/cleared with this.ctx and
+        // this._screenBase.
+        this._renderingToAberrationBuffer = false;
+        this._applyCanvasSize();
+
         this.mapW = 2200; this.mapH = 2200;
         this._sepBuckets = new Map();
         this._sepTouched = [];
@@ -25545,7 +25649,7 @@ class Game {
         
         window.addEventListener('resize', () => {
             this.width = window.innerWidth; this.height = window.innerHeight;
-            this.canvas.width = this.width; this.canvas.height = this.height;
+            this._applyCanvasSize();
         });
 
         window.addEventListener("gamepadconnected", () => { this.gamepadConnected = true; });
@@ -26378,12 +26482,37 @@ class Game {
             p.x, p.y - 30, 'INTEL CACHE DROPPED (' + cache.cacheValue + ')', '#ffb700', 2.4, 0, -40, 160, true));
     }
 
+    // True if a LIVE feed is currently watching (x, y): a living player, or a
+    // piloted drone's PiP feed. Placed drones, dogs and security cams render no
+    // feed you're watching, so they don't count. MAX_FEED_SIGHT bounds the wall
+    // raycast on the 7500px maps AND stops a far-but-clearly-occluded enemy
+    // (theoretically "in LoS" but far off-screen) from over-blocking the
+    // transparent un-stuck.
+    _isSeenByLiveFeed(x, y) {
+        const MAX_FEED_SIGHT = 2400;
+        const eyes = [];
+        if (this.player && !this.player.dead) eyes.push(this.player);
+        if (this.player2 && !this.player2.dead) eyes.push(this.player2);
+        if (this.player && this.player.activeDrone && this.player.activeDrone.isPiloted && !this.player.activeDrone.dead) eyes.push(this.player.activeDrone);
+        if (this.player2 && this.player2.activeDrone && this.player2.activeDrone.isPiloted && !this.player2.activeDrone.dead) eyes.push(this.player2.activeDrone);
+        for (const eye of eyes) {
+            if (Math.hypot(eye.x - x, eye.y - y) > MAX_FEED_SIGHT) continue;
+            if (MathUtils.viewSeesPoint(eye, x, y, this.map.getWallsAlongSegment(eye.x, eye.y, x, y))) return true;
+        }
+        return false;
+    }
+
     // PHASE 1 (stuck-enemy fix): give a wedged enemy a fresh, validated
     // position. Far from every player: silent teleport to a new squad
     // anchor (with a small poof so headless traces still see the event).
     // Near a player (where a teleport would read as a glitch): a physics
     // nudge + forced AI recompute instead.
     _relocateStuckEnemy(e) {
+        // Never nudge/teleport an enemy a live feed is watching (a living player
+        // or a piloted drone's PiP) -- under an active eye it reads as the enemy
+        // popping sideways or vanishing mid-combat. Unseen enemies still get the
+        // transparent un-stuck, which is the system's actual job.
+        if (this._isSeenByLiveFeed(e.x, e.y)) return;
         let nearestPlayerDist = Infinity;
         for (const p of [this.player, this.player2]) {
             if (p && !p.dead) nearestPlayerDist = Math.min(nearestPlayerDist, Math.hypot(p.x - e.x, p.y - e.y));
@@ -28601,7 +28730,20 @@ class Game {
             }
 
             if (this.dpadCooldown <= 0) {
-                if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol-pause' || currentRow[0] === 'sld-sfx-vol-pause')) {
+                if (currentRow.length === 1 && (currentRow[0] === 'opt-render-scale-pause' || currentRow[0] === 'opt-render-scale')) {
+                    // PERF #1: cycle the render-scale <select> with the d-pad.
+                    let rsSel = document.getElementById(currentRow[0]);
+                    if (rsSel) {
+                        if (dLeft || dRight) {
+                            let delta = dLeft ? -1 : 1;
+                            let ni = (rsSel.selectedIndex + delta + rsSel.options.length) % rsSel.options.length;
+                            rsSel.selectedIndex = ni;
+                            this.setRenderScale(rsSel.value);
+                            this.dpadCooldown = 0.12;
+                            return;
+                        }
+                    }
+                } else if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol-pause' || currentRow[0] === 'sld-sfx-vol-pause')) {
                     let slider = document.getElementById(currentRow[0]);
                     if (slider) {
                         let channel = currentRow[0] === 'sld-music-vol-pause' ? 'music' : 'sfx';
@@ -28855,7 +28997,8 @@ class Game {
                 ['btn-p2-gp-auto-pause', 'btn-p2-gp-none-pause', 'btn-p2-gp-0-pause', 'btn-p2-gp-1-pause', 'btn-p2-gp-2-pause', 'btn-p2-gp-3-pause']
             ],
             performance: [
-                ['sld-max-marks-pause']
+                ['sld-max-marks-pause'],
+                ['opt-render-scale-pause']
             ]
         };
     }
@@ -28875,7 +29018,8 @@ class Game {
                 ['sld-sfx-vol']
             ],
             performance: [
-                ['sld-max-marks']
+                ['sld-max-marks'],
+                ['opt-render-scale']
             ],
             // JULY item 3: save export/import moved to its own Data sub-tab.
             data: [
@@ -29091,7 +29235,20 @@ class Game {
             }
 
             if (this.dpadCooldown <= 0) {
-                if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol' || currentRow[0] === 'sld-sfx-vol' || currentRow[0] === 'sld-time-scale' || currentRow[0] === 'sld-max-marks' || currentRow[0] === 'sld-start-wave')) {
+                if (currentRow.length === 1 && (currentRow[0] === 'opt-render-scale' || currentRow[0] === 'opt-render-scale-pause')) {
+                    // PERF #1: cycle the render-scale <select> with the d-pad.
+                    let rsSel = document.getElementById(currentRow[0]);
+                    if (rsSel) {
+                        if (dLeft || dRight) {
+                            let delta = dLeft ? -1 : 1;
+                            let ni = (rsSel.selectedIndex + delta + rsSel.options.length) % rsSel.options.length;
+                            rsSel.selectedIndex = ni;
+                            this.setRenderScale(rsSel.value);
+                            this.dpadCooldown = 0.12;
+                            return;
+                        }
+                    }
+                } else if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol' || currentRow[0] === 'sld-sfx-vol' || currentRow[0] === 'sld-time-scale' || currentRow[0] === 'sld-max-marks' || currentRow[0] === 'sld-start-wave')) {
                     let slider = document.getElementById(currentRow[0]);
                     if (slider) {
                         if (currentRow[0] === 'sld-time-scale') {
@@ -36886,6 +37043,11 @@ class Game {
         } else {
             this.setMaxPermanentMarks(30000);
         }
+        // PERF #1 (2026-08-23): restore the render scale. persist=false — we're
+        // mid-load; a re-save here would write half-loaded data back.
+        if (this.saveData.renderScale !== undefined) {
+            this.setRenderScale(this.saveData.renderScale, false);
+        }
         // Sync the touch stick-size slider/label (and apply if the touch
         // controller is already up). Boot also re-applies once DOM is ready.
         this.setTouchStickScale(this.saveData.touchStickScale !== undefined ? this.saveData.touchStickScale : 1.0);
@@ -36943,6 +37105,7 @@ class Game {
             this.saveData.friendlyFireMode = this.friendlyFireMode;
             this.saveData.nightMode = this.nightMode;
             this.saveData.maxPermanentMarks = this.maxPermanentMarks;
+            this.saveData.renderScale = this.renderScale;
             localStorage.setItem('frozensoldat_save', JSON.stringify(this.saveData));
         } catch(e) {
             console.error("Failed to save data:", e);
@@ -37101,6 +37264,9 @@ class Game {
             if (marks) marks.value = this.maxPermanentMarks;
             const marksLbl = document.getElementById('lbl-max-marks');
             if (marksLbl) marksLbl.textContent = Number(this.maxPermanentMarks).toLocaleString();
+            // PERF #1: sync the render-scale select from the imported save.
+            const rsSel = document.getElementById('opt-render-scale');
+            if (rsSel) rsSel.value = String(Math.round((this.renderScale || 1) * 100));
             const ts = document.getElementById('sld-time-scale');
             if (ts) ts.value = this.timeScale;
             // Audio: route through the same single apply-paths the UI uses so
@@ -38633,6 +38799,40 @@ class Game {
         this.saveGameData();
     }
 
+    // PERF #1 (2026-08-23): size the backing store from the CSS-px viewport
+    // times renderScale. this.width/this.height are ALWAYS CSS px (input, UI,
+    // and all world->screen math use them); only the pixel buffer shrinks.
+    // draw() applies the matching base transform each frame, and the two
+    // screen-space composites (night blit, aberration) set the same base.
+    _applyCanvasSize() {
+        const s = this.renderScale || 1;
+        this.canvas.width  = Math.max(1, Math.round(this.width  * s));
+        this.canvas.height = Math.max(1, Math.round(this.height * s));
+    }
+
+    // PERF #1 (2026-08-23): user-togglable render scale. Snaps to the four
+    // offered steps (100/90/75/66%), resizes the backing store, syncs the
+    // options controls, and persists. persist=false is used by load-time
+    // restore to avoid a redundant save. Render-only: no sim/RNG change, and
+    // 100% is pixel-identical to the pre-feature 1:1 behavior.
+    setRenderScale(value, persist = true) {
+        const opts = [1, 0.9, 0.75, 0.66];
+        let v = parseFloat(value);
+        if (!Number.isFinite(v)) v = 1;
+        let best = opts[0], bd = Infinity;
+        for (const o of opts) { const d = Math.abs(o - v); if (d < bd) { bd = d; best = o; } }
+        this.renderScale = best;
+        this._applyCanvasSize();
+        const pct = Math.round(best * 100);
+        for (const suf of ['', '-pause']) {
+            const sel = document.getElementById('opt-render-scale' + suf);
+            if (sel) sel.value = String(pct);
+            const lbl = document.getElementById('lbl-render-scale' + suf);
+            if (lbl) lbl.innerText = pct + '%';
+        }
+        if (persist) this.saveGameData();
+    }
+
     // ================= PHASE 0: UNIFIED END-OF-RUN PIPELINE =================
     // endRun(outcome) is the ONLY way a run terminates. It finalizes the
     // ledger, accumulates lifetime career stats (Phase 2 Dossier feed),
@@ -40102,15 +40302,31 @@ class Game {
 
             nightCtx.globalCompositeOperation = 'destination-out';
 
+            // nightCanvas is sized in CSS px, so hole POSITIONS must come out
+            // in CSS px. ctx.getTransform() is in the current target's pixels
+            // (it has this._screenBase baked in on top of the zoom), so divide
+            // it back out. The light RADII below are already CSS px (r *
+            // cam.zoom) and are deliberately left alone -- before this, the
+            // positions carried a scale factor the radii did not, so the two
+            // disagreed by exactly that factor. In the main-canvas path at
+            // renderScale=1 this divides by 1 and is a no-op.
             let matrix = this.ctx.getTransform();
-            
+            let mBase = this._screenBase || 1;
+
+            // In the main-canvas path the caller baked translate(viewportW)
+            // into the transform for P2, so subtract it to get back to this
+            // viewport's local space. The aberration buffer is viewport-LOCAL
+            // already (its transform is set fresh, no such translate), so
+            // there is nothing to subtract there.
+            const originBakedIn = isPlayer2 && !this._renderingToAberrationBuffer;
+
             let worldToCanvas = (wx, wy) => {
                 let rx = wx - cam.x;
                 let ry = wy - cam.y;
-                let sx = rx * matrix.a + ry * matrix.c + matrix.e;
-                let sy = rx * matrix.b + ry * matrix.d + matrix.f;
+                let sx = (rx * matrix.a + ry * matrix.c + matrix.e) / mBase;
+                let sy = (rx * matrix.b + ry * matrix.d + matrix.f) / mBase;
                 return {
-                    x: isPlayer2 ? (sx - viewportW) : sx,
+                    x: originBakedIn ? (sx - viewportW) : sx,
                     y: sy
                 };
             };
@@ -40313,8 +40529,15 @@ class Game {
             }
 
             this.ctx.save();
-            this.ctx.setTransform(1, 0, 0, 1, 0, 0); 
-            let drawX = isPlayer2 ? viewportW : 0;
+            // PERF #1: re-assert the base of the target we are actually
+            // drawing into (renderScale for the main canvas, ABER_BUF_SCALE
+            // for the aberration buffer) -- this blit draws the CSS-px-sized
+            // nightCanvas in raw screen space.
+            const nBase = this._screenBase || 1;
+            this.ctx.setTransform(nBase, 0, 0, nBase, 0, 0);
+            // Same viewport-local reasoning as originBakedIn above: the P2
+            // half-offset applies on the main canvas only.
+            let drawX = (isPlayer2 && !this._renderingToAberrationBuffer) ? viewportW : 0;
             this.ctx.drawImage(this.nightCanvas, drawX, 0);
             this.ctx.restore();
         }
@@ -40706,26 +40929,38 @@ class Game {
         const viewportH = this.height;
         const effZoom = camera.zoom + (camera.zoomPunch || 0);
 
+        // PERF #2 (2026-08-23): render the aberration buffer at HALF resolution
+        // and upscale it back in the composite. The whole world pass lands in a
+        // viewportW/2 x viewportH/2 buffer (1/4 the pixels), so both the buffer
+        // fill AND the final blit cost ~1/4 the fill-rate of the full-res pass —
+        // this is the 207ms damage-flash spike. The upscale uses the canvas
+        // smoother (on by default), which reads as "softer ghosts": an intended,
+        // minor visual trade for a transient screen-shake/damage effect.
+        const ABER_BUF_SCALE = 0.5;
+        const bufW = Math.max(1, Math.round(viewportW * ABER_BUF_SCALE));
+        const bufH = Math.max(1, Math.round(viewportH * ABER_BUF_SCALE));
+
         // Lazily create / resize the reused buffer. Mirrors the wall-lineage
         // shadow-canvas idiom (grep _shadowCanvas): allocate once; only
         // re-size on an actual dimension change (window resize or a
         // 1P<->2P transition), and only ever while the effect is active.
         let buf = this._aberrationBuffer;
         if (!buf) buf = this._aberrationBuffer = document.createElement('canvas');
-        if (buf.width !== viewportW || buf.height !== viewportH) {
-            buf.width = viewportW; buf.height = viewportH;
+        if (buf.width !== bufW || buf.height !== bufH) {
+            buf.width = bufW; buf.height = bufH;
         }
         const bctx = buf.getContext('2d');
 
-        // Fill with the SAME opaque background draw() uses, so every
-        // composite INSIDE drawViewport (notably the 'screen'-blended
-        // atmospheric haze) behaves identically to rendering onto the main
-        // canvas. Then bake the zoom into the buffer transform exactly as
-        // the caller's ctx.scale() would have.
+        // Fill the (half-size) buffer with the SAME opaque background draw()
+        // uses, so every composite INSIDE drawViewport (notably the 'screen'
+        // -blended atmospheric haze) behaves identically to rendering onto the
+        // main canvas. Then bake zoom * ABER_BUF_SCALE into the buffer
+        // transform so the world pass lands in the smaller buffer at the same
+        // apparent scale (world-space culling in drawViewport is unaffected).
         bctx.setTransform(1, 0, 0, 1, 0, 0);
         bctx.fillStyle = this.map ? this.map.backdropColor() : '#01050e';
-        bctx.fillRect(0, 0, viewportW, viewportH);
-        bctx.setTransform(effZoom, 0, 0, effZoom, 0, 0);
+        bctx.fillRect(0, 0, bufW, bufH);
+        bctx.setTransform(effZoom * ABER_BUF_SCALE, 0, 0, effZoom * ABER_BUF_SCALE, 0, 0);
 
         // Redirect the ENTIRE world render into the buffer by swapping the
         // shared ctx handle. drawViewport and every entity .draw() reference
@@ -40733,12 +40968,23 @@ class Game {
         // pass with zero changes to any draw code. Screen-shake is applied
         // inside drawViewport, so it is baked into the buffer. try/finally
         // guarantees the handle is restored even if a draw throws.
+        // _screenBase moves WITH the ctx handle. While the world pass is
+        // redirected into the buffer, "CSS px -> target px" is
+        // ABER_BUF_SCALE, not renderScale -- the buffer is sized in plain
+        // CSS px and knows nothing about the main canvas's backing store.
+        // Anything inside drawViewport that blits in screen space (the night
+        // overlay) reads this, so it lands correctly in either target.
         const realCtx = this.ctx;
+        const realScreenBase = this._screenBase;
         this.ctx = bctx;
+        this._screenBase = ABER_BUF_SCALE;
+        this._renderingToAberrationBuffer = true;
         try {
             this.drawViewport(camera, player, isPlayer2);
         } finally {
             this.ctx = realCtx;
+            this._screenBase = realScreenBase;
+            this._renderingToAberrationBuffer = false;
         }
 
         // Composite the single image back in SCREEN space. The caller has
@@ -40754,13 +41000,19 @@ class Game {
         const wobble = Math.sin(Date.now() * 0.05) * 6 * effZoom;
 
         realCtx.save();
-        realCtx.setTransform(1, 0, 0, 1, 0, 0); // NB: does NOT clear the caller's clip
+        // PERF #1: re-assert the base of the target we are compositing INTO
+        // (the main canvas -- _screenBase is back to renderScale by here, the
+        // finally above restored it). These blits draw the CSS-px-sized
+        // buffer in raw screen space. NB: does NOT clear clip.
+        realCtx.setTransform(this._screenBase, 0, 0, this._screenBase, 0, 0);
+        // The half-res buffer is upscaled to full viewport size by the explicit
+        // dest w/h on every copy (shiftVal/wobble stay in CSS-px screen space).
         realCtx.globalAlpha = 0.55;
-        realCtx.drawImage(buf, originX, 0);                    // center
+        realCtx.drawImage(buf, originX, 0, viewportW, viewportH);                 // center
         realCtx.globalAlpha = 0.40;
-        realCtx.drawImage(buf, originX - shiftVal, wobble);    // left ghost
+        realCtx.drawImage(buf, originX - shiftVal, wobble, viewportW, viewportH); // left ghost
         realCtx.globalAlpha = 0.40;
-        realCtx.drawImage(buf, originX + shiftVal, -wobble);   // right ghost
+        realCtx.drawImage(buf, originX + shiftVal, -wobble, viewportW, viewportH);// right ghost
         realCtx.restore(); // restores globalAlpha AND transform
     }
 
@@ -40883,6 +41135,16 @@ class Game {
     draw() {
         this.updateCrosshairVisibility();
         this.updatePointerLock();
+
+        // PERF #1 (2026-08-23): base transform maps the CSS-px drawing space
+        // into the (possibly smaller) backing store. At renderScale=1 this is
+        // identity (byte-for-byte the old 1:1 path). Every save/scale/clip/
+        // restore below nests on top of this base. The two screen-space
+        // composites (night blit, aberration) re-assert the base of whatever
+        // target they are drawing into via this._screenBase, because they
+        // must blit in raw CSS px.
+        this.ctx.setTransform(this.renderScale, 0, 0, this.renderScale, 0, 0);
+        this._screenBase = this.renderScale;
 
         // Biome-tinted ground (see MapGen.backdropColor). Falls back to the
         // old literal before a map exists -- e.g. the start screen.
