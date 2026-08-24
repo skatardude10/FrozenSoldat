@@ -7671,7 +7671,12 @@ class MapGen {
         // nothing per call). Same change-class as getHostilesFor's
         // _hostilesScratch (invariant 22). Audited: every call site reads
         // the result in the same synchronous scope and none re-enters a
-        // spatial query while iterating a prior result.
+        // spatial query while iterating a prior result. Re-audited
+        // 2026-08-23 (BUG-016): that audit had a false negative --
+        // Enemy.update and RobotDog.update DID hold the reference across
+        // their own later re-entrant queries; fixed with per-instance
+        // _wallScratch copies. Do not reintroduce cross-query retention of
+        // this array in either method.
         let nearbyWalls = this._nearScratch || (this._nearScratch = []);
         nearbyWalls.length = 0;
         for (let r = Math.max(0, row - 1); r <= Math.min(this.gridRows - 1, row + 1); r++) {
@@ -15183,7 +15188,22 @@ class Enemy extends Entity {
             if (this.muzzleFlashTimer < 0) this.muzzleFlashTimer = 0;
         }
 
-        let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+        // CONTRACT: getWallsNear() returns a SHARED scratch array that the very
+        // next spatial query overwrites (see its no-copy contract in MapGen).
+        // This method re-queries it later in the same tick -- the patrol beat
+        // sampler and findPath() -> _findNearestClearNode() on the AI stagger
+        // frame -- so holding the reference left the checkWalls / moveHasLOS
+        // decision reads and updatePhysics() at the bottom running on a wall
+        // list from somewhere else on the map: a patroller could walk straight
+        // into a wall for up to a 30-frame cachedMoveAngle before the next tick
+        // re-routes. Same bug class as the RobotDog one (BUGS.md BUG-016); own
+        // a private copy for the life of this update instead.
+        let nearbyWalls = this._wallScratch || (this._wallScratch = []);
+        {
+            const src = game.map.getWallsNear(this.x, this.y);
+            nearbyWalls.length = 0;
+            for (let i = 0; i < src.length; i++) nearbyWalls.push(src[i]);
+        }
 
         let enemyIndex = this._aiStaggerId || 0;
 
@@ -21847,7 +21867,24 @@ class RobotDog extends Entity {
             return;
         }
         
-        let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+        // CONTRACT: getWallsNear() returns a SHARED scratch array that the very
+        // next spatial query overwrites (see its no-copy contract in MapGen).
+        // This method re-queries it repeatedly after the fetch -- the per-enemy
+        // LOS midpoints in the threat scan, and findPath() ->
+        // _findNearestClearNode() when the path is blocked -- so holding the
+        // reference meant the item-LOS / scout / pathBlocked reads and
+        // updatePhysics() below collided against a wall list from the middle of
+        // the map. With no visible target the threat scan re-runs every frame,
+        // which is why the dog used to phase through walls at full walk speed in
+        // exactly that state (regression: the threat-scan PERF refactor,
+        // commit 698c02e; see BUGS.md BUG-016). Own a private copy for the life
+        // of this update instead.
+        let nearbyWalls = this._wallScratch || (this._wallScratch = []);
+        {
+            const src = game.map.getWallsNear(this.x, this.y);
+            nearbyWalls.length = 0;
+            for (let i = 0; i < src.length; i++) nearbyWalls.push(src[i]);
+        }
         let owner = this.owner;
         let dx = owner.x - this.x;
         let dy = owner.y - this.y;
