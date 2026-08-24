@@ -6392,6 +6392,33 @@ const CAMERA_FOLLOW_SPRING = {
 CAMERA_FOLLOW_SPRING.OMEGA0 = Math.sqrt(CAMERA_FOLLOW_SPRING.STIFFNESS);
 CAMERA_FOLLOW_SPRING.DAMPING_COEFF = 2 * CAMERA_FOLLOW_SPRING.DAMPING * CAMERA_FOLLOW_SPRING.OMEGA0;
 
+// LOW READY CAMERA: while the player is sprinting (the same isSprinting gate
+// that drops the gun into Low Ready and dims the laser), the framing leans in
+// -- the normal aim-based zoom target gains an ADDITIVE ZOOM_IN, paced by a
+// slow BLEND (0 = normal, 1 = full Low Ready) that eases at SETTLE_RATE.
+//
+// The PAN is deliberately UNCHANGED while sprinting: the camera keeps
+// following the aim-weighted center (player x 0.65 + aim x 0.35) exactly as
+// when walking. Re-centering on the body at sprint start/end would (a) read
+// as a visible pop and (b) can trip CAMERA_FOLLOW_SPRING.MAX_OFFSET's hard
+// clamp below -- so the sprint framing change is zoom-only, and it builds /
+// fades smoothly because the blend never snaps in or out (a split-second
+// sprint zooms in a little and fades back from wherever it stopped).
+//
+// The aim that feeds the framing must be the player's INTENDED aim, never the
+// low-ready effective gun angle (moveFacing - 40 deg, which the gun chases
+// while sprinting): with a mouse the aim input IS the mouse; with touch it's
+// the raw-stick point (tax/tay); with a gamepad the crosshair is projected
+// from the gun's actual (low-ready-offset) angle, so Player.update stores the
+// intent point (aimIntentX/Y, from aimTargetAngle at the same range) and the
+// game loop feeds THAT to the camera while isSprinting (gated on
+// aimIntentActive, so a mouse/touch player never picks up a stale gamepad
+// intent point).
+const CAMERA_LOW_READY = {
+    ZOOM_IN: 0.25,     // 25% tighter framing while sprinting -- an additive "commit to the run" lean-in on top of the aim-based zoom
+    SETTLE_RATE: 1.5   // blend ease rate (per second): ~0.67s + the 0.25s zoom tracker ~= 0.9s total -- ~4x slower than the old hard 0.25s switch
+};
+
 class Camera {
     constructor() { 
         this.x = 0; this.y = 0; 
@@ -6410,14 +6437,40 @@ class Camera {
         this.followY = null;
         this.followVX = 0;
         this.followVY = 0;
+        // Low Ready framing blend (0 = normal, 1 = full Low Ready) -- eased
+        // at CAMERA_LOW_READY.SETTLE_RATE so sprint in/out zooms build and
+        // fade slowly instead of snapping (see update()).
+        this.lowReadyBlend = 0;
     }
     update(player, mapW, mapH, canvasW, canvasH, dt, aimX, aimY, maxZoomOut) {
+        // LOW READY (sprinting): the framing leans in -- the normal aim-based
+        // zoom target gains an additive ZOOM_IN, paced by the blend below.
+        // The PAN is deliberately unchanged (see LOW READY CAMERA above): the
+        // camera keeps following the aim-weighted center, so sprint in/out
+        // never re-centers the view.
+        let lowReady = !!(player && player.isSprinting);
+        
+        // Ease the Low Ready blend toward its state (see CAMERA_LOW_READY
+        // above). This is the pacing knob: the zoom lerp below stays snappy
+        // and just tracks the slowly-moving blended target, so a short
+        // sprint zooms in a little and then fades back out from exactly
+        // where it stopped -- the blend never snaps, in or out.
+        if (dt) {
+            this.lowReadyBlend += ((lowReady ? 1 : 0) - this.lowReadyBlend) * dt * CAMERA_LOW_READY.SETTLE_RATE;
+        } else {
+            this.lowReadyBlend = lowReady ? 1 : 0;
+        }
+        
+        let baseTargetZoom = 1.0;
         let aimDist = Math.hypot(aimX - player.x, aimY - player.y);
-        let targetZoom = 1.0;
         if (aimDist !== undefined && maxZoomOut !== undefined) {
             let f = MathUtils.clamp(aimDist / 600, 0, 1);
-            targetZoom = 1.0 - f * maxZoomOut;
+            baseTargetZoom = 1.0 - f * maxZoomOut;
         }
+        // The sprint lean-in is ADDITIVE on top of the aim-based zoom (the
+        // aim zoom stays fully in play while sprinting): at full blend the
+        // target is aim-based + ZOOM_IN, at zero it's plain aim-based.
+        let targetZoom = baseTargetZoom + CAMERA_LOW_READY.ZOOM_IN * this.lowReadyBlend;
         
         if (dt) {
             this.zoom += (targetZoom - this.zoom) * dt * 4;
@@ -6444,6 +6497,10 @@ class Camera {
         let visibleW = canvasW / effectiveZoom;
         let visibleH = canvasH / effectiveZoom;
 
+        // The pan target is the aim-weighted center in ALL states, sprinting
+        // included (see LOW READY CAMERA above): switching it on sprint
+        // in/out would re-center the view (a visible pop) and can trip the
+        // MAX_OFFSET clamp below -- the sprint framing change is zoom-only.
         let camCenterX = player.x * 0.65 + aimX * 0.35;
         let camCenterY = player.y * 0.65 + aimY * 0.35;
 
@@ -12929,10 +12986,27 @@ class Player extends Entity {
             input.mx = (targetCrosshairX - cam.x) * cam.zoom;
             input.my = (targetCrosshairY - cam.y) * cam.zoom;
 
+            // INTENT AIM POINT for the camera (see LOW READY CAMERA in the
+            // camera section): the crosshair above tracks the gun's ACTUAL
+            // angle, which while sprinting is the low-ready offset (40 deg
+            // off to the side). The camera framing must follow the RAW intent
+            // instead, so store the intent point at the same range. Only the
+            // gamepad path stores this -- mouse aim and touch tax/tay are
+            // already the intent.
+            this.aimIntentX = this.x + Math.cos(this.aimTargetAngle) * aimRange;
+            this.aimIntentY = this.y + Math.sin(this.aimTargetAngle) * aimRange;
+            this.aimIntentActive = true;
+
             let crossNode = this.isPlayer2 ? game.crosshairP2El : game.crosshair;
             if (crossNode) {
                 setCrosshairPos(crossNode, this.isPlayer2 ? (game.width / 2 + input.mx) : input.mx, input.my);
             }
+        } else if (!this.isPlayer2) {
+            // P1 fell back to the mouse (no gamepad, or stick centered): the
+            // mouse coords ARE the intent, so invalidate any stale gamepad
+            // intent point from earlier in the session -- the camera must
+            // keep framing on the mouse (see LOW READY CAMERA).
+            this.aimIntentActive = false;
         }
 
         // --- Movement Vector Accumulation (Interchangeable Keyboard/Gamepad) ---
@@ -20475,6 +20549,22 @@ class Bullet {
 }
 Bullet._tracerSprites = new Map();
 
+// FPV DRONE FLIGHT: tuning (all modes -- operator mode shares this class, so
+// it flies the same). Top speed is NOT a hard cap: it's the emergent
+// equilibrium where input accel and drag balance:
+//     terminal = ACCEL / ln(1 / DRAG_PER_SEC)  ->  1440 / ln(1/0.51) ~= 2140 px/s
+// (was 1800 / ln(1/0.08) ~= 713 px/s -- a 3x ceiling at 0.8x accel: slower
+// spool-up and a long glide after input release, an aircraft not a
+// hovercraft). MAX_STEP_PX bounds each collision substep: dt is clamped at
+// 0.1s upstream, so at top speed one un-substepped frame would move the
+// drone ~214px -- straight through a 25px wall (~45px of effective depth)
+// without ever registering a hit.
+const FPV_DRONE_FLIGHT = {
+    ACCEL: 1440,        // px/s^2 while thrusting -- 0.8x the old 1800
+    DRAG_PER_SEC: 0.51, // fraction of velocity retained per second of coast -- was 0.08
+    MAX_STEP_PX: 20     // max px of movement per collision substep
+};
+
 class FPVDrone {
     constructor(x, y, pilot) {
         this.x = x;
@@ -20730,46 +20820,57 @@ class FPVDrone {
             
             this.angle = aimAngle;
             
-            let accel = 1800; 
+            let accel = FPV_DRONE_FLIGHT.ACCEL;
             if (moveX !== 0 || moveY !== 0) {
                 let len = Math.hypot(moveX, moveY);
                 this.vx += (moveX / len) * accel * dt;
                 this.vy += (moveY / len) * accel * dt;
             }
             
-            this.vx *= Math.pow(0.08, dt);
-            this.vy *= Math.pow(0.08, dt);
+            this.vx *= Math.pow(FPV_DRONE_FLIGHT.DRAG_PER_SEC, dt);
+            this.vy *= Math.pow(FPV_DRONE_FLIGHT.DRAG_PER_SEC, dt);
             
-            this.x += this.vx * dt;
-            this.y += this.vy * dt;
+            // Integrate position in substeps (bounded by MAX_STEP_PX) so a fast
+            // drone can't skip through a thin wall -- or past an enemy's
+            // proximity radius -- on a hitched frame (see FPV_DRONE_FLIGHT
+            // above for the why).
+            let flightSteps = Math.max(1, Math.ceil(Math.hypot(this.vx, this.vy) * dt / FPV_DRONE_FLIGHT.MAX_STEP_PX));
+            let flightDt = dt / flightSteps;
             
             let exploded = false;
             let mapW = game.mapW;
             let mapH = game.mapH;
-            if (this.x < this.r || this.x > mapW - this.r || this.y < this.r || this.y > mapH - this.r) {
-                exploded = true;
-            }
-            
-            let nearbyWalls = game.map.getWallsNear(this.x, this.y);
-            for (let wall of nearbyWalls) {
-                let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
-                if (col.hit) {
+            for (let step = 0; step < flightSteps && !exploded; step++) {
+                this.x += this.vx * flightDt;
+                this.y += this.vy * flightDt;
+                
+                if (this.x < this.r || this.x > mapW - this.r || this.y < this.r || this.y > mapH - this.r) {
                     exploded = true;
-                    break;
                 }
-            }
-            
-            // PvP: hostile barriers act like walls (crash = detonate), but a piloted
-            // drone has a 20% chance to find a gap and slip through unscathed --
-            // a fortified base shouldn't be a perfect, unbeatable dome.
-            if (!exploded && game.friendlyFireMode === 'pvp' && game.barriers) {
-                for (let bar of game.barriers) {
-                    if (!bar.owner || bar.owner === this.owner) continue;
-                    let barCol = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
-                    if (barCol.hit) {
-                        if (Math.random() < 0.20) continue;
-                        exploded = true;
-                        break;
+                
+                if (!exploded) {
+                    let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+                    for (let wall of nearbyWalls) {
+                        let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
+                        if (col.hit) {
+                            exploded = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // PvP: hostile barriers act like walls (crash = detonate), but a piloted
+                // drone has a 20% chance to find a gap and slip through unscathed --
+                // a fortified base shouldn't be a perfect, unbeatable dome.
+                if (!exploded && game.friendlyFireMode === 'pvp' && game.barriers) {
+                    for (let bar of game.barriers) {
+                        if (!bar.owner || bar.owner === this.owner) continue;
+                        let barCol = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
+                        if (barCol.hit) {
+                            if (Math.random() < 0.20) continue;
+                            exploded = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -20789,36 +20890,57 @@ class FPVDrone {
         } else {
             this.vx *= Math.pow(0.001, dt);
             this.vy *= Math.pow(0.001, dt);
-            this.x += this.vx * dt;
-            this.y += this.vy * dt;
+            
+            // Substep like the piloted branch: a drone released at top speed
+            // keeps its velocity, so a hitched frame could skip through a
+            // wall or past an enemy's proximity-detonate radius.
+            let flightSteps = Math.max(1, Math.ceil(Math.hypot(this.vx, this.vy) * dt / FPV_DRONE_FLIGHT.MAX_STEP_PX));
+            let flightDt = dt / flightSteps;
             
             let exploded = false;
             let mapW = game.mapW;
             let mapH = game.mapH;
-            if (this.x < this.r || this.x > mapW - this.r || this.y < this.r || this.y > mapH - this.r) {
-                exploded = true;
-            }
-            
-            let nearbyWalls = game.map.getWallsNear(this.x, this.y);
-            for (let wall of nearbyWalls) {
-                let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
-                if (col.hit) {
+            for (let step = 0; step < flightSteps && !exploded; step++) {
+                this.x += this.vx * flightDt;
+                this.y += this.vy * flightDt;
+                
+                if (this.x < this.r || this.x > mapW - this.r || this.y < this.r || this.y > mapH - this.r) {
                     exploded = true;
-                    break;
                 }
-            }
-            
-            // PvP: hostile barriers act like walls (crash = detonate), but a piloted
-            // drone has a 20% chance to find a gap and slip through unscathed --
-            // a fortified base shouldn't be a perfect, unbeatable dome.
-            if (!exploded && game.friendlyFireMode === 'pvp' && game.barriers) {
-                for (let bar of game.barriers) {
-                    if (!bar.owner || bar.owner === this.owner) continue;
-                    let barCol = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
-                    if (barCol.hit) {
-                        if (Math.random() < 0.20) continue;
-                        exploded = true;
-                        break;
+                
+                if (!exploded) {
+                    let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+                    for (let wall of nearbyWalls) {
+                        let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
+                        if (col.hit) {
+                            exploded = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // PvP: hostile barriers act like walls (crash = detonate), but a piloted
+                // drone has a 20% chance to find a gap and slip through unscathed --
+                // a fortified base shouldn't be a perfect, unbeatable dome.
+                if (!exploded && game.friendlyFireMode === 'pvp' && game.barriers) {
+                    for (let bar of game.barriers) {
+                        if (!bar.owner || bar.owner === this.owner) continue;
+                        let barCol = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
+                        if (barCol.hit) {
+                            if (Math.random() < 0.20) continue;
+                            exploded = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!exploded) {
+                    for (let e of game.enemies) {
+                        let dist = Math.hypot(e.x - this.x, e.y - this.y);
+                        if (dist < this.r + e.r + 5) {
+                            this.detonate();
+                            return;
+                        }
                     }
                 }
             }
@@ -20826,14 +20948,6 @@ class FPVDrone {
             if (exploded) {
                 this.detonate();
                 return;
-            }
-            
-            for (let e of game.enemies) {
-                let dist = Math.hypot(e.x - this.x, e.y - this.y);
-                if (dist < this.r + e.r + 5) {
-                    this.detonate();
-                    return;
-                }
             }
         }
         
@@ -30609,7 +30723,11 @@ class Game {
         this.ctx.scale(pipZoom, pipZoom);
 
         let lookAheadSeconds = 0.45;
-        let maxLookAheadWorld = 100;
+        // 300px so the feed still leads the drone at the 3x flight ceiling
+        // (~2140 px/s): at the old 100px clamp the lead was already
+        // saturated at the old top speed and would shrink to ~47ms of
+        // lookahead at the new one.
+        let maxLookAheadWorld = 300;
         let shiftX = MathUtils.clamp(droneInstance.vx * lookAheadSeconds, -maxLookAheadWorld, maxLookAheadWorld);
         let shiftY = MathUtils.clamp(droneInstance.vy * lookAheadSeconds, -maxLookAheadWorld, maxLookAheadWorld);
 
@@ -34811,6 +34929,15 @@ class Game {
         this.player.update(p1Dt, this.input, p1Walls, this.gameTime, gp1);
         
         let aimCoords1 = this.getWorldAimCoords(this.player);
+        // LOW READY CAMERA (see CAMERA_LOW_READY in the camera section): while
+        // sprinting, a gamepad player's aim coords come from the crosshair,
+        // which is projected from the gun's actual (low-ready-offset) angle --
+        // the camera must frame on the INTENT point instead. Mouse/touch aim
+        // coords are already the intent (aimIntentActive is only ever true on
+        // the gamepad path), so this override is a no-op for them.
+        if (this.player.isSprinting && this.player.aimIntentActive && this.player.aimIntentX !== undefined) {
+            aimCoords1 = { x: this.player.aimIntentX, y: this.player.aimIntentY };
+        }
         let p1MaxZoom = this.player.weapon.maxZoom || 0.15;
         this.camera.update(this.player, this.mapW, this.mapH, (this.isTwoPlayer) ? this.width / 2 : this.width, this.height, p1Dt, aimCoords1.x, aimCoords1.y, p1MaxZoom);
         
@@ -34823,6 +34950,10 @@ class Game {
             this.player2.update(p2Dt, this.input2, p2Walls, this.gameTime, gp2);
             
             let aimCoords2 = this.getWorldAimCoords(this.player2);
+            // Same LOW READY CAMERA intent override as P1 (gamepad path only).
+            if (this.player2.isSprinting && this.player2.aimIntentActive && this.player2.aimIntentX !== undefined) {
+                aimCoords2 = { x: this.player2.aimIntentX, y: this.player2.aimIntentY };
+            }
             let p2MaxZoom = this.player2.weapon.maxZoom || 0.15;
             this.camera2.update(this.player2, this.mapW, this.mapH, this.width / 2, this.height, p2Dt, aimCoords2.x, aimCoords2.y, p2MaxZoom);
         }
