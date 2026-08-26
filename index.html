@@ -118,6 +118,25 @@
     .hud-value { color: #fff; font-size: 12px; text-shadow: 0 0 6px rgba(255,255,255,0.3); }
     .text-green { color: var(--green) !important; }
     .text-red { color: var(--red) !important; }
+    /* WI-3: PvP kill feed -- top-right, just under the P2 bar. Newest on
+       top, max 5 entries, CSS fade; JS removes each entry after 4s. */
+    #pvp-kill-feed {
+        position: absolute; top: 56px; right: 15px;
+        display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+        pointer-events: none; z-index: 20;
+    }
+    .pvp-kill-entry {
+        font-size: 10px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;
+        color: #fff; background: rgba(0, 5, 12, 0.55); border: 1px solid rgba(255, 42, 95, 0.35);
+        border-radius: 3px; padding: 2px 8px;
+        animation: pvp-kill-fade 4s forwards;
+    }
+    .pvp-kill-entry .kf-p1 { color: #00e5ff; }
+    .pvp-kill-entry .kf-p2 { color: #ffb700; }
+    @keyframes pvp-kill-fade {
+        0%, 75% { opacity: 1; }
+        100% { opacity: 0; }
+    }
     
     .hud-bars-group { display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center; }
     .hud-bar-wrapper { display: flex; align-items: center; gap: 4px; }
@@ -1170,6 +1189,11 @@
                 <span class="hud-label">ENEMIES</span>
                 <span id="ui-enemies" class="hud-value">0</span>
             </div>
+            <!-- WI-3: shared PvP scoreboard (hidden unless SCOREBOARD_ENABLED && 2P PvP) -->
+            <div class="hud-top-section hidden" id="ui-pvp-score-wrap">
+                <span class="hud-label">SCORE</span>
+                <span id="ui-pvp-score" class="hud-value">0/0</span>
+            </div>
         </div>
         <div class="hud-bars-group">
             <div class="hud-bar-wrapper">
@@ -1228,6 +1252,9 @@
             <div class="hud-bar-container" style="width: 120px; height: 4px;"><div id="ammo-bar-p1" class="hud-bar" style="width: 100%; background: var(--green);"></div></div>
         </div>
     </div>
+
+    <!-- WI-3: PvP kill feed (filled by Game._pushPvpKillFeed) -->
+    <div id="pvp-kill-feed"></div>
 
     <!-- PLAYER 2 HUD (Co-op) -->
     <div id="hud-top-p2" class="hud-top-bar hidden">
@@ -2898,7 +2925,9 @@ function useLeftItem(player) {
             let opts  = hasGL ? { fuse: 0.75, vz: 60 } : {};
             // PHASE 4 (BREACHER kit): +15% blast radius rides the opts param.
             if (player.kitBlastMult && player.kitBlastMult !== 1) opts.radiusMult = player.kitBlastMult;
-            game.grenades.push(game.spawnShrapnelGrenade(player.x, player.y, Math.cos(player.angle)*power + player.vx, Math.sin(player.angle)*power + player.vy, opts));
+            const _glGrenade = game.spawnShrapnelGrenade(player.x, player.y, Math.cos(player.angle)*power + player.vx, Math.sin(player.angle)*power + player.vy, opts);
+            _glGrenade.owner = player; // WI-0: kill credit for splash/fragments
+            game.grenades.push(_glGrenade);
             if (hasGL && game.registerNoise) {
                 // The tube's THOONK is loud -- launched ordnance heats the run.
                 game.registerNoise(player.x, player.y, 2.5);
@@ -2934,7 +2963,9 @@ function fireArcShot(player) {
     // PHASE 4 (BREACHER kit): +15% blast radius rides the opts param, same
     // passthrough as the flat tube shot.
     if (player.kitBlastMult && player.kitBlastMult !== 1) opts.radiusMult = player.kitBlastMult;
-    game.grenades.push(game.spawnShrapnelGrenade(player.x, player.y, vx, vy, opts));
+    const _arcGrenade = game.spawnShrapnelGrenade(player.x, player.y, vx, vy, opts);
+    _arcGrenade.owner = player; // WI-0: kill credit for splash/fragments
+    game.grenades.push(_arcGrenade);
     if (game.registerNoise) {
         // Same THOONK as the flat tube shot -- launched ordnance heats the run.
         game.registerNoise(player.x, player.y, 2.5);
@@ -4420,10 +4451,11 @@ class AudioEngine {
         return { vol, cutoff, delay };
     }
 
-    playBakedSound(name, destination = this.sfxGain, gainValue = 1.0, cutoff = 20000, delay = 0) {
+    playBakedSound(name, destination = this.sfxGain, gainValue = 1.0, cutoff = 20000, delay = 0, playbackRate = 1.0) {
         if (!this.ctx || !this.bakedBuffers[name]) return;
         const source = this.ctx.createBufferSource();
         source.buffer = this.bakedBuffers[name];
+        if (playbackRate !== 1.0) source.playbackRate.value = playbackRate;
 
         let baseName = name;
         if (name.lastIndexOf('_') > 0) {
@@ -4457,7 +4489,7 @@ class AudioEngine {
             }
             source.connect(voice.filter);
             source.start(this.ctx.currentTime + delay);
-            voice.busyUntil = this.ctx.currentTime + delay + source.buffer.duration;
+            voice.busyUntil = this.ctx.currentTime + delay + source.buffer.duration / playbackRate;
             source.onended = () => source.disconnect(); // frees the source; the chain persists
             return;
         }
@@ -4569,7 +4601,7 @@ class AudioEngine {
         this.playBakedSound(name, this.sfxGain || this.masterGain, gainVal, cutoff, delay);
     }
 
-    playHit(x = null, y = null) {
+    playHit(x = null, y = null, semitones = 0) {
         let gainVal = 1.0;
         let cutoff = 20000;
         let delay = 0;
@@ -4580,7 +4612,9 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound('hit', this.sfxGain, gainVal, cutoff, delay);
+        // Kill-cadence pitch ladder (FELLPASS item 9): semitones > 0 plays
+        // the confirmation pitch-shifted up; 0 = unchanged base pitch.
+        this.playBakedSound('hit', this.sfxGain, gainVal, cutoff, delay, semitones > 0 ? Math.pow(2, semitones / 12) : 1.0);
     }
 
     playGrenadeThrow(x = null, y = null) {
@@ -5838,7 +5872,17 @@ const PVP_TUNING = {
     RESPAWN_TIME: 5.0,    // seconds from death to respawn while the opponent lives
     KILL_REWARD: 1000,    // cash bounty paid to the operator who lands the kill
     RESPAWN_HP_FRAC: 1.0, // fraction of maxHp restored on respawn (full)
-    SPAWN_INVULN: 2.0     // brief spawn protection so you can't be instantly re-killed
+    SPAWN_INVULN: 2.0,    // brief spawn protection so you can't be instantly re-killed
+    // WI-0/2/3 (all flag-gated, default OFF -- zero behavior change until
+    // each is switched on):
+    SCOREBOARD_ENABLED: true, // gates kill counter, kill feed, streaks, win condition, suicide penalty
+    MATCH_MODE: 'firstTo',     // 'firstTo' | 'timer' | 'off' (match end; see WI-3)
+    MATCH_FIRST_TO: 30,        // kills to win in firstTo mode
+    MATCH_TIME: 300,           // wall-clock seconds in timer mode
+    DEATH_DROPS: true,         // WI-2: dead operator drops a cash + gear copy
+    DEATH_DROP_CASH_FRAC: 0.5, // fraction of the victim's cash dropped (copy -- victim never mutated)
+    DEATH_DROP_CASH_CAP: 1500, // bounds the in-match shop feedback loop
+    PVP_ITEM_EXPIRE: 30        // wall-clock seconds before a PvP drop despawns
 };
 
 // ==== TACTICAL WAVES: tuning ====
@@ -5872,7 +5916,24 @@ const TACTICAL_TUNING = {
     FLANK_OFFSET: 260,           // px lateral offset of the flanking approach point
     PUSH_MIN_WAVE: 4,            // waves before enemies punish stamina crashes
     PUSH_SPEED_MULT: 1.25,       // speed surge while pushing an exhausted player
-    PUSH_RANGE: 600              // LOS range within which the push triggers
+    PUSH_RANGE: 600,             // LOS range within which the push triggers
+    // -- Stuck-detector escalation (WI-1) --
+    // Consecutive 3s stick cycles an enemy spends wedged but SUPPRESSED
+    // (intentional hold / firing hold / drone flee / visible to a feed)
+    // before the safety valve forces an escalated un-stuck anyway.
+    // 3 x 3s = 9s: long enough to read as a deliberate hold, short enough
+    // that a genuinely wedged enemy never soft-locks.
+    STUCK_ESCALATION_CYCLES: 3,
+    STUCK_RELOCATE_RING_MIN: 100, // px: local-relocate ring inner radius
+    STUCK_RELOCATE_RING_MAX: 420, // px: local-relocate ring outer radius
+    // -- WI-4: wounded-grunt behavior (standard wave mode only; flags default ON) --
+    ENEMIES_RETREAT: true,       // wounded hysteresis + hobble (owns the grunt `wounded` state)
+    ENEMIES_USE_COVER: true,     // wounded grunts break to derived cover (needs ENEMIES_RETREAT)
+    MEDIC_BOOST: true,           // medic rush speed + "needs medic" attention ring
+    GRUNT_WOUND_ENTER: 0.30,     // hp/maxHp at or below -> wounded (mirrors STRIKE_TEAM)
+    GRUNT_WOUND_EXIT: 0.55,      // hp/maxHp at or above -> recovered (hysteresis gap)
+    GRUNT_WOUND_SPEED_MULT: 0.7, // the hobble (milder than the operatives' 0.55)
+    MEDIC_RUSH_MULT: 1.4         // medic speed while en route to a live _healTarget
 };
 
 // ==== STRIKE TEAM: tuning & coordination constants ====
@@ -5906,11 +5967,26 @@ const STRIKE_TEAM = {
     WOUND_COVER_SAMPLES: 12,     // nav nodes sampled when picking a fallback position
     WOUND_COVER_RADIUS: 420,     // px search radius for that fallback
 
-    HEAL_CHARGES: 2,             // per Medic, per life
-    HEAL_RANGE: 44,              // px proximity required to channel heal
-    HEAL_CHANNEL: 1.6,           // seconds; interrupted by damage to the Medic
+    HEAL_CHARGES: 8,             // per Medic, per life -- enough to work a real rotation
+    HEAL_RANGE: 70,              // px proximity required to channel the heal
+    HEAL_CHANNEL: 1.2,           // seconds; interrupted by damage to the Medic
     HEAL_FRAC: 0.35,             // fraction of maxHp restored
     HEAL_COOLDOWN: 8.0,          // cooldown between heals
+    HEAL_CHANNEL_ABORT: 220,     // px: channel progress only resets past this --
+                                 // brief range-loss no longer wipes a channel
+    // -- Medic support element (gated by TACTICAL_TUNING.MEDIC_BOOST) --
+    MEDIC_SQUAD_MIN_WAVE: 3,     // first wave a standalone medic squad rolls
+    MEDIC_SQUAD_MAX: 2,          // max standalone medic squads alive at once
+    MEDIC_FALLBACK_RANGE: 700,   // px: a medic with no squad patient takes the
+                                 // worst-wounded enemy within this radius
+    MEDIC_KEEP_OUT: 675,         // px: un-tasked medics kite to hold this range
+    MEDIC_RETREAT_RANGE: 600,    // px: wounded units retreat TO a charged medic
+                                 // within this radius (else derived wall cover)
+    MEDIC_PATIENT_HOLD: 300,     // px: a wounded enemy this close makes an
+                                 // un-tasked medic hold ground instead of kite
+    MEDIC_SPAWN_DELAY: 15.0,     // seconds after a combat squad commits before
+                                 // the medic squad may roll -- they arrive at
+                                 // the rear of the fight, not ahead of it
 
     FLUSH_RANGE: 380,            // squad must be this close to LKP to flush
     FLUSH_COOLDOWN_MIN: 14.0,    // per squad, not per member
@@ -6418,6 +6494,32 @@ const CAMERA_LOW_READY = {
     ZOOM_IN: 0.25,     // 25% tighter framing while sprinting -- an additive "commit to the run" lean-in on top of the aim-based zoom
     SETTLE_RATE: 1.5   // blend ease rate (per second): ~0.67s + the 0.25s zoom tracker ~= 0.9s total -- ~4x slower than the old hard 0.25s switch
 };
+// Focus framing (steady-aim reward, the camera's half of the focus payoff):
+// as the player's aim steadies (Player.focusLevel, 0..1 over ~2s -- see
+// AIM_WEIGHT.IDLE_SWAY_*), the pan target's aim weight rises from 0.35 toward
+// 0.35 + EXTRA_AIM_WEIGHT, so the view quietly settles toward the reticle
+// ("focusing on your target"). focusLevel SNAPS back to 0 the instant the aim
+// moves, so the camera eases its own copy: BUILD_RATE while rising, the faster
+// RELEASE_RATE while falling (~0.25s relax, never a snap). The pan itself is
+// additionally spring-smoothed by CAMERA_FOLLOW_SPRING, so a slowly-moving
+// target can never jerk the view.
+const CAMERA_FOCUS_DRAG = {
+    EXTRA_AIM_WEIGHT: 0.15,  // full-focus aim-weight delta: 0.35 -> 0.50 (plus the lock's 0.05, hard-capped at 0.60 in update)
+    BUILD_RATE: 2.0,         // per-second ease while focus builds (tracks the ~2s focus ramp; the settle starts as the laser begins whitening)
+    RELEASE_RATE: 4.0        // per-second ease while focus breaks (re-aim relaxes the view in ~0.25s)
+};
+// Focus LOCK framing: the sustained "locked-on" state. Engages while
+// focusLevel >= AIM_WEIGHT.FOCUS_LOCK_THRESHOLD (read at RUNTIME -- that
+// constant is declared later in the script; update() only ever runs after
+// full parse, and a single source of truth is deliberate) and releases with
+// it, so the framing tighten lands on the same beat as the laser's G1 white
+// lock-flash. Sustained values go in the zoom TARGET (eased by the existing
+// dt*4 zoom lerp), never in the transient effectiveZoom sum.
+const CAMERA_FOCUS_LOCK = {
+    EXTRA_ZOOM: 0.02,        // +2% framing tighten while locked
+    EXTRA_AIM_WEIGHT: 0.05,  // further aim-weight pull while locked (full lock: 0.35 + 0.15 + 0.05 = 0.55)
+    RATE: 6.0                // per-second ease in/out of the lock state
+};
 
 class Camera {
     constructor() { 
@@ -6441,6 +6543,17 @@ class Camera {
         // at CAMERA_LOW_READY.SETTLE_RATE so sprint in/out zooms build and
         // fade slowly instead of snapping (see update()).
         this.lowReadyBlend = 0;
+        // Focus framing blends (see CAMERA_FOCUS_DRAG / CAMERA_FOCUS_LOCK):
+        // eased camera-side copies of Player.focusLevel / its lock state, so
+        // the framing never snaps when the focus envelope resets on re-aim.
+        this.focusAimBlend = 0;
+        this.focusLockBlend = 0;
+        // Recoil zoom-out (transient, negative): per-shot "the gun gave way"
+        // breath layered on top of the fast concussive zoomPunch. Added by
+        // punchRecoilZoom() in Player.fire, decayed in update() with the same
+        // 0.05 damping base as the kickback spring so pan + zoom settle in
+        // the same breath. Must be included in EVERY effectiveZoom site.
+        this.recoilZoom = 0;
     }
     update(player, mapW, mapH, canvasW, canvasH, dt, aimX, aimY, maxZoomOut) {
         // LOW READY (sprinting): the framing leans in -- the normal aim-based
@@ -6457,8 +6570,21 @@ class Camera {
         // where it stopped -- the blend never snaps, in or out.
         if (dt) {
             this.lowReadyBlend += ((lowReady ? 1 : 0) - this.lowReadyBlend) * dt * CAMERA_LOW_READY.SETTLE_RATE;
+            // Focus framing (see CAMERA_FOCUS_DRAG / CAMERA_FOCUS_LOCK): ease
+            // camera-side copies of the focus envelope. Asymmetric rates on
+            // the drag (slow build, faster release) because focusLevel snaps
+            // to 0 on re-aim -- the release ease is what keeps the pan from
+            // snapping back.
+            let focusLevel = (player && player.focusLevel) || 0;
+            let focusTarget = focusLevel;
+            this.focusAimBlend += (focusTarget - this.focusAimBlend) * dt * (focusTarget > this.focusAimBlend ? CAMERA_FOCUS_DRAG.BUILD_RATE : CAMERA_FOCUS_DRAG.RELEASE_RATE);
+            let locked = focusLevel >= AIM_WEIGHT.FOCUS_LOCK_THRESHOLD;
+            this.focusLockBlend += ((locked ? 1 : 0) - this.focusLockBlend) * dt * CAMERA_FOCUS_LOCK.RATE;
         } else {
             this.lowReadyBlend = lowReady ? 1 : 0;
+            let focusLevel = (player && player.focusLevel) || 0;
+            this.focusAimBlend = focusLevel;
+            this.focusLockBlend = focusLevel >= AIM_WEIGHT.FOCUS_LOCK_THRESHOLD ? 1 : 0;
         }
         
         let baseTargetZoom = 1.0;
@@ -6469,14 +6595,28 @@ class Camera {
         }
         // The sprint lean-in is ADDITIVE on top of the aim-based zoom (the
         // aim zoom stays fully in play while sprinting): at full blend the
-        // target is aim-based + ZOOM_IN, at zero it's plain aim-based.
-        let targetZoom = baseTargetZoom + CAMERA_LOW_READY.ZOOM_IN * this.lowReadyBlend;
+        // target is aim-based + ZOOM_IN, at zero it's plain aim-based. The
+        // focus LOCK tighten is a third sustained additive (see
+        // CAMERA_FOCUS_LOCK) -- it eases in/out via the focusLockBlend above
+        // and rides the same dt*4 zoom lerp, so it never snaps.
+        let targetZoom = baseTargetZoom
+            + CAMERA_LOW_READY.ZOOM_IN * this.lowReadyBlend
+            + CAMERA_FOCUS_LOCK.EXTRA_ZOOM * this.focusLockBlend;
         
         if (dt) {
             this.zoom += (targetZoom - this.zoom) * dt * 4;
             if (this.zoomPunch !== 0) {
                 this.zoomPunch *= Math.pow(0.001, dt);
                 if (Math.abs(this.zoomPunch) < 0.001) this.zoomPunch = 0;
+            }
+            // Recoil zoom-out decay: same 0.05 damping base as the kickback
+            // spring below, so the push-back pan and the zoom breath settle
+            // in the same ~0.46s. Full-auto saturates this channel (shots
+            // land faster than it decays), so spraying holds a sustained
+            // ~2-3% wider framing -- "losing a little control" for free.
+            if (this.recoilZoom !== 0) {
+                this.recoilZoom *= Math.pow(0.05, dt);
+                if (Math.abs(this.recoilZoom) < 0.0005) this.recoilZoom = 0;
             }
             if (this.screenShake > 0) {
                 // INTENSITY CEILING: no shake -- single blast or chained barrel
@@ -6493,7 +6633,10 @@ class Camera {
             this.zoom = targetZoom;
         }
 
-        let effectiveZoom = this.zoom + (this.zoomPunch || 0);
+        // (recoilZoom is a transient, like zoomPunch -- EVERY effectiveZoom
+        // computation in the file must include it or this pass desyncs from
+        // the render pass; see the 5-site rule in render-pipeline.md.)
+        let effectiveZoom = this.zoom + (this.zoomPunch || 0) + (this.recoilZoom || 0);
         let visibleW = canvasW / effectiveZoom;
         let visibleH = canvasH / effectiveZoom;
 
@@ -6501,8 +6644,16 @@ class Camera {
         // included (see LOW READY CAMERA above): switching it on sprint
         // in/out would re-center the view (a visible pop) and can trip the
         // MAX_OFFSET clamp below -- the sprint framing change is zoom-only.
-        let camCenterX = player.x * 0.65 + aimX * 0.35;
-        let camCenterY = player.y * 0.65 + aimY * 0.35;
+        // The aim weight itself is focus-modulated (see CAMERA_FOCUS_DRAG /
+        // CAMERA_FOCUS_LOCK): as the aim steadies the view settles toward the
+        // reticle. Hard-capped so a future constant change can never push the
+        // player's own body or the screen edge onto the cursor.
+        let aimWeight = 0.35
+            + CAMERA_FOCUS_DRAG.EXTRA_AIM_WEIGHT * this.focusAimBlend
+            + CAMERA_FOCUS_LOCK.EXTRA_AIM_WEIGHT * this.focusLockBlend;
+        aimWeight = Math.min(Math.max(aimWeight, 0.35), 0.60);
+        let camCenterX = player.x * (1 - aimWeight) + aimX * aimWeight;
+        let camCenterY = player.y * (1 - aimWeight) + aimY * aimWeight;
 
         // Camera follow lag (see CAMERA_FOLLOW_SPRING above): spring the
         // actual tracked center toward the instant target above instead of
@@ -6564,6 +6715,10 @@ class Camera {
     }
     punchZoom(amount) {
         this.zoomPunch = (this.zoomPunch || 0) + amount;
+    }
+    punchRecoilZoom(amount) {
+        // amount is a positive magnitude; the zoom goes OUT (negative).
+        this.recoilZoom = (this.recoilZoom || 0) - amount;
     }
     applyKickback(angle, force) {
         let instantJolt = force * 0.05;
@@ -12095,6 +12250,12 @@ const AIM_WEIGHT = {
     },
     RECOIL_KICK_DEG_DEFAULT: 1.2,
     RECOIL_BIAS_RESET_GAP: 0.25,   // seconds since last shot before re-rolling the bias direction / resetting climb
+    // FELLPASS item 8 (first-shot bite): the FIRST shot after a
+    // RECOIL_BIAS_RESET_GAP gap (a fresh trigger pull) amplifies the FX-only
+    // recoil terms -- the aim-kick impulse and both zoom punches -- while
+    // follow-up shots in the same burst stay at base values. Damage, spread,
+    // and physical recoil are untouched.
+    FIRST_SHOT_BITE_MULT: 1.6,
     RECOIL_BIAS_STRENGTH: 0.8,     // spring-kick bias: 0 = pure random per shot, 1 = always the burst's bias dir
     RECOIL_CLIMB_DEG_PER_SHOT: 0.9,  // was 1.1 -- climb builds a bit slower during sustained fire
     RECOIL_CLIMB_MAX_DEG: 9,         // was 11 -- lower ceiling on accumulated climb
@@ -12153,7 +12314,7 @@ const AIM_WEIGHT = {
     // physical aim behaves identically at 30/60/144fps. Natural idle tremor
     // sits well under this; a deliberate fast slew (re-aiming at a new target)
     // breaks it, which is the intended "steady your aim to focus" feel.
-    FOCUS_STILL_RATE_DEG_PER_SEC: 30,
+    FOCUS_STILL_RATE_DEG_PER_SEC: 150,  // playtest 2026-08-24: 5x more forgiving (was 30) -- you can now slew up to ~150 deg/s and still hold the focus lock
     // --- Focus LOCK visual (G1, the "you locked on" beat). The steady 0->1
     // ramp above is sub-perceptual on the beam by itself (a sub-pixel beam
     // narrowed a bit more is invisible), so focus gets a DISCRETE cue: when
@@ -12188,6 +12349,14 @@ const AIM_WEIGHT = {
     WHIZ_FLINCH_SPEED_REF: 3400,     // bullet speed (px/s) that maps to a 1.0x flinch-strength multiplier
     WHIZ_FLINCH_SPEED_MIN_MULT: 0.7,
     WHIZ_FLINCH_SPEED_MAX_MULT: 1.6,
+
+    // --- Whiz aberration tick (FELLPASS item 10): a genuinely close pass
+    // gets a brief full-screen aberration pulse. Gated ABOVE the flinch
+    // gate on purpose -- the tick drives the slow render path (half-res
+    // buffer + 3 blits), so sustained mid-range combat must not be able to
+    // hold it open. Duration scales with proximity intensity.
+    WHIZ_ABER_MIN_INTENSITY: 0.5,    // below this proximity intensity, no aberration tick
+    WHIZ_ABER_DURATION: 0.15,        // tick duration (s) at intensity 1.0; ~0.075s at the gate
 
     // --- Locomotive sway: base kick size per footfall (see the
     // aimWalkSwayOffset spring above + the footstepTimer hook in
@@ -12512,10 +12681,23 @@ class Player extends Entity {
         this.accel = 1814; // was 2800 -- tuned so base (unupgraded) walk speed lands around 260px/s, comfortably above every enemy's speed but no longer wildly so; see sprintSpeedMulti below for the matching sprint-side tuning
         this.speedUpgrades = 0; 
         this.cash = 0;
+        // WI-3: per-player match stats (runLedger is run-global -- unusable
+        // for 2P). Player is rebuilt in startNewGame, so ctor init suffices.
+        this.pvpKills = 0;
+        this.shotsFired = 0;
+        this.shotsHit = 0;
+        this.damageDealt = 0;
         this.gamepadZoomIndex = 0;
         
         // Game-feel variables
         this.damageFlashIntensity = 0;
+        // 2P FIX: per-player chromatic-aberration bus (take-damage / whiz
+        // near-misses). Same field names as the Game-level pair so
+        // triggerChromaticAberration(duration, target) can drive either one;
+        // the Game bus remains for deliberate global cinematics (glory kill,
+        // death linger). Decayed in loop() on raw dt (wall-clock).
+        this.chromaticAberrationTimer = 0;
+        this.chromaticAberrationPeak = 0;
         this.muzzleFlashTimer = 0;
         this.muzzleFlashX = 0;
         this.muzzleFlashY = 0;
@@ -12574,6 +12756,7 @@ class Player extends Entity {
         // single value, so they can never visually disagree.
         this.beamCollimation = 1;
         this.beamCollimationHoldTimer = 0;
+        this._dotHitFlare = 0; // FELLPASS item 3: aim-dot hit-flare timer (set when a player bullet lands, decayed in update)
 
         // --- Aim Weight state (see AIM_WEIGHT config + updateAimWeight()) ---
         // aimTargetAngle: raw input intent (mouse/touch world point, or stick
@@ -13475,6 +13658,11 @@ class Player extends Entity {
             if (this.muzzleFlashTimer < 0) this.muzzleFlashTimer = 0;
         }
 
+        if (this._dotHitFlare > 0) {
+            this._dotHitFlare -= dt;
+            if (this._dotHitFlare < 0) this._dotHitFlare = 0;
+        }
+
         if (this.beamCollimationHoldTimer > 0) {
             // Held at the minimum -- no recovery yet. Without this, recovery
             // began on the very next frame after firing, so the "just
@@ -13887,6 +14075,20 @@ class Player extends Entity {
                 this.kickAim('aimWalkSwayOffset',
                     AIM_WEIGHT.WALK_SWAY_KICK_DEG * swayWeightMult * swaySprintMult,
                     this._walkSwaySide, true);
+                // FELLPASS item 5 (footstep camera bob): kick the player's
+                // OWN camera (P2 -> camera2) on the same footfall event that
+                // just fired the sound -- a small vertical sink plus an
+                // alternating lateral offset riding the existing kickback
+                // spring (no new camera field). Magnitude reuses the
+                // weapon-weight mapping above; ~1-2px at current zoom.
+                // applyKickback() negates the direction internally, so the
+                // passed angle points OPPOSITE the desired camera motion.
+                let stepCam = this.isPlayer2 ? game.camera2 : game.camera;
+                if (stepCam && stepCam.applyKickback) {
+                    stepCam.applyKickback(
+                        Math.atan2(-1.0, -this._walkSwaySide * 1.25),
+                        12 * swayWeightMult);
+                }
             }
         } else {
             this.footstepTimer = 0;
@@ -14485,12 +14687,14 @@ class Player extends Entity {
         // spring alone can't guarantee that -- see the RECOIL_CLIMB config
         // comment). Both follow the same per-burst bias direction, re-rolled
         // whenever there's been a gap since the last shot.
-        if (game.gameTime - this.aimLastFireForBiasTime > AIM_WEIGHT.RECOIL_BIAS_RESET_GAP) {
+        let firstShotOfPull = game.gameTime - this.aimLastFireForBiasTime > AIM_WEIGHT.RECOIL_BIAS_RESET_GAP;
+        if (firstShotOfPull) {
             this.aimRecoilBiasDir = Math.random() < 0.5 ? -1 : 1;
         }
         this.aimLastFireForBiasTime = game.gameTime;
         this.kickAim('aimRecoilOffset',
-            AIM_WEIGHT.RECOIL_KICK_DEG[this.weapon.name] || AIM_WEIGHT.RECOIL_KICK_DEG_DEFAULT,
+            (AIM_WEIGHT.RECOIL_KICK_DEG[this.weapon.name] || AIM_WEIGHT.RECOIL_KICK_DEG_DEFAULT) *
+            (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1),
             this.aimRecoilBiasDir);
         let climbCapRad = AIM_WEIGHT.RECOIL_CLIMB_MAX_DEG * Math.PI / 180;
         this.aimRecoilClimb = MathUtils.clamp(
@@ -14565,9 +14769,21 @@ class Player extends Entity {
 
         // Camera optic zoom punch (concussive pressure wave)
         const ZOOM_PUNCHES = { 'Pistol': 0.006, 'SMG': 0.008, 'M1A': 0.016, 'LMG': 0.018, 'Shotgun': 0.028, 'Sniper': 0.042 };
-        let zp = ZOOM_PUNCHES[this.weapon.name] || 0.008;
+        // FELLPASS item 8: fresh trigger pull bites harder (FX only).
+        let zp = (ZOOM_PUNCHES[this.weapon.name] || 0.008) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1);
         if (this.camera) this.camera.punchZoom(zp);
         if (this.isTwoPlayer && game.camera2 && this.isPlayer2) game.camera2.punchZoom(zp);
+
+        // Recoil zoom-out breath ("the gun gave way"): a slower, layered
+        // OUT-zoom on top of the fast in-punch above. Magnitudes are ~1.5-2x
+        // the in-punch so the out-breath clearly leads the in-tick; the decay
+        // (Camera.recoilZoom, 0.05 base) matches the kickback pan so both
+        // settle in the same breath. Full-auto saturates the channel, so a
+        // spray holds a sustained ~2-3% wider framing.
+        const RECOIL_ZOOM_OUT = { 'Pistol': 0.010, 'SMG': 0.014, 'M1A': 0.030, 'LMG': 0.032, 'Shotgun': 0.055, 'Sniper': 0.080 };
+        let rzo = (RECOIL_ZOOM_OUT[this.weapon.name] || 0.010) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1);
+        if (this.camera) this.camera.punchRecoilZoom(rzo);
+        if (this.isTwoPlayer && game.camera2 && this.isPlayer2) game.camera2.punchRecoilZoom(rzo);
 
         game.spawnBarrelFX(barrelX, barrelY, this.angle, this.z || 0);
 
@@ -14629,6 +14845,10 @@ class Player extends Entity {
         }
         
         super.takeDamage(amt, pushDir, pushForce);
+        // FELLPASS item 7: the base takeDamage only records lastHitAngle
+        // when pushDir is non-null, so a directionless hit leaves a STALE
+        // angle the renderer can't tell from a real one -- null it here.
+        this.lastHitAngle = (pushDir != null) ? pushDir : null;
         // PHASE 1 (extraction): a downed operator's carried intel hits the
         // dirt as a recoverable cache -- in co-op the survivor can grab it.
         if (game && game.extractionMode && this.dead && (this.carriedIntel || 0) > 0) {
@@ -14652,14 +14872,53 @@ class Player extends Entity {
             );
             this.kickAim('aimHitFlinchOffset', flinchDeg);
         }
+        if (amt > 0 && game) {
+            // FELLPASS item 6 (player-hit drag): "YOU feel getting hit" --
+            // a short fractional slow-down of the whole sim (global, like
+            // the kill freeze, kept short). Scaled by the hit's share of
+            // max HP: bigger hit = longer + deeper drag. Hits below ~10%
+            // of that share get no drag (chip stays snappy). Set here in
+            // REAL time; decay + consumption live in loop().
+            let frac = Math.min(1, amt / (0.35 * this.maxHp));
+            // FELLPASS-CLEANUP A2 (reshaped): the v1 curve gave a typical 7-11
+            // damage hit depth ~0.87 for ~67ms, and the timer's Math.max let
+            // sustained fire hold the drag open permanently (read as constant
+            // ~13% slow-mo + sluggishness exactly when dodging). Now: light
+            // hits (frac < 0.25) get no drag, real drag is reserved for the
+            // top end (depth floor 0.4, max 80ms), a 0.25s refractory window
+            // allows at most one punch per 0.25s, and depth merges with
+            // Math.min so deepest-wins matches the timer's longest-wins.
+            if (frac >= 0.25 && (game.hurtDragRefractoryTimer || 0) <= 0) {
+                let t = (frac - 0.25) / 0.75;
+                game.hurtDragTimer = Math.max(game.hurtDragTimer || 0, MathUtils.lerp(0.04, 0.08, t));
+                game.hurtDragDepth = Math.min(game.hurtDragDepth, MathUtils.lerp(1.0, 0.4, t));
+                game.hurtDragRefractoryTimer = 0.25;
+            }
+        }
         if (amt >= 20 && game) {
-            // Longer, stronger chromatic aberration on heavy hits
+            // Longer, stronger chromatic aberration on heavy hits.
+            // 2P FIX: target THIS player -- the victim's viewport only,
+            // not the shooter's (and not the other operator's).
             let duration = Math.min(0.6, 0.2 + amt * 0.008);
-            game.triggerChromaticAberration(duration);
+            game.triggerChromaticAberration(duration, this);
         }
         if (game && game.isTestingMode) {
             this.hp = this.maxHp;
         }
+    }
+
+    // Kill-cadence pitch ladder (FELLPASS item 9): per-player combo state,
+    // lazy-evaluated (two floats, zero per-frame cost). Kills within 2.0s
+    // advance the step (max 5); slower kills restart at step 1. Wave reset
+    // is free -- Player objects are rebuilt each wave.
+    registerKillCredit(now) {
+        if (now - (this._killLadderLast || -99) < 2.0) {
+            this._killLadderStep = Math.min(5, (this._killLadderStep || 0) + 1);
+        } else {
+            this._killLadderStep = 1;
+        }
+        this._killLadderLast = now;
+        return this._killLadderStep;
     }
 
     draw(ctx, cam) {
@@ -14997,6 +15256,32 @@ class Player extends Entity {
                     this.x, this.y - 24,
                     (this.isPlayer2 ? 'P2' : 'P1') + ' ELIMINATED', '#ff2a5f', 2.8, 0, -14, 0, false));
             }
+            // WI-2: PvP death drops -- a CASH COPY (FRAC of the victim's
+            // cash, capped) + one gear item, both with a wall-clock shelf
+            // life. The victim's cash is NEVER mutated here: the drops are
+            // copies and the PvP respawn path leaves cash intact, so the
+            // killer's haul comes from KILL_REWARD + scavenging, and the
+            // victim walks back with everything.
+            if (PVP_TUNING.DEATH_DROPS && game.friendlyFireMode === 'pvp' && game.isTwoPlayer) {
+                const cashVal = Math.min(
+                    Math.floor(this.cash * PVP_TUNING.DEATH_DROP_CASH_FRAC),
+                    PVP_TUNING.DEATH_DROP_CASH_CAP);
+                if (cashVal > 0) {
+                    const drop = game.spawnItem(this.x + MathUtils.rand(-15, 15), this.y + MathUtils.rand(-15, 15), 'money');
+                    drop.cashValue = cashVal;
+                    drop.pvpExpires = true;
+                    game.items.push(drop);
+                }
+                const curKey = (this.inventory && this.inventory[this.weaponIdx])
+                    ? this.inventory[this.weaponIdx].name.toLowerCase() : null;
+                const WEAPON_ITEM_FORMS = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a'];
+                const gearType = WEAPON_ITEM_FORMS.indexOf(curKey) !== -1
+                    ? curKey
+                    : ['medpack', 'grenade', 'redbull'][Math.floor(Math.random() * 3)];
+                const gear = game.spawnItem(this.x + MathUtils.rand(-15, 15), this.y + MathUtils.rand(-15, 15), gearType);
+                gear.pvpExpires = true;
+                game.items.push(gear);
+            }
         }
     }
 }
@@ -15026,6 +15311,7 @@ class Enemy extends Entity {
         this.cachedMoveAngle = 0;
         this.cachedAimAngle = 0;
         this.cachedVisibleToPlayers = false;
+        this.cachedMedicNear = false;
         this.cachedReactingToDrone = false;
         this.reactingToDrone = false;
         // TACTICAL WAVES (Phase 2): role + push state must not leak across
@@ -15041,6 +15327,7 @@ class Enemy extends Entity {
         // fields leaking across Enemy pool reuse.
         this._commBuffTimer = 0;                       // comm aura: brief speed/fire-rate surge on nearby enemies
         this._shieldFlash = 0;                         // riot phalanx: brief block-flash visual timer
+        this._hitFlash = 0;                            // FELLPASS item 4: generic white hit-flash timer (set at bullet/blast hit sites, decayed in Game's shared enemy update loop -- FELLPASS-CLEANUP A1)
         this.shieldArcHalf = config.shieldArc || 0;    // riot phalanx: half-angle of the protected front arc (0 = no shield)
         this._droneCooldown = MathUtils.rand(2.5, 4.5);// drone_op: time until next deploy is ready
         this._activeHostileDrone = null;               // drone_op: at most ONE live drone per operator
@@ -15055,6 +15342,8 @@ class Enemy extends Entity {
         this.muzzleFlashX = 0;
         this.muzzleFlashY = 0;
         this.lastHitAngle = 0;
+        this._hitFlash = 0; // pool-recycle reset -- a recycled enemy must not spawn pre-flashed
+        this._pendingKillLadderPlayer = null; // pool-recycle reset (FELLPASS-CLEANUP A6) -- a recycled enemy must not carry a stale kill credit from a removal path that bypassed onDeath
 
         this.type = config.type;
         this.hp = config.hp;
@@ -15102,6 +15391,7 @@ class Enemy extends Entity {
         this.cachedMoveAngle = 0;
         this.cachedAimAngle = 0;
         this.cachedVisibleToPlayers = false;
+        this.cachedMedicNear = false;
         this.cachedReactingToDrone = false;
         this.reactingToDrone = false;
         this.slowTimer = 0;
@@ -15111,6 +15401,21 @@ class Enemy extends Entity {
         this._stuckTimer = 0;
         this._stuckX = undefined;
         this._stuckY = undefined;
+        // WI-1: _intentionalHold marks a behaviorally-chosen stand (bound
+        // overwatch, skittish standoff, medic channel, cover hold). Set by
+        // the behavior each tick it holds; CLEARED at the top of the
+        // staggered AI tick, so it can be stale by at most one tick (~0.5s)
+        // -- safe against the 3s detector window. _stuckSuppressed counts
+        // consecutive suppressed stick cycles for the escalation valve.
+        this._intentionalHold = false;
+        this._stuckSuppressed = 0;
+        // WI-4: wounded-grunt state (ENEMIES_RETREAT / ENEMIES_USE_COVER).
+        // Pool-reset per the same gotcha: a recycled enemy must not inherit
+        // a stale cover point or a latched wounded flag.
+        this.wounded = false;
+        this._coverTimer = 0;
+        this._coverPoint = null;
+        this._coverHold = false;
         // PHASE 2 (tactical AI foundations) -- ALL pool-reset, per the
         // Phase 1 gotcha about fields leaking across Enemy reuse:
         // - reactionDelay: this body's innate sluggishness, rolled once.
@@ -15151,11 +15456,54 @@ class Enemy extends Entity {
                 this._stuckX = this.x; this._stuckY = this.y;
                 if (lx !== undefined) {
                     const moved = Math.hypot(this.x - lx, this.y - ly);
-                    const holding = this.cachedHasLOS && this.cachedDistToTarget < 300;
-                    if (moved < 14 && !holding && !this.cachedRunFromDrone) {
-                        game._relocateStuckEnemy(this);
+                    if (moved >= 14) {
+                        this._stuckSuppressed = 0; // real progress: valve re-armed
+                    } else {
+                        // WI-1: an enemy that IS stuck but is SUPPRESSED
+                        // (behaviorally holding, firing in range, fleeing a
+                        // drone, or currently visible) is left alone -- but
+                        // each suppressed cycle arms the escalation valve so
+                        // a genuinely wedged enemy can't soft-lock forever.
+                        // The visible union deliberately widens BUG-015's
+                        // live-feed gate: the renderer also shows enemies
+                        // via dogs, cameras, unpiloted active drones and a
+                        // live markedTimer, all of which the PiP-only feed
+                        // check misses. cachedVisibleToPlayers is AI-stale
+                        // by up to one tick, so the live-feed check stays.
+                        const holding = this.cachedHasLOS && this.cachedDistToTarget < 300;
+                        const visible = this.cachedVisibleToPlayers
+                            || this.markedTimer > 0
+                            || game._isSeenByLiveFeed(this.x, this.y);
+                        if (this._intentionalHold || holding || this.cachedRunFromDrone || visible) {
+                            this._stuckSuppressed = (this._stuckSuppressed || 0) + 1;
+                            if (this._stuckSuppressed >= TACTICAL_TUNING.STUCK_ESCALATION_CYCLES) {
+                                this._stuckSuppressed = 0;
+                                game._relocateStuckEnemy(this, true);
+                            }
+                        } else {
+                            game._relocateStuckEnemy(this, false);
+                        }
                     }
                 }
+            }
+        }
+
+        // WI-4 (B): wounded hysteresis for standard-wave grunts. Operatives
+        // run their OWN ladder in Operative.update (different thresholds),
+        // so they are excluded even though super.update runs for them.
+        // Bosses never enter the base update (fully overridden), but the
+        // instanceof gate matches the stuck-detector idiom above.
+        if (TACTICAL_TUNING.ENEMIES_RETREAT && game && !game.operatorMode && !game.nowMode &&
+            !(this instanceof Boss) && !(this instanceof Operative)) {
+            const hpRatio = this.hp / this.maxHp;
+            if (!this.wounded && hpRatio <= TACTICAL_TUNING.GRUNT_WOUND_ENTER) {
+                this.wounded = true;
+                this._coverPoint = null;
+                this._coverHold = false;
+            } else if (this.wounded && hpRatio >= TACTICAL_TUNING.GRUNT_WOUND_EXIT) {
+                this.wounded = false;
+                this._coverPoint = null;
+                this._coverHold = false;
             }
         }
 
@@ -15171,6 +15519,8 @@ class Enemy extends Entity {
         // NEW ENEMY TYPES: comm-aura + shield-flash timer decay
         if (this._commBuffTimer > 0) { this._commBuffTimer -= dt; if (this._commBuffTimer < 0) this._commBuffTimer = 0; }
         if (this._shieldFlash > 0) { this._shieldFlash -= dt; if (this._shieldFlash < 0) this._shieldFlash = 0; }
+        // _hitFlash decay moved to Game's shared enemy update loop (FELLPASS-CLEANUP A1):
+        // no Boss subclass calls super.update, so a decay here latched bosses' flash forever.
         // PHASE 2 (tactical AI): reaction-time hold + spot-radio cooldown
         if (this.fireHoldTimer > 0) { this.fireHoldTimer -= dt; if (this.fireHoldTimer < 0) this.fireHoldTimer = 0; }
         if (this._spotCooldown > 0) { this._spotCooldown -= dt; if (this._spotCooldown < 0) this._spotCooldown = 0; }
@@ -15210,6 +15560,11 @@ class Enemy extends Entity {
         let shouldUpdateAI = (game.frameCounter % 30 === enemyIndex % 30) || (this.cachedTarget === null) || (this.cachedMoveAngle === undefined);
 
         if (shouldUpdateAI) {
+            // WI-1: _intentionalHold is re-asserted by the holding behavior
+            // (skittish standoff below, bound-hold/medic in Operative.update)
+            // within the same tick or every frame, so clearing it here keeps
+            // it stale by at most this one AI tick.
+            this._intentionalHold = false;
             // ==== FPV OPERATOR MODE: AI overlay ====
             // Runs on the exact same 30-frame stagger as the rest of this
             // block (see FPV_OPERATOR_SPEC.md section 5 perf guard). Entirely
@@ -15696,6 +16051,12 @@ class Enemy extends Entity {
                     // the target, so hold fire rather than shooting
                     // backwards (comm/bombardier are melee-typed anyway).
                     this.fireHoldTimer = Math.max(this.fireHoldTimer, 0.5);
+                    // WI-1: the standoff range is an intentional stand.
+                    // While this block is active the enemy is either
+                    // actively backing off (the detector can't fire on a
+                    // moving body) or wedged at its preferred range -- the
+                    // exactly the case a visible relocation would expose.
+                    this._intentionalHold = true;
                 }
             }
 
@@ -15842,6 +16203,31 @@ class Enemy extends Entity {
                 ? Math.atan2(targetY - this.y, targetX - this.x)
                 : moveAngle;
             this.cachedVisibleToPlayers = visibleToPlayers;
+
+            // WI-4 (C): "needs medic" ring state, computed on the tick
+            // instead of in draw() -- the teams x members scan used to run
+            // per wounded enemy, per frame, per viewport. Up to ~0.5s stale,
+            // which fails the safe way: a fresh wound defaults to "no medic
+            // near" (ring shows) and clears within half a second if a medic
+            // is actually there. Gated exactly like the draw was -- wounded
+            // grunts only (operatives never carry `wounded`), flag on, teams
+            // collection null-guarded.
+            this.cachedMedicNear = false;
+            if (TACTICAL_TUNING.MEDIC_BOOST && this.wounded && game) {
+                const teams = game._strikeTeams;
+                if (teams) {
+                    for (let t = 0; t < teams.length && !this.cachedMedicNear; t++) {
+                        const members = teams[t].members;
+                        for (let m = 0; m < members.length; m++) {
+                            const mm = members[m];
+                            if (mm.roleKey === 'medic' && !mm.dead && mm._healCharges > 0) {
+                                const mdx = mm.x - this.x, mdy = mm.y - this.y;
+                                if (mdx * mdx + mdy * mdy < 250000) { this.cachedMedicNear = true; break; } // 500px
+                            }
+                        }
+                    }
+                }
+            }
 
             // TACTICAL WAVES (Phase 2): coordinated push. From PUSH_MIN_WAVE
             // onward, an enemy with LOS to an EXHAUSTED player (stamina
@@ -15997,6 +16383,8 @@ class Enemy extends Entity {
         // PHASE 4 (patrolling AI): unengaged patrollers WALK their beat --
         // the drop back to combat speed on contact is part of the tell.
         if (this.patrolUntilContact) speedScalar *= 0.55;
+        // WI-4 (B): wounded grunts hobble (ENEMIES_RETREAT owns the flag).
+        if (TACTICAL_TUNING.ENEMIES_RETREAT && this.wounded) speedScalar *= TACTICAL_TUNING.GRUNT_WOUND_SPEED_MULT;
         let moveX = Math.cos(this.cachedMoveAngle) * (this.speed * speedScalar) + sepX;
         let moveY = Math.sin(this.cachedMoveAngle) * (this.speed * speedScalar) + sepY;
         // PHASE 4 (CRYO): enemies slide on the same ice (see player accel site).
@@ -16289,7 +16677,106 @@ class Enemy extends Entity {
     //  - It runs on the 30-frame AI stagger, not per frame. Keep it cheap
     //    and do not allocate per call beyond the single returned object.
     _tacticalMoveTarget(targetX, targetY, distToTarget, hasLOS, target, runFromDrone) {
+        // WI-4 (A): wounded standard-wave grunts break toward derived cover.
+        // Operative overrides this hook entirely (its own ladder); Boss never
+        // reaches the base AI tick; every flag/mode gate is checked so the
+        // default build behaves exactly as before.
+        if (TACTICAL_TUNING.ENEMIES_USE_COVER && this.wounded && game &&
+            !game.operatorMode && !game.nowMode && !this.finalKillRole && !runFromDrone &&
+            !(this instanceof Boss) && !(this instanceof Operative)) {
+            this._coverTimer -= (1 / 60) * 30; // one throttled AI tick's worth
+            if (!this._coverPoint || this._coverTimer <= 0) {
+                this._coverTimer = 2.0;
+                // WI-4 (D): nearest charged medic within range, else wall cover.
+                this._coverPoint = this._findRetreatPoint(targetX, targetY);
+            }
+            if (this._coverPoint) {
+                const cdx = this._coverPoint.x - this.x, cdy = this._coverPoint.y - this.y;
+                if (cdx * cdx + cdy * cdy > 900) return this._coverPoint; // 30px arrival
+                // Arrived: an intentional stand (hold site 4) so the stuck
+                // detector reads it as a deliberate hold, not a wedge.
+                this._coverHold = true;
+                this._intentionalHold = true;
+            }
+            // No cover found (or already there) -- stand and fight; the
+            // stuck-detector escalation ladder is the backstop.
+            return null;
+        }
         return null;
+    }
+
+    // ==== WI-4: cover selection (lifted from Operative, now shared) ====
+    // Operatives inherit this unchanged; standard-wave grunts use it for the
+    // wounded fallback. map.coverGraph exists ONLY on the Operator corridor
+    // map (MapGen case 11), so standard maps have zero cover nodes and cover
+    // has to be DERIVED. Definition used here: a nav node near me whose
+    // sightline to the threat is broken by a wall.
+    //
+    // Same sample-and-validate idiom as the patrol-beat picker and
+    // _pickSquadAnchor. Cost is bounded: WOUND_COVER_SAMPLES candidates,
+    // one segment-filtered wall scan each, and it only runs on entering the
+    // wounded state or every _coverTimer seconds after -- never per frame.
+    // Returns null if nothing qualifies, which correctly means "stand and
+    // fight" rather than running blindly into the open.
+    _findCoverPoint(threatX, threatY) {
+        if (typeof game === 'undefined' || !game || !game.map || !game.map.navNodes) return null;
+        const nodes = game.map.navNodes;
+        if (!nodes.length) return null;
+        const R = STRIKE_TEAM.WOUND_COVER_RADIUS;
+        const RSq = R * R;
+        let best = null, bestDSq = Infinity;
+        let tried = 0;
+        // Stride the node list so samples are spread across the map region
+        // instead of clustered at one end of the array.
+        const stride = Math.max(1, Math.floor(nodes.length / (STRIKE_TEAM.WOUND_COVER_SAMPLES * 4)));
+        const offset = (this._aiStaggerId || 0) % stride;
+        for (let i = offset; i < nodes.length && tried < STRIKE_TEAM.WOUND_COVER_SAMPLES; i += stride) {
+            const n = nodes[i];
+            if (n.blocked) continue;
+            const dx = n.x - this.x, dy = n.y - this.y;
+            const dSq = dx * dx + dy * dy;
+            if (dSq > RSq || dSq < 3600) continue; // too far, or basically where I already am
+            tried++;
+            if (dSq >= bestDSq) continue;
+            // Cover == the threat CANNOT see this node.
+            const segWalls = game.map.getWallsAlongSegment(n.x, n.y, threatX, threatY);
+            let blockedSight = false;
+            for (let w = 0; w < segWalls.length; w++) {
+                if (MathUtils.lineIntersectAABB(n.x, n.y, threatX, threatY, segWalls[w])) { blockedSight = true; break; }
+            }
+            if (blockedSight) { best = n; bestDSq = dSq; }
+        }
+        return best ? { x: best.x, y: best.y } : null;
+    }
+
+    // ==== WI-4 (D): retreat destination -- medic first, wall cover second ====
+    // The old behavior sent wounded units to a wall and stopped: a medic
+    // standing behind them and a patient planted in cover never met, so
+    // heals almost never happened. A charged medic within
+    // MEDIC_RETREAT_RANGE IS the retreat point -- the patient runs to the
+    // heal instead of to a corner. Called on the same 2s throttle as cover
+    // selection, so a moving medic re-aims the patient's destination.
+    // Cost: one pass over live teams (max 2-3 squads), only for wounded
+    // units, only every 2s. Falls back to derived cover when no medic is
+    // in range (or MEDIC_BOOST is off), exactly as before.
+    _findRetreatPoint(threatX, threatY) {
+        if (TACTICAL_TUNING.MEDIC_BOOST && typeof game !== 'undefined' && game && game._strikeTeams) {
+            const R = STRIKE_TEAM.MEDIC_RETREAT_RANGE;
+            const RSq = R * R;
+            let best = null, bestDSq = Infinity;
+            for (let t = 0; t < game._strikeTeams.length; t++) {
+                const members = game._strikeTeams[t].members;
+                for (let m = 0; m < members.length; m++) {
+                    const mm = members[m];
+                    if (mm === this || mm.dead || mm.roleKey !== 'medic' || mm._healCharges <= 0) continue;
+                    const dx = mm.x - this.x, dy = mm.y - this.y;
+                    const dSq = dx * dx + dy * dy;
+                    if (dSq <= RSq && dSq < bestDSq) { best = mm; bestDSq = dSq; }
+                }
+            }
+            if (best) return { x: best.x, y: best.y };
+        }
+        return this._findCoverPoint(threatX, threatY);
     }
 
     // ==== FPV OPERATOR MODE: AI overlay implementation ====
@@ -16647,6 +17134,29 @@ class Enemy extends Entity {
             ctx.beginPath();
             ctx.arc(scx, scy, this.r + 5, 0, Math.PI * 2);
             ctx.stroke();
+            ctx.restore();
+        }
+        // WI-4 (C): "needs medic" attention ring -- a wounded grunt with no
+        // charge-carrying medic within 500px gets a pulsing red ring + a
+        // small cross overhead, so the support gap reads at a glance. The
+        // proximity answer is cachedMedicNear, computed on the 30-frame AI
+        // tick (up to ~0.5s stale; a fresh wound fails toward SHOWING the
+        // ring). draw() only reads the flag -- no loops in the render path.
+        if (TACTICAL_TUNING.MEDIC_BOOST && this.wounded && game && !this.cachedMedicNear) {
+            let scx = this.x - cam.x, scy = this.y - cam.y;
+            let pulse = 0.35 + 0.25 * Math.sin((game.gameTime || 0) * 6.0);
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, pulse);
+            ctx.strokeStyle = '#ff3b3b';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(scx, scy, this.r + 7, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = Math.max(0.3, pulse + 0.2);
+            ctx.fillStyle = '#ff5c5c';
+            const cy = scy - this.r - 12;
+            ctx.fillRect(scx - 2, cy - 5, 4, 10);
+            ctx.fillRect(scx - 5, cy - 2, 10, 4);
             ctx.restore();
         }
         // NEW ENEMY TYPES: comm-aura recipient ring -- steady amber halo on
@@ -17057,7 +17567,27 @@ class Enemy extends Entity {
                 game.player2.cash += amount;
             }
         }
-        audio.playHit(this.x, this.y);
+        // Kill-cadence pitch ladder (FELLPASS item 9): the bullet that last
+        // hit this enemy stashed its attributed player on
+        // _pendingKillLadderPlayer before takeDamage -- onDeath runs
+        // synchronously INSIDE takeDamage, so credit must resolve here, not
+        // at the bullet's post-hit kill check. Last-damage-dealer
+        // convention: AoE finishes credit the last bullet dealer; AoE-only
+        // kills play at base pitch. Consumed+nulled, so pool-recycled
+        // enemies never carry a stale credit.
+        let killSemitones = 0;
+        if (this._pendingKillLadderPlayer) {
+            // (step - 1) x 2.5 semitones, 5 steps: step 1 (a lone kill or a
+            // fresh chain) plays at BASE pitch -- matching AoE-only kills --
+            // and a full chain reaches +10 (a major sixth).
+            // FELLPASS-CLEANUP A5: the old step x 2 gave every bullet kill a
+            // +2 minimum, so the ladder had no step 0 (a lone kill sounded
+            // like it was already in a chain, and AoE kills sounded a tone
+            // lower than everything else).
+            killSemitones = (this._pendingKillLadderPlayer.registerKillCredit(game.gameTime) - 1) * 2.5;
+            this._pendingKillLadderPlayer = null;
+        }
+        audio.playHit(this.x, this.y, killSemitones);
         
         if ((game.player && game.player.perkVolatileCorpses) || (game.isTwoPlayer && game.player2 && game.player2.perkVolatileCorpses)) {
             game.enrageEnemiesNear(this.x, this.y, 220); // Phase 3 chaos aggro cost
@@ -17464,6 +17994,7 @@ class Operative extends Enemy {
         this._healCooldown = 0;
         this._healChannel = 0;
         this._healTarget = null;
+        this._patientNear = false;
         this._lastHpSnapshot = this.hp;
         this._fragCharges = (roleKey === 'grenadier') ? STRIKE_TEAM.FRAG_CHARGES : 0;
         this._coverPoint = null;
@@ -17525,47 +18056,9 @@ class Operative extends Enemy {
     }
 
     // ==== STRIKE TEAM: cover selection ====
-    // map.coverGraph exists ONLY on the Operator corridor map (MapGen case
-    // 11), so standard maps have zero cover nodes and cover has to be
-    // DERIVED. Definition used here: a nav node near me whose sightline to
-    // the threat is broken by a wall.
-    //
-    // Same sample-and-validate idiom as the patrol-beat picker and
-    // _pickSquadAnchor. Cost is bounded: WOUND_COVER_SAMPLES candidates,
-    // one segment-filtered wall scan each, and it only runs on entering the
-    // wounded state or every _coverTimer seconds after -- never per frame.
-    // Returns null if nothing qualifies, which correctly means "stand and
-    // fight" rather than running blindly into the open.
-    _findCoverPoint(threatX, threatY) {
-        if (typeof game === 'undefined' || !game || !game.map || !game.map.navNodes) return null;
-        const nodes = game.map.navNodes;
-        if (!nodes.length) return null;
-        const R = STRIKE_TEAM.WOUND_COVER_RADIUS;
-        const RSq = R * R;
-        let best = null, bestDSq = Infinity;
-        let tried = 0;
-        // Stride the node list so samples are spread across the map region
-        // instead of clustered at one end of the array.
-        const stride = Math.max(1, Math.floor(nodes.length / (STRIKE_TEAM.WOUND_COVER_SAMPLES * 4)));
-        const offset = (this._aiStaggerId || 0) % stride;
-        for (let i = offset; i < nodes.length && tried < STRIKE_TEAM.WOUND_COVER_SAMPLES; i += stride) {
-            const n = nodes[i];
-            if (n.blocked) continue;
-            const dx = n.x - this.x, dy = n.y - this.y;
-            const dSq = dx * dx + dy * dy;
-            if (dSq > RSq || dSq < 3600) continue; // too far, or basically where I already am
-            tried++;
-            if (dSq >= bestDSq) continue;
-            // Cover == the threat CANNOT see this node.
-            const segWalls = game.map.getWallsAlongSegment(n.x, n.y, threatX, threatY);
-            let blockedSight = false;
-            for (let w = 0; w < segWalls.length; w++) {
-                if (MathUtils.lineIntersectAABB(n.x, n.y, threatX, threatY, segWalls[w])) { blockedSight = true; break; }
-            }
-            if (blockedSight) { best = n; bestDSq = dSq; }
-        }
-        return best ? { x: best.x, y: best.y } : null;
-    }
+    // _findCoverPoint moved to the base Enemy class (WI-4) so wounded
+    // standard-wave grunts can share the same derived-cover derivation.
+    // Operatives inherit it unchanged.
 
     // ==== STRIKE TEAM: movement priority ladder ====
     // The single steering brain for an operative. Deliberately ONE
@@ -17591,16 +18084,21 @@ class Operative extends Enemy {
 
         const squad = this.squad;
 
-        // 1. Wounded: break contact toward derived cover.
+        // 1. Wounded: break contact toward derived cover -- or straight to
+        // the nearest charged medic when one is reachable (WI-4 D).
         if (this.wounded) {
             this._coverTimer -= (1 / 60) * 30; // one throttled AI tick's worth
             if (!this._coverPoint || this._coverTimer <= 0) {
                 this._coverTimer = 2.0;
-                this._coverPoint = this._findCoverPoint(targetX, targetY);
+                this._coverPoint = this._findRetreatPoint(targetX, targetY);
             }
             if (this._coverPoint) {
                 const cdx = this._coverPoint.x - this.x, cdy = this._coverPoint.y - this.y;
-                if (cdx * cdx + cdy * cdy > 3600) return this._coverPoint;
+                if (cdx * cdx + cdy * cdy > 3600) return this._coverPoint; // 60px arrival
+                // Arrived at the medic (or cover): an intentional stand so the
+                // stuck detector doesn't shove a patient out of channel range.
+                this._coverHold = true;
+                this._intentionalHold = true;
             }
             // No cover found (or already there) -- stand and fight. Still
             // dangerous: the fire-rate penalty in update() is the cost, not
@@ -17613,6 +18111,25 @@ class Operative extends Enemy {
         // 2. Medic en route to a heal.
         if (this.roleKey === 'medic' && this._healTarget && !this._healTarget.dead) {
             return { x: this._healTarget.x, y: this._healTarget.y };
+        }
+
+        // 2.5 Support keep-out: an UN-TASKED medic never charges -- it kites
+        // to hold MEDIC_KEEP_OUT from the threat (the base fire logic still
+        // applies, so it trades shots while backing). The instant it has a
+        // heal target, branch 2 owns its steering and the medic sprints in.
+        if (TACTICAL_TUNING.MEDIC_BOOST && this.roleKey === 'medic' && !this._healTarget &&
+            distToTarget < STRIKE_TEAM.MEDIC_KEEP_OUT) {
+            // WI-4 (D): a wounded enemy is right here running to us -- hold
+            // ground so the patient actually arrives. Acquisition picks it up
+            // next frame (or on the cooldown flip) and branch 2 takes over.
+            if (this._patientNear) {
+                this._intentionalHold = true;
+                return null;
+            }
+            const inv = 1 / Math.max(1, distToTarget);
+            const push = STRIKE_TEAM.MEDIC_KEEP_OUT - distToTarget;
+            return { x: this.x + (this.x - targetX) * inv * push,
+                     y: this.y + (this.y - targetY) * inv * push };
         }
 
         // 3. Holding a bound -- speed is damped in update(); do not steer.
@@ -17687,6 +18204,22 @@ class Operative extends Enemy {
         // only ever healed on accidental contact.
         if (this.roleKey === 'medic' && typeof game !== 'undefined' && game) {
             if (this._healCooldown > 0) this._healCooldown -= dt;
+            // WI-4 (D): patient-in-reach flag. A wounded enemy inside
+            // MEDIC_PATIENT_HOLD is (almost certainly) retreating TOWARD us,
+            // so kiting now would make the meet-up unreachable -- the
+            // keep-out branch reads this and holds ground instead. Deliberately
+            // NOT gated on charges/cooldown: a patient running 300px to us
+            // shouldn't be chased away by a medic that happens to be on its
+            // 8s cooldown. Bounded scan, early-out, medics only.
+            this._patientNear = false;
+            if (TACTICAL_TUNING.MEDIC_BOOST && game.enemies) {
+                const PRSq = STRIKE_TEAM.MEDIC_PATIENT_HOLD * STRIKE_TEAM.MEDIC_PATIENT_HOLD;
+                for (const e of game.enemies) {
+                    if (e === this || e.dead || !e.wounded) continue;
+                    const pdx = e.x - this.x, pdy = e.y - this.y;
+                    if (pdx * pdx + pdy * pdy <= PRSq) { this._patientNear = true; break; }
+                }
+            }
             let lowestAlly = null;
             if (this._healCharges > 0 && this._healCooldown <= 0 && this.squad) {
                 let lowestHpFrac = 0.99;
@@ -17700,11 +18233,36 @@ class Operative extends Enemy {
                 }
                 if (lowestAlly && lowestHpFrac > 0.75) lowestAlly = null;
             }
+            // WI-4 (C+): no squad patient? Take the WORST-wounded enemy within
+            // MEDIC_FALLBACK_RANGE (MEDIC_BOOST-gated). This makes the
+            // "needs medic" ring a live call instead of a dead tell: the ring
+            // clears at 500px, the medic commits from up to 700px, so a
+            // ringed enemy is always inside some medic's commit radius while
+            // charges last. The existing channel machinery below works on any
+            // enemy -- the direct hp write is the same for grunts and ops.
+            if (!lowestAlly && TACTICAL_TUNING.MEDIC_BOOST &&
+                this._healCharges > 0 && this._healCooldown <= 0 && game.enemies) {
+                const FR = STRIKE_TEAM.MEDIC_FALLBACK_RANGE;
+                let worst = 0.6; // only worth moving for someone actually hurt
+                for (const e of game.enemies) {
+                    if (e === this || e.dead || !e.wounded) continue;
+                    const frac = e.hp / e.maxHp;
+                    if (frac >= worst) continue;
+                    const dx = e.x - this.x, dy = e.y - this.y;
+                    if (dx * dx + dy * dy > FR * FR) continue;
+                    worst = frac;
+                    lowestAlly = e;
+                }
+            }
 
             if (lowestAlly) {
                 this._healTarget = lowestAlly;
                 const hdx = lowestAlly.x - this.x, hdy = lowestAlly.y - this.y;
-                if (hdx * hdx + hdy * hdy <= STRIKE_TEAM.HEAL_RANGE * STRIKE_TEAM.HEAL_RANGE) {
+                const hDistSq = hdx * hdx + hdy * hdy;
+                if (hDistSq <= STRIKE_TEAM.HEAL_RANGE * STRIKE_TEAM.HEAL_RANGE) {
+                    // WI-1: channeling is an intentional hold (every frame,
+                    // so the flag survives the AI-tick clear in super.update).
+                    this._intentionalHold = true;
                     this._healChannel += dt;
                     game.addParticle(lowestAlly.x + MathUtils.rand(-12, 12), lowestAlly.y + MathUtils.rand(-12, 12), 0, -30, '#00e676', 0.35, 2);
                     if (this._healChannel >= STRIKE_TEAM.HEAL_CHANNEL) {
@@ -17724,9 +18282,17 @@ class Operative extends Enemy {
                         // names, so the old call made no sound at all).
                         if (typeof audio !== 'undefined' && audio && audio.playPickup) audio.playPickup('money');
                     }
-                } else {
-                    this._healChannel = 0; // out of range: channel does not persist
+                } else if (hDistSq > STRIKE_TEAM.HEAL_CHANNEL_ABORT * STRIKE_TEAM.HEAL_CHANNEL_ABORT) {
+                    // Patient broke well away: abort. The old hard-reset on
+                    // ANY out-of-range frame is why a channel could fuzz for
+                    // a long time and never complete -- a limping patient
+                    // drifts, the channel zeroed, drifts back, starts over.
+                    // Progress now persists through the RANGE..ABORT gap.
+                    this._healChannel = 0;
                 }
+                // else: in the gap between HEAL_RANGE and HEAL_CHANNEL_ABORT.
+                // No particles this frame, but the channel keeps its progress
+                // -- a patient limping around the medic no longer resets it.
             } else {
                 this._healTarget = null;
                 this._healChannel = 0;
@@ -17743,6 +18309,11 @@ class Operative extends Enemy {
             const myGroup = (this.role.boundGroup === 'cover') ? 'COVER' : 'MOVE';
             if (this.squad.boundPhase !== myGroup && this.squad.state === 'ENGAGE') {
                 this._holdTimer = 1;
+                // WI-1: bound-overwatch hold runs at BOUND_HOLD_SPEED
+                // (~2px per 3s detector window). Without this flag the
+                // detector fired every 3s on every holding operative that
+                // lacked LOS, shoving or teleporting it mid-hold.
+                this._intentionalHold = true;
             }
         }
 
@@ -17793,6 +18364,11 @@ class Operative extends Enemy {
             this.speed *= STRIKE_TEAM.BOUND_HOLD_SPEED;
         } else if (this.squad && this.squad.flushPushTimer > 0) {
             this.speed *= STRIKE_TEAM.FLUSH_PUSH_MULT;
+        }
+        // WI-4 (C): a medic with a live heal target sprints to it.
+        if (TACTICAL_TUNING.MEDIC_BOOST && this.roleKey === 'medic' &&
+            this._healTarget && !this._healTarget.dead) {
+            this.speed *= TACTICAL_TUNING.MEDIC_RUSH_MULT;
         }
         if (this.roleKey === 'gunner' && (this._burstLeft > 0 || this._burstCooldown > 0)) {
             // The burst loop owns the Gunner's trigger for the whole cycle:
@@ -19664,6 +20240,12 @@ class Bullet {
         this.isHP = isHP;
         this.isNeutral = isNeutral; 
         this.owner = null;
+        // WI-0: creditOwner separates KILL CREDIT from hit exclusion.
+        // Shrapnel-fragment bullets get creditOwner (whoever threw the
+        // grenade) while owner stays null, so the `ent === bulletOwner`
+        // self-exclusion below never fires -- point-blank self-damage is
+        // preserved exactly as before.
+        this.creditOwner = null;
         this.hasExploded = false;
         // PERF: bullets are already pooled (see Game.spawnBullet), but this
         // array was reallocated on every single init() regardless -- i.e. on
@@ -19836,6 +20418,21 @@ class Bullet {
                             let pan = (cx - player.x) / maxRadius;
                             
                             audio.playFlyby(intensity, pan, currentSpeed);
+
+                            // FELLPASS item 10: a close whiz gets a brief
+                            // aberration tick (the "something just missed my
+                            // head" screen flinch). Gated at
+                            // WHIZ_ABER_MIN_INTENSITY (0.5, above the flinch
+                            // gate) so sustained combat can't hold the slow
+                            // render path open; duration scales with
+                            // intensity. whizzedPlayers already de-dupes to
+                            // once per bullet per player.
+                            if (intensity > AIM_WEIGHT.WHIZ_ABER_MIN_INTENSITY) {
+                                // 2P FIX: target the whizzed player (already
+                                // in scope from the activePlayers loop) --
+                                // only their viewport flinches.
+                                game.triggerChromaticAberration(AIM_WEIGHT.WHIZ_ABER_DURATION * intensity, player);
+                            }
 
                             // Aim Weight: a close call binks the aim too --
                             // see AIM_WEIGHT.WHIZ_FLINCH_*. Reuses the same
@@ -20028,6 +20625,39 @@ class Bullet {
                     if (this.shooter instanceof Player && ent instanceof Enemy && game && game.runLedger) {
                         game.runLedger.shotsHit++;
                     }
+                    // WI-3: per-player accuracy + damage (works in every mode;
+                    // the PvP mirror below covers hits on the other operator,
+                    // which the enemy-only gate above never saw).
+                    if (this.shooter instanceof Player) {
+                        const _statShooter = this.shooter;
+                        if (ent instanceof Enemy) {
+                            _statShooter.shotsHit = (_statShooter.shotsHit || 0) + 1;
+                            _statShooter.damageDealt = (_statShooter.damageDealt || 0) + calculatedDmg;
+                        } else if (ent instanceof Player && game && game.friendlyFireMode === 'pvp') {
+                            _statShooter.shotsHit = (_statShooter.shotsHit || 0) + 1;
+                            _statShooter.damageDealt = (_statShooter.damageDealt || 0) + calculatedDmg;
+                        }
+                    }
+                    // Kill-cadence pitch ladder (FELLPASS item 9): stash the
+                    // bullet's attributed player on the victim BEFORE
+                    // takeDamage (Enemy.onDeath consumes it for the
+                    // kill-confirmation pitch). Re-set on every hit, so the
+                    // LAST damage dealer wins; cleared in onDeath.
+                    if (ent instanceof Enemy && !ent.dead && this.shooter instanceof Player) {
+                        ent._pendingKillLadderPlayer = this.shooter;
+                    }
+                    // FELLPASS item 4: white hit-flash, set at the hit site
+                    // (not in takeDamage -- tongs zone); decayed in Game's
+                    // shared enemy update loop (FELLPASS-CLEANUP A1).
+                    if (ent instanceof Enemy && calculatedDmg > 0) {
+                        ent._hitFlash = 0.06;
+                    }
+                    // FELLPASS item 3: the shooter's aim dot flares when their
+                    // bullet lands on anything (any victim). Set here, decayed
+                    // in Player.update, consumed in the aim-dot render.
+                    if (this.shooter instanceof Player) {
+                        this.shooter._dotHitFlare = 0.08;
+                    }
                     if (ent instanceof ApcBoss) {
                         // Route damage to whichever seat the shot actually
                         // came in on, so shooting the left side reliably
@@ -20049,19 +20679,12 @@ class Bullet {
                     
                     // PvP KILL BOUNTY: eliminating the other operator pays a
                     // flat bounty so 1v1 has an economy loop (respawn + rebuy).
-                    // Resolve the shooter to its owning Player (a turret/dog/drone
-                    // bullet credits its owner) and never self-credit.
+                    // WI-0: single credit path -- the helper resolves the
+                    // bullet to its owning Player (turret/dog/drone credits
+                    // the pilot; grenade fragments credit the thrower via
+                    // creditOwner) and never self-credits.
                     if (game && game.friendlyFireMode === 'pvp' && ent instanceof Player && ent.dead && !wasDeadBefore) {
-                        let killer = (bulletOwner && bulletOwner.owner) ? bulletOwner.owner : bulletOwner;
-                        if (killer instanceof Player && killer !== ent && !killer.dead) {
-                            killer.cash = (killer.cash || 0) + PVP_TUNING.KILL_REWARD;
-                            game.floatingTexts.push(game.spawnFloatingText(
-                                killer.x, killer.y - 28,
-                                `+ELIMINATION $${PVP_TUNING.KILL_REWARD}`, '#ff2a5f', 1.6,
-                                (Math.random() - 0.5) * 40, -70, 150, false
-                            ));
-                            if (audio && audio.playPickup) audio.playPickup('money');
-                        }
+                        game._payPvpKillBounty(ent, this);
                     }
 
                     if (ent instanceof Enemy && ent.dead && !wasDeadBefore) {
@@ -20483,6 +21106,18 @@ class Bullet {
 
             let targets = game.getBulletBlastEntities(this.shooter);
 
+            // WI-0: PvP splash attribution. Note the set EXCLUDES the
+            // shooter (perk self-damage is disabled), so only a mutual kill
+            // (both operators in the 60px radius) can leave the victim
+            // uncredited -- the helper's !killer.dead gate handles that.
+            let splashPreDeadPlayers = null;
+            for (let ent of targets) {
+                if (ent instanceof Player && ent.dead) {
+                    if (!splashPreDeadPlayers) splashPreDeadPlayers = [];
+                    splashPreDeadPlayers.push(ent);
+                }
+            }
+
             let blastRadiusSq = blastRadius * blastRadius;
             for (let ent of targets) {
                 if (ent.dead) continue;
@@ -20514,6 +21149,12 @@ class Bullet {
                     }
                     ent.takeDamage(splashDmg, pushDir, 200);
                     if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                }
+            }
+            for (let ent of targets) {
+                if (ent instanceof Player && ent.dead
+                    && !(splashPreDeadPlayers && splashPreDeadPlayers.indexOf(ent) !== -1)) {
+                    game._payPvpKillBounty(ent, this);
                 }
             }
             game.triggerBarrelsInRadius(this.x, this.y, blastRadius);
@@ -21190,6 +21831,7 @@ class FPVDrone {
             this.bombsDropped++;
             if (game) {
                 let grenade = game.spawnShrapnelGrenade(this.x, this.y, 0, 0);
+                grenade.owner = this.owner; // WI-0: the piloting player
                 game.grenades.push(grenade);
                 audio.playPickup('weapon');
                 for (let i = 0; i < 8; i++) {
@@ -23039,19 +23681,13 @@ class MiniDrone extends Entity {
                     pushDir = Math.atan2(ent.y - this.y, ent.x - this.x);
                 }
                 let wasDeadBefore = ent.dead;
+                if (ent instanceof Enemy) ent._hitFlash = 0.06; // FELLPASS item 4: blast hit flash
                 ent.takeDamage(damage, pushDir, 400);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                // WI-0: single PvP credit path (resolves the drone/mine to
+                // its owning Player; never self-credits).
                 if (game && game.friendlyFireMode === 'pvp' && ent instanceof Player && ent.dead && !wasDeadBefore) {
-                    let killer = (this.owner && this.owner.owner) ? this.owner.owner : this.owner;
-                    if (killer instanceof Player && killer !== ent && !killer.dead) {
-                        killer.cash = (killer.cash || 0) + PVP_TUNING.KILL_REWARD;
-                        game.floatingTexts.push(game.spawnFloatingText(
-                            killer.x, killer.y - 28,
-                            `+ELIMINATION $${PVP_TUNING.KILL_REWARD}`, '#ff2a5f', 1.6,
-                            (Math.random() - 0.5) * 40, -70, 150, false
-                        ));
-                        if (audio && audio.playPickup) audio.playPickup('money');
-                    }
+                    game._payPvpKillBounty(ent, this);
                 }
             }
         }
@@ -23135,6 +23771,10 @@ class ShrapnelGrenade {
         // retention (thrown-grenade default; launcher rounds use the same).
         this.radiusMult  = (opts && opts.radiusMult)  || 1.0;
         this.restitution = (opts && opts.restitution !== undefined) ? opts.restitution : 0.5;
+        // WI-0: the throwing Player (set at every spawn site; null-safe for
+        // pool reuse). Feeds kill credit for splash + fragments. Deliberately
+        // NOT named to collide with Bullet.owner's turret/dog/drone meaning.
+        this.owner = null;
         // PHASE 5 (ARC SIGHTS): true for a released hold-charge lob -- see
         // the wall-collision skip in update(). Declared here for pool-
         // shape stability / revive reset (this class is pooled).
@@ -23205,23 +23845,29 @@ class ShrapnelGrenade {
         game.map.damageWallsNear(this.x, this.y, blastRadius, 180);
 
         let entities = game.getBlastEntities();
-        
+
         let preDead = 0;
+        let preDeadPlayers = null;
         for (let ent of entities) {
             if (ent instanceof Enemy && ent.dead) preDead++;
+            if (ent instanceof Player && ent.dead) {
+                if (!preDeadPlayers) preDeadPlayers = [];
+                preDeadPlayers.push(ent);
+            }
         }
-        
+
         for (let ent of entities) {
             if (ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
                 if (game.blastOccluded(this.x, this.y, ent)) continue;
                 let damage = 140 * (1.0 - dist / blastRadius);
+                if (ent instanceof Enemy) ent._hitFlash = 0.06; // FELLPASS item 4: blast hit flash
                 ent.takeDamage(damage, Math.atan2(ent.y - this.y, ent.x - this.x), 500);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
             }
         }
-        
+
         let postDead = 0;
         for (let ent of entities) {
             if (ent instanceof Enemy && ent.dead) postDead++;
@@ -23231,11 +23877,26 @@ class ShrapnelGrenade {
             game.triggerHitStop(0.04 + killCount * 0.015);
         }
 
+        // WI-0: PvP splash attribution. Scan AFTER the whole blast so a
+        // mutual kill (both players in the radius) credits nobody -- the
+        // helper's !killer.dead gate then sees both dead. Self-splash
+        // routes to the helper's suicide branch.
+        for (let ent of entities) {
+            if (ent instanceof Player && ent.dead
+                && !(preDeadPlayers && preDeadPlayers.indexOf(ent) !== -1)) {
+                game._payPvpKillBounty(ent, this);
+            }
+        }
+
         let fragments = 16;
         for (let i = 0; i < fragments; i++) {
             let angle = (i / fragments) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
             let speed = MathUtils.rand(1800, 2600);
             let b = game.spawnBullet(this.x, this.y, angle, { name: 'Pistol', dmg: 25, speed: speed, drag: 0.18, color: '#ffb700' }, true, false, false, true);
+            // WI-0: credit the thrower WITHOUT setting b.owner -- owner stays
+            // null so the ent === bulletOwner self-exclusion never fires and
+            // point-blank self-damage is preserved.
+            b.creditOwner = this.owner;
             game.bullets.push(b);
         }
 
@@ -23764,17 +24425,10 @@ class TripMine {
                 let wasDeadBefore = ent.dead;
                 ent.takeDamage(damage, Math.atan2(ent.y - this.y, ent.x - this.x), 450);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                // WI-0: single PvP credit path (resolves the drone/mine to
+                // its owning Player; never self-credits).
                 if (game && game.friendlyFireMode === 'pvp' && ent instanceof Player && ent.dead && !wasDeadBefore) {
-                    let killer = (this.owner && this.owner.owner) ? this.owner.owner : this.owner;
-                    if (killer instanceof Player && killer !== ent && !killer.dead) {
-                        killer.cash = (killer.cash || 0) + PVP_TUNING.KILL_REWARD;
-                        game.floatingTexts.push(game.spawnFloatingText(
-                            killer.x, killer.y - 28,
-                            `+ELIMINATION $${PVP_TUNING.KILL_REWARD}`, '#ff2a5f', 1.6,
-                            (Math.random() - 0.5) * 40, -70, 150, false
-                        ));
-                        if (audio && audio.playPickup) audio.playPickup('money');
-                    }
+                    game._payPvpKillBounty(ent, this);
                 }
             }
         }
@@ -23891,6 +24545,12 @@ class Item {
         // scattering at any tilt (sideways, upside-down) sells the loot-
         // pinata feel, while HUD-matching icons stay upright for legibility.
         this.landAngle = Math.random() * Math.PI * 2;
+        // WI-2: PvP death drops carry a fixed cash value and age on
+        // WALL-CLOCK time (game.wave doesn't advance in PvP, so the 3-wave
+        // window would never fire). init resets them so pool reuse is clean.
+        this.cashValue = 0;
+        this.pvpWallAge = 0;
+        this.pvpExpires = false;
     }
 
     // Waves elapsed since this item dropped. 0 = dropped this wave.
@@ -23916,11 +24576,20 @@ class Item {
     // culled from the ground entirely.
     isExpired() {
         if (this.isSandbox) return false;
+        // WI-2: PvP drops expire on wall-clock shelf life.
+        if (this.pvpExpires && this.pvpWallAge >= PVP_TUNING.PVP_ITEM_EXPIRE) return true;
         return this.waveAge() >= 3;
     }
 
     update(dt, activePlayers) {
         this.t += dt;
+        // WI-2: PvP drops age on WALL-CLOCK time (game._rawDt from loop()),
+        // so slow-mo / hurt-drag never stretch their shelf life. The dt
+        // fallback (first frame, before loop() has stashed _rawDt) still
+        // ages them -- just at game speed; it never stops aging.
+        if (this.pvpExpires) {
+            this.pvpWallAge += (typeof game !== 'undefined' && game && game._rawDt) ? game._rawDt : dt;
+        }
         if (activePlayers) {
             for (let p of activePlayers) {
                 if (p.dead) continue;
@@ -24396,7 +25065,7 @@ class FloatingText {
 // Every run terminates through Game.endRun(outcome) -> the debrief screen.
 // Never add a mode-specific end screen again.
 // =========================================================================
-const RUN_OUTCOMES = { DEATH: 'death', ABANDON: 'abandon', EXTRACTION: 'extraction', FAILED: 'failed' };
+const RUN_OUTCOMES = { DEATH: 'death', ABANDON: 'abandon', EXTRACTION: 'extraction', FAILED: 'failed', PVP_WINNER: 'pvp_match' };
 
 // PHASE 2: run-end ARBITER priority. Objectives never call endRun /
 // completeExtraction directly anymore -- they call
@@ -25607,6 +26276,14 @@ class Game {
         
         // Game-feel variables
         this.hitPauseTimer = 0;
+        // FELLPASS item 6 (player-hit drag): wall-clock timer + depth for
+        // the fractional slow-down when a PLAYER takes damage. Decays on
+        // RAW dt in loop() (real time, like hitPauseTimer) and is consumed
+        // as a multiplicative factor on scaledDt -- it never writes
+        // timeScale (a saved setting with its own mutators).
+        this.hurtDragTimer = 0;
+        this.hurtDragDepth = 1;
+        this.hurtDragRefractoryTimer = 0; // FELLPASS-CLEANUP A2: real-time no-retrigger window
         this.shockwaves = [];
         for (let i = 0; i < 10; i++) {
             this.shockwaves.push({
@@ -25624,7 +26301,12 @@ class Game {
         this.difficultyMode = 'hard';
         this.cashMultiplier = 1.0;
         this.timeScale = 1.0;
+        // WI-2: wall-clock dt (pre-scaled), captured in loop(). PvP death-drop
+        // expiry ages on this so slow-mo / hurt-drag never stretches a drop's
+        // shelf life.
+        this._rawDt = 0;
         this.flashMuffleTimer = 0;
+        this.blastMuffleTimer = 0;
         this.currentShopBuyer = null;
         this.roundWinDelay = 0;
         this.winFlashIntensity = 0;
@@ -25801,6 +26483,12 @@ class Game {
         window.addEventListener('resize', () => {
             this.width = window.innerWidth; this.height = window.innerHeight;
             this._applyCanvasSize();
+            // FELLPASS-CLEANUP A7: both screen-gradient caches key on the
+            // viewport rect, so a resize mints new keys forever (steady state
+            // 16-48 entries, unbounded across resize sessions). Clear on
+            // resize; they re-mint lazily on next use.
+            if (Game._dirGlowCache) Game._dirGlowCache.clear();
+            if (Game._vignetteCache) Game._vignetteCache.clear();
         });
 
         window.addEventListener("gamepadconnected", () => { this.gamepadConnected = true; });
@@ -26000,7 +26688,10 @@ class Game {
         // isPlayerBullet; turrets/dogs pass boolean true -- the instanceof
         // check counts only genuine player trigger pulls (shotgun pellets
         // each count, so accuracy is per-projectile).
-        if (isPlayerBullet instanceof Player && this.runLedger) this.runLedger.shotsFired++;
+        if (isPlayerBullet instanceof Player) {
+            if (this.runLedger) this.runLedger.shotsFired++;
+            isPlayerBullet.shotsFired = (isPlayerBullet.shotsFired || 0) + 1; // WI-3: per-player accuracy
+        }
 
         // Concussive muzzle blast shockwave on environmental dust motes
         if (this.applyDustShockwave) {
@@ -26446,6 +27137,8 @@ class Game {
         this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: EXTRACTION_TUNING.INSERTION_PREP + 2.0 };
         this._strikeTeams = [];
         this._strikeTeamsThisWave = 0;
+        this._medicSquadsThisWave = 0;
+        this._medicDelayArmed = false;
         for (const p of [this.player, this.player2]) if (p) p.carriedIntel = 0;
         // PHASE 2: announce the OP, not a hardcoded uplink briefing.
         const _mn = (this.runConfig && this.runConfig.missionId && MISSIONS[this.runConfig.missionId])
@@ -26653,33 +27346,68 @@ class Game {
         return false;
     }
 
-    // PHASE 1 (stuck-enemy fix): give a wedged enemy a fresh, validated
-    // position. Far from every player: silent teleport to a new squad
-    // anchor (with a small poof so headless traces still see the event).
-    // Near a player (where a teleport would read as a glitch): a physics
+    // PHASE 1 (stuck-enemy fix) + WI-1: give a wedged enemy a fresh,
+    // validated position. Far from every player: silent LOCAL relocate to a
+    // clear nav node in a 100-420px ring (a global anchor teleport read as
+    // the enemy "vanishing" -- the ring keeps it in the same fight). Near a
+    // player (where a teleport would read as a glitch): a gentle directional
     // nudge + forced AI recompute instead.
-    _relocateStuckEnemy(e) {
+    //
+    // `escalated` (the STUCK_ESCALATION_CYCLES safety valve) bypasses the
+    // live-feed gate: a gentle 80px nudge under an eye reads as a
+    // reposition, and a wedged-but-visible enemy must eventually unstuck.
+    _relocateStuckEnemy(e, escalated) {
         // Never nudge/teleport an enemy a live feed is watching (a living player
         // or a piloted drone's PiP) -- under an active eye it reads as the enemy
         // popping sideways or vanishing mid-combat. Unseen enemies still get the
         // transparent un-stuck, which is the system's actual job.
-        if (this._isSeenByLiveFeed(e.x, e.y)) return;
+        if (!escalated && this._isSeenByLiveFeed(e.x, e.y)) return;
         let nearestPlayerDist = Infinity;
         for (const p of [this.player, this.player2]) {
             if (p && !p.dead) nearestPlayerDist = Math.min(nearestPlayerDist, Math.hypot(p.x - e.x, p.y - e.y));
         }
         if (nearestPlayerDist > 700) {
-            const anchor = this._pickSquadAnchor();
+            let dest = null;
+            if (this.map && this.map.navNodes && this.map.navNodes.length) {
+                // Local ring relocate: stride the nav nodes (the
+                // _findCoverPoint idiom) for a clear node 100-420px out.
+                // 100-420px matches the patrol beat radius, so a relocated
+                // patroller lands where a normal beat pick would have.
+                const nodes = this.map.navNodes;
+                const rMin = TACTICAL_TUNING.STUCK_RELOCATE_RING_MIN, rMax = TACTICAL_TUNING.STUCK_RELOCATE_RING_MAX;
+                const rMinSq = rMin * rMin, rMaxSq = rMax * rMax;
+                const stride = Math.max(1, Math.floor(nodes.length / 48));
+                const offset = (e._aiStaggerId || 0) % stride;
+                let bestDSq = Infinity;
+                for (let i = offset; i < nodes.length; i += stride) {
+                    const n = nodes[i];
+                    if (n.blocked) continue;
+                    const dx = n.x - e.x, dy = n.y - e.y;
+                    const dSq = dx * dx + dy * dy;
+                    if (dSq > rMaxSq || dSq < rMinSq || dSq >= bestDSq) continue;
+                    const wn = this.map.getWallsNear(n.x, n.y);
+                    let clear = true;
+                    for (const w of wn) {
+                        if (MathUtils.circleIntersectAABB(n.x, n.y, 20, w).hit) { clear = false; break; }
+                    }
+                    if (clear) { bestDSq = dSq; dest = n; }
+                }
+            }
+            if (!dest) dest = this._pickSquadAnchor(); // sealed pocket: global fallback
             for (let i = 0; i < 6; i++) {
                 const a = Math.random() * Math.PI * 2;
                 this.addParticle(e.x, e.y, Math.cos(a) * 90, Math.sin(a) * 90, '#5a6a75', 0.4, 2);
             }
-            e.x = anchor.x; e.y = anchor.y;
+            e.x = dest.x; e.y = dest.y;
             e.vx = 0; e.vy = 0;
         } else {
-            const a = Math.random() * Math.PI * 2;
-            e.vx += Math.cos(a) * 260;
-            e.vy += Math.sin(a) * 260;
+            // Gentle directional nudge: along the enemy's own heading when it
+            // has one (it reads as "committing to its move"), random bearing
+            // only when the heading is stale/undefined.
+            let a = e.cachedMoveAngle;
+            if (a === undefined || a === null) a = Math.random() * Math.PI * 2;
+            e.vx += Math.cos(a) * 80;
+            e.vy += Math.sin(a) * 80;
         }
         // Force a full AI recompute next frame (cachedMoveAngle undefined
         // is one of shouldUpdateAI's explicit triggers).
@@ -26763,6 +27491,34 @@ class Game {
             return new Array(n).fill('swarmer');
         }
 
+        // ==== MEDIC SUPPORT SQUAD: the medical element rolls SECOND ====
+        // A medic-only TacticalSquad, released MEDIC_SPAWN_DELAY after a
+        // combat squad has committed, so it arrives at the REAR of the fight
+        // instead of racing in alone ahead of everything and dying first.
+        // `_medicDelayArmed` flips true at the first combat-squad commit and
+        // the commit path stretches the gap to MEDIC_SPAWN_DELAY while the
+        // medic is still pending. Gated by MEDIC_BOOST (the whole support
+        // behavior is one switch). Deliberately outside the strike-team
+        // gates: it does NOT count against MAX_CONCURRENT / MAX_PER_WAVE, so
+        // wave 10+ can field a Medic Team AND an assault fireteam. Boss
+        // waves excluded for the same pacing reason as strike teams.
+        if (TACTICAL_TUNING.MEDIC_BOOST && !this.isBossWave && this._medicDelayArmed &&
+            w >= STRIKE_TEAM.MEDIC_SQUAD_MIN_WAVE &&
+            (this._medicSquadsThisWave || 0) < 1) {
+            const liveMedicSquads = (this._strikeTeams || []).filter(s => s.isMedicSquad).length;
+            if (liveMedicSquads < STRIKE_TEAM.MEDIC_SQUAD_MAX) {
+                // 1-2 medics early, 2-3 once the wave can afford the body count.
+                const size = w < 5 ? (Math.random() < 0.5 ? 2 : 1) : (Math.random() < 0.5 ? 3 : 2);
+                if (size <= this.enemiesToSpawn) {
+                    const plan = new Array(size).fill('op_medic');
+                    plan.isStrikeTeam = true;   // reuses the op_* release path
+                    plan.isMedicSquad = true;   // ...but is counted separately
+                    plan.compName = 'Medic Team';
+                    return plan;
+                }
+            }
+        }
+
         // ==== STRIKE TEAM roll: coordinated spec-ops fireteam ====
         // Three independent gates, all deliberate:
         //  - MAX_CONCURRENT bounds how many teams are ALIVE at once.
@@ -26773,7 +27529,8 @@ class Game {
         //  - Boss waves are excluded: a scripted boss plus a coordinated
         //    fireteam makes wave pacing unpredictable in the wrong way, the
         //    same reasoning that stops bosses from also rolling a mutator.
-        const liveTeams = (this._strikeTeams ? this._strikeTeams.length : 0);
+        // Standalone medic squads don't count against the assault-team cap.
+        const liveTeams = (this._strikeTeams ? this._strikeTeams.filter(s => !s.isMedicSquad).length : 0);
         const spawnedThisWave = this._strikeTeamsThisWave || 0;
         const perWaveCap = (w >= 14 ? 2 : STRIKE_TEAM.MAX_PER_WAVE);
         if (!this.isBossWave
@@ -27029,16 +27786,29 @@ class Game {
 
         ss.isStrikeTeam = !!plan.isStrikeTeam;
         ss.compName = plan.compName || 'Strike Team';
+        ss.isMedicSquad = !!plan.isMedicSquad;
         if (ss.isStrikeTeam) {
             ss.currentSquad = new TacticalSquad(ss.compName);
+            ss.currentSquad.isMedicSquad = ss.isMedicSquad;
             if (!this._strikeTeams) this._strikeTeams = [];
             this._strikeTeams.push(ss.currentSquad);
             // Per-wave spawn counter (distinct from the live-team count).
             // Reset alongside squadState in startNextWave().
-            this._strikeTeamsThisWave = (this._strikeTeamsThisWave || 0) + 1;
+            if (ss.isMedicSquad) {
+                this._medicSquadsThisWave = (this._medicSquadsThisWave || 0) + 1;
+            } else {
+                this._strikeTeamsThisWave = (this._strikeTeamsThisWave || 0) + 1;
+            }
         } else {
             ss.currentSquad = null;
         }
+        // WI-4 (D): ANY committed combat squad -- strike OR standard -- arms
+        // the medical element's delayed roll (the gap stretch below waits it
+        // out MEDIC_SPAWN_DELAY later); a medic commit disarms it. This MUST
+        // live outside the isStrikeTeam branch: waves 3-5 have no strike
+        // teams, so arming only on strike commits starves the medic roll on
+        // exactly the waves it exists for.
+        this._medicDelayArmed = !ss.isMedicSquad;
 
         // PHASE 1: extraction squad cadence is the heat tier's, not the
         // fixed wave-mode band -- CALM is sparse, OVERRUN is relentless.
@@ -27047,6 +27817,16 @@ class Game {
             ss.gapTimer = MathUtils.rand(tier.gapMin, tier.gapMax);
         } else {
             ss.gapTimer = MathUtils.rand(TACTICAL_TUNING.SQUAD_GAP_MIN, TACTICAL_TUNING.SQUAD_GAP_MAX);
+        }
+        // WI-4 (D): hold the slot open for the medical element. While a
+        // medic squad is still pending this wave, the next roll waits
+        // MEDIC_SPAWN_DELAY so the Medic Team arrives behind the combat
+        // squads instead of ahead of them. Once the medic rolls (or the
+        // wave becomes ineligible) this never triggers again.
+        if (this._medicDelayArmed && TACTICAL_TUNING.MEDIC_BOOST && !this.isBossWave &&
+            this._spawnIntensityWave() >= STRIKE_TEAM.MEDIC_SQUAD_MIN_WAVE &&
+            (this._medicSquadsThisWave || 0) < 1) {
+            ss.gapTimer = Math.max(ss.gapTimer, STRIKE_TEAM.MEDIC_SPAWN_DELAY);
         }
 
         // Contact ping: readable threat info is what makes the pressure
@@ -27339,8 +28119,8 @@ class Game {
             }
 
             // Smoothly ease back toward organic ambient swirl (natural void in-fill)
-            m.vx += (targetVx - m.vx) * safeDt * 2.2;
-            m.vy += (targetVy - m.vy) * safeDt * 2.2;
+            m.vx += (targetVx - m.vx) * safeDt * 0.7;
+            m.vy += (targetVy - m.vy) * safeDt * 0.7;
 
             m.x += m.vx * safeDt;
             m.y += m.vy * safeDt;
@@ -27388,10 +28168,26 @@ class Game {
         }
     }
 
-    triggerChromaticAberration(duration = 0.2) {
-        this.chromaticAberrationTimer = Math.max(this.chromaticAberrationTimer, duration);
-        // Also track intensity peak for variable-strength rendering
-        this.chromaticAberrationPeak = Math.max(this.chromaticAberrationPeak || 0, duration);
+    triggerChromaticAberration(duration = 0.2, target = null) {
+        // 2P FIX: target-aware. `target` is the Player whose viewport the
+        // effect belongs to (take-damage / whiz pass the affected player);
+        // defaulting to `this` (Game) keeps the two deliberate global
+        // cinematics (glory kill, death linger) on both viewports.
+        // FELLPASS item 10 (peak-hazard fix): the peak used to be a running
+        // Math.max that never decayed, so an old big hit (peak 0.5) left the
+        // render's timer/peak ratio permanently deflated -- a later 0.15s
+        // near-miss tick rendered at 0.15/0.5 = 30% strength instead of a
+        // full-strength fade. The peak must always equal the duration of the
+        // effect currently driving the timer: only a call that actually
+        // re-drives the timer (duration > current timer) may set it. While a
+        // larger effect is still fading, smaller calls are absorbed (its
+        // fade continues untouched), and a stale peak can never survive a
+        // full decay to 0. Applies unchanged per-bus.
+        const t = target || this;
+        if (duration > t.chromaticAberrationTimer) {
+            t.chromaticAberrationTimer = duration;
+            t.chromaticAberrationPeak = duration;
+        }
     }
 
     applyExplosionShake(x, y, maxShake, blastRadius) {
@@ -27415,6 +28211,12 @@ class Game {
             if (shake > 0 && this.camera) {
                 this.camera.screenShake = Math.max(this.camera.screenShake, shake);
             }
+            // Concussion muffle (FELLPASS item 2): proximity-scaled into the
+            // shared 0.9s channel; Math.max so chained barrel pops can't
+            // stack past the window.
+            if (factor > 0) {
+                this.blastMuffleTimer = Math.max(this.blastMuffleTimer || 0, 0.9 * factor);
+            }
             // Aim Weight: nearby explosions also flinch the reticle, scaled by
             // the same proximity falloff as the screen shake above so both
             // read as one coherent moment instead of two uncoordinated effects.
@@ -27429,6 +28231,13 @@ class Game {
             let shake = maxShake * factor;
             if (shake > 0 && this.camera2) {
                 this.camera2.screenShake = Math.max(this.camera2.screenShake, shake);
+            }
+            // Concussion muffle (FELLPASS item 2): P2 writes the SAME global
+            // bus as P1 (the lowpass filter is one shared SFX bus, same as
+            // the flashbang muffle) -- caveat: in co-op, a blast near either
+            // player muffles both viewports.
+            if (factor > 0) {
+                this.blastMuffleTimer = Math.max(this.blastMuffleTimer || 0, 0.9 * factor);
             }
             if (factor > 0 && this.player2.kickAim) {
                 this.player2.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor);
@@ -32031,6 +32840,9 @@ class Game {
         p.isExhausted = false;
         p.flashOpacity = 0;
         p.damageFlashIntensity = 0;
+        // 2P FIX: no residual aberration after a mid-effect respawn.
+        p.chromaticAberrationTimer = 0;
+        p.chromaticAberrationPeak = 0;
         // Clear any transient action state carried across the death.
         p.isBuilding = false; p.buildTargetSide = 0; p.buildHoldTime = 0;
         p.manipulatorLatch = null;
@@ -32044,6 +32856,85 @@ class Game {
         if (audio && audio.playPickup) audio.playPickup('money');
         this.announce('OPERATOR REDEPLOYED', '#39ff14', 1.6,
             (p.isPlayer2 ? 'P2' : 'P1') + ' BACK IN THE FIGHT');
+    }
+
+    // WI-0: the SINGLE PvP kill-credit path (resolves BUG-001 -- the bounty
+    // gate was copy-pasted across three damage paths, and two more kill
+    // paths -- Explosive-Rounds splash and shrapnel-grenade splash/fragments
+    // -- paid nothing at all). Every damage path that can freshly kill the
+    // opposing operator funnels here; the caller keeps the death-frame
+    // check (`ent.dead && !wasDeadBefore`).
+    // `source` is the instrument of death (Bullet | ShrapnelGrenade |
+    // FPVDrone | TripMine). Resolution chain: creditOwner (grenade
+    // fragments -> the thrower) > Bullet owner/shooter (turret/dog/drone
+    // -> pilot) > the source's own owner (asset -> player).
+    _payPvpKillBounty(victim, source) {
+        if (!victim || !source || this.friendlyFireMode !== 'pvp' || !this.isTwoPlayer) return;
+        if (!(victim instanceof Player) || !victim.dead) return;
+        let s = source.creditOwner || source;
+        if (s instanceof Bullet) s = s.owner || s.shooter;
+        let killer = (s && s.owner) ? s.owner : s;
+        if (!(killer instanceof Player)) return;
+        if (killer === victim) {
+            // Suicide (own splash, point-blank grenade fragment): no
+            // bounty; with the scoreboard on, drop one kill so the counter
+            // keeps reflecting kills dealt to the opponent.
+            if (PVP_TUNING.SCOREBOARD_ENABLED) {
+                killer.pvpKills = Math.max(0, (killer.pvpKills || 0) - 1);
+            }
+            return;
+        }
+        if (killer.dead) return; // mutual kill: neither operator is paid
+        killer.cash = (killer.cash || 0) + PVP_TUNING.KILL_REWARD;
+        this.floatingTexts.push(this.spawnFloatingText(
+            killer.x, killer.y - 28,
+            `+ELIMINATION $${PVP_TUNING.KILL_REWARD}`, '#ff2a5f', 1.6,
+            (Math.random() - 0.5) * 40, -70, 150, false
+        ));
+        if (audio && audio.playPickup) audio.playPickup('money');
+        if (PVP_TUNING.SCOREBOARD_ENABLED) {
+            killer.pvpKills = (killer.pvpKills || 0) + 1;
+            const step = killer.registerKillCredit(this.gameTime);
+            // Streak callout off the kill-cadence step (2 = double, 3+ =
+            // spree) -- reuses the same 2.0s window as the audio ladder.
+            if (step === 2) {
+                this.floatingTexts.push(this.spawnFloatingText(
+                    killer.x, killer.y - 44, 'DOUBLE KILL', killer.color, 1.4,
+                    0, -60, 150, false
+                ));
+            } else if (step >= 3) {
+                this.floatingTexts.push(this.spawnFloatingText(
+                    killer.x, killer.y - 44, 'KILLING SPREE', killer.color, 1.4,
+                    0, -60, 150, false
+                ));
+            }
+            this._pushPvpKillFeed(killer, victim, source);
+            // firstTo win check (timer mode ticks in Game.update).
+            if (PVP_TUNING.MATCH_MODE === 'firstTo' && killer.pvpKills >= PVP_TUNING.MATCH_FIRST_TO) {
+                this.pvpWinner = killer;
+                this.endRun(RUN_OUTCOMES.PVP_WINNER);
+            }
+        }
+    }
+
+    // WI-3: one kill-feed entry per credited PvP kill. Newest on top, max
+    // 5 entries, CSS fade + JS removal after 4s.
+    _pushPvpKillFeed(killer, victim, source) {
+        const feed = document.getElementById('pvp-kill-feed');
+        if (!feed) return;
+        let weapon = 'BLAST';
+        if (source instanceof Bullet) weapon = (source.weaponName || 'GUN').toUpperCase();
+        else if (source instanceof ShrapnelGrenade) weapon = 'GRENADE';
+        else if (source instanceof TripMine) weapon = 'MINE';
+        else if (source instanceof FPVDrone) weapon = 'DRONE';
+        const kCls = killer.isPlayer2 ? 'kf-p2' : 'kf-p1';
+        const vCls = victim.isPlayer2 ? 'kf-p2' : 'kf-p1';
+        const entry = document.createElement('div');
+        entry.className = 'pvp-kill-entry';
+        entry.innerHTML = `<span class="${kCls}">P${killer.isPlayer2 ? 2 : 1}</span> &rarr; <span class="${vCls}">P${victim.isPlayer2 ? 2 : 1}</span> <span style="color:#a9c2c7">[${weapon}]</span>`;
+        feed.prepend(entry);
+        while (feed.children.length > 5) feed.removeChild(feed.lastChild);
+        setTimeout(() => { if (entry.parentNode) entry.parentNode.removeChild(entry); }, 4000);
     }
 
     startNewGame() {
@@ -32158,6 +33049,8 @@ class Game {
         };
         this._strikeTeams = [];
         this._strikeTeamsThisWave = 0;
+        this._medicSquadsThisWave = 0;
+        this._medicDelayArmed = false;
         this.intelEarnedThisRun = 0;
         // JULY item 8: final-kill event state is run-scoped -- a runner that
         // escaped in a PREVIOUS run must not reinforce this run's wave 1.
@@ -32369,6 +33262,13 @@ class Game {
         this.smokeParticles = [];
         this.embers = [];
         this.chromaticAberrationTimer = 0;
+        // FELLPASS-CLEANUP A7: constructor-only effect timers that previously
+        // carried into a fast restart (up to 0.9s of muffle, an open
+        // hurt-drag). Same reset pattern as chromaticAberrationTimer above.
+        this.hurtDragTimer = 0;
+        this.hurtDragDepth = 1;
+        this.hurtDragRefractoryTimer = 0;
+        this.blastMuffleTimer = 0;
         this.gloryKillTimer = 0;
         this.gloryKillTarget = null;
         this.heartbeatTimer = 0;
@@ -32625,6 +33525,8 @@ class Game {
             this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: 0.5 };
             this._strikeTeams = [];
             this._strikeTeamsThisWave = 0;
+            this._medicSquadsThisWave = 0;
+            this._medicDelayArmed = false;
             this.updateHUD();
             return;
         }
@@ -32728,6 +33630,8 @@ class Game {
         this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: 0.5 };
         this._strikeTeams = [];
         this._strikeTeamsThisWave = 0;
+        this._medicSquadsThisWave = 0;
+        this._medicDelayArmed = false;
         this.updateHUD();
     }
 
@@ -33024,6 +33928,20 @@ class Game {
         if (!it || this.items[idxInArray] !== it) return false;
         let pickedUp = false;
         if (it.type === 'money') {
+            if (it.cashValue) {
+                // WI-2: valued PvP death drop -- exact cash baked at drop
+                // time; no roll, no jackpot, no cashMultiplier.
+                let amount = it.cashValue;
+                let cash_vx = (Math.random() - 0.5) * 90;
+                this.floatingTexts.push(this.spawnFloatingText(
+                    it.x, it.y - 10, "+$" + amount,
+                    '#39ff14', 1.2,
+                    cash_vx, -80, 260, true
+                ));
+                audio.playPickup('money');
+                p.cash += amount;
+                pickedUp = true;
+            } else {
             let amount = Math.floor(MathUtils.rand(10, 26)); 
             let isJackpot = Math.random() < 0.03; 
             if (isJackpot) {
@@ -33051,6 +33969,7 @@ class Game {
             }
             p.cash += amount;
             pickedUp = true;
+            }
         } else if (it.type === 'grenade') {
             if (p.grenades < (p.maxGrenades || 3)) {
                 p.grenades++;
@@ -35005,11 +35924,27 @@ class Game {
             this.flashMuffleTimer -= dt;
             if (this.flashMuffleTimer < 0) this.flashMuffleTimer = 0;
         }
+        if (this.blastMuffleTimer > 0) {
+            this.blastMuffleTimer -= dt;
+            if (this.blastMuffleTimer < 0) this.blastMuffleTimer = 0;
+        }
         if (audio.ctx && audio.lowpassFilter) {
             let targetFreq = 20000;
             if (this.flashMuffleTimer > 0) {
                 let pct = Math.min(1.0, this.flashMuffleTimer / 3.0);
                 targetFreq = 300 + (20000 - 300) * (1.0 - pct);
+            }
+            // Concussion muffle (FELLPASS item 2): shorter, shallower
+            // channel from explosions (0.9s window, 800Hz floor vs the
+            // flashbang's 3.0s / 300Hz). Effective cutoff = the DEEPER
+            // muffle of the two channels (min of the frequencies) -- a blast
+            // during a flashbang stays deep instead of brightening the bus
+            // (FELLPASS-CLEANUP A4: was max, which let the less-muffled
+            // channel win). One filter write per frame.
+            if (this.blastMuffleTimer > 0) {
+                let pct = Math.min(1.0, this.blastMuffleTimer / 0.9);
+                let blastFreq = 800 + (20000 - 800) * (1.0 - pct);
+                if (blastFreq < targetFreq) targetFreq = blastFreq;
             }
             audio.lowpassFilter.frequency.setValueAtTime(targetFreq, audio.ctx.currentTime);
         }
@@ -35075,6 +36010,11 @@ class Game {
             // its sanctioned use: whole-entity speedup with no desync).
             if (e.finalKillRole === 'runner') enemyDt *= 1.35;
             e.update(enemyDt, this.player, this.map.walls, this.gameTime, this.enemies);
+            // FELLPASS-CLEANUP A1: hit-flash decay lives in this shared loop (once
+            // per frame, every variant) instead of Enemy.update -- Boss overrides
+            // update without super.update, so the old base-class decay never ran
+            // for bosses and the first hit latched a permanent white disc.
+            if (e._hitFlash > 0) { e._hitFlash -= dt; if (e._hitFlash < 0) e._hitFlash = 0; }
         }
 
 
@@ -35546,6 +36486,25 @@ class Game {
         if (pvpActive) {
             this._tickPvpRespawn(this.player, this.player2, dt);
             this._tickPvpRespawn(this.player2, this.player, dt);
+            // WI-3: timer match mode -- wall-clock countdown; at zero the
+            // higher kill count wins (a tie is a draw: pvpWinner stays null).
+            // startNewGame is tongs, so re-arm per run on runLedger identity.
+            if (PVP_TUNING.SCOREBOARD_ENABLED && PVP_TUNING.MATCH_MODE === 'timer') {
+                if (this._pvpTimerRunId !== this.runLedger) {
+                    this._pvpTimerRunId = this.runLedger;
+                    this.pvpMatchTimeLeft = PVP_TUNING.MATCH_TIME;
+                }
+                const realDt = (this._rawDt != null && this._rawDt > 0)
+                    ? this._rawDt
+                    : (this.timeScale > 0 ? dt / this.timeScale : dt);
+                this.pvpMatchTimeLeft -= realDt;
+                if (this.pvpMatchTimeLeft <= 0) {
+                    this.pvpMatchTimeLeft = 0;
+                    const k1 = this.player.pvpKills || 0, k2 = this.player2.pvpKills || 0;
+                    this.pvpWinner = (k1 > k2) ? this.player : (k2 > k1) ? this.player2 : null;
+                    this.endRun(RUN_OUTCOMES.PVP_WINNER);
+                }
+            }
         }
 
         let bothDead = this.player.dead && (!this.isTwoPlayer || !this.player2 || this.player2.dead);
@@ -36832,6 +37791,23 @@ class Game {
         // PHASE 1: extraction's spawn budget is an endless sentinel -- show
         // live hostiles only there.
         setHtmlCached('ui-enemies', this.extractionMode ? this.enemies.length : (this.enemies.length + this.enemiesToSpawn));
+        // WI-3: shared PvP scoreboard -- visible only when the scoreboard is
+        // enabled AND a 2P PvP match is live.
+        const pvpScoreOn = !!(PVP_TUNING.SCOREBOARD_ENABLED && this.friendlyFireMode === 'pvp' && this.isTwoPlayer && this.player2);
+        if (this.hudState['ui-pvp-score-wrap_on'] !== pvpScoreOn) {
+            toggleClass('ui-pvp-score-wrap', 'hidden', !pvpScoreOn);
+            this.hudState['ui-pvp-score-wrap_on'] = pvpScoreOn;
+        }
+        if (pvpScoreOn) {
+            let scoreTxt = 'P1 ' + (this.player.pvpKills || 0) + '  P2 ' + (this.player2.pvpKills || 0);
+            if (PVP_TUNING.MATCH_MODE === 'firstTo') {
+                scoreTxt += ' / ' + PVP_TUNING.MATCH_FIRST_TO;
+            } else if (PVP_TUNING.MATCH_MODE === 'timer' && this.pvpMatchTimeLeft != null) {
+                const _t = Math.max(0, Math.ceil(this.pvpMatchTimeLeft));
+                scoreTxt += '  ' + Math.floor(_t / 60) + ':' + String(_t % 60).padStart(2, '0');
+            }
+            setHtmlCached('ui-pvp-score', scoreTxt);
+        }
         setHtmlCached('ui-cash', this.player.cash);
         // PHASE 0: per-run intel readout + eligibility banner (dirty-cached)
         setHtmlCached('ui-intel', this.runLedger ? this.runLedger.intelEarned : (this.intelEarnedThisRun || 0));
@@ -39146,7 +40122,8 @@ class Game {
             death:      { title: 'OPERATOR ELIMINATED', color: 'var(--red)' },
             abandon:    { title: 'MISSION ABANDONED',   color: '#ffb700' },
             extraction: { title: 'EXTRACTION COMPLETE', color: 'var(--green)' },
-            failed:     { title: 'MISSION FAILED',      color: 'var(--red)' }
+            failed:     { title: 'MISSION FAILED',      color: 'var(--red)' },
+            pvp_match:  { title: 'MATCH COMPLETE',      color: 'var(--neon-blue)' }
         })[L.outcome] || { title: 'RUN COMPLETE', color: 'var(--neon-blue)' };
         if (titleEl) {
             titleEl.innerText = meta.title;
@@ -39164,22 +40141,45 @@ class Game {
             // copy button.
             const seedTag = (L.config && Number.isFinite(L.config.mapSeed))
                 ? ' \u2014 SEED ' + SeededRNG.toCode(L.config.mapSeed) : '';
-            subEl.innerText = ((L.config && L.config.modeId === 'extraction')
-                ? 'AFTER-ACTION REPORT \u2014 ' + missionName
-                : 'AFTER-ACTION REPORT \u2014 ' + modeName + ' \u2014 WAVE ' + L.endWave) + seedTag;
+            if (L.outcome === RUN_OUTCOMES.PVP_WINNER) {
+                // WI-3: a 1v1 match has no wave axis (the counter is
+                // parked) -- report the match, not a fake wave.
+                subEl.innerText = 'AFTER-ACTION REPORT \u2014 1v1 MATCH' + seedTag;
+            } else {
+                subEl.innerText = ((L.config && L.config.modeId === 'extraction')
+                    ? 'AFTER-ACTION REPORT \u2014 ' + missionName
+                    : 'AFTER-ACTION REPORT \u2014 ' + modeName + ' \u2014 WAVE ' + L.endWave) + seedTag;
+            }
         }
 
         const mins = Math.floor(L.durationSec / 60);
         const secs = Math.floor(L.durationSec % 60);
-        const rows = [
-            ['WAVES CLEARED', L.wavesCleared],
-            ['KILLS',         L.kills],
-            ['ELITES',        L.eliteKills],
-            ['BOSSES',        L.bossKills],
-            ['GLORY KILLS',   L.gloryKills],
-            ['DAMAGE TAKEN',  Math.round(L.damageTaken)],
-            ['TIME IN FIELD', mins + ':' + String(secs).padStart(2, '0')]
-        ];
+        const rows = [];
+        if (L.outcome === RUN_OUTCOMES.PVP_WINNER) {
+            // WI-3: per-player match report (the run-global ledger rows are
+            // meaningless in a 2P mirror). Players survive to startNewGame,
+            // so reading them here (synchronously inside endRun) is safe.
+            const p1 = this.player, p2 = this.player2;
+            const w = this.pvpWinner;
+            rows.push(['WINNER', w ? (w.isPlayer2 ? 'PLAYER 2' : 'PLAYER 1') : 'DRAW']);
+            rows.push(['P1 KILLS', p1 ? (p1.pvpKills || 0) : 0]);
+            rows.push(['P2 KILLS', p2 ? (p2.pvpKills || 0) : 0]);
+            if (p1 && p1.shotsFired > 0) rows.push(['P1 ACCURACY', Math.round(p1.shotsHit / p1.shotsFired * 100) + '%']);
+            if (p2 && p2.shotsFired > 0) rows.push(['P2 ACCURACY', Math.round(p2.shotsHit / p2.shotsFired * 100) + '%']);
+            rows.push(['P1 DAMAGE DEALT', p1 ? Math.round(p1.damageDealt || 0) : 0]);
+            rows.push(['P2 DAMAGE DEALT', p2 ? Math.round(p2.damageDealt || 0) : 0]);
+            rows.push(['TIME IN FIELD', mins + ':' + String(secs).padStart(2, '0')]);
+        } else {
+            rows.push(
+                ['WAVES CLEARED', L.wavesCleared],
+                ['KILLS',         L.kills],
+                ['ELITES',        L.eliteKills],
+                ['BOSSES',        L.bossKills],
+                ['GLORY KILLS',   L.gloryKills],
+                ['DAMAGE TAKEN',  Math.round(L.damageTaken)],
+                ['TIME IN FIELD', mins + ':' + String(secs).padStart(2, '0')]
+            );
+        }
         // PHASE 1: carried-intel outcome rows (extraction runs only) +
         // accuracy once the counters are live.
         if (L.carriedIntelBanked > 0) rows.push(['INTEL EXTRACTED', '+' + L.carriedIntelBanked]);
@@ -39740,9 +40740,18 @@ class Game {
             let sy = (m.y - cam.y) + (m.y - camCenterY) * (m.parallax || 0) - (m.z || 0);
 
             let speedSq = m.vx * m.vx + m.vy * m.vy;
-            let speedGlint = Math.min(0.08, Math.sqrt(speedSq) * 0.0004);
+            // FELLPASS-CLEANUP A3: coefficient 0.0004 -> 0.00085. The 380 px/s
+            // velocity clamp in applyDustShockwave capped the glint at ~0.152
+            // (0.215 diagonal), so this 0.30 cap could NEVER bind and the
+            // kicked tier saturated ~0.435 under the alpha cap -- two dead
+            // tuning knobs (why tuning pass 3 appeared to do nothing). At
+            // 0.00085 the cap binds at the clamp velocity and both caps are
+            // live rails again.
+            let speedGlint = Math.min(0.30, Math.sqrt(speedSq) * 0.00085);
             let alpha = ((m.baseOpacity || 0.08) + speedGlint) * (0.7 + 0.3 * Math.sin(m.phase || 0));
-            this.ctx.globalAlpha = Math.max(0.015, Math.min(0.24, alpha));
+            // 0.55 cap: reachable max is now (0.22 tier-2 base + 0.30 glint)
+            // x 1.0 phase = 0.52 -- a tight rail, not a dead number.
+            this.ctx.globalAlpha = Math.max(0.015, Math.min(0.55, alpha));
             this.ctx.beginPath();
             this.ctx.arc(sx, sy, m.r, 0, Math.PI * 2);
             this.ctx.fill();
@@ -39984,9 +40993,16 @@ class Game {
                 // visibility -- at tight/focused angles the true computed
                 // width was thin enough that the dot barely registered as
                 // a dot at all.
-                let dotHalfWidth = (Math.max(1.2, dist * Math.tan(halfAngle)) + 2.5 * g1Flash) * AIM_WEIGHT.DOT_RADIUS_MULT;
+                // FELLPASS item 3: hit-flare -- a second additive width term
+                // plus a g1Flash-shaped alpha boost while the player's own
+                // bullet hit-flare timer runs. The gate below stays on the
+                // UNBOOSTED alpha, so a fully faded dot can never be
+                // resurrected by a flare.
+                let dotFlare = (p._dotHitFlare > 0) ? Math.min(1, p._dotHitFlare / 0.08) : 0;
+                let dotHalfWidth = (Math.max(1.2, dist * Math.tan(halfAngle)) + 2.5 * g1Flash + 3.0 * dotFlare) * AIM_WEIGHT.DOT_RADIUS_MULT;
                 let dotAlpha = Math.min(0.95, peakAlpha * falloff * AIM_WEIGHT.DOT_ALPHA_BOOST);
                 if (dotAlpha > 0.01) {
+                    dotAlpha = Math.min(0.95, dotAlpha * (1 + 0.6 * dotFlare));
                     this.ctx.save();
                     this.ctx.shadowBlur = 8;
                     this.ctx.shadowColor = `rgba(${laserRGB}, 1)`;
@@ -40085,6 +41101,27 @@ class Game {
                     e.y < cam.y - cullM || e.y > cam.y + visibleH + cullM) continue;
             }
             e.draw(this.ctx, cam);
+            // FELLPASS item 4: generic hit flash -- a brief white wash over
+            // the body, drawn AFTER e.draw in this shared loop so it sits on
+            // top of every per-type body (base Enemy, Operative, and all
+            // Boss variants) without touching any class draw method.
+            // Scaled by the body's own visibility factor: base/Operative
+            // enemies fade in via fog-of-war opacity (an unrevealed enemy
+            // must not flash through the dark -- gameplay-reveal bug);
+            // bosses are always opaque, the Infiltrator excepted (it tracks
+            // its cloak alpha, so a hit can't fully decloak it).
+            if (e._hitFlash > 0) {
+                let vis = (e instanceof Boss)
+                    ? (e.cloak != null ? MathUtils.lerp(1.0, 0.08, e.cloak) : 1)
+                    : (e.opacity || 0);
+                this.ctx.save();
+                this.ctx.globalAlpha = Math.min(1, e._hitFlash / 0.06) * 0.5 * vis;
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.beginPath();
+                this.ctx.arc(e.x - cam.x, e.y - cam.y, e.r + 1, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.restore();
+            }
             if (e.chaosDraftShield && e.chaosDraftShield > 0) {
                 this.ctx.save();
                 this.ctx.strokeStyle = '#00e5ff';
@@ -41054,8 +42091,51 @@ class Game {
 
         // 5. DAMAGE FLASH
         if (p.damageFlashIntensity > 0) {
-            this.ctx.fillStyle = `rgba(255, 0, 0, ${p.damageFlashIntensity * 0.35})`;
+            // FELLPASS item 7: when the hit had a bearing, the directional
+            // glow below carries the read, so the flat wash steps back to
+            // 40% (playtest pass 1: at full strength the flat wash drowned
+            // the glow -- "don't notice at all"). Directionless hits
+            // (lastHitAngle === null) keep the full flat wash, unchanged.
+            const dirWashMult = (p.lastHitAngle != null) ? 0.4 : 1.0;
+            this.ctx.fillStyle = `rgba(255, 0, 0, ${p.damageFlashIntensity * 0.35 * dirWashMult})`;
             this.ctx.fillRect(x, y, w, h);
+            if (p.lastHitAngle != null) {
+                // World angle == screen angle -- the camera transform is
+                // scale/translate only. BEARING INVERSION: lastHitAngle is
+                // the KNOCKBACK direction (bullet travel / blast push --
+                // pointing AWAY from the attacker, the same value used to
+                // shove the player), so the glow must be painted at
+                // lastHitAngle + PI to sit on the edge the shot CAME FROM
+                // (playtest: hit from the left glowed the right side).
+                // Radial gradient cached per 16-bucket angle + rect in a
+                // static Map, same pattern as the vignette above. Tight
+                // falloff: the threat-side edge sits near the peak while
+                // the OPPOSITE edge falls past the outer radius to exactly
+                // 0 -- the asymmetry IS the indicator.
+                const bearing = p.lastHitAngle + Math.PI;
+                const bucket = ((Math.round(bearing / (Math.PI / 8)) % 16) + 16) % 16;
+                const gkey = bucket + "|" + x + "|" + y + "|" + w + "|" + h;
+                if (!Game._dirGlowCache) Game._dirGlowCache = new Map();
+                let glow = Game._dirGlowCache.get(gkey);
+                if (!glow) {
+                    const a = bucket * (Math.PI / 8);
+                    const cx = x + w / 2, cy = y + h / 2;
+                    const R = Math.max(w, h) * 0.55;
+                    glow = this.ctx.createRadialGradient(
+                        cx + Math.cos(a) * R, cy + Math.sin(a) * R, 0,
+                        cx + Math.cos(a) * R, cy + Math.sin(a) * R, R * 1.5
+                    );
+                    glow.addColorStop(0, 'rgba(255, 0, 0, 0.95)');
+                    glow.addColorStop(0.45, 'rgba(255, 0, 0, 0.45)');
+                    glow.addColorStop(1, 'rgba(255, 0, 0, 0)');
+                    Game._dirGlowCache.set(gkey, glow);
+                }
+                this.ctx.save();
+                this.ctx.globalAlpha = p.damageFlashIntensity;
+                this.ctx.fillStyle = glow;
+                this.ctx.fillRect(x, y, w, h);
+                this.ctx.restore();
+            }
         }
         
         // 6. WIN FLASH
@@ -41088,14 +42168,30 @@ class Game {
     // buffer is only ever touched while the timer is live, so normal play
     // is untouched.
     drawViewportWithAberration(camera, player, isPlayer2) {
-        if (this.chromaticAberrationTimer <= 0) {
+        // 2P FIX: resolve the timer driving THIS viewport from the per-player
+        // bus OR the global Game bus -- whichever is larger. Timer and peak
+        // must come from the SAME source (the render divides one by the
+        // other; mixing a player timer with the game peak reintroduces the
+        // stale-peak ratio deflation). A live global effect (glory kill /
+        // death linger) therefore still hits both halves in 2P.
+        const pTimer = (player && player.chromaticAberrationTimer) || 0;
+        const gTimer = this.chromaticAberrationTimer;
+        let aberT, aberPeak;
+        if (pTimer >= gTimer) {
+            aberT = pTimer;
+            aberPeak = (player && player.chromaticAberrationPeak) || 0.5;
+        } else {
+            aberT = gTimer;
+            aberPeak = this.chromaticAberrationPeak || 0.5;
+        }
+        if (aberT <= 0) {
             this.drawViewport(camera, player, isPlayer2);
             return;
         }
 
         const viewportW = this.isTwoPlayer ? this.width / 2 : this.width;
         const viewportH = this.height;
-        const effZoom = camera.zoom + (camera.zoomPunch || 0);
+        const effZoom = camera.zoom + (camera.zoomPunch || 0) + (camera.recoilZoom || 0);
 
         // PERF #2 (2026-08-23): render the aberration buffer at HALF resolution
         // and upscale it back in the composite. The whole world pass lands in a
@@ -41164,7 +42260,7 @@ class Game {
         // value (shiftVal * zoom) so the ghost spread is unchanged; only the
         // layers' translucency is new.
         const originX = (this.isTwoPlayer && isPlayer2) ? viewportW : 0;
-        const shiftVal = (this.chromaticAberrationTimer / (this.chromaticAberrationPeak || 0.5)) * 26 * effZoom;
+        const shiftVal = (aberT / (aberPeak || 0.5)) * 26 * effZoom;
         const wobble = Math.sin(Date.now() * 0.05) * 6 * effZoom;
 
         realCtx.save();
@@ -41331,7 +42427,7 @@ class Game {
             this.ctx.rect(0, 0, viewportW, viewportH);
             this.ctx.clip();
             
-            let effectiveZoom1 = this.camera.zoom + (this.camera.zoomPunch || 0);
+            let effectiveZoom1 = this.camera.zoom + (this.camera.zoomPunch || 0) + (this.camera.recoilZoom || 0);
             this.ctx.scale(effectiveZoom1, effectiveZoom1);
             
             this.drawViewportWithAberration(this.camera, this.player, false);
@@ -41347,7 +42443,7 @@ class Game {
             this.ctx.clip();
             
             this.ctx.translate(viewportW, 0);
-            let effectiveZoom2 = this.camera2.zoom + (this.camera2.zoomPunch || 0);
+            let effectiveZoom2 = this.camera2.zoom + (this.camera2.zoomPunch || 0) + (this.camera2.recoilZoom || 0);
             this.ctx.scale(effectiveZoom2, effectiveZoom2);
             
             this.drawViewportWithAberration(this.camera2, this.player2, true);
@@ -41369,7 +42465,7 @@ class Game {
         } else {
             // Single Player Viewport
             this.ctx.save();
-            let effectiveZoom = this.camera.zoom + (this.camera.zoomPunch || 0);
+            let effectiveZoom = this.camera.zoom + (this.camera.zoomPunch || 0) + (this.camera.recoilZoom || 0);
             this.ctx.scale(effectiveZoom, effectiveZoom);
             
             this.drawViewportWithAberration(this.camera, this.player, false);
@@ -41656,10 +42752,22 @@ class Game {
         let dt = (timestamp - this.lastTime) / 1000;
         this.lastTime = timestamp;
         if (dt > 0.1) dt = 0.1;
+        this._rawDt = dt; // WI-2: wall-clock dt (before timeScale/hurt-drag)
         
         if (this.chromaticAberrationTimer > 0) {
             this.chromaticAberrationTimer -= dt;
             if (this.chromaticAberrationTimer < 0) this.chromaticAberrationTimer = 0;
+        }
+        // 2P FIX: per-player aberration buses on the SAME raw-dt wall clock
+        // (not scaledDt -- decay in Player.update would stretch the effect
+        // through slow-mo / hurt-drag / hit-pause).
+        if (this.player && this.player.chromaticAberrationTimer > 0) {
+            this.player.chromaticAberrationTimer -= dt;
+            if (this.player.chromaticAberrationTimer < 0) this.player.chromaticAberrationTimer = 0;
+        }
+        if (this.player2 && this.player2.chromaticAberrationTimer > 0) {
+            this.player2.chromaticAberrationTimer -= dt;
+            if (this.player2.chromaticAberrationTimer < 0) this.player2.chromaticAberrationTimer = 0;
         }
         
         if (this.gloryKillTimer > 0) {
@@ -41669,6 +42777,21 @@ class Game {
                 this.gloryKillTarget = null;
                 this.timeScale = this.baseTimeScale;
             }
+        }
+
+        // FELLPASS item 6: the hurt-drag timer decays on REAL time, placed
+        // BEFORE the hit-pause early return so a kill freeze can never
+        // extend it (freeze skips update entirely; drag only scales it).
+        if (this.hurtDragTimer > 0) {
+            this.hurtDragTimer -= dt;
+            if (this.hurtDragTimer < 0) this.hurtDragTimer = 0;
+            if (this.hurtDragTimer === 0) this.hurtDragDepth = 1; // A2: no stale depth after expiry (the trigger site Math.min-merges)
+        }
+        // FELLPASS-CLEANUP A2: refractory window for the hurt-drag trigger
+        // (real time, same placement as the drag timer itself).
+        if (this.hurtDragRefractoryTimer > 0) {
+            this.hurtDragRefractoryTimer -= dt;
+            if (this.hurtDragRefractoryTimer < 0) this.hurtDragRefractoryTimer = 0;
         }
 
         if (this.hitPauseTimer > 0) {
@@ -41686,7 +42809,10 @@ class Game {
             return;
         }
         
-        let scaledDt = dt * this.timeScale;
+        // FELLPASS item 6: the player-hit drag multiplies scaledDt (depth
+        // 1.0 = no drag). Multiplicative so it composes with glory-kill /
+        // death slow-mo without ever writing timeScale.
+        let scaledDt = dt * this.timeScale * (this.hurtDragTimer > 0 ? this.hurtDragDepth : 1);
         // Guard against an uncaught exception inside update()/draw() silently
         // killing the requestAnimationFrame chain forever. Without this,
         // a single bad frame (e.g. a null enemy reference, a malformed
