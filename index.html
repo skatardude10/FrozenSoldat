@@ -118,25 +118,52 @@
     .hud-value { color: #fff; font-size: 12px; text-shadow: 0 0 6px rgba(255,255,255,0.3); }
     .text-green { color: var(--green) !important; }
     .text-red { color: var(--red) !important; }
-    /* WI-3: PvP kill feed -- top-right, just under the P2 bar. Newest on
-       top, max 5 entries, CSS fade; JS removes each entry after 4s. */
+    /* WI-3: PvP kill feed -- centered on the split seam so BOTH players see
+       it (match state, not player state). Sits under the 42px top bars; in
+       timer mode #ui-pvp-timer occupies the 56px slot so the feed starts at
+       80px. Newest on top, max 5 entries, 5s CSS fade (JS removal matches);
+       kf-in gives new lines a short slide so they read as NEW. */
     #pvp-kill-feed {
-        position: absolute; top: 56px; right: 15px;
-        display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+        position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+        display: flex; flex-direction: column; align-items: center; gap: 3px;
         pointer-events: none; z-index: 20;
     }
     .pvp-kill-entry {
-        font-size: 10px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;
+        font-size: 12px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;
         color: #fff; background: rgba(0, 5, 12, 0.55); border: 1px solid rgba(255, 42, 95, 0.35);
-        border-radius: 3px; padding: 2px 8px;
-        animation: pvp-kill-fade 4s forwards;
+        border-radius: 3px; padding: 2px 10px;
+        animation: pvp-kill-fade 5s forwards, kf-in 0.18s ease-out;
     }
+    /* Stock fallbacks -- _pushPvpKillFeed also sets an inline color from
+       each operator's paint (bodyColor) or accent (color) when present. */
     .pvp-kill-entry .kf-p1 { color: #00e5ff; }
     .pvp-kill-entry .kf-p2 { color: #ffb700; }
     @keyframes pvp-kill-fade {
-        0%, 75% { opacity: 1; }
+        0%, 85% { opacity: 1; }
         100% { opacity: 0; }
     }
+    @keyframes kf-in {
+        from { opacity: 0; transform: translateY(-4px); }
+        to   { opacity: 1; transform: none; }
+    }
+    /* WI-3: PvP match timer (timer mode only) -- seam-centered above the feed. */
+    #ui-pvp-timer {
+        position: absolute; top: 56px; left: 50%; transform: translateX(-50%);
+        font-size: 13px; font-weight: bold; letter-spacing: 2px; color: #fff;
+        background: rgba(0, 5, 12, 0.55); border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 3px; padding: 3px 12px;
+        pointer-events: none; z-index: 20;
+    }
+    /* WI-3: per-player score pills -- first item in each top bar's stat
+       group so each player's score is delineated (bordered, colored with
+       their operator paint/accent) on their own half. The bar's flow center
+       belongs to the vitals group, so the pill anchors the left edge. */
+    .pvp-score-pill {
+        padding: 3px 10px; border: 1px solid; border-radius: 3px;
+        background: rgba(0, 5, 12, 0.5); min-width: 62px; justify-content: center;
+    }
+    .pvp-score-pill .hud-label { color: inherit; }
+    .pvp-score-pill .hud-value { font-size: 14px; }
     
     .hud-bars-group { display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center; }
     .hud-bar-wrapper { display: flex; align-items: center; gap: 4px; }
@@ -1181,6 +1208,13 @@
     <!-- PLAYER 1 HUD -->
     <div id="hud-top-p1" class="hud-top-bar">
         <div class="hud-top-group">
+            <!-- WI-3: P1 score pill (hidden unless SCOREBOARD_ENABLED && 2P
+                 PvP). Border/text color is set from P1's operator paint or
+                 cyan accent by the HUD update. -->
+            <div class="hud-top-section hidden pvp-score-pill" id="ui-pvp-score-p1" style="color: #00e5ff; border-color: #00e5ff;">
+                <span class="hud-label">P1</span>
+                <span id="ui-pvp-score-p1-val" class="hud-value">0/30</span>
+            </div>
             <div class="hud-top-section">
                 <span class="hud-label">WAVE</span>
                 <span id="ui-wave" class="hud-value">1</span>
@@ -1188,11 +1222,6 @@
             <div class="hud-top-section">
                 <span class="hud-label">ENEMIES</span>
                 <span id="ui-enemies" class="hud-value">0</span>
-            </div>
-            <!-- WI-3: shared PvP scoreboard (hidden unless SCOREBOARD_ENABLED && 2P PvP) -->
-            <div class="hud-top-section hidden" id="ui-pvp-score-wrap">
-                <span class="hud-label">SCORE</span>
-                <span id="ui-pvp-score" class="hud-value">0/0</span>
             </div>
         </div>
         <div class="hud-bars-group">
@@ -1253,12 +1282,20 @@
         </div>
     </div>
 
-    <!-- WI-3: PvP kill feed (filled by Game._pushPvpKillFeed) -->
+    <!-- WI-3: PvP kill feed (filled by Game._pushPvpKillFeed) + match timer
+         (timer mode only). Both seam-centered so both players see them. -->
+    <div id="ui-pvp-timer" class="hidden"></div>
     <div id="pvp-kill-feed"></div>
 
     <!-- PLAYER 2 HUD (Co-op) -->
     <div id="hud-top-p2" class="hud-top-bar hidden">
         <div class="hud-top-group">
+            <!-- WI-3: P2 score pill (mirror of ui-pvp-score-p1, amber accent
+                 or P2's operator paint). -->
+            <div class="hud-top-section hidden pvp-score-pill" id="ui-pvp-score-p2" style="color: #ffb700; border-color: #ffb700;">
+                <span class="hud-label">P2</span>
+                <span id="ui-pvp-score-p2-val" class="hud-value">0/30</span>
+            </div>
             <div class="hud-top-section">
                 <span class="hud-label">WAVE</span>
                 <span id="ui-wave-p2" class="hud-value">1</span>
@@ -2077,6 +2114,7 @@
                     <div class="stat-line">Grenades: <span id="shop-stat-grenades-p1">0</span> / <span id="shop-stat-maxgrenades-p1">3</span></div>
                     <div class="stat-line">Trip Mines: <span id="shop-stat-mines-p1">0</span> / 3</div>
                     <div class="stat-line">Barriers: <span id="shop-stat-barriers-p1">0</span> / 5</div>
+                    <div class="stat-line">Rubble: <span id="shop-stat-rubble-p1">0</span></div>
                     <div class="stat-line">FPV Drones: <span id="shop-stat-drones-p1">0</span> / 3</div>
                     <div class="stat-line">Auto Turrets: <span id="shop-stat-turrets-p1">0</span> / 1</div>
                     <div class="stat-line">Spot Robots: <span id="shop-stat-dogs-p1">0</span> / 1</div>
@@ -2104,6 +2142,7 @@
                         <button id="btn-buy-medpack-p1" onclick="game.buyItem('medpack', game.player)">Buy Med Pack ($40)</button>
                         <button id="btn-buy-boost-p1" onclick="game.buyItem('boost', game.player)">Buy Energy Drink ($40)</button>
                         <button id="btn-buy-barrier-p1" onclick="game.buyItem('barrier', game.player)">Buy Barrier ($75)</button>
+                        <button id="btn-buy-rubble-p1" onclick="game.buyItem('rubble', game.player)">Rubble 2,500 ($75)</button>
                         <button id="btn-buy-barrier-upgrade-p1" onclick="game.buyItem('barrier_upgrade', game.player)">Barrier MK.II Upgrade ($400)</button>
                         <button id="btn-buy-drone-p1" onclick="game.buyItem('drone', game.player)">FPV Drone ($150)</button>
                         <button id="btn-buy-drone-upgrade-p1" onclick="game.buyItem('drone_upgrade', game.player)">FPV Drone Bomber ($600)</button>
@@ -2183,6 +2222,7 @@
                     <div class="stat-line">Grenades: <span id="shop-stat-grenades-p2">0</span> / <span id="shop-stat-maxgrenades-p2">3</span></div>
                     <div class="stat-line">Trip Mines: <span id="shop-stat-mines-p2">0</span> / 3</div>
                     <div class="stat-line">Barriers: <span id="shop-stat-barriers-p2">0</span> / 5</div>
+                    <div class="stat-line">Rubble: <span id="shop-stat-rubble-p2">0</span></div>
                     <div class="stat-line">FPV Drones: <span id="shop-stat-drones-p2">0</span> / 3</div>
                     <div class="stat-line">Auto Turrets: <span id="shop-stat-turrets-p2">0</span> / 1</div>
                     <div class="stat-line">Spot Robots: <span id="shop-stat-dogs-p2">0</span> / 1</div>
@@ -2210,6 +2250,7 @@
                         <button id="btn-buy-medpack-p2" onclick="game.buyItem('medpack', game.player2)">Buy Med Pack ($40)</button>
                         <button id="btn-buy-boost-p2" onclick="game.buyItem('boost', game.player2)">Buy Energy Drink ($40)</button>
                         <button id="btn-buy-barrier-p2" onclick="game.buyItem('barrier', game.player2)">Buy Barrier ($75)</button>
+                        <button id="btn-buy-rubble-p2" onclick="game.buyItem('rubble', game.player2)">Rubble 2,500 ($75)</button>
                         <button id="btn-buy-barrier-upgrade-p2" onclick="game.buyItem('barrier_upgrade', game.player2)">Barrier MK.II Upgrade ($400)</button>
                         <button id="btn-buy-drone-p2" onclick="game.buyItem('drone', game.player2)">FPV Drone ($150)</button>
                         <button id="btn-buy-drone-upgrade-p2" onclick="game.buyItem('drone_upgrade', game.player2)">FPV Drone Bomber ($600)</button>
@@ -25570,7 +25611,7 @@ const KIT_ORDER = ['standard', 'breacher', 'ghost', 'technician', 'medic', 'path
 const KIT_SHOP_REBATE = {
     breacher:   { pct: 0.20, match: (t) => t === 'grenade' || t === 'mine' },
     ghost:      { pct: 0.20, match: (t) => typeof t === 'string' && t.indexOf('ammo_') === 0 },
-    technician: { pct: 0.20, match: (t) => ['barrier', 'barrier_upgrade', 'turret', 'turret_mk2', 'drone', 'drone_upgrade', 'fiber_optic', 'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack'].indexOf(t) >= 0 },
+    technician: { pct: 0.20, match: (t) => ['barrier', 'barrier_upgrade', 'rubble', 'turret', 'turret_mk2', 'drone', 'drone_upgrade', 'fiber_optic', 'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack'].indexOf(t) >= 0 },
     medic:      { pct: 0.20, match: (t) => t === 'medpack' || t === 'armor' },
     pathfinder: { pct: 0.20, match: (t) => typeof t === 'string' && t.indexOf('ammo_') === 0 },
     vanguard:   { pct: 0.20, match: (t) => t === 'grenade' || t === 'mine' },
@@ -26416,7 +26457,7 @@ class Game {
         
         this.shopItemIDs = [
             'hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost', 
-            'barrier', 'barrier_upgrade', 'drone', 'drone_upgrade', 'fiber_optic', 'turret', 'turret_mk2',
+            'barrier', 'rubble', 'barrier_upgrade', 'drone', 'drone_upgrade', 'fiber_optic', 'turret', 'turret_mk2',
             'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'camera', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
             'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap', 'ammo_shotgun_slug',
             'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC',
@@ -29318,6 +29359,7 @@ class Game {
         if (this.state === 'shop') {
             if (this.shopSelectedIndexP1 === undefined) this.shopSelectedIndexP1 = 0;
             if (this.shopSelectedIndexP2 === undefined) this.shopSelectedIndexP2 = 0;
+            if (!this._shopNavModel) this.buildShopNavModel();
 
             for (let i = 0; i < gpList.length; i++) {
                 let gp = gpList[i];
@@ -29348,59 +29390,30 @@ class Game {
                 }
 
                 if (this.dpadCooldown <= 0) {
-                    let nextIdx = curIdx;
-                    let totalItems = this.shopItemIDs.length;
-                    // JULY item 11: the list now ends in TWO full-width rows
-                    // (CALL EVAC, then READY) below the 2-column grid --
-                    // the vertical wrap threads grid -> evac -> ready -> grid,
-                    // and horizontal moves stay grid-only.
-                    const gridCount = totalItems - 2;      // first N-2 = 2-col grid
-                    const evacIdx = totalItems - 2;
-                    const readyIdx = totalItems - 1;
-                    if (dUp) {
-                        if (curIdx === readyIdx) {
-                            nextIdx = evacIdx;
-                        } else if (curIdx === evacIdx) {
-                            nextIdx = gridCount - 1;
-                        } else if (curIdx <= 1) {
-                            nextIdx = readyIdx;
-                        } else {
-                            nextIdx = curIdx - 2;
-                        }
-                        this.dpadCooldown = 0.18;
-                    } else if (dDown) {
-                        if (curIdx === readyIdx) {
-                            nextIdx = 0;
-                        } else if (curIdx === evacIdx) {
-                            nextIdx = readyIdx;
-                        } else if (curIdx >= gridCount - 2) {
-                            nextIdx = evacIdx;
-                        } else {
-                            nextIdx = curIdx + 2;
-                        }
-                        this.dpadCooldown = 0.18;
-                    } else if (dLeft) {
-                        if (curIdx < gridCount && curIdx % 2 === 1) {
-                            nextIdx = curIdx - 1;
+                    // Section-aware move on the DOM-derived nav model (see
+                    // buildShopNavModel / _shopNavMove). The cursor index now
+                    // addresses model cells, whose (sec, row, col) geometry
+                    // matches what the player actually sees.
+                    let navCells = this._shopNavModel ? (isP2 ? this._shopNavModel.p2 : this._shopNavModel.p1) : null;
+                    if (navCells && navCells.length) {
+                        if (curIdx >= navCells.length) curIdx = navCells.length - 1;
+                        let dir = dUp ? 'up' : dDown ? 'down' : dLeft ? 'left' : dRight ? 'right' : null;
+                        let nextIdx = (dir) ? this._shopNavMove(navCells, curIdx, dir) : -1;
+                        if (nextIdx >= 0 && nextIdx !== curIdx) {
+                            if (isP2) this.shopSelectedIndexP2 = nextIdx;
+                            else this.shopSelectedIndexP1 = nextIdx;
                             this.dpadCooldown = 0.18;
+                            this.refreshGamepadShopHighlight();
+                            break;
                         }
-                    } else if (dRight) {
-                        if (curIdx % 2 === 0 && curIdx + 1 < gridCount) {
-                            nextIdx = curIdx + 1;
-                            this.dpadCooldown = 0.18;
-                        }
-                    }
-
-                    if (nextIdx !== curIdx) {
-                        if (isP2) this.shopSelectedIndexP2 = nextIdx;
-                        else this.shopSelectedIndexP1 = nextIdx;
-                        this.refreshGamepadShopHighlight();
-                        break;
                     }
                 }
 
                 if (btnA && this.gpadButtonCooldown <= 0) {
-                    let chosenID = this.shopItemIDs[curIdx];
+                    let confirmCells = this._shopNavModel ? (isP2 ? this._shopNavModel.p2 : this._shopNavModel.p1) : null;
+                    let chosenID = (confirmCells && curIdx >= 0 && curIdx < confirmCells.length)
+                        ? confirmCells[curIdx].id
+                        : this.shopItemIDs[curIdx];
                     if (chosenID === 'ready') {
                         this.setReady(isP2 ? 2 : 1);
                     } else if (chosenID === 'call_evac') {
@@ -29539,13 +29552,12 @@ class Game {
         return true;
     }
 
-    refreshGamepadShopHighlight() {
-        let buttons = document.querySelectorAll('.shop-grid button, .shop-panel-items button');
-        buttons.forEach(btn => btn.classList.remove('focused-btn'));
-
-        let idMap = {
+    // item id -> shop button base element id (no -p1/-p2 suffix). Shared by
+    // the nav model builder (reverse lookup) and any future highlight code.
+    _shopBtnIdMap() {
+        return {
             hp: 'btn-buy-hp', armor: 'btn-buy-armor', speed: 'btn-buy-speed', grenade: 'btn-buy-grenade', mine: 'btn-buy-mine', medpack: 'btn-buy-medpack', boost: 'btn-buy-boost',
-            barrier: 'btn-buy-barrier', barrier_upgrade: 'btn-buy-barrier-upgrade',
+            barrier: 'btn-buy-barrier', barrier_upgrade: 'btn-buy-barrier-upgrade', rubble: 'btn-buy-rubble',
             drone: 'btn-buy-drone', drone_upgrade: 'btn-buy-drone-upgrade', fiber_optic: 'btn-buy-fiber-optic',
             turret: 'btn-buy-turret', turret_mk2: 'btn-buy-turret-mk2',
             dog: 'btn-buy-dog', dog_upgrade: 'btn-buy-dog-upgrade',
@@ -29565,20 +29577,146 @@ class Game {
             call_evac: 'btn-call-evac', // JULY item 11
             ready: 'btn-ready'
         };
+    }
 
-        if (this.shopSelectedIndexP1 !== undefined) {
-            let activeID = this.shopItemIDs[this.shopSelectedIndexP1];
-            let targetBtn = document.getElementById(idMap[activeID] + '-p1');
-            if (targetBtn) {
+    // Shop nav geometry, derived from the DOM instead of assumed. Each panel
+    // holds one 2-column .shop-grid PER SECTION (Vitality & Gear, Standard
+    // Munitions, ...) -- separate grids, not one continuous grid. The old nav
+    // walked the flat shopItemIDs list assuming all sections formed one
+    // 2-column grid, so any section with an odd item count flipped the
+    // even=left/odd=right parity and its same-row pairs became unreachable
+    // sideways (and cross-section drops landed on the wrong column). This
+    // model records each visible button's true (sec, row, col) plus the two
+    // full-width rows (CALL EVAC, READY, sec -1), so movement works on
+    // geometry and adding/hiding buttons can never desync the cursor.
+    // Rebuilt on every openShopInterface() render; cheap (~40 buttons).
+    buildShopNavModel() {
+        let idMap = this._shopBtnIdMap();
+        let reverse = {};
+        for (let itemID in idMap) reverse[idMap[itemID]] = itemID;
+        let build = (suffix) => {
+            let panel = document.getElementById('shop-box-' + suffix);
+            if (!panel) return [];
+            let cells = [];
+            let grids = panel.querySelectorAll('.shop-panel-items .shop-grid');
+            let sec = 0;
+            for (let grid of grids) {
+                let visIdx = 0;
+                for (let btn of grid.children) {
+                    // offsetParent is null for display:none (operator-mode
+                    // whitelist hiding) -- hidden buttons are skipped, and the
+                    // remaining buttons reflow, so row/col use the VISIBLE
+                    // index, exactly matching the CSS grid.
+                    if (btn.tagName !== 'BUTTON' || btn.offsetParent === null) continue;
+                    let base = btn.id ? btn.id.replace(/-p[12]$/, '') : '';
+                    let itemID = reverse[base] || null;
+                    if (!itemID) continue;
+                    cells.push({ id: itemID, el: btn, sec: sec, row: (visIdx >> 1), col: visIdx % 2 });
+                    visIdx++;
+                }
+                if (visIdx > 0) sec++;
+            }
+            let evac = document.getElementById('btn-call-evac-' + suffix);
+            if (evac && evac.offsetParent !== null) cells.push({ id: 'call_evac', el: evac, sec: -1, row: -1, col: 0 });
+            let ready = document.getElementById('btn-ready-' + suffix);
+            if (ready && ready.offsetParent !== null) cells.push({ id: 'ready', el: ready, sec: -1, row: -1, col: 0 });
+            return cells;
+        };
+        this._shopNavModel = { p1: build('p1'), p2: build('p2') };
+        return this._shopNavModel;
+    }
+
+    // Move the shop cursor one step. Returns the new cell index, or -1 when
+    // the move is not possible (e.g. right edge of a row). Geometry rules:
+    //  - left/right: same section + row, other column, only if it exists.
+    //  - down/up within a section: next/prev row, same column, falling back
+    //    to the other column when that row is shorter.
+    //  - down/up across sections: first/last row of the next/previous
+    //    section, same column (fallback other).
+    //  - wraps: up from section 0 row 0 -> READY, READY up -> CALL EVAC,
+    //    CALL EVAC up -> last grid cell, down from CALL EVAC -> READY,
+    //    READY down -> first grid cell (the JULY item 11 threading, kept).
+    _shopNavMove(cells, idx, dir) {
+        if (!cells || !cells.length || idx < 0 || idx >= cells.length) return -1;
+        let cur = cells[idx];
+        let byPos = (sec, row, col) => {
+            for (let i = 0; i < cells.length; i++) {
+                if (cells[i].sec === sec && cells[i].row === row && cells[i].col === col) return i;
+            }
+            return -1;
+        };
+        let byId = (id) => {
+            for (let i = 0; i < cells.length; i++) {
+                if (cells[i].id === id) return i;
+            }
+            return -1;
+        };
+        let lastGridIdx = -1;
+        for (let i = cells.length - 1; i >= 0; i--) {
+            if (cells[i].sec >= 0) { lastGridIdx = i; break; }
+        }
+        if (cur.sec === -1) {
+            if (dir === 'down') {
+                if (cur.id === 'call_evac') return byId('ready');
+                return (cells[0].sec >= 0) ? 0 : -1; // ready -> first grid cell
+            }
+            if (dir === 'up') {
+                if (cur.id === 'ready') {
+                    let i = byId('call_evac');
+                    return (i >= 0) ? i : lastGridIdx;
+                }
+                return lastGridIdx; // call_evac -> last grid cell
+            }
+            return -1;
+        }
+        if (dir === 'right') {
+            return (cur.col === 0) ? byPos(cur.sec, cur.row, 1) : -1;
+        }
+        if (dir === 'left') {
+            return (cur.col === 1) ? byPos(cur.sec, cur.row, 0) : -1;
+        }
+        if (dir === 'down') {
+            let i = byPos(cur.sec, cur.row + 1, cur.col);
+            if (i < 0) i = byPos(cur.sec, cur.row + 1, 1 - cur.col);
+            if (i < 0) i = byPos(cur.sec + 1, 0, cur.col);
+            if (i < 0) i = byPos(cur.sec + 1, 0, 1 - cur.col);
+            if (i < 0) i = byId('call_evac');
+            return i;
+        }
+        if (dir === 'up') {
+            let i = byPos(cur.sec, cur.row - 1, cur.col);
+            if (i < 0) i = byPos(cur.sec, cur.row - 1, 1 - cur.col);
+            if (i < 0 && cur.sec > 0) {
+                let prevLastRow = -1;
+                for (let k = 0; k < cells.length; k++) {
+                    if (cells[k].sec === cur.sec - 1 && cells[k].row > prevLastRow) prevLastRow = cells[k].row;
+                }
+                i = byPos(cur.sec - 1, prevLastRow, cur.col);
+                if (i < 0) i = byPos(cur.sec - 1, prevLastRow, 1 - cur.col);
+            }
+            if (i < 0 && cur.sec === 0 && cur.row === 0) i = byId('ready');
+            return i;
+        }
+        return -1;
+    }
+
+    refreshGamepadShopHighlight() {
+        let buttons = document.querySelectorAll('.shop-grid button, .shop-panel-items button');
+        buttons.forEach(btn => btn.classList.remove('focused-btn'));
+
+        if (this.shopSelectedIndexP1 !== undefined && this._shopNavModel) {
+            let cells = this._shopNavModel.p1;
+            if (this.shopSelectedIndexP1 < cells.length) {
+                let targetBtn = cells[this.shopSelectedIndexP1].el;
                 targetBtn.classList.add('focused-btn');
                 targetBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         }
-        
-        if (this.isTwoPlayer && this.shopSelectedIndexP2 !== undefined) {
-            let activeID = this.shopItemIDs[this.shopSelectedIndexP2];
-            let targetBtn = document.getElementById(idMap[activeID] + '-p2');
-            if (targetBtn) {
+
+        if (this.isTwoPlayer && this.shopSelectedIndexP2 !== undefined && this._shopNavModel) {
+            let cells = this._shopNavModel.p2;
+            if (this.shopSelectedIndexP2 < cells.length) {
+                let targetBtn = cells[this.shopSelectedIndexP2].el;
                 targetBtn.classList.add('focused-btn');
                 targetBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
@@ -32881,10 +33019,19 @@ class Game {
             // keeps reflecting kills dealt to the opponent.
             if (PVP_TUNING.SCOREBOARD_ENABLED) {
                 killer.pvpKills = Math.max(0, (killer.pvpKills || 0) - 1);
+                // Feed line for the self-elimination -- the exact moment
+                // players most need to know what just happened.
+                this._pushPvpKillFeed(killer, killer, source, 'suicide');
             }
             return;
         }
-        if (killer.dead) return; // mutual kill: neither operator is paid
+        if (killer.dead) {
+            // Mutual kill (trade): neither operator is paid.
+            if (PVP_TUNING.SCOREBOARD_ENABLED) {
+                this._pushPvpKillFeed(killer, victim, source, 'trade');
+            }
+            return;
+        }
         killer.cash = (killer.cash || 0) + PVP_TUNING.KILL_REWARD;
         this.floatingTexts.push(this.spawnFloatingText(
             killer.x, killer.y - 28,
@@ -32917,9 +33064,12 @@ class Game {
         }
     }
 
-    // WI-3: one kill-feed entry per credited PvP kill. Newest on top, max
-    // 5 entries, CSS fade + JS removal after 4s.
-    _pushPvpKillFeed(killer, victim, source) {
+    // WI-3: one kill-feed entry per PvP death event. Newest on top, max 5
+    // entries, CSS fade + JS removal after 5s (MUST match pvp-kill-fade).
+    // kind: 'kill' (default) | 'suicide' | 'trade' -- same entry markup,
+    // only the connector glyph/label differs. Operator names use the paint
+    // color (bodyColor) when owned, else the stock P1-cyan/P2-amber accent.
+    _pushPvpKillFeed(killer, victim, source, kind = 'kill') {
         const feed = document.getElementById('pvp-kill-feed');
         if (!feed) return;
         let weapon = 'BLAST';
@@ -32927,14 +33077,31 @@ class Game {
         else if (source instanceof ShrapnelGrenade) weapon = 'GRENADE';
         else if (source instanceof TripMine) weapon = 'MINE';
         else if (source instanceof FPVDrone) weapon = 'DRONE';
-        const kCls = killer.isPlayer2 ? 'kf-p2' : 'kf-p1';
-        const vCls = victim.isPlayer2 ? 'kf-p2' : 'kf-p1';
+        const name = (p) => `<span class="${p.isPlayer2 ? 'kf-p2' : 'kf-p1'}" style="color:${p.bodyColor || p.color}">P${p.isPlayer2 ? 2 : 1}</span>`;
+        let body;
+        if (kind === 'suicide') {
+            body = `${name(killer)} &times; <span style="color:#a9c2c7">SELF</span>`;
+        } else if (kind === 'trade') {
+            body = `${name(killer)} &harr; ${name(victim)}`;
+        } else {
+            body = `${name(killer)} &rarr; ${name(victim)}`;
+        }
         const entry = document.createElement('div');
         entry.className = 'pvp-kill-entry';
-        entry.innerHTML = `<span class="${kCls}">P${killer.isPlayer2 ? 2 : 1}</span> &rarr; <span class="${vCls}">P${victim.isPlayer2 ? 2 : 1}</span> <span style="color:#a9c2c7">[${weapon}]</span>`;
+        entry.innerHTML = `${body} <span style="color:#a9c2c7">[${weapon}]</span>`;
         feed.prepend(entry);
         while (feed.children.length > 5) feed.removeChild(feed.lastChild);
-        setTimeout(() => { if (entry.parentNode) entry.parentNode.removeChild(entry); }, 4000);
+        setTimeout(() => { if (entry.parentNode) entry.parentNode.removeChild(entry); }, 5000);
+    }
+
+    // WI-3: empty the kill feed + timer (match state, never shown over the
+    // debrief or carried into the next match). Pending removal timeouts are
+    // self-guarding (parentNode null-check) so a bulk clear is safe.
+    _clearPvpKillFeed() {
+        const feed = document.getElementById('pvp-kill-feed');
+        if (feed) feed.innerHTML = '';
+        const t = document.getElementById('ui-pvp-timer');
+        if (t) t.classList.add('hidden');
     }
 
     startNewGame() {
@@ -32963,6 +33130,11 @@ class Game {
         } else {
             this._entryFeePaidThisRun = 0; // stale-flag guard: fee only ever belongs to the extraction run that paid it
         }
+
+        // WI-3: start from an empty kill feed (defensive -- endRun already
+        // clears, but a retry straight from the debrief must never inherit
+        // the previous match's entries).
+        this._clearPvpKillFeed();
 
         // PHASE 2: snapshot which missions are unlocked BEFORE this run so
         // endRun can diff and flip "MISSION UNLOCKED" debrief cards.
@@ -36883,7 +37055,7 @@ class Game {
         // deliberately adds it here -- safer default for a mode this
         // restrictive.
         const allIds = ['hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost',
-            'barrier', 'barrier-upgrade', 'drone', 'drone-upgrade', 'fiber-optic',
+            'barrier', 'barrier-upgrade', 'rubble', 'drone', 'drone-upgrade', 'fiber-optic',
             'turret', 'turret-mk2', 'dog', 'dog-upgrade', 'swarm-drone', 'swarm-pack',
             'ammo-shotgun', 'ammo-smg-std', 'ammo-lmg-std', 'ammo-sniper-std', 'ammo-m1a-std',
             'ammo-smg-hp', 'ammo-lmg-ap', 'ammo-sniper-ap', 'ammo-pistol-hp', 'ammo-m1a-ap',
@@ -37129,6 +37301,10 @@ class Game {
             setHtml('shop-stat-maxgrenades-' + suffix, p.maxGrenades || 3);
             setHtml('shop-stat-mines-' + suffix, p.mines);
             setHtml('shop-stat-barriers-' + suffix, (p.barriersCount || 0) + (p.barrierUpgraded ? ' (MK.II)' : ''));
+            // Rubble bank readout: the in-game RUBBLE HUD line sits behind the
+            // shop overlay's blur, so the bank needs its own line here to be
+            // legible while buying/building planning happens.
+            setHtml('shop-stat-rubble-' + suffix, Math.floor(p.wallMaterial || 0));
             // FPV OPERATOR MODE: drones are unlimited (launch-cooldown gated,
             // not inventory-gated -- see handleDroneInput), so the normal
             // "N / 3" inventory readout would be permanently misleading
@@ -37221,6 +37397,14 @@ class Game {
             if (barBtn) {
                 if (p.barriersCount >= this._maxBarriers()) { barBtn.classList.add('maxed'); barBtn.innerText = "BARRIER (MAX)"; barBtn.disabled = true; }
                 else { barBtn.classList.remove('maxed'); barBtn.innerText = "Barrier ($75)"; barBtn.disabled = false; }
+            }
+
+            let rubbleBtn = document.getElementById('btn-buy-rubble-' + suffix);
+            if (rubbleBtn) {
+                // No max state: the rubble bank is unbounded (see buyItem).
+                rubbleBtn.classList.remove('maxed');
+                rubbleBtn.innerText = "Rubble 2,500 ($75)";
+                rubbleBtn.disabled = p.cash < 75;
             }
 
             let barUpgradeBtn = document.getElementById('btn-buy-barrier-upgrade-' + suffix);
@@ -37480,7 +37664,9 @@ class Game {
         }
         
         toggleClass('shop-screen', 'hidden', false);
-        
+
+        this.buildShopNavModel();
+
         if (this.gamepadConnected) {
             this.refreshGamepadShopHighlight();
         }
@@ -37529,6 +37715,13 @@ class Game {
             p.cash -= 40; p.energyDrinks++;
         } else if (type === 'barrier' && p.cash >= 75 && p.barriersCount < this._maxBarriers()) {
             p.cash -= 75; p.barriersCount++;
+        } else if (type === 'rubble' && p.cash >= 75) {
+            // MATTER MANIPULATOR resupply: buy banked rubble (1 rubble = 1
+            // wall HP, tier-neutral -- see _wallCellPlan) for a flat price.
+            // Ungated (the drill/build tool is base kit) and uncapped -- the
+            // bank is a run-scoped float the build system already treats as
+            // unbounded, and repeated buys are the intended "bulk" path.
+            p.cash -= 75; p.wallMaterial += 2500;
         } else if (type === 'drone' && p.cash >= 150 && p.dronesCount < 3) {
             p.cash -= 150; p.dronesCount++;
         } else if (type === 'drone_upgrade' && p.cash >= 600 && !p.droneUpgraded) {
@@ -37791,22 +37984,44 @@ class Game {
         // PHASE 1: extraction's spawn budget is an endless sentinel -- show
         // live hostiles only there.
         setHtmlCached('ui-enemies', this.extractionMode ? this.enemies.length : (this.enemies.length + this.enemiesToSpawn));
-        // WI-3: shared PvP scoreboard -- visible only when the scoreboard is
-        // enabled AND a 2P PvP match is live.
+        // WI-3: per-player PvP score pills -- visible only when the
+        // scoreboard is enabled AND a 2P PvP match is live. Each pill sits
+        // in its own top bar, colored with that operator's paint or accent,
+        // so P1/P2 read apart at a glance.
         const pvpScoreOn = !!(PVP_TUNING.SCOREBOARD_ENABLED && this.friendlyFireMode === 'pvp' && this.isTwoPlayer && this.player2);
-        if (this.hudState['ui-pvp-score-wrap_on'] !== pvpScoreOn) {
-            toggleClass('ui-pvp-score-wrap', 'hidden', !pvpScoreOn);
-            this.hudState['ui-pvp-score-wrap_on'] = pvpScoreOn;
+        if (this.hudState['ui-pvp-score_on'] !== pvpScoreOn) {
+            toggleClass('ui-pvp-score-p1', 'hidden', !pvpScoreOn);
+            toggleClass('ui-pvp-score-p2', 'hidden', !pvpScoreOn);
+            this.hudState['ui-pvp-score_on'] = pvpScoreOn;
         }
         if (pvpScoreOn) {
-            let scoreTxt = 'P1 ' + (this.player.pvpKills || 0) + '  P2 ' + (this.player2.pvpKills || 0);
-            if (PVP_TUNING.MATCH_MODE === 'firstTo') {
-                scoreTxt += ' / ' + PVP_TUNING.MATCH_FIRST_TO;
-            } else if (PVP_TUNING.MATCH_MODE === 'timer' && this.pvpMatchTimeLeft != null) {
-                const _t = Math.max(0, Math.ceil(this.pvpMatchTimeLeft));
-                scoreTxt += '  ' + Math.floor(_t / 60) + ':' + String(_t % 60).padStart(2, '0');
+            const pvpVal = (p) => (PVP_TUNING.MATCH_MODE === 'firstTo')
+                ? (p.pvpKills || 0) + '/' + PVP_TUNING.MATCH_FIRST_TO
+                : String(p.pvpKills || 0);
+            setHtmlCached('ui-pvp-score-p1-val', pvpVal(this.player));
+            setHtmlCached('ui-pvp-score-p2-val', pvpVal(this.player2));
+            // Paint is fixed for the run (applied at player reset) -- cache
+            // the style writes against the resolved color string.
+            const pillCol = (id, p) => {
+                const c = p.bodyColor || p.color;
+                if (this.hudState[id + '_col'] !== c) {
+                    const el = document.getElementById(id);
+                    if (el) { el.style.color = c; el.style.borderColor = c; }
+                    this.hudState[id + '_col'] = c;
+                }
+            };
+            pillCol('ui-pvp-score-p1', this.player);
+            pillCol('ui-pvp-score-p2', this.player2);
+            // Timer mode: seam-centered countdown above the kill feed.
+            const timerOn = PVP_TUNING.MATCH_MODE === 'timer' && this.pvpMatchTimeLeft != null;
+            if (this.hudState['ui-pvp-timer_on'] !== timerOn) {
+                toggleClass('ui-pvp-timer', 'hidden', !timerOn);
+                this.hudState['ui-pvp-timer_on'] = timerOn;
             }
-            setHtmlCached('ui-pvp-score', scoreTxt);
+            if (timerOn) {
+                const _t = Math.max(0, Math.ceil(this.pvpMatchTimeLeft));
+                setHtmlCached('ui-pvp-timer', Math.floor(_t / 60) + ':' + String(_t % 60).padStart(2, '0'));
+            }
         }
         setHtmlCached('ui-cash', this.player.cash);
         // PHASE 0: per-run intel readout + eligibility banner (dirty-cached)
@@ -40029,6 +40244,10 @@ class Game {
     endRun(outcome) {
         if (this.state === 'debrief') return;                 // double-entry guard
         if (!this.runLedger) { this.returnToMainMenu(); return; } // pathological (no run ever started)
+
+        // WI-3: the kill feed + timer are match state -- a match-winning kill
+        // must not leave its entry floating over the debrief screen.
+        this._clearPvpKillFeed();
 
         // PHASE 1 (extraction): any intel still carried (on players or
         // sitting in an unrecovered cache) at a non-evac ending is LOST --
