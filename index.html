@@ -2708,6 +2708,8 @@
                         <button class="neon-btn" onclick="game.devSpawnItem('redbull')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Energy Drink</button>
                         <button class="neon-btn" onclick="game.devSpawnItem('perk_case')" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: var(--neon-blue); color: var(--neon-blue);">Perk Case</button>
                         <button class="neon-btn" onclick="game.devSpawnItem('intel')" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: #00e5ff; color: #00e5ff;">Intel Chip</button>
+                        <button class="neon-btn" onclick="game.devSpawnItem('shield')" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: #cfd8dc; color: #cfd8dc;">Riot Shield</button>
+                        <button class="neon-btn" onclick="game.devSpawnItem('armor')" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: #26a69a; color: #26a69a;">Armor Vest</button>
                     </div>
                 </div>
             </div>
@@ -2871,7 +2873,9 @@ const SVGIcons = {
     m1a: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13h4l2-1h14v2.5H10l-2 1.5H2v-3zM12 11v3M8 12.5h8"/></svg>`,
     dog: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="8" width="12" height="6" rx="1"/><line x1="8" y1="14" x2="6" y2="19"/><line x1="16" y1="14" x2="18" y2="19"/><line x1="10" y1="14" x2="9" y2="19"/><line x1="14" y1="14" x2="15" y2="19"/><circle cx="15" cy="6" r="1.5"/><line x1="13.5" y1="7.5" x2="15" y2="6"/></svg>`,
     hunter_swarm: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="17" cy="14" r="1.5"/></svg>`,
-    camera: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/><circle cx="8" cy="12" r="3"/><line x1="4" y1="8" x2="4" y2="8.01"/></svg>`
+    camera: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/><circle cx="8" cy="12" r="3"/><line x1="4" y1="8" x2="4" y2="8.01"/></svg>`,
+    shield: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 7.6-7 9-4-1.4-7-4.4-7-9V6l7-3z"/></svg>`,
+    armor: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10l2 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7l2-3z"/><path d="M12 8v11"/></svg>`
 };
 
 // ==== JULY item 4: world-space loot icons ==================================
@@ -5780,16 +5784,20 @@ const EnemyTypes = {
     //   class HostileMiniDrone + the special-abilities block in Enemy.update).
     // bombardier: fragile spotter; calls small telegraphed MortarMarker
     //   strikes on its target while it has line of sight.
-    // shield: riot phalanx; bullets from the front arc are mostly blocked
-    //   (see the shieldArcHalf check in the bullet hit chain). Explosions,
-    //   melee, and flanking shots take full effect; AP partially penetrates.
+    // shield: riot phalanx; carries a SHIELD HP POOL (shieldHp, 300) in
+    //   front of its own HP. Bullets from the front arc chew the shield
+    //   instead of the body (see the shieldArcHalf check in the bullet hit
+    //   chain); when it breaks the body is naked. Explosions, melee, and
+    //   flanking shots take full effect and never touch the shield; AP
+    //   partially penetrates. A phalanx killed with shield integrity left
+    //   drops it as a pickup (see Enemy.onDeath).
     // comm: unarmed high-value target; flees, buffs nearby enemies' speed
     //   and fire rate while alive (_commBuffTimer aura).
     // jammer: signal-hardened; player Auto-Turrets and swarm MiniDrones
     //   cannot target-lock it (guns/dog/FPV still work).
     drone_op:   { hp: 55,  speed: 140, color: '#39ff14', type: 'drone_op',   score: 40, size: 12, weapon: 'pistol' },
     bombardier: { hp: 45,  speed: 95,  color: '#b388ff', type: 'bombardier', score: 40, size: 12, weapon: 'melee' },
-    shield:     { hp: 90,  speed: 115, color: '#90a4ae', type: 'shield',     score: 35, size: 14, weapon: 'heavy_pistol', shieldArc: Math.PI / 3 },
+        shield: { hp: 240, speed: 115, color: '#90a4ae', type: 'shield', score: 35, size: 14, weapon: 'heavy_pistol', shieldArc: 40 * Math.PI / 180, shieldHp: 300 },
     comm:       { hp: 60,  speed: 150, color: '#ffffff', type: 'comm',       score: 60, size: 12, weapon: 'melee' },
     jammer:     { hp: 110, speed: 100, color: '#64ffda', type: 'jammer',     score: 45, size: 13, weapon: 'pistol' }
 };
@@ -6052,10 +6060,11 @@ const OPERATIVE_ROLES = {
     pointman: {
         key: 'pointman', name: 'Pointman',
         minWave: 6,
-        hp: 130, speed: 438, size: 9, color: '#5c6b7a', tracerColor: '#00e5ff', score: 150,
+        hp: 280, speed: 438, size: 9, color: '#5c6b7a', tracerColor: '#00e5ff', score: 150,
         type: 'op_pointman',
         weapon: 'smg',
         shieldArc: 25 * Math.PI / 180,  // 25-degree HALF-arc = 50-degree total forward shield (was 60-degree half / 120-degree total); hit test + arc draw both read this, so visual == hitbox
+        shieldHp: 300,  // SHIELD HP POOL: bullets in the front arc chew this before the body; killed with integrity left = drops a pickup
         offset: { fwd: 0, side: 0 },
         boundGroup: 'move',
         leaderPriority: 1,
@@ -12953,6 +12962,15 @@ class Player extends Entity {
         this.activeDrone = null;
         this._droneArmGuard = 0; // post-launch window blocking input-detonate (see handleDroneInput)
         this.respawnInvuln = 0;  // PvP spawn-protection window (see _respawnPvpPlayer)
+        // CARRIED RIOT SHIELD (drop from a shielded unit; see collectItem):
+        // passive always-up plate in front of the player -- front-arc bullets
+        // chew carriedShield before armor/HP (hit chain in Bullet collision).
+        // Arc/color transfer from the drop's source unit. Never bought, only
+        // earned. Lost on death (respawn resets it).
+        this.carriedShield = 0;
+        this.carriedShieldArc = 0;
+        this.carriedShieldColor = '';
+        this._lastShieldHitAt = -999; // hit-flash clock for the carry overlay
         this.semiAutoTriggerReleased = true;
         this.dogsInventory = [];
         this.hunterSwarmCount = 0;
@@ -15210,6 +15228,38 @@ class Player extends Entity {
         ctx.fill();
 
         ctx.restore();
+
+        // CARRIED RIOT SHIELD overlay (see collectItem): passive always-up
+        // plate drawn in AIM space (this.angle, NOT moveFacingAngle) -- the
+        // plate covers where you point, the same angle the bullet hit chain
+        // tests, so visual == hitbox. Color comes from the source unit:
+        // off-white Phalanx plate vs charcoal Pointman buckler w/ cyan edge.
+        // Integrity reads through stepped alpha + stroke weight (the cone
+        // never narrows), plus a white flash right after eating a bullet.
+        if ((this.carriedShield || 0) > 0) {
+            let pct = Math.min(1, this.carriedShield / 300);
+            let stepA = pct > 0.75 ? 1.0 : pct > 0.5 ? 0.85 : pct > 0.25 ? 0.65 : 0.4;
+            let flashed = game && (game.gameTime - (this._lastShieldHitAt || -999)) < 0.12;
+            let col = this.carriedShieldColor || '#cfd8dc';
+            let edge = (col === '#37474f') ? '#00e5ff' : '#eceff1';
+            ctx.save();
+            ctx.translate(scx, scy);
+            ctx.rotate(this.angle);
+            ctx.globalAlpha = stepA;
+            ctx.strokeStyle = flashed ? '#ffffff' : col;
+            ctx.lineWidth = flashed ? 5 : (pct > 0.5 ? 4 : 2.5);
+            ctx.beginPath();
+            ctx.arc(0, 0, this.r + 9, -(this.carriedShieldArc || 40 * Math.PI / 180), (this.carriedShieldArc || 40 * Math.PI / 180));
+            ctx.stroke();
+            if (pct > 0.75) {
+                ctx.strokeStyle = flashed ? '#e0f7fa' : edge;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.r + 6, -(this.carriedShieldArc || 40 * Math.PI / 180) * 0.85, (this.carriedShieldArc || 40 * Math.PI / 180) * 0.85);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
     }
     
     switchWeapon(dir) {
@@ -15370,6 +15420,7 @@ class Enemy extends Entity {
         this._shieldFlash = 0;                         // riot phalanx: brief block-flash visual timer
         this._hitFlash = 0;                            // FELLPASS item 4: generic white hit-flash timer (set at bullet/blast hit sites, decayed in Game's shared enemy update loop -- FELLPASS-CLEANUP A1)
         this.shieldArcHalf = config.shieldArc || 0;    // riot phalanx: half-angle of the protected front arc (0 = no shield)
+        this.shieldHp = config.shieldHp || 0;          // SHIELD HP POOL: front-arc bullets chew this before the body (0 = no shield)
         this._droneCooldown = MathUtils.rand(2.5, 4.5);// drone_op: time until next deploy is ready
         this._activeHostileDrone = null;               // drone_op: at most ONE live drone per operator
         this._mortarCooldown = MathUtils.rand(3.5, 5.5); // bombardier: first strike is delayed post-spawn
@@ -17451,19 +17502,34 @@ class Enemy extends Entity {
         if (this.type === 'shield') {
             // Riot shield: thick layered arc covering the protected front
             // cone (matches shieldArcHalf exactly, so the visual IS the
-            // hitbox), flashing white when it eats a bullet.
-            let arcHalf = this.shieldArcHalf || Math.PI / 3;
-            let blocked = this._shieldFlash > 0;
-            ctx.strokeStyle = blocked ? '#ffffff' : '#cfd8dc';
-            ctx.lineWidth = blocked ? 5 : 4;
-            ctx.beginPath();
-            ctx.arc(0, 0, this.r + 4, -arcHalf, arcHalf);
-            ctx.stroke();
-            ctx.strokeStyle = blocked ? '#e0f7fa' : '#546e7a';
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            ctx.arc(0, 0, this.r + 7, -arcHalf * 0.85, arcHalf * 0.85);
-            ctx.stroke();
+            // hitbox), flashing white when it eats a bullet. The shield is
+            // now a BREAKABLE POOL (shieldHp): the arc disappears entirely
+            // once broken, and erodes as it takes damage -- outer arc peels
+            // at <=75, main stroke thins at <=50, then stepped alpha. The
+            // CONE never narrows (geometry stays true to the hitbox; only
+            // the paint erodes). No shadowBlur (elite-glow lesson).
+            if (this.shieldHp > 0) {
+                let arcHalf = this.shieldArcHalf || 40 * Math.PI / 180;
+                let blocked = this._shieldFlash > 0;
+                let pct = Math.min(1, this.shieldHp / 300);
+                let stepA = pct > 0.75 ? 1.0 : pct > 0.5 ? 0.8 : pct > 0.25 ? 0.6 : 0.35;
+                let baseA = ctx.globalAlpha;
+                ctx.save();
+                ctx.globalAlpha = baseA * stepA;
+                ctx.strokeStyle = blocked ? '#ffffff' : '#cfd8dc';
+                ctx.lineWidth = blocked ? 5 : (pct > 0.5 ? 4 : 2.5);
+                ctx.beginPath();
+                ctx.arc(0, 0, this.r + 4, -arcHalf, arcHalf);
+                ctx.stroke();
+                if (pct > 0.75) {
+                    ctx.strokeStyle = blocked ? '#e0f7fa' : '#546e7a';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.r + 7, -arcHalf * 0.85, arcHalf * 0.85);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
             // Visor slit so the body itself reads "armored".
             ctx.fillStyle = '#263238';
             ctx.fillRect(this.r * 0.2, -this.r * 0.35, this.r * 0.35, this.r * 0.7);
@@ -17718,6 +17784,45 @@ class Enemy extends Entity {
                 game.floatingTexts.push(game.spawnFloatingText(
                     this.x, this.y - 20, 'ELITE DOWN', '#ffcc00', 1.6, (Math.random() - 0.5) * 60, -90, 200, true
                 ));
+            }
+        }
+
+        // SHIELD & VEST DROPS (riot phalanx / pointman operatives): a
+        // shielded unit killed with shield integrity LEFT ALWAYS drops the
+        // shield as a pickup -- integrity rounded UP to the next 25 (floor
+        // 75, cap 300, matching the erosion steps the pickup will render).
+        // The pickup carries the source unit's arc width + color, so a
+        // phalanx drops the wide off-white riot plate and a pointman drops
+        // the narrow dark buckler. Independently, a flat 25% roll drops an
+        // armor vest (both can co-occur). Operator mode suppresses all
+        // in-run item drops, same gate as the elite drops above.
+        if (game && !game.operatorMode && this.shieldArcHalf > 0) {
+            let shieldDropped = false;
+            if (this.shieldHp > 0) {
+                shieldDropped = true;
+                let dropHp = Math.max(75, Math.min(300, Math.ceil(this.shieldHp / 25) * 25));
+                let shX = this.x + (Math.random() - 0.5) * 24;
+                let shY = this.y + (Math.random() - 0.5) * 24;
+                let shIt = game.spawnItem(shX, shY, 'shield');
+                shIt.shieldHp = dropHp;
+                shIt.shieldArcHalf = this.shieldArcHalf;
+                shIt.shieldColor = (this.type === 'shield') ? '#cfd8dc' : '#37474f';
+                game.items.push(shIt);
+                game.floatingTexts.push(game.spawnFloatingText(
+                    shX, shY - 20, 'SHIELD DROPPED!!', '#cfd8dc', 1.6,
+                    (Math.random() - 0.5) * 60, -90, 260, true
+                ));
+                if (audio && audio.playPickup) audio.playPickup('weapon');
+            }
+            if (Math.random() < 0.25) {
+                let aX = this.x + (Math.random() - 0.5) * 30 + (shieldDropped ? 28 : 0);
+                let aY = this.y + (Math.random() - 0.5) * 30;
+                game.items.push(game.spawnItem(aX, aY, 'armor'));
+                game.floatingTexts.push(game.spawnFloatingText(
+                    aX, aY - 20, 'VEST DROPPED', '#26a69a', 1.3,
+                    (Math.random() - 0.5) * 60, -80, 240, true
+                ));
+                if (audio && audio.playPickup) audio.playPickup('weapon');
             }
         }
 
@@ -18004,7 +18109,8 @@ class Operative extends Enemy {
             score: role.score,
             size: role.size,
             weapon: role.weapon,
-            shieldArc: role.shieldArc || 0
+            shieldArc: role.shieldArc || 0,
+            shieldHp: role.shieldHp || 0
         });
         this.init(x, y, roleKey, squad);
     }
@@ -18019,7 +18125,8 @@ class Operative extends Enemy {
             score: role.score,
             size: role.size,
             weapon: role.weapon,
-            shieldArc: role.shieldArc || 0
+            shieldArc: role.shieldArc || 0,
+            shieldHp: role.shieldHp || 0
         });
 
         this.squad = squad || null;
@@ -18450,21 +18557,29 @@ class Operative extends Enemy {
         // blocked. PERF: no shadowBlur here (see the elite-glow bake comment
         // in Enemy.draw) -- per-entity gaussian blur is a known measured
         // cost in this renderer; a second offset stroke reads as a glow for
-        // free.
-        if (this.shieldArcHalf > 0) {
+        // free. BREAKABLE POOL (shieldHp): gone entirely once broken; the
+        // paint erodes as it chips (inner arc peels <=75, stroke thins <=50,
+        // stepped alpha) but the cone never narrows -- geometry stays true
+        // to the hitbox.
+        if (this.shieldArcHalf > 0 && this.shieldHp > 0) {
             ctx.save();
             const halfArc = this.shieldArcHalf;
             const blocked = this._shieldFlash > 0;
+            const pct = Math.min(1, this.shieldHp / 300);
+            const stepA = pct > 0.75 ? 1.0 : pct > 0.5 ? 0.8 : pct > 0.25 ? 0.6 : 0.35;
+            ctx.globalAlpha = this.opacity * stepA;
             ctx.strokeStyle = blocked ? '#ffffff' : '#00e5ff';
-            ctx.lineWidth = blocked ? 5 : 3.5;
+            ctx.lineWidth = blocked ? 5 : (pct > 0.5 ? 3.5 : 2);
             ctx.beginPath();
             ctx.arc(0, 0, this.r + 6, -halfArc, halfArc);
             ctx.stroke();
-            ctx.strokeStyle = blocked ? '#e0f7fa' : 'rgba(255, 255, 255, 0.7)';
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            ctx.arc(0, 0, this.r + 4, -halfArc * 0.85, halfArc * 0.85);
-            ctx.stroke();
+            if (pct > 0.75) {
+                ctx.strokeStyle = blocked ? '#e0f7fa' : 'rgba(255, 255, 255, 0.7)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.r + 4, -halfArc * 0.85, halfArc * 0.85);
+                ctx.stroke();
+            }
             ctx.restore();
         }
 
@@ -20638,14 +20753,55 @@ class Bullet {
                     // so flanking and splash are the intended counters. Same
                     // hit-angle-vs-facing routing the ApcBoss seat logic uses.
                     // AP rounds partially punch through instead of full block.
-                    if (ent.shieldArcHalf && calculatedDmg > 0) {
-                        let inAngle = Math.atan2(this.vy, this.vx); // bullet travel direction
-                        let camF = Math.abs(MathUtils.angleDifference(inAngle + Math.PI, ent.angle)); // damage came from vs facing
-                        if (camF < ent.shieldArcHalf) {
-                            calculatedDmg *= this.isAP ? 0.55 : 0.12;
-                            ent._shieldFlash = 0.15;
-                            for (let c = 0; c < 3; c++) {
-                                game.addParticle(this.x, this.y, MathUtils.rand(-140, 140), MathUtils.rand(-140, 140), '#e0f7fa', 0.18, 1.5);
+                    // SHIELD HP POOLS (riot phalanx / pointman operatives /
+                    // player-carried riot shields). Bullet-only by design --
+                    // explosions, melee, and the dog ignore them, so flanking
+                    // and splash remain the intended counters. Same
+                    // hit-angle-vs-facing routing the ApcBoss seat logic uses.
+                    // Front-arc bullets CHEW THE POOL instead of the body:
+                    // non-AP is fully absorbed until the pool runs dry (the
+                    // overflow of the breaking hit spills to the body); AP
+                    // chips the pool 45% and penetrates the rest. A broken
+                    // shield stops protecting entirely -- the arc art and the
+                    // hit test both key off the pool, so visual == hitbox.
+                    if (calculatedDmg > 0) {
+                        let enemyShieldUp = (ent.shieldArcHalf > 0 && ent.shieldHp > 0);
+                        let playerShieldUp = (ent instanceof Player && (ent.carriedShield || 0) > 0 && (ent.carriedShieldArc || 0) > 0);
+                        if (enemyShieldUp || playerShieldUp) {
+                            let arcHalf = playerShieldUp ? ent.carriedShieldArc : ent.shieldArcHalf;
+                            let inAngle = Math.atan2(this.vy, this.vx); // bullet travel direction
+                            let camF = Math.abs(MathUtils.angleDifference(inAngle + Math.PI, ent.angle)); // damage came from vs facing
+                            if (camF < arcHalf) {
+                                let chip = this.isAP ? calculatedDmg * 0.45 : calculatedDmg;
+                                let pool = playerShieldUp ? ent.carriedShield : ent.shieldHp;
+                                let absorbed = Math.min(pool, chip);
+                                pool -= absorbed;
+                                calculatedDmg -= absorbed;
+                                if (playerShieldUp) {
+                                    ent.carriedShield = pool;
+                                    ent._lastShieldHitAt = game.gameTime;
+                                } else {
+                                    ent.shieldHp = pool;
+                                    ent._shieldFlash = 0.15;
+                                }
+                                for (let c = 0; c < 3; c++) {
+                                    game.addParticle(this.x, this.y, MathUtils.rand(-140, 140), MathUtils.rand(-140, 140), '#e0f7fa', 0.18, 1.5);
+                                }
+                                if (pool <= 0) {
+                                    // SHATTER: crumble burst + crash + honest text.
+                                    let crumbCol = playerShieldUp ? (ent.carriedShieldColor || '#cfd8dc') : '#cfd8dc';
+                                    for (let c = 0; c < 10; c++) {
+                                        let ca = Math.random() * Math.PI * 2;
+                                        let cspd = MathUtils.rand(60, 210);
+                                        game.addParticle(ent.x, ent.y, Math.cos(ca) * cspd, Math.sin(ca) * cspd, crumbCol, 0.5, MathUtils.rand(1.5, 3));
+                                    }
+                                    if (audio && audio.playMiniExplosion) audio.playMiniExplosion(ent.x, ent.y);
+                                    game.floatingTexts.push(game.spawnFloatingText(
+                                        ent.x, ent.y - ent.r - 14,
+                                        playerShieldUp ? 'SHIELD DOWN!' : 'SHIELD BROKEN!',
+                                        '#cfd8dc', 1.2, (Math.random() - 0.5) * 60, -80, 200, true
+                                    ));
+                                }
                             }
                         }
                     }
@@ -24592,6 +24748,18 @@ class Item {
         this.cashValue = 0;
         this.pvpWallAge = 0;
         this.pvpExpires = false;
+        // SHIELD/VEST drops: a broken-able riot shield carried as loot.
+        // shieldHp is baked at drop time (25-point steps) and drives the
+        // icon's erosion alpha; arcHalf/color carry the source unit's style
+        // (Phalanx wide off-white plate vs Pointman narrow dark buckler).
+        // init MUST reset them all -- items are pooled (see spawnItem).
+        // Shield drops expire FAST: gone at the next wave (waveAge >= 1),
+        // with a 45s wall-clock fallback for no-wave maps (extraction/
+        // sandbox/PvP, where game.wave never advances) -- same pattern as
+        // the pvpExpires precedent above.
+        this.shieldHp = 0;
+        this.shieldArcHalf = 0;
+        this.shieldColor = '';
     }
 
     // Waves elapsed since this item dropped. 0 = dropped this wave.
@@ -24600,12 +24768,24 @@ class Item {
         return curWave - this.spawnWave;
     }
 
+    // Shield/vest drop marker (see init) -- used by fadeAlpha/isExpired and
+    // the magnet gate so the branch checks stay one-liners.
+    isShieldDrop() { return this.type === 'shield'; }
+
     // Fade schedule: full visibility the wave it drops, 2/3 the next wave,
     // 1/3 the wave after that, then gone. Sandbox/testing-mode fixtures
     // (see Game.init's isTestingMode weapon rack) are permanent test
     // fixtures, not run loot, so they never fade.
     fadeAlpha() {
         if (this.isSandbox) return 1;
+        // Shield drops read as urgent loot: full opacity until the last
+        // 10 seconds of their 45s wall-clock fallback, then dim while the
+        // next-wave cull (see isExpired) waits in wave modes.
+        if (this.isShieldDrop()) {
+            if (this.waveAge() >= 1) return 0;
+            let tLeft = 45 - this.pvpWallAge;
+            return tLeft < 10 ? 0.4 : 1;
+        }
         let age = this.waveAge();
         if (age <= 0) return 1;
         if (age === 1) return 2 / 3;
@@ -24617,6 +24797,9 @@ class Item {
     // culled from the ground entirely.
     isExpired() {
         if (this.isSandbox) return false;
+        // Shield drops are scarce by design: gone at the NEXT wave, with a
+        // 45s wall-clock fallback so they still vanish on no-wave maps.
+        if (this.isShieldDrop()) return this.waveAge() >= 1 || this.pvpWallAge >= 45;
         // WI-2: PvP drops expire on wall-clock shelf life.
         if (this.pvpExpires && this.pvpWallAge >= PVP_TUNING.PVP_ITEM_EXPIRE) return true;
         return this.waveAge() >= 3;
@@ -24628,7 +24811,7 @@ class Item {
         // so slow-mo / hurt-drag never stretch their shelf life. The dt
         // fallback (first frame, before loop() has stashed _rawDt) still
         // ages them -- just at game speed; it never stops aging.
-        if (this.pvpExpires) {
+        if (this.pvpExpires || this.isShieldDrop()) {
             this.pvpWallAge += (typeof game !== 'undefined' && game && game._rawDt) ? game._rawDt : dt;
         }
         if (activePlayers) {
@@ -24646,6 +24829,14 @@ class Item {
                     canCollect = (p.energyDrinks < 6); // max settled at 6 (stamina drain/regen improved, so fewer backups are needed)
                 } else if (this.type === 'perk_case' || this.type === 'intel' || this.type === 'intel_cache') {
                     canCollect = true;
+                } else if (this.type === 'shield') {
+                    // ONE riot shield per player -- holding one leaves the
+                    // drop on the ground (no refresh/stack). No buy-menu
+                    // source: kills are the only way to earn one.
+                    canCollect = ((p.carriedShield || 0) <= 0);
+                } else if (this.type === 'armor') {
+                    // Vest only if armor isn't already at ceiling.
+                    canCollect = (p.armor < (p.maxArmor || 50));
                 } else {
                     let wKey = this.type;
                     if (p.inventory && p.ammo && p.maxAmmo) {
@@ -24767,6 +24958,36 @@ class Item {
             ctx.beginPath();
             ctx.arc(0, 0, 2, 0, Math.PI * 2);
             ctx.fill();
+        } else if (this.type === 'shield') {
+            // Riot shield drop: filled shield silhouette in the SOURCE
+            // unit's color (off-white Phalanx plate / dark charcoal Pointman
+            // buckler with cyan edge), with shadowBlur glow (loot scale --
+            // the elite-glow perf lesson is about per-frame ENEMY bodies,
+            // not static pickups) and stepped alpha from the baked shieldHp,
+            // so the pickup shows what it's worth at a glance.
+            let pct = Math.min(1, Math.max(this.shieldHp || 75, 1) / 300);
+            let col = this.shieldColor || '#cfd8dc';
+            let edge = (col === '#37474f') ? '#00e5ff' : '#eceff1';
+            let stepA = pct > 0.75 ? 1.0 : pct > 0.5 ? 0.85 : pct > 0.25 ? 0.65 : 0.4;
+            ctx.rotate(this.landAngle);
+            ctx.globalAlpha = fadeAlpha * stepA;
+            ctx.shadowBlur = 12; ctx.shadowColor = edge;
+            ctx.fillStyle = col;
+            ctx.beginPath();
+            ctx.moveTo(0, -11);
+            ctx.lineTo(9, -7);
+            ctx.lineTo(9, 3);
+            ctx.quadraticCurveTo(9, 9, 0, 12);
+            ctx.quadraticCurveTo(-9, 9, -9, 3);
+            ctx.lineTo(-9, -7);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = edge; ctx.lineWidth = 1.6;
+            ctx.stroke();
+        } else if (this.type === 'armor') {
+            // Teal armor vest -- HUD-icon silhouette (SVGIcons.armor), the
+            // same strokeWorldIcon path the rest of the loot uses.
+            strokeWorldIcon(ctx, 'armor', '#26a69a', 1.15);
         } else {
             let col = Weapons[this.type].color;
             // The bottom weapon carousel's silhouette, in that weapon's own
@@ -32987,6 +33208,9 @@ class Game {
         this._clearPaintStroke(p);
         p.isDrilling = false;
         p._insurancePayout = 0;
+        // Shields don't survive the grave: a carried riot plate is lost on
+        // death (drops would otherwise clone the pickup economy on respawn).
+        p.carriedShield = 0;
         // Brief spawn protection so you can't be instantly re-killed.
         p.respawnInvuln = PVP_TUNING.SPAWN_INVULN;
         // FX + callout.
@@ -34186,6 +34410,33 @@ class Game {
             if (this.runLedger) this.intelEarnedThisRun = this.runLedger.intelEarned;
             this.intelPickupJuice(it.x, it.y, awarded);
             audio.playPickup('money');
+        } else if (it.type === 'shield') {
+            // RIOT SHIELD: pick up the broken-able plate. One at a time --
+            // the magnet gate (Item.update) keeps full shields off, but the
+            // direct touch path needs its own guard. The drop's baked
+            // integrity + source style (arc width, color) transfer to the
+            // player as-is; passive always-up, drains from the front arc.
+            if ((p.carriedShield || 0) <= 0) {
+                pickedUp = true;
+                p.carriedShield = Math.max(75, Math.min(300, it.shieldHp || 75));
+                p.carriedShieldArc = it.shieldArcHalf || (40 * Math.PI / 180);
+                p.carriedShieldColor = it.shieldColor || '#cfd8dc';
+                this.floatingTexts.push(this.spawnFloatingText(
+                    p.x, p.y - 15, 'RIOT SHIELD EQUIPPED!', '#cfd8dc', 1.5,
+                    (Math.random() - 0.5) * 60, -80, 240, true));
+                audio.playPickup('weapon');
+            }
+        } else if (it.type === 'armor') {
+            // ARMOR VEST: flat +20, clamped at the player's armor ceiling
+            // (same math as the buy-menu armor).
+            if (p.armor < (p.maxArmor || 50)) {
+                pickedUp = true;
+                p.armor = Math.min(p.maxArmor || 50, p.armor + 20);
+                this.floatingTexts.push(this.spawnFloatingText(
+                    p.x, p.y - 15, '+20 ARMOR', '#26a69a', 1.3,
+                    (Math.random() - 0.5) * 60, -80, 240, true));
+                audio.playPickup('weapon');
+            }
         } else {
             let wKey = it.type;
             let hasWeapon = p.inventory.some(w => w.name.toLowerCase() === wKey);
@@ -35738,7 +35989,15 @@ class Game {
             spawnX = Math.max(60, Math.min(this.mapW - 60, spawnX));
             spawnY = Math.max(60, Math.min(this.mapH - 60, spawnY));
             
-            this.items.push(this.spawnItem(spawnX, spawnY, itemType));
+            let devIt = this.spawnItem(spawnX, spawnY, itemType);
+            // Dev-spawned shields get full-integrity Phalanx defaults (real
+            // drops bake source style in Enemy.onDeath).
+            if (itemType === 'shield') {
+                devIt.shieldHp = 300;
+                devIt.shieldArcHalf = 40 * Math.PI / 180;
+                devIt.shieldColor = '#cfd8dc';
+            }
+            this.items.push(devIt);
             if (audio) audio.playPickup('money');
         }
         this.toggleDevDashboard();
