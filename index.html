@@ -2154,6 +2154,7 @@
                         <button id="btn-buy-swarm-drone-p1" onclick="game.buyItem('swarm_drone', game.player)">1x Swarm Drone ($100)</button>
                         <button id="btn-buy-swarm-pack-p1" onclick="game.buyItem('swarm_pack', game.player)">4x Swarm Pack ($300)</button>
                         <button id="btn-buy-camera-p1" onclick="game.buyItem('camera', game.player)">Security Cam ($350)</button>
+                        <button id="btn-buy-repairgun-p1" onclick="game.buyItem('repairgun', game.player)">Repair Gun ($1250)</button>
                     </div>
                     
                     <div class="shop-section-title">Standard Munitions</div>
@@ -2262,6 +2263,7 @@
                         <button id="btn-buy-swarm-drone-p2" onclick="game.buyItem('swarm_drone', game.player2)">1x Swarm Drone ($100)</button>
                         <button id="btn-buy-swarm-pack-p2" onclick="game.buyItem('swarm_pack', game.player2)">4x Swarm Pack ($300)</button>
                         <button id="btn-buy-camera-p2" onclick="game.buyItem('camera', game.player2)">Security Cam ($350)</button>
+                        <button id="btn-buy-repairgun-p2" onclick="game.buyItem('repairgun', game.player2)">Repair Gun ($1250)</button>
                     </div>
                     
                     <div class="shop-section-title">Standard Munitions</div>
@@ -2871,6 +2873,7 @@ const SVGIcons = {
     barrier: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17V7h18v10H3zM8 7v10M16 7v10"/></svg>`,
     turret: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14v4M5 18h14v2H5v-2z"/><circle cx="12" cy="11" r="5"/><path d="M12 11h8v2h-8z"/></svg>`,
     m1a: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13h4l2-1h14v2.5H10l-2 1.5H2v-3zM12 11v3M8 12.5h8"/></svg>`,
+    repairgun: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h10v4H8l-1 4H5l1-4H3v-4z"/><path d="M13 13h6"/><path d="M19 10.5v5"/><path d="M21.5 12h1"/><path d="M21 8l1.5-1.5"/></svg>`,
     dog: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="8" width="12" height="6" rx="1"/><line x1="8" y1="14" x2="6" y2="19"/><line x1="16" y1="14" x2="18" y2="19"/><line x1="10" y1="14" x2="9" y2="19"/><line x1="14" y1="14" x2="15" y2="19"/><circle cx="15" cy="6" r="1.5"/><line x1="13.5" y1="7.5" x2="15" y2="6"/></svg>`,
     hunter_swarm: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="17" cy="14" r="1.5"/></svg>`,
     camera: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/><circle cx="8" cy="12" r="3"/><line x1="4" y1="8" x2="4" y2="8.01"/></svg>`,
@@ -3430,6 +3433,8 @@ function renderHUDSelectors(player, suffix) {
         displayAmmoText = `PISTOL: &infin; ${player.pistolHP ? '(HP)' : ''}`;
     } else {
         let curAmmo = player.ammo[wKey];
+        // REPAIR GUN battery drains/regens in fractions -- show whole units.
+        if (wKey === 'repairgun') curAmmo = Math.ceil(curAmmo);
         let maxAmmo = player.maxAmmo[wKey];
         ammoPct = Math.max(0, Math.min(1, curAmmo / maxAmmo));
         if (ammoPct < 0.2) {
@@ -4317,6 +4322,88 @@ class AudioEngine {
                 osc.connect(gain);
                 gain.connect(offlineCtx.destination);
                 osc.start(0);
+            }));
+
+            // REPAIR GUN weld buzz: gritty low sawtooth buzz with a fast
+            // amplitude flutter -- short enough to loop by re-triggering
+            // every 0.25s while the arc is on a target (Player._weldTick).
+            promises.push(this.bakeSound('repair_weld', 0.22, (offlineCtx) => {
+                const osc = offlineCtx.createOscillator();
+                const osc2 = offlineCtx.createOscillator();
+                const gain = offlineCtx.createGain();
+                const flutter = offlineCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(110, 0);
+                osc2.type = 'square';
+                osc2.frequency.setValueAtTime(62, 0);
+                flutter.gain.setValueAtTime(0.5, 0);
+                flutter.gain.setValueAtTime(0.9, 0.03);
+                flutter.gain.setValueAtTime(0.4, 0.07);
+                flutter.gain.setValueAtTime(0.9, 0.11);
+                flutter.gain.setValueAtTime(0.45, 0.15);
+                gain.gain.setValueAtTime(0.25, 0);
+                gain.gain.exponentialRampToValueAtTime(0.001, 0.22);
+                osc.connect(flutter);
+                osc2.connect(flutter);
+                flutter.connect(gain);
+                gain.connect(offlineCtx.destination);
+                osc.start(0);
+                osc2.start(0);
+            }));
+
+            // SPRINT-MELEE swing whoosh: band-passed noise sweeping UP in
+            // pitch across the shove (the "ffwuck" of air displaced close
+            // to the mic), under a short low thump for body weight.
+            promises.push(this.bakeSound('melee_swish', 0.3, (offlineCtx) => {
+                const len = Math.floor(offlineCtx.sampleRate * 0.3);
+                const buf = offlineCtx.createBuffer(1, len, offlineCtx.sampleRate);
+                const data = buf.getChannelData(0);
+                for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+                const src = offlineCtx.createBufferSource();
+                src.buffer = buf;
+                const bp = offlineCtx.createBiquadFilter();
+                bp.type = 'bandpass';
+                bp.Q.value = 1.2;
+                bp.frequency.setValueAtTime(320, 0);
+                bp.frequency.exponentialRampToValueAtTime(1500, 0.18);
+                bp.frequency.exponentialRampToValueAtTime(400, 0.3);
+                const nGain = offlineCtx.createGain();
+                nGain.gain.setValueAtTime(0.0001, 0);
+                nGain.gain.exponentialRampToValueAtTime(0.5, 0.06);
+                nGain.gain.exponentialRampToValueAtTime(0.001, 0.3);
+                const thump = offlineCtx.createOscillator();
+                thump.type = 'sine';
+                thump.frequency.setValueAtTime(120, 0);
+                thump.frequency.exponentialRampToValueAtTime(45, 0.16);
+                const tGain = offlineCtx.createGain();
+                tGain.gain.setValueAtTime(0.35, 0);
+                tGain.gain.exponentialRampToValueAtTime(0.001, 0.18);
+                src.connect(bp); bp.connect(nGain); nGain.connect(offlineCtx.destination);
+                thump.connect(tGain); tGain.connect(offlineCtx.destination);
+                src.start(0);
+                thump.start(0); thump.stop(0.3);
+            }));
+
+            // 12b. Repair-gun empty swing: a soft high fizzle -- the arc
+            // sparking at nothing. Quiet, short, non-alarming.
+            promises.push(this.bakeSound('repair_fizzle', 0.12, (offlineCtx) => {
+                const len = Math.floor(offlineCtx.sampleRate * 0.12);
+                const buf = offlineCtx.createBuffer(1, len, offlineCtx.sampleRate);
+                const data = buf.getChannelData(0);
+                for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+                const src = offlineCtx.createBufferSource();
+                src.buffer = buf;
+                const bp = offlineCtx.createBiquadFilter();
+                bp.type = 'bandpass';
+                bp.Q.value = 2.0;
+                bp.frequency.setValueAtTime(2400, 0);
+                bp.frequency.exponentialRampToValueAtTime(3600, 0.09);
+                const nGain = offlineCtx.createGain();
+                nGain.gain.setValueAtTime(0.0001, 0);
+                nGain.gain.exponentialRampToValueAtTime(0.18, 0.02);
+                nGain.gain.exponentialRampToValueAtTime(0.001, 0.11);
+                src.connect(bp); bp.connect(nGain); nGain.connect(offlineCtx.destination);
+                src.start(0);
             }));
 
             // 13. Grenade throw foley (metallic chink pin-pull)
@@ -5766,8 +5853,23 @@ const Weapons = {
     smg:     { name: 'SMG', dmg: 11, fireRate: 0.07, speed: 2400, drag: 0.12, spread: 0.08, mag: 0, weight: 8, color: '#39ff14', type: 'auto', maxZoom: 0.20, gamepadAimDist: 200, openBoltDelay: 0.05 },
     lmg:     { name: 'LMG', dmg: 22, fireRate: 0.11, speed: 3200, drag: 0.05, spread: 0.05, mag: 0, weight: 24, color: '#ffea00', type: 'auto', maxZoom: 0.25, gamepadAimDist: 240, openBoltDelay: 0.14 },
     sniper:  { name: 'Sniper', dmg: 120, fireRate: 1.8, speed: 5200, drag: 0.02, spread: 0.002, mag: 0, weight: 20, color: '#d500f9', type: 'bolt', maxZoom: 0.45, gamepadAimDist: 380, openBoltDelay: 0 },
-    m1a:     { name: 'M1A', dmg: 48, fireRate: 0.15, speed: 4400, drag: 0.03, spread: 0.004, mag: 0, weight: 14, color: '#ffb700', type: 'semi', maxZoom: 0.35, gamepadAimDist: 300, openBoltDelay: 0 }
-};
+     m1a:     { name: 'M1A', dmg: 48, fireRate: 0.15, speed: 4400, drag: 0.03, spread: 0.004, mag: 0, weight: 14, color: '#ffb700', type: 'semi', maxZoom: 0.35, gamepadAimDist: 300, openBoltDelay: 0 },
+     // REPAIR GUN: shop support tool ($1250, armory-gated). Trigger welds the
+     // nearest damaged friendly deployable instead of firing (see Player.
+     // _weldTick -- no bullet path exists for this key). 'ammo' is the battery
+     // pool; it drains while welding and trickles back while holstered/idle.
+     // Deliberately absent from WEAPON_ITEM_FORMS/kill drops -- you buy it or
+     // you don't have it this run.
+     repairgun: { name: 'RepairGun', dmg: 0, fireRate: 0.2, speed: 0, drag: 0, spread: 0, mag: 0, weight: 10, color: '#7fdcff', type: 'auto', maxZoom: 0, gamepadAimDist: 120, openBoltDelay: 0 }
+ };
+
+ // REPAIR GUN welding tuning (battery doubles as the ammo pool).
+ const REPAIR_TUNING = {
+     drainPerSec: 25,   // battery while the arc is on a target
+     regenPerSec: 20,   // trickle recharge while NOT welding (scales 2.5x with the 250 battery so a full refill still takes 12.5s)
+     hpPerSec: 40,      // deployable HP restored per second
+     reach: 70,         // px from the player to a valid weld target
+ };
 
 /**
  * ENEMY PROFILES
@@ -5950,9 +6052,13 @@ const TACTICAL_TUNING = {
     LIVE_CAP_BASE: 9,            // max simultaneous enemies at wave 1...
     LIVE_CAP_PER_WAVE: 0.5,      // ...growing +1 every 2 waves...
     LIVE_CAP_MAX: 16,            // ...to a hard ceiling (handoff spec: 12-16)
-    SWARM_CAP_MULT: 1.75,        // Swarm mutator keeps its flood identity (1-hp swarmers)
+    SWARM_CAP_MULT: 2.25,        // Swarm mutator keeps its flood identity (1-hp swarmers); 2.25x lets the tight 0.5-2s cadence actually field a wall
     SQUAD_GAP_MIN: 4.0,          // seconds between squad releases
     SQUAD_GAP_MAX: 8.0,
+    // Swarm mutator: relentless cadence, branch-only (never edit the shared
+    // band above -- it drives every other mode's squad rhythm).
+    SWARM_SQUAD_GAP_MIN: 0.5,
+    SWARM_SQUAD_GAP_MAX: 2.0,
     SQUAD_MEMBER_INTERVAL: 0.35, // spacing between members of one squad
     SQUAD_JITTER: 110,           // px spread of members around the squad anchor
     CONTACT_PING: true,          // announce each squad's approach bearing
@@ -12640,6 +12746,27 @@ const DIVE_CONFIG = {
     STAMINA_COST: 12           // flat stamina cost per dive
 };
 
+// ==== SPRINT-MELEE (PLAN_support_features_2026-08 task 5) =================
+// Close-quarters shove: double-tap the SPRINT input (Shift on keyboard P1 /
+// LT btn6 on gamepad) and the gun lunges forward into a forward arc.
+// Deliberately NOT bound to L3 (btn10) -- L3 already drives the left
+// selector (item use / GL charge hold), so tapping it for melee would make
+// item-mashing swing the gun. PvE-only: swings hit game.enemies (all
+// archetypes incl. bosses); player-owned drones/barriers are never targets.
+// Touch has no sprint button, so touch melee is a documented non-goal.
+const MELEE_TUNING = {
+    DMG: 65,               // one swing -- one-shots 1-hp swarmers, ~2 hits a scaled grunt
+    KNOCKBACK: 200,        // pushForce passed to takeDamage (same lever as enemy melee)
+    STAMINA_COST: 25,      // pricier than a dive -- melee is a commitment, not a step
+    COOLDOWN: 1.0,         // seconds between swings
+    REACH: 60,             // base px from player center the arc covers (+ weapon barrelLen)
+    ARC: 1.1,              // radians each side of aim (~63 deg per side, ~126 deg cone)
+    SWING_DURATION: 0.22,  // seconds the shove animation runs
+    SHOVE_PX: 18,          // how far the gun group lunges forward at the swing peak
+    NOISE: 1.5,            // registerNoise magnitude (reads as a loud close clash)
+    TAP_WINDOW: 0.28       // double-tap window for the sprint input (dive's feel)
+};
+
 // Top-down characters are a torso circle (r=12) drawn ON TOP of the gun/arm
 // group, which used to swallow the first ~12px of the arms and receiver. We
 // push the whole arm+gun assembly forward along the aim axis by this many
@@ -12671,7 +12798,9 @@ const PLAYER_GUN_GEOM = {
     Shotgun: { barrelLen: 27, barrelH: 5, recX: 7, recLen: 12, recH: 7, stock: 0, grip: 6, fore: 21 },
     M1A:     { barrelLen: 31, barrelH: 3, recX: 6, recLen: 9,  recH: 6, stock: 5, grip: 6, fore: 22, foreY: 7 },
     Sniper:  { barrelLen: 30, barrelH: 4, recX: 7, recLen: 13, recH: 6, stock: 4, grip: 6, fore: 24 },
-    LMG:     { barrelLen: 23, barrelH: 5, recX: 5, recLen: 14, recH: 8, stock: 3, grip: 6, fore: 17, mag: { x: 4, w: 9, h: 8 } }
+    LMG:     { barrelLen: 23, barrelH: 5, recX: 5, recLen: 14, recH: 8, stock: 3, grip: 6, fore: 17, mag: { x: 4, w: 9, h: 8 } },
+    // Repair Gun: short stubby tool, fat barrel (the weld nozzle), no stock.
+    RepairGun: { barrelLen: 13, barrelH: 6, recX: 5, recLen: 10, recH: 7, stock: 0, grip: 5, fore: 12 }
 };
 
 // --- MATTER MANIPULATOR tuning (context-sensitive F: mine <-> build) ---
@@ -12940,14 +13069,16 @@ class Player extends Entity {
             smg: 0,
             lmg: 0,
             sniper: 0,
-            m1a: 0
+            m1a: 0,
+            repairgun: 0
         };
         this.maxAmmo = {
             shotgun: 48,
             smg: 360,
             lmg: 300,
             sniper: 15,
-            m1a: 60
+            m1a: 60,
+            repairgun: 250
         };
         this.ammoTypes = {
             shotgun: 'buck',   // PHASE 3: 'buck' | 'slug' (mutually exclusive)
@@ -12997,6 +13128,14 @@ class Player extends Entity {
         this._diveStickPrevMag = 0;          // last frame's stick magnitude, used to detect the rising edge into a flick
         this._diveStickReadyForFlick = true; // only true once the stick has returned near center since the last flick
         this._diveStickLastFlickTime = -999; // timestamp of the last qualifying flick, compared against DOUBLE_TAP_WINDOW
+
+        // --- Sprint-Melee state (see MELEE_TUNING + checkMeleeTrigger/_doMeleeSwing) ---
+        this.meleeCooldownTimer = 0;
+        this._meleeSwingTimer = 0;      // drives the gun-shove animation in draw()
+        this._meleeKeyPrev = false;     // rising-edge state for the Shift double-tap
+        this._meleeKeyTapTime = -999;   // timestamp of the last Shift tap
+        this._meleePadPrev = false;     // rising-edge state for the LT (btn6) double-tap
+        this._meleePadTapTime = -999;   // timestamp of the last LT tap
 
         // --- Focus state (see AIM_WEIGHT.FOCUS_* + updateAimWeight() tail) ---
         this.focusLevel = 0;
@@ -13339,6 +13478,9 @@ class Player extends Entity {
             this.checkDiveTrigger(dt, input, gpRawMag, moveX, moveY, gameTime);
         }
 
+        // --- Sprint-Melee trigger (double-tap the sprint input; MELEE_TUNING) ---
+        this.checkMeleeTrigger(dt, input, gp, gameTime);
+
         // --- Sprint Verification ---
         let isSprinting = false;
         if (gp) {
@@ -13414,7 +13556,21 @@ class Player extends Entity {
             if (this.emptyClickCooldown < 0) this.emptyClickCooldown = 0;
         }
 
-        if (isFiring) {
+        // REPAIR GUN battery: trickle-charge whenever the previous frame did
+        // not have an arc on a target (welding pays drain first -- see
+        // REPAIR_TUNING next to the Weapons registry).
+        if (this.ammo.repairgun !== undefined && this.ammo.repairgun < this.maxAmmo.repairgun && !this._weldActive) {
+            this.ammo.repairgun = Math.min(this.maxAmmo.repairgun, this.ammo.repairgun + REPAIR_TUNING.regenPerSec * dt);
+        }
+        // Cleared every frame; _weldTick re-arms it whenever it welds.
+        this._weldActive = false;
+
+        // REPAIR GUN: the trigger welds instead of shooting -- handled on a
+        // side path entirely outside the bullet pipeline (see _weldTick).
+        if (isFiring && this.weapon.name === 'RepairGun') {
+            this._weldTick(game, dt);
+        }
+        if (isFiring && this.weapon.name !== 'RepairGun') {
             let weaponKey = this.weapon.name.toLowerCase();
             let hasAmmo = weaponKey === 'pistol' || this.ammo[weaponKey] > 0;
             let canFireSemi = !isSemi || this.semiAutoTriggerReleased;
@@ -13808,6 +13964,8 @@ class Player extends Entity {
     // single false `if` check and an immediate return, i.e. effectively free.
     updateDivePhysics(dt) {
         if (this.diveCooldownTimer > 0) this.diveCooldownTimer -= dt;
+        if (this.meleeCooldownTimer > 0) this.meleeCooldownTimer -= dt;
+        if (this._meleeSwingTimer > 0) this._meleeSwingTimer -= dt;
         if (!this.isDiving && this.z <= 0) return;
         this.vz -= DIVE_CONFIG.DIVE_GRAVITY * dt;
         this.z += this.vz * dt;
@@ -13824,6 +13982,93 @@ class Player extends Entity {
     // Detects a dive trigger from whichever input method is active this
     // frame and, if one fires, hands off to startDive(). See DIVE_CONFIG
     // for all tunable thresholds.
+
+    // ==== SPRINT-MELEE (PLAN_support_features_2026-08 task 5) ====
+    // Double-tap the SPRINT input (Shift KB / LT btn6 pad) to shove the gun
+    // into a forward arc. Mirrors checkDiveTrigger's rising-edge
+    // double-tap bookkeeping one-for-one (prev-state + last-tap timestamp),
+    // and shares the sprint input by design: the same muscle memory that
+    // surges you forward also swings when you double-pulse it at close
+    // range. Deliberately NOT L3 (btn10) -- that button drives the left
+    // selector, so melee there would fire while item-mashing.
+    checkMeleeTrigger(dt, input, gp, gameTime) {
+        if (this.dead) return;
+        if (this.activeDrone && this.activeDrone.isPiloted && !this.activeDrone.dead) return;
+        if (this.meleeCooldownTimer > 0 || this.isDiving || this.stamina < MELEE_TUNING.STAMINA_COST) return;
+
+        let triggered = false;
+
+        // Keyboard: double-tap Shift (P1's sprint key). Touch movement
+        // writes into the same input.keys booleans, but touch has no
+        // sprint key, so there is nothing extra to cover here.
+        const kDown = !!(input && input.keys && input.keys['shift']);
+        if (kDown && !this._meleeKeyPrev) {
+            if (gameTime - this._meleeKeyTapTime < MELEE_TUNING.TAP_WINDOW) {
+                triggered = true;
+                this._meleeKeyTapTime = -999; // consume; a 3rd tap can't re-trigger
+            } else {
+                this._meleeKeyTapTime = gameTime;
+            }
+        }
+        this._meleeKeyPrev = kDown;
+
+        // Gamepad: double-tap LT (btn6) -- the sprint button's rising edge.
+        // Same consume-on-trigger semantics as the dive stick flicks.
+        if (!triggered && gp) {
+            const pDown = !!(gp.buttons[6] && gp.buttons[6].pressed);
+            if (pDown && !this._meleePadPrev) {
+                if (gameTime - this._meleePadTapTime < MELEE_TUNING.TAP_WINDOW) {
+                    triggered = true;
+                    this._meleePadTapTime = -999;
+                } else {
+                    this._meleePadTapTime = gameTime;
+                }
+            }
+            this._meleePadPrev = pDown;
+        }
+
+        if (triggered) this._doMeleeSwing();
+    }
+
+    // The swing itself: pay stamina, arm the cooldown, start the shove
+    // animation, log noise, and resolve the forward-arc hit test in ONE
+    // pass (instant resolve -- no multi-frame active window, which keeps
+    // the code path a flat loop instead of a state machine).
+    _doMeleeSwing() {
+        const game = (typeof window !== 'undefined' && window.game) ? window.game : null;
+        this.stamina = Math.max(0, this.stamina - MELEE_TUNING.STAMINA_COST);
+        this.meleeCooldownTimer = MELEE_TUNING.COOLDOWN;
+        this._meleeSwingTimer = MELEE_TUNING.SWING_DURATION;
+
+        // Loud close-quarters clash -- feeds the extraction Heat director
+        // exactly like gunfire does (same registerNoise lever, same mag).
+        if (game && game.registerNoise) game.registerNoise(this.x, this.y, MELEE_TUNING.NOISE);
+        if (typeof audio !== 'undefined' && audio && audio.playBakedSound) audio.playBakedSound('melee_swish', audio.sfxGain, 0.6);
+
+        // Forward arc: anything within REACH whose direction from us is
+        // within ARC radians of our aim takes the shove. takeDamage(amt,
+        // angle-attacker->victim, pushForce) is the exact convention the
+        // enemy melee pass uses, so knockback/credit/scoring all behave.
+        if (!game || !game.enemies) return;
+        const cosA = Math.cos(this.angle), sinA = Math.sin(this.angle);
+        const arcCos = Math.cos(MELEE_TUNING.ARC);
+        // Long guns shove further: base reach + the held weapon's barrel length
+        // (pistol ~+11, LMG ~+23, sniper ~+30), so the arc meets the muzzle.
+        const MG = PLAYER_GUN_GEOM[this.weapon.name] || PLAYER_GUN_GEOM.SMG;
+        const reach = MELEE_TUNING.REACH + MG.barrelLen;
+        const reach2 = reach * reach;
+        for (let i = 0; i < game.enemies.length; i++) {
+            const e = game.enemies[i];
+            if (!e || e.dead || typeof e.takeDamage !== 'function') continue;
+            const dx = e.x - this.x, dy = e.y - this.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 > reach2) continue;
+            const d = Math.sqrt(d2) || 1;
+            if ((dx / d) * cosA + (dy / d) * sinA < arcCos) continue; // behind the cone
+            e.takeDamage(MELEE_TUNING.DMG, Math.atan2(dy, dx), MELEE_TUNING.KNOCKBACK);
+        }
+    }
+
     checkDiveTrigger(dt, input, gpRawMag, moveX, moveY, gameTime) {
         if (this.diveCooldownTimer > 0 || this.isDiving || this.stamina < DIVE_CONFIG.STAMINA_COST) return;
 
@@ -14657,6 +14902,81 @@ class Player extends Entity {
         }
     }
     
+    // REPAIR GUN weld tick (Player.update fire-block side path; never enters
+    // fire()). Holds an arc on the nearest damaged FRIENDLY deployable inside
+    // REPAIR_TUNING.reach: battery drains, target HP climbs. Friendly sets
+    // exclude hostile hardware -- mine-launched MiniDrones carry
+    // owner===game.player as a targeting-side fallback (see TripMine.
+    // launchDrone), so fromMine alone marks the bogies. Barriers predate
+    // ownership tracking, so an unowned barrier is treated as player tech
+    // (only players place barriers; enemy mines live in game.mines).
+    _weldTick(game, dt) {
+        this._weldActive = true;
+        if (this.ammo.repairgun <= 0) {
+            if (this.emptyClickCooldown <= 0) {
+                audio.playBakedSound('empty_click', audio.sfxGain, 0.6);
+                let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'BATTERY DEAD', '#ff2a5f', 1.0);
+                if (ft) game.floatingTexts.push(ft);
+                this.emptyClickCooldown = 0.4;
+            }
+            return;
+        }
+        const reach2 = REPAIR_TUNING.reach * REPAIR_TUNING.reach;
+        let target = null, bestD2 = reach2;
+        const ally = this.isPlayer2 ? game.player : game.player2;
+        // Barriers are SEGMENTS (ax/ay-bx/by, no x/y) -- measure to the
+        // midpoint or their distance is NaN and they can never be targeted.
+        const centerOf = (ent) => (ent.ax !== undefined)
+            ? { x: (ent.ax + ent.bx) / 2, y: (ent.ay + ent.by) / 2 }
+            : { x: ent.x, y: ent.y };
+        const consider = (ent) => {
+            if (!ent || ent.dead || !(ent.hp < ent.maxHp)) return;
+            const c = centerOf(ent);
+            const dx = c.x - this.x, dy = c.y - this.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < bestD2) { bestD2 = d2; target = ent; }
+        };
+        const isMine = (o) => o === this || (ally && o === ally);
+        for (const t of game.turrets) { if (isMine(t.owner)) consider(t); }
+        for (const d of game.dogs) { if (isMine(d.owner)) consider(d); }
+        for (const c of game.securityCameras) { if (isMine(c.owner)) consider(c); }
+        for (const md of game.miniDrones) { if (!md.fromMine && isMine(md.owner)) consider(md); }
+        for (const b of game.barriers) { if (!b.owner || isMine(b.owner)) consider(b); }
+        if (!target) {
+            // Empty swing: never click into silence. Throttled soft fizzle +
+            // a couple of blue sparks at the nozzle so the trigger always
+            // answers (dead battery already buzzes "BATTERY DEAD" above).
+            this._weldFizzTimer = (this._weldFizzTimer || 0) + dt;
+            if (this._weldFizzTimer >= 0.35) {
+                this._weldFizzTimer = 0;
+                if (typeof audio !== 'undefined' && audio && audio.playBakedSound) audio.playBakedSound('repair_fizzle', audio.sfxGain, 0.35);
+                const na = this.angle;
+                game.addParticle(this.x + Math.cos(na) * 18, this.y + Math.sin(na) * 18,
+                    Math.cos(na) * 40 + (Math.random() - 0.5) * 30, Math.sin(na) * 40 - 20, '#7fdcff', 0.15, 1.5);
+            }
+            return;
+        }
+        const tc = centerOf(target);
+        this.ammo.repairgun = Math.max(0, this.ammo.repairgun - REPAIR_TUNING.drainPerSec * dt);
+        target.hp = Math.min(target.maxHp, target.hp + REPAIR_TUNING.hpPerSec * dt);
+        // Sparks at the work point + a repeating weld buzz sell the arc.
+        if (Math.random() < 0.4) {
+            game.addParticle(tc.x + (Math.random() - 0.5) * 18,
+                tc.y + (Math.random() - 0.5) * 18,
+                (Math.random() - 0.5) * 120, -Math.random() * 90, '#7fdcff', 0.3, 2);
+        }
+        this._weldSfxTimer = (this._weldSfxTimer || 0) + dt;
+        if (this._weldSfxTimer >= 0.25) {
+            this._weldSfxTimer = 0;
+            audio.playBakedSound('repair_weld', audio.sfxGain, 0.5);
+        }
+        if (target.hp >= target.maxHp) {
+            let ft = game.spawnFloatingText(tc.x, tc.y - 15, 'REPAIRED!', '#39ff14', 1.2);
+            if (ft) game.floatingTexts.push(ft);
+            audio.playPickup('weapon');
+        }
+    }
+
     fire(game) {
         let weaponKey = this.weapon.name.toLowerCase();
         let isAP = false;
@@ -14857,7 +15177,7 @@ class Player extends Entity {
         // is semi-auto and semiAutoTriggerReleased is NOT re-armed here, so
         // a held trigger stays dead until a fresh pull -- deliberate, so an
         // auto-weapon mag-dump doesn't bleed straight into pistol fire.
-        if (weaponKey !== 'pistol' && this.ammo[weaponKey] <= 0) {
+        if (weaponKey !== 'pistol' && weaponKey !== 'repairgun' && this.ammo[weaponKey] <= 0) {
             let pistolIdx = this.inventory.findIndex(w => w.name === 'Pistol');
             if (pistolIdx !== -1 && pistolIdx !== this.weaponIdx) {
                 this.weaponIdx = pistolIdx;
@@ -15045,6 +15365,16 @@ class Player extends Entity {
         // JULY item 6: the whole arm/gun group compresses toward the chest
         // by gunRetractPx while the muzzle would otherwise clip a wall, plus
         // gunRecoilKickPx when the weapon fires for mechanical slide kick.
+        // SPRINT-MELEE shove: while the swing timer runs, the GUN+HANDS lunge
+        // forward along the aim axis and ease back (sine pulse -- out and
+        // back in SWING_DURATION, peak SHOVE_PX). The arm SHOULDERS stay
+        // anchored to the body; the elbows bend out and the hands ride the
+        // gun (see the arm + gun blocks below) so nothing detaches.
+        let _meleeShovePx = 0;
+        if (this._meleeSwingTimer > 0) {
+            const _mt = 1 - this._meleeSwingTimer / MELEE_TUNING.SWING_DURATION;
+            _meleeShovePx = Math.sin(Math.PI * Math.min(1, Math.max(0, _mt))) * MELEE_TUNING.SHOVE_PX;
+        }
         ctx.translate(GUN_MOUNT_OFFSET - ((this.gunRetractPx || 0) + (this.gunRecoilKickPx || 0)), 0);
 
         // Per-weapon silhouette + grip (see PLAYER_GUN_GEOM). Gun centered on
@@ -15061,16 +15391,34 @@ class Player extends Entity {
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
+        const _sh = _meleeShovePx; // melee shove offset (0 unless mid-swing)
+        // RIGHT (trigger) arm: shoulder stays anchored. Instead of the elbow
+        // drifting out with the hand (locked-look), it TUCKS -- it rides an
+        // arc centered on the shoulder at its rest upper-arm length, swinging
+        // IN toward the body's centerline as the forearm extends to the grip.
+        // At rest (_sh=0) the math collapses to the original (grip-3, 14)
+        // point, so the idle stance is unchanged.
+        {
+            const _sx = -2, _sy = 9;
+            const _uel = Math.hypot((G.grip - 3) - _sx, 14 - _sy);        // upper-arm length (const)
+            const _ua = Math.atan2(14 - _sy, (G.grip - 3) - _sx)
+                     - (_sh / MELEE_TUNING.SHOVE_PX) * 0.55;              // tuck ~31 deg at full shove
+            ctx.beginPath();
+            ctx.moveTo(_sx, _sy);
+            ctx.lineTo(_sx + Math.cos(_ua) * _uel, _sy + Math.sin(_ua) * _uel);
+            ctx.lineTo(G.grip + _sh, 7);        // trigger hand rides the grip forward
+            ctx.stroke();
+        }
         ctx.beginPath();
-        ctx.moveTo(-2, 9);
-        ctx.lineTo(G.grip - 3, 14);   // elbow kicked further out/down so the bend reads
-        ctx.lineTo(G.grip, 7);        // trigger hand at the grip
-        ctx.stroke();
-        ctx.beginPath();
-        if (G.fore !== null) { ctx.moveTo(0, -6); ctx.lineTo(G.fore, foreY - 3); }
-        else { ctx.moveTo(0, -4); ctx.lineTo(G.grip + 2, 5); }
+        if (G.fore !== null) { ctx.moveTo(0, -6); ctx.lineTo(G.fore + _sh, foreY - 3); }
+        else { ctx.moveTo(0, -4); ctx.lineTo(G.grip + 2 + _sh, 5); }
         ctx.stroke();
 
+        // Gun + hands: the ONLY parts that lunge on the melee shove -- the
+        // arms above already reach to their shoved positions, so the
+        // shoulders stay welded to the body (no field amputations).
+        ctx.save();
+        ctx.translate(_sh, 0);
         // LMG drum/ammo drawn UNDER the gun (before the barrel so the gun
         // sits on top and it peeks out the bottom). Drab tone in the LMG's
         // own colorway.
@@ -15106,6 +15454,7 @@ class Player extends Entity {
         else ctx.arc(G.grip + 3, 7, 2.7, -0.3, 2.6);
         ctx.stroke();
 
+        ctx.restore(); // gun + hands shove
         ctx.restore();
 
         // Torso/head circle -- back in the body group's rotation (the
@@ -15417,6 +15766,7 @@ class Enemy extends Entity {
         // NEW ENEMY TYPES: ALL pool-reset per the Phase 1 gotcha about
         // fields leaking across Enemy pool reuse.
         this._commBuffTimer = 0;                       // comm aura: brief speed/fire-rate surge on nearby enemies
+        this._jamTimer = 0;                            // jammer field: dark to smart targeting while > 0
         this._shieldFlash = 0;                         // riot phalanx: brief block-flash visual timer
         this._hitFlash = 0;                            // FELLPASS item 4: generic white hit-flash timer (set at bullet/blast hit sites, decayed in Game's shared enemy update loop -- FELLPASS-CLEANUP A1)
         this.shieldArcHalf = config.shieldArc || 0;    // riot phalanx: half-angle of the protected front arc (0 = no shield)
@@ -15610,6 +15960,7 @@ class Enemy extends Entity {
         if (this.enragedTimer > 0) { this.enragedTimer -= dt; if (this.enragedTimer < 0) this.enragedTimer = 0; }
         // NEW ENEMY TYPES: comm-aura + shield-flash timer decay
         if (this._commBuffTimer > 0) { this._commBuffTimer -= dt; if (this._commBuffTimer < 0) this._commBuffTimer = 0; }
+        if (this._jamTimer > 0) { this._jamTimer -= dt; if (this._jamTimer < 0) this._jamTimer = 0; }
         if (this._shieldFlash > 0) { this._shieldFlash -= dt; if (this._shieldFlash < 0) this._shieldFlash = 0; }
         // _hitFlash decay moved to Game's shared enemy update loop (FELLPASS-CLEANUP A1):
         // no Boss subclass calls super.update, so a decay here latched bosses' flash forever.
@@ -16124,7 +16475,23 @@ class Enemy extends Entity {
                     const ce = allEnemies[i];
                     if (ce === this || ce.dead || ce instanceof Boss || ce.type === 'comm') continue;
                     const cdx = ce.x - this.x, cdy = ce.y - this.y;
-                    if (cdx * cdx + cdy * cdy < 490000) ce._commBuffTimer = 1.4; // 700px radius
+                    if (cdx * cdx + cdy * cdy < 810000) ce._commBuffTimer = 1.4; // 900px radius (was 700)
+                }
+            }
+
+            // NEW ENEMY TYPES: jammer field. Everything inside 500px -- the
+            // jammer itself AND its squadmates -- goes dark to ALL smart
+            // targeting (turrets, swarm drones, tripmines, camera, dog,
+            // smart munitions read _jamTimer). Bosses can't be jammed;
+            // multiple jammers refresh the timer, never stack. Same
+            // 30-frame stagger as the comm aura pass above; dumb guns and
+            // player aim are deliberately unaffected.
+            if (this.type === 'jammer' && allEnemies) {
+                for (let i = 0; i < allEnemies.length; i++) {
+                    const je = allEnemies[i];
+                    if (je.dead || je instanceof Boss) continue;
+                    const jdx = je.x - this.x, jdy = je.y - this.y;
+                    if (jdx * jdx + jdy * jdy < 250000) je._jamTimer = 1.4; // 500px radius
                 }
             }
 
@@ -16470,7 +16837,9 @@ class Enemy extends Entity {
         if (this.tactic && this.cachedDistToTarget > TACTICAL_TUNING.FLANK_DIST) pushMult = Math.max(pushMult, 1.3);
         // NEW ENEMY TYPES: comm aura -- coordinated surge while a Comm
         // Officer is alive nearby (same multiplier lever as push/enraged).
-        if (this._commBuffTimer > 0) pushMult = Math.max(pushMult, 1.25);
+        // 1.45 is DELIBERATELY above the push/enraged levers (1.25/1.20) so
+        // a buffed squad visibly outruns anything else on the field.
+        if (this._commBuffTimer > 0) pushMult = Math.max(pushMult, 1.45);
         let speedScalar = (this.cachedRunFromDrone ? 1.5 : pushMult) * slowFactor;
         // PHASE 4 (patrolling AI): unengaged patrollers WALK their beat --
         // the drop back to combat speed on contact is part of the tell.
@@ -16597,8 +16966,10 @@ class Enemy extends Entity {
             // WINDOW_UP_PASS in Bullet.update is the "less often than firing
             // down" half, and neither is touched here.
             const canShoot = this.cachedHasLOS || this.cachedWindowLOS;
+            // Comm buff: x0.55 interval = ~1.8x fire rate -- paired with the
+            // 1.45 speed surge so the aura reads as "they coordinate".
             const fireInterval = this.fireRate
-                * (this._commBuffTimer > 0 ? 0.72 : 1)
+                * (this._commBuffTimer > 0 ? 0.55 : 1)
                 * (this.cachedHasLOS ? 1 : SECOND_FLOOR.ENEMY_WINDOW_FIRE_MULT);
             if (canShoot && inEngagementRange && gameTime - this.lastFire > fireInterval && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact) {
                 // Phase 3: Suppressing Fire perk blocks return fire while
@@ -16773,7 +17144,12 @@ class Enemy extends Entity {
         // Operative overrides this hook entirely (its own ladder); Boss never
         // reaches the base AI tick; every flag/mode gate is checked so the
         // default build behaves exactly as before.
-        if (TACTICAL_TUNING.ENEMIES_USE_COVER && this.wounded && game &&
+        // COMM SUPPORT: the Comm Officer is a support unit -- any damage
+        // makes it reposition to LOS-broken cover (same ladder, same cadence
+        // as wounded grunts). The skittish 620px standoff already keeps it
+        // from holding melee ground; this adds the break-to-cover instinct.
+        const wantsCover = this.wounded || (this.type === 'comm' && this.hp < this.maxHp);
+        if (TACTICAL_TUNING.ENEMIES_USE_COVER && wantsCover && game &&
             !game.operatorMode && !game.nowMode && !this.finalKillRole && !runFromDrone &&
             !(this instanceof Boss) && !(this instanceof Operative)) {
             this._coverTimer -= (1 / 60) * 30; // one throttled AI tick's worth
@@ -17264,19 +17640,38 @@ class Enemy extends Entity {
             ctx.arc(scx, scy, this.r + 4, 0, Math.PI * 2);
             ctx.stroke();
             ctx.restore();
+            // Gold diamond over the head -- the buff mark is a SHAPE, not a
+            // text label (no word to read at speed; reads as "coordinated"
+            // next to the officer's own diamond). Rides the same visibility
+            // gate as the halo.
+            ctx.save();
+            ctx.globalAlpha = 0.9 * this.opacity;
+            ctx.fillStyle = '#ffd700';
+            ctx.translate(scx, scy - this.r - 10);
+            ctx.rotate(Math.PI / 4);
+            ctx.fillRect(-3, -3, 6, 6);
+            ctx.restore();
         }
-        // NEW ENEMY TYPES: comm radio pulse -- expanding rings broadcast
-        // from the officer itself, visually linking it to the amber halos.
+        // NEW ENEMY TYPES: comm officer marker -- gold diamond + short
+        // "COMMS" tag. Deliberately NO expanding radius rings: a 900px
+        // broadcast circle telegraphs a hiding officer's position. The
+        // diamond is the same mark its buffed troops wear, so the link
+        // reads without drawing the aura itself.
         if (this.type === 'comm' && this.opacity > 0.05) {
             let scx = this.x - cam.x, scy = this.y - cam.y;
-            let t = ((game ? game.gameTime : 0) % 1.6) / 1.6;
             ctx.save();
-            ctx.globalAlpha = (1.0 - t) * 0.45 * this.opacity;
-            ctx.strokeStyle = '#ffb700';
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            ctx.arc(scx, scy, this.r + 4 + t * 26, 0, Math.PI * 2);
-            ctx.stroke();
+            ctx.globalAlpha = 0.95 * this.opacity;
+            ctx.fillStyle = '#ffd700';
+            ctx.translate(scx, scy - this.r - 10);
+            ctx.rotate(Math.PI / 4);
+            ctx.fillRect(-3.5, -3.5, 7, 7);
+            ctx.restore();
+            ctx.save();
+            ctx.globalAlpha = 0.8 * this.opacity;
+            ctx.fillStyle = '#ffd700';
+            ctx.font = 'bold 8px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('COMMS', scx, scy - this.r - 20);
             ctx.restore();
         }
         // NEW ENEMY TYPES: jammer static field -- rotating dashed ring with
@@ -17285,6 +17680,45 @@ class Enemy extends Entity {
         if (this.type === 'jammer' && this.opacity > 0.05) {
             let scx = this.x - cam.x, scy = this.y - cam.y;
             let gt = (game ? game.gameTime : 0);
+            // Jam FIELD radius -- the 500px lock-denial zone (matches the
+            // 250000 px^2 test in the aura pass). Faint green dashed circle:
+            // visible enough to plan around, quiet enough not to scream.
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(scx, scy, 500, 0, Math.PI * 2);
+            // Very faint fill inside the zone (camera-cast-overlay style) so
+            // the field reads as a PLACE, not just a line.
+            ctx.globalAlpha = 0.04 * this.opacity;
+            ctx.fillStyle = '#39ff14';
+            ctx.fill();
+            ctx.globalAlpha = 0.12 * this.opacity;
+            ctx.strokeStyle = '#39ff14';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 10]);
+            ctx.lineDashOffset = -gt * 12;
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+            // Per-target feedback: a small green diamond over every enemy
+            // currently inside the field -- "turrets/drones can't look at
+            // THIS one". Sits 6px right / 5px below the comms gold diamond
+            // (side by side, never stacked). Same visibility gate as the
+            // field: hidden jammer = no field, no diamonds.
+            ctx.save();
+            ctx.globalAlpha = 0.85 * this.opacity;
+            ctx.fillStyle = '#39ff14';
+            for (let ji = 0; ji < game.enemies.length; ji++) {
+                const je2 = game.enemies[ji];
+                if (!je2 || je2.dead) continue;
+                const jdx2 = je2.x - this.x, jdy2 = je2.y - this.y;
+                if (jdx2 * jdx2 + jdy2 * jdy2 > 250000) continue;
+                ctx.save();
+                ctx.translate(je2.x - cam.x + 6, je2.y - cam.y - je2.r - 5);
+                ctx.rotate(Math.PI / 4);
+                ctx.fillRect(-2.5, -2.5, 5, 5);
+                ctx.restore();
+            }
+            ctx.restore();
             ctx.save();
             ctx.globalAlpha = (0.3 + 0.15 * Math.sin(gt * 17.0)) * this.opacity;
             ctx.strokeStyle = '#64ffda';
@@ -20480,7 +20914,7 @@ class Bullet {
                 let currentAngle = Math.atan2(this.vy, this.vx);
                 
                 for (let ent of entities) {
-                    if (ent instanceof Enemy && !ent.dead) {
+                    if (ent instanceof Enemy && !ent.dead && !(ent._jamTimer > 0)) { // JAMMER FIELD: dark to smart munitions (flag read only -- hot path)
                         let dx = ent.x - this.x;
                         let dy = ent.y - this.y;
                         let distSq = dx*dx + dy*dy;
@@ -22094,13 +22528,14 @@ class AutoTurret extends Entity {
 
         this.retargetTimer -= dt;
 
-        // Cheap per-frame validation of the CURRENT target only -- dead or
-        // out-of-range clears it immediately and forces an instant re-scan
-        // next frame (no perceptible delay on target death); a single LOS
+        // Cheap per-frame validation of the CURRENT target only -- dead,
+        // jammed (walks into a jammer field) or out-of-range clears it
+        // immediately and forces an instant re-scan next frame (no
+        // perceptible delay on target death); a single LOS
         // ray keeps aim-tracking honest about walls the instant LOS breaks,
         // without re-running the full O(hostiles) acquisition scan.
         if (this.target) {
-            if (this.target.dead || Math.hypot(this.target.x - this.x, this.target.y - this.y) > this.maxRange) {
+            if (this.target.dead || this.target._jamTimer > 0 || Math.hypot(this.target.x - this.x, this.target.y - this.y) > this.maxRange) {
                 this.target = null;
                 this.retargetTimer = 0;
             } else {
@@ -22121,7 +22556,7 @@ class AutoTurret extends Entity {
 
             for (let h of hostiles) {
                 if (h.dead) continue;
-                if (h.type === 'jammer') continue; // NEW ENEMY TYPES: signal-hardened -- turrets can't lock it
+                if (h.type === 'jammer' || h._jamTimer > 0) continue; // NEW ENEMY TYPES: signal-hardened -- turrets can't lock it (or anything in a jam field)
                 let d = Math.hypot(h.x - this.x, h.y - this.y);
                 if (d < nearestDist) {
                     // PERF: per-candidate segment-filtered walls (was: full wall
@@ -22385,6 +22820,7 @@ class SecurityCamera extends Entity {
 
         for (let h of hostiles) {
             if (!h || h.dead) continue;
+            if (h._jamTimer > 0) continue; // JAMMER FIELD: dark to smart optics (target re-derives each frame, so entering a field drops the lock instantly)
             let dx = h.x - this.x;
             let dy = h.y - this.y;
             let dist = Math.hypot(dx, dy);
@@ -22753,7 +23189,8 @@ class RobotDog extends Entity {
         let dogIndex = this._aiStaggerId || 0;
         let targetStaleRecycle = this.target && this.target._aiStaggerId !== undefined && this.target._aiStaggerId !== this.targetGenId;
         let shouldRescanThreats = (game.frameCounter % 30 === dogIndex % 30) ||
-            this._cachedActiveThreatCount === undefined || !this.target || this.target.dead || targetStaleRecycle;
+            this._cachedActiveThreatCount === undefined || !this.target || this.target.dead || targetStaleRecycle ||
+            this.target._jamTimer > 0; // JAMMER FIELD: current target went dark -- drop it now, don't wait for the 30-frame rescan
 
         if (shouldRescanThreats) {
             // Single pass over game.enemies computes both "how many are
@@ -22769,6 +23206,7 @@ class RobotDog extends Entity {
 
             for (let enemy of game.enemies) {
                 if (enemy.dead) continue;
+                if (enemy._jamTimer > 0) continue; // JAMMER FIELD: enemies inside a jam field are dark to the dog
                 let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                 let midX = (this.x + enemy.x) / 2, midY = (this.y + enemy.y) / 2;
                 let localWalls = game.map.getWallsNear(midX, midY);
@@ -22781,6 +23219,7 @@ class RobotDog extends Entity {
             if (game.bossDrones && game.bossDrones.length > 0) {
                 for (let drone of game.bossDrones) {
                     if (drone.dead) continue;
+                    if (drone._jamTimer > 0) continue; // JAMMER FIELD: same darkness for boss drones inside a field
                     let d = Math.hypot(drone.x - this.x, drone.y - this.y);
                     let midX = (this.x + drone.x) / 2, midY = (this.y + drone.y) / 2;
                     let localWalls = game.map.getWallsNear(midX, midY);
@@ -23499,7 +23938,7 @@ class MiniDrone extends Entity {
                 let huntPool = game.getHostilesFor(this);
                 for (let enemy of huntPool) {
                     if (enemy.dead) continue;
-                    if (enemy.type === 'jammer') continue; // NEW ENEMY TYPES: signal-hardened -- swarm drones can't lock it
+                    if (enemy.type === 'jammer' || enemy._jamTimer > 0) continue; // NEW ENEMY TYPES: signal-hardened -- swarm drones can't lock it (or anything in a jam field)
                     if (otherTargets.includes(enemy)) continue;
                     if (enemy.lastMiniDroneTargetTime && game.gameTime - enemy.lastMiniDroneTargetTime < 5.0) continue;
                     
@@ -23518,7 +23957,7 @@ class MiniDrone extends Entity {
                     nearestDist = 600;
                     for (let enemy of huntPool) {
                         if (enemy.dead) continue;
-                        if (enemy.type === 'jammer') continue; // NEW ENEMY TYPES: signal-hardened
+                        if (enemy.type === 'jammer' || enemy._jamTimer > 0) continue; // NEW ENEMY TYPES: signal-hardened
                         if (enemy.lastMiniDroneTargetTime && game.gameTime - enemy.lastMiniDroneTargetTime < 5.0) continue;
                         
                         let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
@@ -23646,14 +24085,14 @@ class MiniDrone extends Entity {
             // is a different enemy now wearing the same object," not "still
             // my original target."
             let targetIsStaleRecycle = this.target && this.target._aiStaggerId !== undefined && this.target._aiStaggerId !== this.targetGenId;
-            if (!this.target || this.target.dead || targetIsStaleRecycle) {
+            if (!this.target || this.target.dead || targetIsStaleRecycle || this.target._jamTimer > 0) {
                 let nearestEnemy = null;
                 let nearestDist = 600;
                 let walls = game.map.walls;
                 let reacquirePool = game.getHostilesFor(this);
                 for (let enemy of reacquirePool) {
                     if (enemy.dead) continue;
-                    if (enemy.type === 'jammer') continue; // NEW ENEMY TYPES: signal-hardened
+                    if (enemy.type === 'jammer' || enemy._jamTimer > 0) continue; // NEW ENEMY TYPES: signal-hardened
                     let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                     if (d < nearestDist) {
                         let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment)
@@ -24541,7 +24980,7 @@ class TripMine {
                 this.explode(game);
                 return false; 
             }
-            if (wantDeploy && ent.type !== 'jammer' && dist < deployDist) {
+            if (wantDeploy && ent.type !== 'jammer' && !(ent._jamTimer > 0) && dist < deployDist) {
                 let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, ent.x, ent.y)
                     .some(w => MathUtils.lineIntersectAABB(this.x, this.y, ent.x, ent.y, w));
                 if (hasLOS) {
@@ -25479,7 +25918,7 @@ const MISSION_ORDER = ['op_first_contact', 'op_deep_incursion', 'op_overrun_prot
 // old copies inside _applyExtMags were folded into recalcPlayerMaxAmmo()
 // so meta magazine upgrades and in-run Extended Mags compose instead of
 // clobbering each other.
-const BASE_MAX_AMMO = { shotgun: 48, smg: 360, lmg: 300, sniper: 15, m1a: 60 };
+const BASE_MAX_AMMO = { shotgun: 48, smg: 360, lmg: 300, sniper: 15, m1a: 60, repairgun: 250 };
 
 // Meta magazine upgrades: flat reserve added to the base BEFORE the
 // in-run Extended Mags percentage applies (so both purchases keep paying).
@@ -25642,6 +26081,12 @@ const ARMORY_UPGRADES = [
       costPerLevel: [20, 35, 55],
       desc: 'Deployable surveillance and sentry cameras that sweep choke points. Lvl1: 600px range, 60° sweep, perimeter alarms. Lvl2: 1000px range, 90° sweep, automated suppressed dart defense. Lvl3: 1500px range, 120° sweep, continuous thermal sentry laser.',
       levelDescs: ['Sentinel Cam (600px range, 60° sweep, perimeter intruder alert)', 'MK.II Auto-Dart (1000px range, 90° sweep, silenced dart launcher)', 'MK.III Thermal Sentry Array (1500px range, 120° sweep, high-power thermal laser)'] },
+    // REPAIR GUN requisition -- single level, cheap-ish gate so the $1250
+    // shop buy is a deliberate "commit to support" pick, not an impulse.
+    { key: 'unlockRepairGun', name: 'REQUISITION: FIELD WELDER', maxLevel: 1,
+      costPerLevel: [25],
+      desc: 'Unlocks the REPAIR GUN in the Shop: hold the trigger on a damaged friendly deployable (turret, Spot, Sentry Cam, swarm drone, barrier) to weld it back up on a rechargeable battery.',
+      levelDescs: ['Repair Gun available in the Shop'] },
     { key: 'unlockOverclocks', name: 'REQUISITION: OVERCLOCKS', maxLevel: 2,
       costPerLevel: [30, 40],
       desc: 'Lvl1: standard Weapon Overclocks in the Shop. Lvl2: Extended Mags.',
@@ -26679,7 +27124,7 @@ class Game {
         this.shopItemIDs = [
             'hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost', 
             'barrier', 'rubble', 'barrier_upgrade', 'drone', 'drone_upgrade', 'fiber_optic', 'turret', 'turret_mk2',
-            'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'camera', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
+            'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'camera', 'repairgun', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
             'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap', 'ammo_shotgun_slug',
             'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC',
             'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel', 'call_evac', 'ready'
@@ -27749,7 +28194,10 @@ class Game {
         const w = this._spawnIntensityWave();
         if (this.activeMutator === 'swarm') {
             // Swarm mutator: everything is a swarmer regardless of template.
-            let n = 4 + Math.floor(Math.random() * 3);
+            // 3-8 bodies per squad: the small rolls stay nippable, the big
+            // rolls land as genuine walls -- paired with the 0.5-2s cadence
+            // and the 2.25x cap so squads stack instead of cap-strangling.
+            let n = 3 + Math.floor(Math.random() * 6);
             return new Array(n).fill('swarmer');
         }
 
@@ -28077,6 +28525,10 @@ class Game {
         if (this.extractionMode) {
             const tier = EXTRACTION_TUNING.HEAT_TIERS[this.heatTier];
             ss.gapTimer = MathUtils.rand(tier.gapMin, tier.gapMax);
+        } else if (this.activeMutator === 'swarm') {
+            // Swarm mutator: the flood identity wants 0.5-2s gaps, not the
+            // 4-8s band. Branch-only; shared band untouched.
+            ss.gapTimer = MathUtils.rand(TACTICAL_TUNING.SWARM_SQUAD_GAP_MIN, TACTICAL_TUNING.SWARM_SQUAD_GAP_MAX);
         } else {
             ss.gapTimer = MathUtils.rand(TACTICAL_TUNING.SQUAD_GAP_MIN, TACTICAL_TUNING.SQUAD_GAP_MAX);
         }
@@ -28085,7 +28537,10 @@ class Game {
         // MEDIC_SPAWN_DELAY so the Medic Team arrives behind the combat
         // squads instead of ahead of them. Once the medic rolls (or the
         // wave becomes ineligible) this never triggers again.
-        if (this._medicDelayArmed && TACTICAL_TUNING.MEDIC_BOOST && !this.isBossWave &&
+        // Swarm exception: the swarm branch in _rollSquadPlan early-returns
+        // above the medic roll, so a medic can NEVER roll this wave -- this
+        // stretch would pin every gap to MEDIC_SPAWN_DELAY as pure dead air.
+        if (this.activeMutator !== 'swarm' && this._medicDelayArmed && TACTICAL_TUNING.MEDIC_BOOST && !this.isBossWave &&
             this._spawnIntensityWave() >= STRIKE_TEAM.MEDIC_SQUAD_MIN_WAVE &&
             (this._medicSquadsThisWave || 0) < 1) {
             ss.gapTimer = Math.max(ss.gapTimer, STRIKE_TEAM.MEDIC_SPAWN_DELAY);
@@ -29784,6 +30239,7 @@ class Game {
             dog: 'btn-buy-dog', dog_upgrade: 'btn-buy-dog-upgrade',
             swarm_drone: 'btn-buy-swarm-drone', swarm_pack: 'btn-buy-swarm-pack',
             camera: 'btn-buy-camera',
+            repairgun: 'btn-buy-repairgun',
             ammo_shotgun: 'btn-buy-ammo-shotgun', ammo_smg_std: 'btn-buy-ammo-smg-std', ammo_smg_hp: 'btn-buy-ammo-smg-hp',
             ammo_lmg_std: 'btn-buy-ammo-lmg-std', ammo_lmg_ap: 'btn-buy-ammo-lmg-ap',
             ammo_sniper_std: 'btn-buy-ammo-sniper-std', ammo_sniper_ap: 'btn-buy-ammo-sniper-ap', ammo_pistol_hp: 'btn-buy-ammo-pistol-hp',
@@ -37794,6 +38250,21 @@ class Game {
                 }
             }
 
+            // REPAIR GUN: one per operator per run -- inventory itself is the
+            // source of truth (respawn keeps weapons, run reset rebuilds it).
+            let repairGunBtn = document.getElementById('btn-buy-repairgun-' + suffix);
+            if (repairGunBtn && !this._armoryGate(repairGunBtn, 'unlockRepairGun', 1, "Repair Gun (UNLOCK IN ARMORY)")) {
+                if (p.inventory.some(w => w.name === 'RepairGun')) {
+                    repairGunBtn.classList.add('maxed');
+                    repairGunBtn.innerText = "REPAIR GUN (OWNED)";
+                    repairGunBtn.disabled = true;
+                } else {
+                    repairGunBtn.classList.remove('maxed');
+                    repairGunBtn.innerText = "Repair Gun ($1250)";
+                    repairGunBtn.disabled = false;
+                }
+            }
+
             let checkAmmoCap = (id, cur, max, label) => {
                 let el = document.getElementById(id);
                 if (el) {
@@ -37948,7 +38419,8 @@ class Game {
                 dog: ['unlockSpotRobot', 1], dog_upgrade: ['unlockSpotRobot', 2],
                 swarm_drone: ['unlockSwarm', 1], swarm_pack: ['unlockSwarm', 2],
                 turret_mk2: ['unlockTurretMk2', 1], barrier_upgrade: ['unlockBarrierMk2', 1],
-                camera: ['unlockSecurityCamera', 1]
+                camera: ['unlockSecurityCamera', 1],
+                repairgun: ['unlockRepairGun', 1]
             };
             const g = GATE[type];
             if (g && (MA[g[0]] || 0) < g[1]) return;
@@ -38081,6 +38553,14 @@ class Game {
         } else if (type === 'camera' && p.cash >= 350 && (p.camerasCount || 0) < 3) {
             p.cash -= 350;
             p.camerasCount = (p.camerasCount || 0) + 1;
+            audio.playPickup('weapon');
+        } else if (type === 'repairgun' && p.cash >= 1250 && !p.inventory.some(w => w.name === 'RepairGun')) {
+            // REPAIR GUN: bought once, kept all run (see shop refresh for the
+            // OWNED state). Full battery on purchase; welding never touches
+            // the ammo pickups, so the battery is the whole economy.
+            p.cash -= 1250;
+            p.addWeapon('repairgun');
+            p.ammo.repairgun = p.maxAmmo.repairgun;
             audio.playPickup('weapon');
         } else if (type === 'ammo_shotgun' && p.cash >= 30 && p.ammo.shotgun < p.maxAmmo.shotgun) {
             p.cash -= 30; p.ammo.shotgun = Math.min(p.maxAmmo.shotgun, p.ammo.shotgun + 12); p.ammoTypes.shotgun = 'buck';
@@ -38586,6 +39066,12 @@ class Game {
                     if (typeof sd.metaUpgrades[k] !== 'number') sd.metaUpgrades[k] = 0;
                 }
                 if (typeof sd.buildTier !== 'string') sd.buildTier = '';
+            }},
+            // v16: REQUISITION: FIELD WELDER -- armory gate for the shop
+            // REPAIR GUN. Additive only.
+            { to: 16, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.unlockRepairGun !== 'number') sd.metaUpgrades.unlockRepairGun = 0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -38634,6 +39120,8 @@ class Game {
         if (MA.manipulatorHardening === undefined) MA.manipulatorHardening = 0;
         if (MA.manipulatorRig === undefined) MA.manipulatorRig = 0;
         if (MA.manipulatorRampart === undefined) MA.manipulatorRampart = 0;
+        // v16: REPAIR GUN armory gate (mirrors the v16 migration).
+        if (MA.unlockRepairGun === undefined) MA.unlockRepairGun = 0;
         if (typeof this.saveData.buildTier !== 'string') this.saveData.buildTier = '';
         if (typeof this.saveData.hasSeenArmoryTutorial !== 'boolean') this.saveData.hasSeenArmoryTutorial = false;
         if (typeof this.saveData.touchFireHintDone !== 'boolean') this.saveData.touchFireHintDone = false;
