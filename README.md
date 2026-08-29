@@ -1,3 +1,5 @@
+Open source - use to the full extent as you like.
+
 <div align="center">
 
   <!-- Logo/Title Image -->
