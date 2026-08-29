@@ -1,5 +1,5 @@
 <div align="center">
-Open source - use to the full extent as you like.
+Open source - use to the full extent as you like non-monetarily.
 </div>
 <div align="center">
 
