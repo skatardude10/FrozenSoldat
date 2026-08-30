@@ -2687,6 +2687,8 @@
                         <button class="neon-btn" onclick="game.devSpawnEnemy('shield', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Phalanx</button>
                         <button class="neon-btn" onclick="game.devSpawnEnemy('comm', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Comm Officer</button>
                         <button class="neon-btn" onclick="game.devSpawnEnemy('jammer', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Jammer</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('medic', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">Medic</button>
+                        <button class="neon-btn" onclick="game.devSpawnEnemy('fpv_pilot', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">FPV Pilot</button>
                         <button class="neon-btn" onclick="game.devSpawnEnemy('grunt', true)" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: var(--red); color: var(--red);">Elite Grunt</button>
                         <button class="neon-btn" onclick="game.devSpawnStrikeTeam()" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: #ff2a5f; color: #ff2a5f;">Strike Team</button>
                     </div>
@@ -4499,6 +4501,34 @@ class AudioEngine {
                 osc2.start(0);
             }));
 
+            // 14c. FPV drone launch (servo clack + rotor spin-up).
+            promises.push(this.bakeSound('fpv_launch', 0.4, (offlineCtx) => {
+                const osc1 = offlineCtx.createOscillator();
+                const gain1 = offlineCtx.createGain();
+                osc1.type = 'square';
+                osc1.frequency.setValueAtTime(1000, 0);
+                osc1.frequency.exponentialRampToValueAtTime(80, 0.04);
+                gain1.gain.setValueAtTime(0.3, 0);
+                gain1.gain.exponentialRampToValueAtTime(0.001, 0.05);
+
+                const osc2 = offlineCtx.createOscillator();
+                const gain2 = offlineCtx.createGain();
+                osc2.type = 'sawtooth';
+                osc2.frequency.setValueAtTime(180, 0.03);
+                osc2.frequency.exponentialRampToValueAtTime(900, 0.3);
+                gain2.gain.setValueAtTime(0, 0);
+                gain2.gain.linearRampToValueAtTime(0.12, 0.08);
+                gain2.gain.exponentialRampToValueAtTime(0.001, 0.38);
+
+                osc1.connect(gain1);
+                gain1.connect(offlineCtx.destination);
+                osc2.connect(gain2);
+                gain2.connect(offlineCtx.destination);
+
+                osc1.start(0);
+                osc2.start(0);
+            }));
+
             // 15. Weapon switch foley (sliding mechanism and cocking sound)
             promises.push(this.bakeSound('weapon_switch', 0.35, (offlineCtx) => {
                 const osc1 = offlineCtx.createOscillator();
@@ -4783,6 +4813,22 @@ class AudioEngine {
             delay = settings.delay;
         }
         this.playBakedSound('mine_place', this.sfxGain, gainVal, cutoff, delay);
+    }
+
+    playFpvLaunch(x = null, y = null) {
+        if (!this.ctx) return;
+        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        let gainVal = 0.8 * sfxVol;
+        let cutoff = 20000;
+        let delay = 0;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('hit', d);
+            gainVal = settings.vol * 0.8 * sfxVol;
+            cutoff = settings.cutoff;
+            delay = settings.delay;
+        }
+        this.playBakedSound('fpv_launch', this.sfxGain, gainVal, cutoff, delay);
     }
 
     playWeaponSwitch(x = null, y = null) {
@@ -5867,13 +5913,57 @@ const Weapons = {
      repairgun: { name: 'RepairGun', dmg: 0, fireRate: 0.2, speed: 0, drag: 0, spread: 0, mag: 0, weight: 10, color: '#7fdcff', type: 'auto', maxZoom: 0, gamepadAimDist: 120, openBoltDelay: 0 }
  };
 
- // REPAIR GUN welding tuning (battery doubles as the ammo pool).
- const REPAIR_TUNING = {
-     drainPerSec: 25,   // battery while the arc is on a target
-     regenPerSec: 20,   // trickle recharge while NOT welding (scales 2.5x with the 250 battery so a full refill still takes 12.5s)
-     hpPerSec: 40,      // deployable HP restored per second
-     reach: 70,         // px from the player to a valid weld target
- };
+  // REPAIR GUN welding tuning (battery doubles as the ammo pool).
+  const REPAIR_TUNING = {
+      drainPerSec: 25,   // battery while the arc is on a target
+      regenPerSec: 8,    // trickle recharge while NOT welding (250 battery → ~31s full refill; deliberately slow so welding is a commitment)
+      hpPerSec: 40,      // deployable HP restored per second
+      reach: 70,         // px from the player to a valid weld target
+  };
+
+  // drone_op swarm cadence (C3): overlapping bursts, long loiter, capped
+  // concurrency. The cap is the perf bound -- each live drone runs the
+  // MiniDrone spatial pattern per frame, so it's what keeps a full operator's
+  // swarm cheap even with several operators on the map at once.
+  const DRONE_OP_TUNING = {
+      burstMin: 1,       // drones per burst (rolled)
+      burstMax: 3,
+      maxAlive: 6,       // hard cap on live drones per operator
+      range: 2200,       // px from operator to target at which a burst may launch
+      cdMin: 6,          // seconds between bursts (doubled 30aug per operator: 3-5s read as continuous swarms)
+      cdMax: 10,
+  };
+
+  // Unarmed Priority Medic (Unit A): behavioral knobs. The heal channel
+  // time/frac/cooldown/abort deliberately reuse STRIKE_TEAM.HEAL_* (same
+  // mechanism as the Operative medic) and are NOT duplicated here.
+  const MEDIC_TUNING = {
+      commitRange: 700,  // px: how far it runs to reach a priority target
+      healRange: 70,     // px: must be this close to channel a heal -- matches STRIKE_TEAM.HEAL_RANGE so it runs up almost touching, like the Operative medic
+      fleeRange: 250,    // px: player this close → skittish flee (beats rush)
+      standoff: 380,     // px: idle support leash -- backs off if the player gets closer (matches the skittish standoff)
+      anchorRange: 900,  // px: how far it looks for the nearest ally to hang around when idle
+      anchorRadius: 150, // px: within this of the anchor it holds position (already with the squad)
+      anchorDrift: 0.7,  // speed scalar for the "hang with the squad" idle drift
+      retargetMin: 0.7,  // staggered priority re-scan interval (s)
+      retargetMax: 1.0,
+  };
+
+  // FPV Pilot (Unit B): behavioral knobs. The hunting drone itself is an
+  // EnemyFPVDrone; its stats live in FPV_PILOT_TUNING.drone.
+  const FPV_PILOT_TUNING = {
+      unpackTime: 2.5,   // s: rooted deploy/telegraph before the drone launches
+      reloadTime: 15,    // s: between drones
+       deployMinDist: 500,// px from player: won't deploy closer (keeps distance)
+       deployMaxDist: 2500,// px: won't deploy farther. Must bracket the 1500px
+                           // skittish standoff -- the pilot's resting position
+                           // IS its firing position, so the band has to include
+                           // it or it can never deploy from where it stands.
+       dmgResist: 0.8,    // damage multiplier while rooted (UNPACK/PILOTING)
+      dronesMin: 3,      // drones per pilot, wave-scaled up to dronesMax
+      dronesMax: 5,
+       drone: { hp: 40, r: 9, speed: 330, life: 25, blastRadius: 150, blastDmg: 110 },
+  };
 
 /**
  * ENEMY PROFILES
@@ -5886,8 +5976,10 @@ const EnemyTypes = {
     sniper_grunt: { hp: 55, speed: 130, color: '#f50057', type: 'sniper_grunt', score: 35, size: 12, weapon: 'sniper' },
     sapper: { hp: 35, speed: 210, color: '#ffea00', type: 'sapper', score: 20, weapon: 'melee', size: 11 },
     // ---- NEW ENEMY TYPES (support/specialist tier) ----
-    // drone_op: skittish pilot; deploys ONE HostileMiniDrone at a time (see
-    //   class HostileMiniDrone + the special-abilities block in Enemy.update).
+    // drone_op: skittish pilot; launches OVERLAPPING bursts of 1-3
+    //   HostileMiniDrones (DRONE_OP_TUNING) while it has line of sight and a
+    //   target in range -- capped at maxAlive live drones. See class
+    //   HostileMiniDrone + the special-abilities block in Enemy.update.
     // bombardier: fragile spotter; calls small telegraphed MortarMarker
     //   strikes on its target while it has line of sight.
     // shield: riot phalanx; carries a SHIELD HP POOL (shieldHp, 300) in
@@ -5901,11 +5993,23 @@ const EnemyTypes = {
     //   and fire rate while alive (_commBuffTimer aura).
     // jammer: signal-hardened; player Auto-Turrets and swarm MiniDrones
     //   cannot target-lock it (guns/dog/FPV still work).
+    // ---- NEW (29 Aug) ----
+    // medic: UNARMED priority healer. weapon 'melee' → the ranged fire gate
+    //   no-ops (never returns fire); also excluded from flashbang. Runs to
+    //   the highest-priority wounded ally (MEDIC_TUNING + the medic block in
+    //   Enemy.update) and channels a heal (reuses the Operative medic
+    //   mechanism). Restyled black body + red "+".
+    // fpv_pilot: keeps max distance; unpacks a heavy hunting drone
+    //   (EnemyFPVDrone), ROOTS + goggle while it's out, reloads, repeats
+    //   dronesMin–dronesMax times (wave-scaled), then falls back to a
+    //   skittish pistol. See FPV_PILOT_TUNING + the fpv_pilot block.
     drone_op:   { hp: 55,  speed: 140, color: '#39ff14', type: 'drone_op',   score: 40, size: 12, weapon: 'pistol' },
     bombardier: { hp: 45,  speed: 95,  color: '#b388ff', type: 'bombardier', score: 40, size: 12, weapon: 'melee' },
         shield: { hp: 240, speed: 115, color: '#90a4ae', type: 'shield', score: 35, size: 14, weapon: 'heavy_pistol', shieldArc: 40 * Math.PI / 180, shieldHp: 300 },
     comm:       { hp: 60,  speed: 150, color: '#ffffff', type: 'comm',       score: 60, size: 12, weapon: 'melee' },
-    jammer:     { hp: 110, speed: 100, color: '#64ffda', type: 'jammer',     score: 45, size: 13, weapon: 'pistol' }
+    jammer:     { hp: 110, speed: 100, color: '#64ffda', type: 'jammer',     score: 45, size: 13, weapon: 'pistol' },
+    medic:      { hp: 34,  speed: 135, color: '#111111', type: 'medic',      score: 30, size: 11, weapon: 'melee' },
+    fpv_pilot:  { hp: 70,  speed: 95,  color: '#448aff', type: 'fpv_pilot',  score: 70, size: 15, weapon: 'pistol' }
 };
 
 // ---- Boss registry ----
@@ -6134,7 +6238,7 @@ const STRIKE_TEAM = {
     HEAL_CHANNEL_ABORT: 220,     // px: channel progress only resets past this --
                                  // brief range-loss no longer wipes a channel
     // -- Medic support element (gated by TACTICAL_TUNING.MEDIC_BOOST) --
-    MEDIC_SQUAD_MIN_WAVE: 3,     // first wave a standalone medic squad rolls
+    MEDIC_SQUAD_MIN_WAVE: 4,     // first wave a standalone medic squad rolls (bumped 3→4 on 29 Aug: the base Enemy medic now covers wave 3)
     MEDIC_SQUAD_MAX: 2,          // max standalone medic squads alive at once
     MEDIC_FALLBACK_RANGE: 700,   // px: a medic with no squad patient takes the
                                  // worst-wounded enemy within this radius
@@ -15775,13 +15879,37 @@ class Enemy extends Entity {
         this._hitFlash = 0;                            // FELLPASS item 4: generic white hit-flash timer (set at bullet/blast hit sites, decayed in Game's shared enemy update loop -- FELLPASS-CLEANUP A1)
         this.shieldArcHalf = config.shieldArc || 0;    // riot phalanx: half-angle of the protected front arc (0 = no shield)
         this.shieldHp = config.shieldHp || 0;          // SHIELD HP POOL: front-arc bullets chew this before the body (0 = no shield)
-        this._droneCooldown = MathUtils.rand(2.5, 4.5);// drone_op: time until next deploy is ready
-        this._activeHostileDrone = null;               // drone_op: at most ONE live drone per operator
+        this._droneCooldown = MathUtils.rand(2.5, 4.5);// drone_op: time until next burst is ready
+        this._activeHostileDrones = [];                // drone_op: live drones (capped at DRONE_OP_TUNING.maxAlive; bursts of 1-3)
         this._mortarCooldown = MathUtils.rand(3.5, 5.5); // bombardier: first strike is delayed post-spawn
+        // ---- NEW ENEMY TYPES (29 Aug): ALL pool-reset per the Phase 1 gotcha ----
+        // medic: priority-heal state. Retarget is a throttled O(n) scan over
+        // game.enemies, staggered by a per-unit random phase so meds never all
+        // scan the same frame.
+        this._medicTarget = null;
+        this._medicAnchor = null; // nearest living ally to hang around when idle (set in _medicPickTarget)
+        this._medicRetarget = MathUtils.rand(MEDIC_TUNING.retargetMin, MEDIC_TUNING.retargetMax);
+        this._medicChannel = 0;
+        this._medicHealCd = 0;
+        this._medicCharges = STRIKE_TEAM.HEAL_CHARGES; // per-life heal budget (same economy as the Operative medic)
+        // fpv_pilot: hunting-drone state machine (APPROACH → UNPACK → PILOTING
+        // → RELOAD → EXHAUSTED). Drone count scales with the wave at spawn
+        // (both the wave pool and devSpawnEnemy run after `game` exists).
+        this._fpvState = 'APPROACH';
+        this._fpvTimer = 0;
+        this._fpvDrone = null;
+        this._fpvRooted = false;
+        this._fpvDmgResist = 1.0; // set <1 each frame while rooted (see takeDamage)
+        {
+            let _w = (game && game.wave) ? game.wave : 8;
+            this._fpvDronesLeft = Math.max(FPV_PILOT_TUNING.dronesMin,
+                Math.min(FPV_PILOT_TUNING.dronesMax,
+                    FPV_PILOT_TUNING.dronesMin + Math.floor((_w - 8) / 3)));
+        }
         // Skittish types keep distance instead of using the stock
         // hold-at-240px moonwalk (whose reversed-angle math assumes the
         // move angle points AT the target -- theirs points away).
-        this.isSkittish = (config.type === 'comm' || config.type === 'drone_op' || config.type === 'bombardier');
+        this.isSkittish = (config.type === 'comm' || config.type === 'drone_op' || config.type === 'bombardier' || config.type === 'medic' || config.type === 'fpv_pilot');
         
         // Game-feel variables
         this.muzzleFlashTimer = 0;
@@ -15889,12 +16017,19 @@ class Enemy extends Entity {
         // the base class so EVERY enemy in every mode gets it (critical on
         // the large extraction map, where a wedged enemy would stall the
         // squad cadence forever). Skips: bosses (scripted movement),
-        // operator mode (has its own detector inside opAI), and enemies
-        // that are legitimately holding (in firing range with LOS, or
-        // fleeing a drone). Far-from-player relocations teleport to a
-        // fresh validated anchor; near ones get a nudge -- see
-        // Game._relocateStuckEnemy.
-        if (game && !game.operatorMode && !(this instanceof Boss)) {
+        // operator mode (has its own detector inside opAI), a rooted
+        // fpv_pilot (UNPACK/PILOTING -- a scripted stand: standing still for
+        // seconds is intentional, and a relocate would yank it mid-root.
+        // RELOAD is mobile under FORK-2b, so it stays under the detector and
+        // keeps its wedge backstop: a pilot wedged in geometry is an
+        // unclearable wave, since wave clear is enemies.length === 0), and
+        // enemies that are legitimately holding (in firing range with LOS, or
+        // fleeing a drone). Note the relocate is LOCAL, not a map-spanning
+        // teleport: a relocated enemy gets a <=420px ring move measured from
+        // ITSELF (STUCK_RELOCATE_RING_MIN/MAX), not from the player -- a
+        // kiting pilot hops a short distance. Only the _pickSquadAnchor()
+        // sealed-pocket fallback is global. See Game._relocateStuckEnemy.
+        if (game && !game.operatorMode && !(this instanceof Boss) && !(this.type === 'fpv_pilot' && this._fpvRooted)) {
             this._stuckTimer = (this._stuckTimer || 0) + dt;
             if (this._stuckTimer >= 3.0) {
                 this._stuckTimer = 0;
@@ -16505,7 +16640,7 @@ class Enemy extends Entity {
             // blocks above use, so combat ranging (distToTarget) stays
             // honest. Beyond the standoff they drift with the squad.
             if (this.isSkittish && game && !game.operatorMode && !this.finalKillRole) {
-                const standoff = this.type === 'comm' ? 620 : (this.type === 'bombardier' ? 430 : 380);
+                const standoff = this.type === 'comm' ? 620 : (this.type === 'bombardier' ? 430 : (this.type === 'fpv_pilot' ? 1500 : 380));
                 if (distToTarget < standoff) {
                     const away = Math.atan2(this.y - targetY, this.x - targetX);
                     moveTargetX = Math.max(50, Math.min(game.mapW - 50, this.x + Math.cos(away) * 320));
@@ -16850,6 +16985,18 @@ class Enemy extends Entity {
         if (this.patrolUntilContact) speedScalar *= 0.55;
         // WI-4 (B): wounded grunts hobble (ENEMIES_RETREAT owns the flag).
         if (TACTICAL_TUNING.ENEMIES_RETREAT && this.wounded) speedScalar *= TACTICAL_TUNING.GRUNT_WOUND_SPEED_MULT;
+        // MEDIC rush (rebuild): while closing on a live patient (beyond channel
+        // range) the medic sprints at MEDIC_RUSH_MULT. The base stat is
+        // captured and restored within this single update -- the Operative's
+        // idiom @~19377 (it is pooled too), so a recycled enemy can never
+        // inherit a compounded speed.
+        let _medicSpeed = 0;
+        if (this.type === 'medic' && game && !game.operatorMode && this._medicTarget &&
+            !this._medicTarget.dead && this._medicHealCd <= 0 &&
+            Math.hypot(this._medicTarget.x - this.x, this._medicTarget.y - this.y) > MEDIC_TUNING.healRange) {
+            _medicSpeed = this.speed;
+            this.speed *= TACTICAL_TUNING.MEDIC_RUSH_MULT;
+        }
         let moveX = Math.cos(this.cachedMoveAngle) * (this.speed * speedScalar) + sepX;
         let moveY = Math.sin(this.cachedMoveAngle) * (this.speed * speedScalar) + sepY;
         // PHASE 4 (CRYO): enemies slide on the same ice (see player accel site).
@@ -17007,27 +17154,136 @@ class Enemy extends Entity {
         // below). Both are inert in Operator mode, which has its own AI
         // overlay and balance.
         if (this.type === 'drone_op' && game && !game.operatorMode) {
-            // Treat a drone as gone if it died OR if the bossDrones array
-            // was wiped out from under it (wave-clear etc.) -- otherwise an
-            // orphaned non-dead reference would block redeploy forever.
-            if (this._activeHostileDrone && (this._activeHostileDrone.dead ||
-                !game.bossDrones || game.bossDrones.indexOf(this._activeHostileDrone) === -1)) {
-                this._activeHostileDrone = null;
+            // C3: overlapping bursts. Prune dead / wave-wiped drones first so a
+            // cleared bossDrones array can't strand the cap forever (an orphaned
+            // non-dead ref would otherwise block redeploy). PERF-1: reverse
+            // in-place loop, no per-frame array/closure allocation, dead test
+            // first (the cheap gate). The wave-wipe guard keys off
+            // bossDrones.length === 0 (the wipe resets it to []) instead of a
+            // per-drone O(global-list) indexOf -- only dead drones are ever
+            // removed from bossDrones individually, so length-0 is the only
+            // "orphaned" case that reaches a live ref here.
+            if (this._activeHostileDrones.length) {
+                let bd = game.bossDrones;
+                let wiped = !bd || bd.length === 0;
+                for (let i = this._activeHostileDrones.length - 1; i >= 0; i--) {
+                    let d = this._activeHostileDrones[i];
+                    if (d.dead) { this._activeHostileDrones.splice(i, 1); continue; }
+                    if (wiped) this._activeHostileDrones.splice(i, 1);
+                }
             }
-            if (!this._activeHostileDrone) {
+            // Cooldown ticks only while under the cap, so a full swarm waits out
+            // its own drones before the next burst -- but the 6-10s cdMin..cdMax
+            // still means bursts overlap well before a burst's 35s loiter expires.
+            if (this._activeHostileDrones.length < DRONE_OP_TUNING.maxAlive) {
                 this._droneCooldown -= dt;
-                if (this._droneCooldown <= 0 && this.cachedTarget && this.cachedDistToTarget < 1500) {
-                    // One drone in the air at a time; the next only starts
-                    // prepping once this one is destroyed or expires.
-                    this._droneCooldown = MathUtils.rand(6.5, 9.5);
-                    let hd = new HostileMiniDrone(this.x, this.y, this);
-                    game.bossDrones.push(hd); // rides the existing hostile-drone update/draw/bullet-collision/wave-wipe path
-                    this._activeHostileDrone = hd;
+                if (this._droneCooldown <= 0 && this.cachedTarget && this.cachedDistToTarget < DRONE_OP_TUNING.range) {
+                    this._droneCooldown = MathUtils.rand(DRONE_OP_TUNING.cdMin, DRONE_OP_TUNING.cdMax);
+                    let burst = DRONE_OP_TUNING.burstMin + Math.floor(Math.random() * (DRONE_OP_TUNING.burstMax - DRONE_OP_TUNING.burstMin + 1));
+                    for (let i = 0; i < burst; i++) {
+                        // Hard cap: the outer check admits the burst, but the
+                        // burst itself must not push past maxAlive (5 alive +
+                        // a 3-burst would otherwise launch 8).
+                        if (this._activeHostileDrones.length >= DRONE_OP_TUNING.maxAlive) break;
+                        let hd = new HostileMiniDrone(this.x, this.y, this);
+                        // Stagger the spin-up so the burst doesn't all commit (and
+                        // all start humming) on the same frame.
+                        hd.armTimer += i * 0.18;
+                        game.bossDrones.push(hd); // rides the existing hostile-drone update/draw/bullet-collision/wave-wipe path
+                        this._activeHostileDrones.push(hd);
+                    }
                     audio.playPickup('weapon');
                     for (let c = 0; c < 6; c++) {
                         game.addParticle(this.x, this.y, MathUtils.rand(-90, 90), MathUtils.rand(-90, 90), '#ff1744', 0.3, 2);
                     }
                 }
+            }
+        }
+        // ---- NEW ENEMY TYPE: FPV Pilot (Unit B) ----
+        // Keeps distance (skittish standoff 700), and inside a deploy band
+        // unpacks a heavy hunting drone (EnemyFPVDrone), then ROOTS while
+        // it's out (UNPACK/PILOTING: reduced damage, fireHold, facing the
+        // player). RELOAD is mobile + pistol-live (FORK-2b). Repeats
+        // dronesLeft times before falling back to a plain skittish pistol.
+        // Rooted states zero the velocity the base skittish pass just set,
+        // so it holds still (this block runs after base movement, before
+        // updatePhysics).
+        if (this.type === 'fpv_pilot' && game && !game.operatorMode) {
+            // Drop a drone that died / detonated / was wave-wiped so we can
+            // redeploy (indexOf over the tiny bossDrones list is cheap).
+            if (this._fpvDrone && (this._fpvDrone.dead || !game.bossDrones || game.bossDrones.indexOf(this._fpvDrone) === -1)) {
+                this._fpvDrone = null;
+            }
+            const T = FPV_PILOT_TUNING;
+            switch (this._fpvState) {
+                case 'APPROACH':
+                    if (this._fpvDrone) { this._fpvState = 'PILOTING'; break; } // safety
+                    if (this._fpvDronesLeft <= 0) { this._fpvState = 'EXHAUSTED'; break; }
+                    // Commit only when a player is in the deploy band and it's
+                    // not already fleeing a drone (never rooted while running).
+                    if (this.cachedTarget && this.cachedDistToTarget >= T.deployMinDist && this.cachedDistToTarget <= T.deployMaxDist && !this.cachedRunFromDrone) {
+                        this._fpvState = 'UNPACK';
+                        this._fpvTimer = T.unpackTime;
+                        audio.playPickup('weapon');
+                        for (let c = 0; c < 5; c++) {
+                            game.addParticle(this.x, this.y, MathUtils.rand(-60, 60), MathUtils.rand(-120, -40), '#ff5252', 0.35, 2.2);
+                        }
+                    }
+                    break;
+                case 'UNPACK':
+                    // Rooted deploy window: the player's chance to kill it
+                    // before the drone launches.
+                    this.vx = 0; this.vy = 0;
+                    this._fpvTimer -= dt;
+                    if (this._fpvTimer <= 0) {
+                        // Launch 40px toward the player so the drone doesn't
+                        // hover on top of the pilot during its 1s spin-up.
+                        const lt = this.cachedTarget;
+                        const ldx = lt ? lt.x - this.x : 0, ldy = lt ? lt.y - this.y : 0;
+                        const ldist = Math.hypot(ldx, ldy) || 1;
+                        let d = new EnemyFPVDrone(this.x + (ldx / ldist) * 40, this.y + (ldy / ldist) * 40, this);
+                        game.bossDrones.push(d); // rides the shared hostile-drone path
+                        this._fpvDrone = d;
+                        this._fpvDronesLeft--;
+                        this._fpvState = 'PILOTING';
+                        if (audio.playFpvLaunch) audio.playFpvLaunch(this.x, this.y);
+                    }
+                    break;
+                case 'PILOTING':
+                    // Rooted + goggled while the drone hunts.
+                    this.vx = 0; this.vy = 0;
+                    if (!this._fpvDrone) {
+                        this._fpvState = (this._fpvDronesLeft > 0) ? 'RELOAD' : 'EXHAUSTED';
+                        this._fpvTimer = T.reloadTime;
+                    }
+                    break;
+                case 'RELOAD':
+                    // Mobile between drones (FORK-2b): the base skittish pass
+                    // steers it (standoff kites) and its pistol stays live.
+                    this._fpvTimer -= dt;
+                    if (this._fpvTimer <= 0) this._fpvState = 'APPROACH';
+                    break;
+                case 'EXHAUSTED':
+                    // Out of drones: plain skittish pistol from here on.
+                    break;
+            }
+            // Rooted = goggled (UNPACK/PILOTING): reduced incoming damage,
+            // stuck-detector skip, and fireHold (locked while the visor's up).
+            // RELOAD is mobile + pistol-live (FORK-2b), so it is NOT rooted.
+            this._fpvRooted = (this._fpvState === 'UNPACK' || this._fpvState === 'PILOTING');
+            this._fpvDmgResist = this._fpvRooted ? T.dmgResist : 1.0;
+            if (this._fpvRooted) {
+                this.fireHoldTimer = Math.max(this.fireHoldTimer, 0.2);
+                this._stuckX = undefined; // rooted: restart the stuck sampler on unroot, don't compare against a pre-root position
+            }
+            // Face the player while rooted: the base angle write above used
+            // cachedAimAngle, which is the move angle unless windowLOS -- and
+            // during the skittish standoff the move angle points AWAY, so a
+            // rooted pilot would face backwards. The _tacticalMoveTarget
+            // contract forbids writing this.angle from the steering hook, so
+            // the facing fix lives here (after base movement consumed angle).
+            if (this._fpvRooted && this.cachedTarget && !this.cachedTarget.dead) {
+                this.angle = Math.atan2(this.cachedTarget.y - this.y, this.cachedTarget.x - this.x);
             }
         }
         if (this.type === 'bombardier' && game && !game.operatorMode) {
@@ -17049,7 +17305,67 @@ class Enemy extends Entity {
             }
         }
 
-        if (this.type !== 'swarmer' && this.type !== 'sapper') {
+        // ---- NEW ENEMY TYPE: Unarmed Priority Medic (Unit A) ----
+        // Unarmed (weapon 'melee' → the fire gate above no-ops; also excluded
+        // from flashbangs below). A throttled O(n) priority re-scan (staggered
+        // per unit) picks the highest-priority WOUNDED ally in commit range.
+        // ALL steering (rush to patient, idle anchor hold, skittish yield when
+        // the player is on top) lives in _tacticalMoveTarget on the AI tick --
+        // returning the patient's position feeds the base pathfinding for free
+        // (the old per-frame vx/vy override wall-pinned on blocked lines).
+        // This block keeps only the per-frame channel: in range, hold still
+        // and channel a heal reusing the Operative medic's timing/amount
+        // (STRIKE_TEAM.HEAL_*).
+        if (this.type === 'medic' && game && !game.operatorMode) {
+            if (this._medicHealCd > 0) this._medicHealCd -= dt;
+            this._medicRetarget -= dt;
+            if (this._medicRetarget <= 0) {
+                this._medicRetarget = MathUtils.rand(MEDIC_TUNING.retargetMin, MEDIC_TUNING.retargetMax);
+                // Runs on every tick -- the heal-cooldown gate lives inside
+                // _medicPickTarget (next to the charges gate), so the idle
+                // anchor keeps refreshing while the medic rests.
+                this._medicTarget = this._medicPickTarget();
+            }
+            // Drop a stale patient (recovered per the wounded ladder, or dead)
+            // cheaply, every frame. The ladder is the single authority on
+            // "patient or not" -- the base class never writes e.wounded.
+            let mt = this._medicTarget;
+            if (mt && (mt.dead || !mt.wounded)) { this._medicTarget = null; this._medicChannel = 0; }
+            mt = this._medicTarget;
+            if (mt) {
+                let mDist = Math.hypot(mt.x - this.x, mt.y - this.y);
+                let hr = MEDIC_TUNING.healRange;
+                if (mDist <= hr) {
+                    // In channel range: hold still and channel (progress persists
+                    // through the abort gap so a drifting patient doesn't reset it).
+                    // Assert the intentional-hold latch so the stuck detector never
+                    // teleports it mid-channel (the channel branch holds still).
+                    this.vx = 0; this.vy = 0;
+                    this._intentionalHold = true;
+                    this._medicChannel += dt;
+                    if (Math.random() < 0.5) game.addParticle(mt.x + MathUtils.rand(-12, 12), mt.y + MathUtils.rand(-12, 12), 0, -30, '#00e676', 0.35, 2);
+                    if (this._medicChannel >= STRIKE_TEAM.HEAL_CHANNEL) {
+                        mt.hp = Math.min(mt.maxHp, mt.hp + Math.round(mt.maxHp * STRIKE_TEAM.HEAL_FRAC));
+                        // (wounded flag: NOT written here -- the patient's own
+                        // GRUNT_WOUND_* ladder recomputes it on its next AI
+                        // tick; the base class doesn't own that flag.)
+                        this._medicHealCd = STRIKE_TEAM.HEAL_COOLDOWN;
+                        this._medicCharges--;
+                        this._medicChannel = 0;
+                        this._medicTarget = null;
+                        if (audio && audio.playPickup) audio.playPickup('money');
+                    }
+                } else {
+                    // Out of channel range: the hook rushes it to close. Abort
+                    // progress only once the patient breaks well past the range.
+                    if (mDist > hr + 120) this._medicChannel = 0;
+                }
+            } else {
+                this._medicChannel = 0;
+            }
+        }
+
+        if (this.type !== 'swarmer' && this.type !== 'sapper' && this.type !== 'medic') {
             if (this.flashCooldown !== undefined) {
                 this.flashCooldown -= dt;
                 let closestPlayer = distToP1 < distToP2 ? game.player : game.player2;
@@ -17142,6 +17458,7 @@ class Enemy extends Entity {
         // the deliberate `walls`-vs-`nearbyWalls` split already present above
         // for sniper LOS: full walls are only ever needed for long-range
         // raycasts, never for body collision.
+        if (_medicSpeed) this.speed = _medicSpeed; // restore (see the capture above)
         this.updatePhysics(dt, nearbyWalls);
     }
 
@@ -17191,6 +17508,36 @@ class Enemy extends Entity {
             }
             // No cover found (or already there) -- stand and fight; the
             // stuck-detector escalation ladder is the backstop.
+            return null;
+        }
+        // MEDIC steering (rebuild): runs on the AI tick; the per-frame channel
+        // stays in update(). Defer to the authoritative overrides first
+        // (final-kill runner, drone flee -- same idiom as the Operative).
+        // Live patient: rush to it. This hook sits LAST in the override chain,
+        // so the rush beats the skittish standoff for free -- and it ROUTES
+        // through the base pathfinding when the straight line is blocked,
+        // which the old per-frame velocity override could not do. Yield
+        // (return null) when the player is on top: the base skittish standoff
+        // kites the medic away, replacing the old per-frame fleeRange gate.
+        // No patient: hold the tier-first anchor (see _medicPickTarget) --
+        // drift to it when far, deliberate support stand when close (the
+        // cover branch's latch idiom, so the stuck detector reads a hold,
+        // not a wedge). It never advances on the player from here.
+        if (this.type === 'medic' && game && !game.operatorMode &&
+            !this.finalKillRole && !runFromDrone) {
+            const mt = this._medicTarget;
+            if (mt && !mt.dead && this._medicHealCd <= 0) {
+                if (distToTarget > MEDIC_TUNING.fleeRange) return { x: mt.x, y: mt.y };
+                return null; // player on top: yield to the skittish standoff
+            }
+            const a = this._medicAnchor;
+            if (a && !a.dead) {
+                const adx = a.x - this.x, ady = a.y - this.y;
+                if (adx * adx + ady * ady > MEDIC_TUNING.anchorRadius * MEDIC_TUNING.anchorRadius) {
+                    return { x: a.x, y: a.y };
+                }
+                this._intentionalHold = true; // with the squad: deliberate stand
+            }
             return null;
         }
         return null;
@@ -17488,6 +17835,22 @@ class Enemy extends Entity {
         opAI.routeTargetY = curNode.y;
     }
     
+    // Per-type incoming-damage hook (first takeDamage override on Enemy -- it
+    // previously inherited Entity's). Two consumers: the rooted fpv_pilot,
+    // which takes reduced damage while committed to its pack (deploying /
+    // piloting / reloading) so rooting is a real trade-off rather than a pure
+    // sitting duck, and the medic, whose heal channel is interrupted by ANY
+    // hit (the Operative medic's idiom -- the design brief's "a window to
+    // interrupt"). Every other type takes full damage, unmodified.
+    takeDamage(amt, pushDir, pushForce) {
+        if (this.type === 'fpv_pilot' && this._fpvDmgResist < 1) amt *= this._fpvDmgResist;
+        if (this.type === 'medic' && this._medicChannel > 0) {
+            this._medicChannel = 0;
+            this._medicTarget = null;
+        }
+        return super.takeDamage(amt, pushDir, pushForce);
+    }
+
     fire(game) {
         if (this.weaponType === 'melee') {
             return;
@@ -17577,6 +17940,73 @@ class Enemy extends Entity {
     // only the window flag is set. Callers must pass the target's live
     // x/y (this.cachedTarget) and must only call this when the cached
     // flags already say "can shoot" -- it is a re-verify, not a scan.
+    // ---- NEW ENEMY TYPE: Unarmed Priority Medic (Unit A) helpers ----
+    // Priority tiers for patient selection (lower = more urgent). Matches the
+    // brief: comm > jammer > bombardier > drone_op/fpv_pilot > other elites >
+    // most-wounded grunt.
+    _medicTier(e) {
+        switch (e.type) {
+            case 'comm': return 0;
+            case 'jammer': return 1;
+            case 'bombardier': return 2;
+            case 'drone_op':
+            case 'fpv_pilot': return 3;
+            case 'enforcer':
+            case 'shotgun_grunt':
+            case 'sniper_grunt':
+            case 'shield':
+            case 'sapper': return 4;
+            default: return 5;
+        }
+    }
+    // Throttled O(n) scan over game.enemies (called on the staggered
+    // _medicRetarget timer, NOT per frame). Picks the highest-priority WOUNDED
+    // ally within commit range (wounded-ladder discipline, same as the
+    // Operative medic); ties break by most-wounded then nearest. Also picks
+    // the idle anchor: highest-TIER living ally (distance tiebreak) within
+    // anchorRange, so the medic hangs on the squad's key units rather than
+    // whatever grunt happens to be closest. One pass, no allocation -- cheap
+    // even on a full wave.
+    _medicPickTarget() {
+        if (!game || !game.enemies) return null;
+        const CR = MEDIC_TUNING.commitRange;
+        const AR2 = MEDIC_TUNING.anchorRange * MEDIC_TUNING.anchorRange;
+        let best = null, bestTier = 99, bestFrac = 1, bestD2 = Infinity;
+        let anchor = null, anchorTier = 99, anchorD2 = AR2;
+        for (const e of game.enemies) {
+            if (e === this || e.dead) continue;
+            const dx = e.x - this.x, dy = e.y - this.y;
+            const d2 = dx * dx + dy * dy;
+            const tier = this._medicTier(e);
+            // Anchor: the highest-tier LIVING ally (any HP) within anchorRange
+            // -- the point the medic hangs around when it has nothing to rush
+            // to, so it stays with the squad instead of advancing on the player.
+            if (d2 < AR2 && (tier < anchorTier || (tier === anchorTier && d2 < anchorD2))) {
+                anchorTier = tier; anchorD2 = d2; anchor = e;
+            }
+            // The heal cooldown is a real rest window: a resting (or spent)
+            // medic holds its anchor (the block above) and does NOT re-acquire
+            // a patient until it expires. Gating INSIDE the scan (not at the
+            // caller) keeps the anchor refreshing every tick, so a higher-tier
+            // ally that walks into range while the medic rests is picked up the
+            // moment it comes out of cooldown -- not the stale patient from
+            // when the cooldown started.
+            if (this._medicCharges <= 0 || this._medicHealCd > 0 || d2 > CR * CR) continue; // spent or resting: anchor only
+            // Wounded-ladder patient filter: commit only to units in the
+            // WOUNDED state (entered at <=0.30 by their own GRUNT_WOUND_*
+            // ladder). One 0.35 heal carries a 0.30 patient past WOUND_EXIT
+            // (0.55), so the owning ladder clears the flag on its next AI
+            // tick and the stale-drop releases the medic. Charges and heals
+            // line up 1:1.
+            if (!e.wounded) continue;
+            const frac = e.hp / e.maxHp;
+            if (tier < bestTier || (tier === bestTier && (frac < bestFrac || (frac === bestFrac && d2 < bestD2)))) {
+                best = e; bestTier = tier; bestFrac = frac; bestD2 = d2;
+            }
+        }
+        this._medicAnchor = anchor;
+        return best;
+    }
     _fireLineClear(tx, ty) {
         if (this._barrierBlocksShot(tx, ty)) return false;
         const walls = game.map.getWallsAlongSegment(this.x, this.y, tx, ty);
@@ -18048,12 +18478,14 @@ class Enemy extends Entity {
             ctx.lineWidth = 1.2;
             ctx.fillRect(this.r * 0.55, -this.r * 0.4, this.r * 0.6, this.r * 0.8);
             ctx.strokeRect(this.r * 0.55, -this.r * 0.4, this.r * 0.6, this.r * 0.8);
-            let prepping = !this._activeHostileDrone;
+            // C3: the rack strobes while the swarm is below its cap and the next
+            // burst is imminent ("more are coming" tell); it dims while capped.
+            let prepping = this._activeHostileDrones.length < DRONE_OP_TUNING.maxAlive;
             let rackAlpha = 1.0;
             if (prepping && this._droneCooldown < 2.0) {
                 rackAlpha = Math.floor((game ? game.gameTime : 0) * 10) % 2 === 0 ? 1.0 : 0.25;
             } else if (!prepping) {
-                rackAlpha = 0.25; // rack is empty while its drone is in the air
+                rackAlpha = 0.25; // swarm at cap -- nothing more to rack
             }
             ctx.save();
             ctx.globalAlpha = this.opacity * rackAlpha;
@@ -18099,9 +18531,96 @@ class Enemy extends Entity {
             ctx.beginPath();
             ctx.arc(0, 0, this.r * 0.28, 0, Math.PI * 2);
             ctx.fill();
+        } else if (this.type === 'medic') {
+            // Unarmed: no gun. A WHITE body outline so the near-black medic
+            // reads against dark maps (its stock outline is near-black too),
+            // + a red medical cross that pulses brighter while channeling.
+            // A SPENT medic (all heal charges used) draws a dim grey cross --
+            // plain stroke swap, no glow -- so "out of heals" reads at a glance.
+            let channeling = this._medicChannel > 0;
+            let spent = this._medicCharges <= 0;
+            let crossOn = channeling || (Math.floor((game ? game.gameTime : 0) * 4) % 2 === 0);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.r, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.strokeStyle = spent ? (crossOn ? '#616161' : '#424242') : (crossOn ? '#ff1744' : '#b71c1c');
+            ctx.lineWidth = 2.4;
+            let cx = this.r * 0.2, s = this.r * 0.45;
+            ctx.beginPath();
+            ctx.moveTo(cx - s, 0); ctx.lineTo(cx + s, 0);
+            ctx.moveTo(cx, -s); ctx.lineTo(cx, s);
+            ctx.stroke();
+            if (channeling) {
+                ctx.save();
+                ctx.globalAlpha = this.opacity * 0.5;
+                ctx.strokeStyle = '#00e676';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(cx, 0, this.r * (0.75 + 0.2 * Math.sin((game ? game.gameTime : 0) * 12)), 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+        } else if (this.type === 'fpv_pilot') {
+            // Ground pilot: a cool steel-blue body (registry color) with a heavy
+            // drone-bay pack on the back + a goggle visor. Rooted states
+            // (UNPACK/PILOTING) light the visor bright cyan with a slow strobe
+            // ("goggled and live"); EXHAUSTED deflates him -- hollow/dim pack,
+            // dead visor -- so "out of drones, deprioritise" reads at a glance.
+            let active = this._fpvState === 'PILOTING' || this._fpvState === 'UNPACK';
+            let exhausted = this._fpvState === 'EXHAUSTED';
+            ctx.fillStyle = exhausted ? 'rgba(55,71,79,0.22)' : '#37474f';
+            ctx.strokeStyle = exhausted ? '#3a4a55' : (active ? '#40c4ff' : '#5c7a9a');
+            ctx.lineWidth = 1.5;
+            ctx.fillRect(-this.r * 1.35, -this.r * 0.55, this.r * 0.75, this.r * 1.1);
+            ctx.strokeRect(-this.r * 1.35, -this.r * 0.55, this.r * 0.75, this.r * 1.1);
+            let visorOn = Math.floor((game ? game.gameTime : 0) * 6) % 2 === 0;
+            let visorFill, visorAlpha;
+            if (active) {
+                visorFill = (this._fpvState === 'PILOTING') ? '#8ef0ff' : '#40c4ff';
+                visorAlpha = visorOn ? 1.0 : 0.35;
+            } else if (exhausted) {
+                visorFill = '#1c262e'; visorAlpha = 1.0;
+            } else {
+                visorFill = '#263238'; visorAlpha = 1.0;
+            }
+            ctx.save();
+            ctx.globalAlpha = ctx.globalAlpha * visorAlpha;
+            ctx.fillStyle = visorFill;
+            ctx.fillRect(this.r * 0.2, -this.r * 0.5, this.r * 0.62, this.r * 0.55);
+            ctx.restore();
         }
 
         ctx.restore();
+
+        // FPV pilot world-space tells (map space, not body space): a faint
+        // planted-feet ring while rooted, and a very faint tether to his drone
+        // while PILOTING so you can see which pilot owns the bird you're dodging.
+        if (this.type === 'fpv_pilot' && game) {
+            let px = this.x - cam.x, py = this.y - cam.y;
+            if (this._fpvState === 'UNPACK' || this._fpvState === 'PILOTING') {
+                ctx.save();
+                ctx.globalAlpha = this.opacity * 0.4;
+                ctx.strokeStyle = '#40c4ff';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(px, py, this.r * 1.5, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+            if (this._fpvState === 'PILOTING' && this._fpvDrone && !this._fpvDrone.dead) {
+                ctx.save();
+                ctx.globalAlpha = this.opacity * 0.15; // very faint
+                ctx.strokeStyle = '#40c4ff';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(px, py);
+                ctx.lineTo(this._fpvDrone.x - cam.x, this._fpvDrone.y - cam.y);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
 
         if (this.reactingToDrone) {
             let ex = this.x - cam.x;
@@ -18122,6 +18641,21 @@ class Enemy extends Entity {
     }
 
     onDeath() {
+        // C-2: an operator's drones are its doctrine -- when it dies they
+        // retire (stop homing, drift, expire in ~3s) instead of hunting for
+        // the rest of their life. Marking only: retireFromOwnerDeath() never
+        // touches game.bossDrones, so this is safe even though onDeath runs
+        // synchronously inside takeDamage (and can chain via the volatile-
+        // corpses blast below). Covers the drone_op swarm AND the fpv_pilot's
+        // single hunting drone (same bug, different owner field).
+        if (this.type === 'drone_op' && this._activeHostileDrones) {
+            for (let i = 0; i < this._activeHostileDrones.length; i++) {
+                let hd = this._activeHostileDrones[i];
+                if (hd && !hd.dead) hd.retireFromOwnerDeath();
+            }
+        } else if (this.type === 'fpv_pilot' && this._fpvDrone && !this._fpvDrone.dead) {
+            this._fpvDrone.retireFromOwnerDeath();
+        }
         // FPV OPERATOR MODE: no per-kill cash drops (spec section 4 -- "you
         // just earn money by surviving waves"). Track a kill-credit counter
         // instead, consumed by openShopInterface()'s payout formula
@@ -20215,11 +20749,53 @@ class HostileMiniDrone {
         this.maxHp = 25;
         this.dead = false;
         this.owner = owner;
-        this.life = 16;
+        this.life = 18; // C-3 (FORK-1b): cut from 35 -- the swarm turns over faster, and with C-2's owner-death retirement the population decays when the operator falls (silent expiry stays as the lost-drone backstop)
         this.armTimer = 0.7; // brief spin-up hover before it commits -- the player's reaction window
         this.angle = Math.random() * Math.PI * 2;
-        this._repathTimer = 0;
+        this._repathTimer = MathUtils.rand(0, 0.45); // PERF-2: dephase A* bursts -- a burst of 1-3 launches from the same point/frame; spreading the first repath over 0-0.45s avoids a synchronous path-query spike
         this._wp = null;
+        this._retiring = false; // C-2: set by retireFromOwnerDeath() when the owner dies -- wind down, stop homing
+        // C.2: dull flight hum (duller + quieter than the player FPVDrone's;
+        // no per-frame wall-occlusion query, gain refreshed on a 10Hz throttle).
+        this.osc = null;
+        this.oscGain = null;
+        this.oscFilter = null;
+        this._humTimer = 0;
+    }
+    // C.2: dull flight hum. Lower freq (~50Hz vs the player's 120+) and far
+    // lower peak gain (~0.05 vs ~1.0) than the player FPVDrone, no per-frame
+    // wall-occlusion query; gain is refreshed on a 10Hz throttle in update().
+    initAudio() {
+        if (!audio.ctx || this.osc) return;
+        try {
+            this.osc = audio.ctx.createOscillator();
+            this.oscGain = audio.ctx.createGain();
+            this.oscFilter = audio.ctx.createBiquadFilter();
+            this.osc.type = 'sawtooth';
+            this.osc.frequency.value = 50;
+            this.oscFilter.type = 'lowpass';
+            this.oscFilter.frequency.value = 220;
+            this.osc.connect(this.oscFilter);
+            this.oscFilter.connect(this.oscGain);
+            this.oscGain.connect(audio.sfxGain || audio.masterGain || audio.ctx.destination);
+            this.oscGain.gain.setValueAtTime(0, audio.ctx.currentTime);
+            this.osc.start();
+        } catch (e) { this.osc = null; }
+    }
+    stopAudio() {
+        if (this.oscFilter) { try { this.oscFilter.disconnect(); } catch (e) {} this.oscFilter = null; }
+        if (this.oscGain) { try { this.oscGain.disconnect(); } catch (e) {} this.oscGain = null; }
+        if (this.osc) { try { this.osc.stop(); } catch (e) {} try { this.osc.disconnect(); } catch (e) {} this.osc = null; }
+    }
+    // C-2: the operator that owns this drone is dead. Retire: stop homing,
+    // drift, and expire within ~3s -- a visible wind-down rather than a
+    // silent vanish or a chain pop. Marking only: the life expiry in
+    // update() is what actually kills us and the bossDrones prune reaps the
+    // node, so this never splices game.bossDrones (safe inside a blast pass).
+    retireFromOwnerDeath() {
+        if (this.dead || this._retiring) return;
+        this._retiring = true;
+        this.life = Math.min(this.life, 3);
     }
     takeDamage(amt = 25) {
         if (this.dead) return;
@@ -20231,6 +20807,7 @@ class HostileMiniDrone {
     explode(hitPlayer) {
         if (this.dead) return;
         this.dead = true;
+        this.stopAudio();
         if (!game) return;
         if (audio.playMiniExplosion) audio.playMiniExplosion(this.x, this.y);
         else audio.playExplosion(0.5, this.x, this.y);
@@ -20263,7 +20840,18 @@ class HostileMiniDrone {
     update(dt, game) {
         if (this.dead) return;
         this.life -= dt;
-        if (this.life <= 0) { this.dead = true; return; } // silent expiry, same contract as BossDrone
+        if (this.life <= 0) { this.dead = true; this.stopAudio(); return; } // silent expiry, same contract as BossDrone
+        // C-2: owner died -- wind down. Stop homing, drift, fade the hum, and
+        // let the life expiry above reap us within ~3s.
+        if (this._retiring) {
+            this.vx *= Math.pow(0.3, dt);
+            this.vy *= Math.pow(0.3, dt);
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+            this.angle += dt * 3;
+            if (this.osc && this.oscGain) this.oscGain.gain.setTargetAtTime(0, audio.ctx.currentTime, 0.25);
+            return;
+        }
 
         if (this.armTimer > 0) {
             // Spin-up hover: drift gently, telegraph via blink in draw().
@@ -20283,7 +20871,21 @@ class HostileMiniDrone {
             let d = Math.hypot(game.player2.x - this.x, game.player2.y - this.y);
             if (d < bestDist) { target = game.player2; bestDist = d; }
         }
-        if (!target) { this.dead = true; return; }
+        if (!target) { this.dead = true; this.stopAudio(); return; } // both players gone: kill the hum with the drone
+
+        // C.2: dull flight hum -- starts when it commits to homing (past the
+        // spin-up early-return above); distance-falloff gain refreshed on a
+        // 10Hz throttle (cheap param writes, no per-frame wall query).
+        if (!this.osc && audio.ctx) this.initAudio();
+        if (this.osc && this.oscGain) {
+            this._humTimer -= dt;
+            if (this._humTimer <= 0) {
+                this._humTimer = 0.1;
+                let maxAudible = 900;
+                let g = (bestDist < maxAudible) ? 0.05 * (1.0 - bestDist / maxAudible) : 0.0;
+                this.oscGain.gain.setTargetAtTime(g, audio.ctx.currentTime, 0.05);
+            }
+        }
 
         // Throttled routing: with LOS, home directly; without, steer at the
         // next shared-path waypoint (the swarmer path cache -- cheap).
@@ -20393,6 +20995,328 @@ class HostileMiniDrone {
         ctx.beginPath();
         ctx.arc(0, 0, 1.6, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
+    }
+}
+
+// ---- NEW ENEMY TYPE (29 Aug): FPV Pilot's heavy hunting drone (Unit B) ----
+// A bigger, heavier cousin of HostileMiniDrone: the fpv_pilot unpacks it and
+// roots while it hunts a PLAYER, detonating on contact for a much larger
+// splash. It pathfinds around cover (throttled shared-path waypoint, same
+// pattern as HostileMiniDrone), is shootable by the player (rides the
+// bossDrones bullet-collision pass), and rides the shared bossDrones
+// update/draw/blast/wave-wipe path. Stats live in FPV_PILOT_TUNING.drone.
+class EnemyFPVDrone {
+    constructor(x, y, owner) {
+        const D = FPV_PILOT_TUNING.drone;
+        this.x = x; this.y = y;
+        this.vx = 0; this.vy = 0;
+        this.r = D.r;
+        this.hp = D.hp;
+        this.maxHp = D.hp;
+        this.dead = false;
+        this.owner = owner;
+        this.speed = D.speed;
+        this.life = D.life;
+        this.blastRadius = D.blastRadius;
+        this.blastDmg = D.blastDmg;
+        this.armTimer = 1.0; // longer spin-up than the mini drone = a bigger tell
+        this.angle = Math.random() * Math.PI * 2;
+        this._propPhase = Math.random() * Math.PI * 2; // desyncs the rotor spin between drones
+        this._repathTimer = MathUtils.rand(0, 0.45); // PERF-2: dephase A* bursts (see HostileMiniDrone)
+        this._wp = null;
+        this._retiring = false; // C-2: set by retireFromOwnerDeath() when the pilot dies -- wind down, stop homing
+        // FPV hum: same voice as the player's own FPV drone (see FPVDrone).
+        this.osc = null;
+        this.oscGain = null;
+        this.oscFilter = null;
+        this._audBlocked = false; // wall-occluded-from-player flag, cached on the repath tick
+    }
+    initAudio() {
+        if (!audio.ctx || this.osc) return;
+        try {
+            this.osc = audio.ctx.createOscillator();
+            this.oscGain = audio.ctx.createGain();
+            this.oscFilter = audio.ctx.createBiquadFilter();
+            this.osc.type = 'sawtooth';
+            this.osc.frequency.value = 120;
+            this.oscFilter.type = 'lowpass';
+            this.oscFilter.frequency.value = 1000;
+            this.osc.connect(this.oscFilter);
+            this.oscFilter.connect(this.oscGain);
+            this.oscGain.connect(audio.sfxGain || audio.masterGain || audio.ctx.destination);
+            this.oscGain.gain.setValueAtTime(0, audio.ctx.currentTime);
+            this.osc.start();
+        } catch (e) { this.osc = null; }
+    }
+    stopAudio() {
+        if (this.oscFilter) { try { this.oscFilter.disconnect(); } catch (e) {} this.oscFilter = null; }
+        if (this.oscGain) { try { this.oscGain.disconnect(); } catch (e) {} this.oscGain = null; }
+        if (this.osc) { try { this.osc.stop(); } catch (e) {} try { this.osc.disconnect(); } catch (e) {} this.osc = null; }
+    }
+    // C-2: the pilot that owns this drone is dead. Retire: stop homing,
+    // drift, and expire within ~3s (visible wind-down). Marking only -- the
+    // life expiry in update() kills us and the bossDrones prune reaps us, so
+    // this never splices game.bossDrones (safe inside a blast pass).
+    retireFromOwnerDeath() {
+        if (this.dead || this._retiring) return;
+        this._retiring = true;
+        this.life = Math.min(this.life, 3);
+    }
+    takeDamage(amt = 20) {
+        if (this.dead) return;
+        this.hp -= amt;
+        if (this.hp <= 0) this.explode(false);
+    }
+    explode(hitPlayer) {
+        if (this.dead) return;
+        this.dead = true;
+        this.stopAudio();
+        if (!game) return;
+        if (audio.playMiniExplosion) audio.playMiniExplosion(this.x, this.y);
+        else if (audio.playExplosion) audio.playExplosion(0.7, this.x, this.y);
+        game.applyExplosionShake(this.x, this.y, 18, 90);
+        game.spawnShockwave(this.x, this.y, this.blastRadius * 0.5, 0.25);
+        // Splash the player AND the player's own doctrine -- turrets, dog,
+        // cameras, hostages, swarm -- so the drone "uses your own doctrine
+        // against you" (the repair tool makes that damage recoverable). It
+        // deliberately EXCLUDES game.enemies/bossDrones (the drone's own side)
+        // so a blast can't friends-fire a chain of hostile drones. Not FF-gated:
+        // it's a hostile tool and always reaches the player's side.
+        let targets = [game.player];
+        if (game.isTwoPlayer && game.player2) targets.push(game.player2);
+        let doctrine = [game.turrets, game.securityCameras, game.dogs, game.hostages, game.miniDrones];
+        for (let list of doctrine) {
+            if (!list) continue;
+            for (let i = 0; i < list.length; i++) targets.push(list[i]);
+        }
+        if (game.player && game.player.activeDrone) targets.push(game.player.activeDrone);
+        if (game.player2 && game.player2.activeDrone) targets.push(game.player2.activeDrone);
+        for (let ent of targets) {
+            if (!ent || ent.dead) continue;
+            let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
+            if (dist < this.blastRadius) {
+                if (game.blastOccluded(this.x, this.y, ent)) continue;
+                let dmg = this.blastDmg * (1.0 - dist / this.blastRadius);
+                ent.takeDamage(dmg, Math.atan2(ent.y - this.y, ent.x - this.x), 320);
+            }
+        }
+        let n = hitPlayer ? 26 : 16;
+        for (let c = 0; c < n; c++) {
+            let a = Math.random() * Math.PI * 2;
+            let spd = MathUtils.rand(120, 380);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ff5252', 0.4, 3);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd * 0.6, Math.sin(a) * spd * 0.6, '#ffea00', 0.3, 2);
+        }
+        game.spawnScorchMark(this.x, this.y, this.blastRadius * 0.16);
+        game.triggerBarrelsInRadius(this.x, this.y, this.blastRadius * 0.6);
+    }
+    update(dt, game) {
+        if (this.dead) return;
+        this.life -= dt;
+        if (this.life <= 0) { this.dead = true; this.stopAudio(); return; } // silent expiry backstop
+        // C-2: owner (the pilot) died -- wind down. Stop homing, drift, fade
+        // the hum, and let the life expiry above reap us within ~3s.
+        if (this._retiring) {
+            this.vx *= Math.pow(0.3, dt);
+            this.vy *= Math.pow(0.3, dt);
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+            this.angle += dt * 3;
+            if (this.osc && this.oscGain) this.oscGain.gain.setTargetAtTime(0, audio.ctx.currentTime, 0.25);
+            return;
+        }
+
+        if (this.armTimer > 0) {
+            // Spin-up hover: drift gently, telegraph via blink in draw().
+            this.armTimer -= dt;
+            this.vx *= Math.pow(0.1, dt);
+            this.vy *= Math.pow(0.1, dt);
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+            this.angle += dt * 5;
+            return;
+        }
+
+        // Nearest player (it hunts the player, not other enemies).
+        let target = null;
+        let bestDist = Infinity;
+        if (game.player && !game.player.dead) { target = game.player; bestDist = Math.hypot(game.player.x - this.x, game.player.y - this.y); }
+        if (game.isTwoPlayer && game.player2 && !game.player2.dead) {
+            let d = Math.hypot(game.player2.x - this.x, game.player2.y - this.y);
+            if (d < bestDist) { target = game.player2; bestDist = d; }
+        }
+        if (!target) { this.dead = true; this.stopAudio(); return; } // both players gone: kill the hum with the drone
+
+        // FPV hum: same voice as the player's own FPV drone (FPVDrone.update)
+        // -- sawtooth + lowpass, base freq rising with speed, Doppler from the
+        // relative velocity, distance-falloff gain scaled by SFX volume. The
+        // enemy drone is always "flying" once armed (no isPiloted gate), so it
+        // hums continuously until it detonates. Occlusion is cached on the
+        // repath tick below (no per-frame wall query); only 1-2 ever exist.
+        if (!this.osc && audio.ctx) this.initAudio();
+        if (this.osc && this.oscGain) {
+            let spd = Math.hypot(this.vx, this.vy);
+            let baseFreq = 120 + spd * 0.45;
+            let maxAudible = 1200;
+            let vol = 0.02, fFreq = baseFreq, filterFreq = 1000;
+            if (bestDist < maxAudible) {
+                let rawVol = 1.0 - bestDist / maxAudible;
+                vol = 0.02 + 0.98 * rawVol;
+                if (this._audBlocked) { vol *= 0.4; filterFreq = 350; }
+                if (bestDist > 0) {
+                    let ux = (this.x - target.x) / bestDist, uy = (this.y - target.y) / bestDist;
+                    let v_rel = (target.vx - this.vx) * ux + (target.vy - this.vy) * uy;
+                    fFreq = baseFreq * MathUtils.clamp(1.0 + v_rel / 800, 0.55, 1.7);
+                }
+            }
+            let sfxVol = (game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+            this.oscGain.gain.setValueAtTime(vol * 0.25 * sfxVol, audio.ctx.currentTime);
+            this.osc.frequency.setValueAtTime(fFreq, audio.ctx.currentTime);
+            if (this.oscFilter) this.oscFilter.frequency.setValueAtTime(filterFreq, audio.ctx.currentTime);
+        }
+
+        // Throttled routing: direct home with LOS, else steer to the next
+        // shared-path waypoint (same pattern as HostileMiniDrone).
+        this._repathTimer -= dt;
+        if (this._repathTimer <= 0) {
+            this._repathTimer = 0.4;
+            let segWalls = game.map.getWallsAlongSegment(this.x, this.y, target.x, target.y);
+            let los = !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
+            this._audBlocked = !los; // reuse this LOS for the hum's occlusion (no extra wall query)
+            if (los) {
+                this._wp = null;
+            } else {
+                let nearbyW = game.map.getWallsNear(this.x, this.y);
+                let path = game.map.getSharedPath(this.x, this.y, target.x, target.y, nearbyW);
+                this._wp = (path && path.length > 0) ? { x: path[0].x, y: path[0].y } : null;
+            }
+        }
+        let steerX = target.x, steerY = target.y;
+        if (this._wp) {
+            steerX = this._wp.x; steerY = this._wp.y;
+            if (Math.hypot(steerX - this.x, steerY - this.y) < 45) { this._wp = null; this._repathTimer = 0; }
+        }
+
+        let sdx = steerX - this.x, sdy = steerY - this.y;
+        let sdist = Math.hypot(sdx, sdy);
+        if (sdist > 0) {
+            this.vx += ((sdx / sdist) * this.speed - this.vx) * 6 * dt;
+            this.vy += ((sdy / sdist) * this.speed - this.vy) * 6 * dt;
+        }
+
+        // Wall repulsion (MiniDrone pattern) so it slides around corners.
+        let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+        for (let wall of nearbyWalls) {
+            let cx = Math.max(wall.x, Math.min(this.x, wall.x + wall.w));
+            let cy = Math.max(wall.y, Math.min(this.y, wall.y + wall.h));
+            let wdx = this.x - cx, wdy = this.y - cy;
+            let wdist = Math.hypot(wdx, wdy);
+            let repelDist = 28;
+            if (wdist < repelDist) {
+                let force = (repelDist - wdist) / repelDist;
+                if (wdist > 0) {
+                    this.vx += (wdx / wdist) * force * 360;
+                    this.vy += (wdy / wdist) * force * 360;
+                } else {
+                    let pushAngle = Math.atan2(this.y - (wall.y + wall.h / 2), this.x - (wall.x + wall.w / 2));
+                    this.vx += Math.cos(pushAngle) * 360;
+                    this.vy += Math.sin(pushAngle) * 360;
+                }
+            }
+        }
+
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.x = MathUtils.clamp(this.x, this.r, game.mapW - this.r);
+        this.y = MathUtils.clamp(this.y, this.r, game.mapH - this.r);
+        let spd = Math.hypot(this.vx, this.vy);
+        if (spd > 10) this.angle = Math.atan2(this.vy, this.vx);
+
+        // Barrier hit = detonate (same contract as HostileMiniDrone).
+        if (game.barriers && game.barriers.length > 0) {
+            for (let j = game.barriers.length - 1; j >= 0; j--) {
+                let bar = game.barriers[j];
+                let barCol = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
+                if (barCol.hit) {
+                    bar.hp -= 60;
+                    this.explode(false);
+                    return;
+                }
+            }
+        }
+
+        // Contact detonate (the splash in explode() does the damage).
+        if (bestDist < this.r + target.r + 4) {
+            this.explode(true);
+        }
+    }
+    draw(ctx, cam) {
+        if (this.dead) return;
+        let t = game ? game.gameTime : 0;
+        let scx = this.x - cam.x, scy = this.y - cam.y;
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(this.angle);
+        let curA = ctx.globalAlpha;
+        // Spin-up "get ready" tell: blink the whole quad while it arms.
+        if (this.armTimer > 0) curA *= (Math.floor(t * 12) % 2 === 0) ? 1.0 : 0.35;
+        let r = this.r;
+        let a = r * 0.72;
+
+        // Aluminum-grey frame: two crossing arms (the airframe).
+        ctx.globalAlpha = curA;
+        ctx.strokeStyle = '#c8d0d9';
+        ctx.lineWidth = 2.2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-a, -a); ctx.lineTo(a, a);
+        ctx.moveTo(a, -a); ctx.lineTo(-a, a);
+        ctx.stroke();
+
+        // Steel-blue center hull (the "blue" accent) with a darker core.
+        ctx.fillStyle = '#46586b';
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.52, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#2c3a49';
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.32, 0, Math.PI * 2); ctx.fill();
+
+        // Dark-grey rotor pods: the circles around the props.
+        ctx.fillStyle = '#31363d';
+        for (let rx of [-a, a]) for (let ry of [-a, a]) {
+            ctx.beginPath(); ctx.arc(rx, ry, r * 0.34, 0, Math.PI * 2); ctx.fill();
+        }
+
+        // Red props: a faint motion-blur disc + a spinning two-blade rotor each.
+        let spin = t * 42 + this._propPhase;
+        for (let rx of [-a, a]) for (let ry of [-a, a]) {
+            ctx.globalAlpha = curA * 0.28;
+            ctx.strokeStyle = '#ff3b30';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(rx, ry, r * 0.30, 0, Math.PI * 2); ctx.stroke();
+            ctx.globalAlpha = curA;
+            ctx.strokeStyle = '#ff5148';
+            let bx = Math.cos(spin) * r * 0.28, by = Math.sin(spin) * r * 0.28;
+            ctx.beginPath(); ctx.moveTo(rx - bx, ry - by); ctx.lineTo(rx + bx, ry + by); ctx.stroke();
+        }
+
+        // Cyan forward lens: the FPV camera.
+        ctx.globalAlpha = curA;
+        ctx.fillStyle = '#4dd0ff';
+        ctx.beginPath(); ctx.arc(r * 0.6, 0, r * 0.20, 0, Math.PI * 2); ctx.fill();
+
+        // Flashing green nav light (rear): pulses ~6 Hz.
+        ctx.globalAlpha = curA * (0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 12)));
+        ctx.fillStyle = '#39ff14';
+        ctx.beginPath(); ctx.arc(-r * 0.56, 0, r * 0.13, 0, Math.PI * 2); ctx.fill();
+
+        // Fully armed + hunting: a pulsing red ring (the bomb is live).
+        if (this.armTimer <= 0) {
+            let k = 0.5 + 0.5 * Math.sin(t * 10);
+            ctx.globalAlpha = curA * (0.25 + 0.5 * k);
+            ctx.strokeStyle = '#ff3b30';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(0, 0, r + 3 + k * 4, 0, Math.PI * 2); ctx.stroke();
+        }
         ctx.restore();
     }
 }
@@ -28355,7 +29279,15 @@ class Game {
             [8,  () => 0.5 + w * 0.10,                 ['comm', 'enforcer', 'grunt', 'grunt']],
             [10, () => 0.4 + w * 0.10,                 ['jammer', 'shotgun_grunt', 'grunt', 'grunt']],
             [12, () => 0.25 + w * 0.10,                ['comm', 'shield', 'shield', 'drone_op']],
-            [13, () => 0.2 + w * 0.10,                 ['jammer', 'bombardier', 'drone_op', 'grunt']]
+            [13, () => 0.2 + w * 0.10,                 ['jammer', 'bombardier', 'drone_op', 'grunt']],
+            // SPAWN-1: the medic previously only ever came out as a lone
+            // faucet unit with no one to patch up (compounds A-2's "stands
+            // around doing nothing"). Give it a support-heavy squad to
+            // actually heal. minWave tracks the latest member's unlock (comm
+            // @9, jammer @11). No combo/pairing logic -- just rows in the
+            // existing weighted table, per the operator's constraint.
+            [9,  () => 0.4 + w * 0.08,                 ['medic', 'comm', 'grunt']],
+            [11, () => 0.3 + w * 0.08,                 ['medic', 'jammer', 'grunt']]
         ];
         let pool = templates.filter(t => w >= t[0]);
         let total = 0;
@@ -34273,6 +35205,9 @@ class Game {
         toggleClass('hud-heat-wrap', 'hidden', !this.extractionMode);
 
         // ---- Boss run-state reset ----
+        if (this.bossDrones) {
+            for (let d of this.bossDrones) d.stopAudio();
+        }
         this.bossDrones = [];       // hostile drones launched by SpotBoss instances
         this.activeBoss = null;     // the currently-alive boss this run, if any (drives the boss HUD bar)
         this.bossesDefeatedThisRun = 0; // feeds escort-size scaling for the next boss wave
@@ -36791,15 +37726,40 @@ class Game {
                         }
                         // NEW ENEMY TYPES: specialist bands for the faucet
                         // spawner (Action NOW + any faucet-mode fallback).
-                        // They occupy the previously-unused 0.75-1.0 slice
-                        // (which fell through to grunt), so existing band
-                        // odds are completely unchanged -- later waves just
-                        // trade some grunts for specialists as gates unlock.
-                        if (this.wave >= 4 && roll >= 0.75 && roll < 0.81) chosenType = EnemyTypes.drone_op;
-                        if (this.wave >= 5 && roll >= 0.81 && roll < 0.87) chosenType = EnemyTypes.bombardier;
-                        if (this.wave >= 6 && roll >= 0.87 && roll < 0.93) chosenType = EnemyTypes.shield;
-                        if (this.wave >= 9 && roll >= 0.93 && roll < 0.965) chosenType = EnemyTypes.comm;
-                        if (this.wave >= 11 && roll >= 0.965) chosenType = EnemyTypes.jammer;
+                        // They occupy the 0.75-1.0 slice (which, before the
+                        // 29 Aug re-slice, fell through to grunt), so later
+                        // waves trade some grunts for specialists as gates
+                        // unlock. Bands are non-overlapping, so a roll can
+                        // match at most one.
+                        // 29 Aug: added medic (early, common) + fpv_pilot
+                        // (late, rare) by re-slicing the five specialists.
+                        // NOTE (SPAWN-2): that re-slice NERFED every
+                        // pre-existing specialist -- drone_op/bombardier/
+                        // shield 6%->4%, comm 3.5%->2.5%, jammer 3.5%->3% --
+                        // and medic at 5% is now MORE common than any of
+                        // them. That width nerf is a balance-pass (F)
+                        // tunable and is intentionally left as-is here; this
+                        // comment previously (and falsely) claimed "relative
+                        // rarity is preserved."
+                        if (this.wave >= 3 && roll >= 0.75 && roll < 0.80) chosenType = EnemyTypes.medic;
+                        if (this.wave >= 4 && roll >= 0.80 && roll < 0.84) chosenType = EnemyTypes.drone_op;
+                        if (this.wave >= 5 && roll >= 0.84 && roll < 0.88) chosenType = EnemyTypes.bombardier;
+                        if (this.wave >= 6 && roll >= 0.88 && roll < 0.92) chosenType = EnemyTypes.shield;
+                        if (this.wave >= 8 && roll >= 0.92 && roll < 0.945) {
+                            // SPAWN-2 (plan §11.3 B.3): cap fpv_pilot at 1/wave,
+                            // 2 @wave>=13 -- the band roll alone could produce
+                            // several per wave. Lazy per-wave reset (keys off
+                            // this.wave) so it survives every wave-start path.
+                            // When capped, chosenType stays grunt (no earlier
+                            // band matches a 0.92-0.945 roll).
+                            if (this.wave !== this._fpvPilotWave) { this._fpvPilotWave = this.wave; this._fpvPilotSpawnedThisWave = 0; }
+                            if (this._fpvPilotSpawnedThisWave < (this.wave >= 13 ? 2 : 1)) {
+                                chosenType = EnemyTypes.fpv_pilot;
+                                this._fpvPilotSpawnedThisWave++;
+                            }
+                        }
+                        if (this.wave >= 9 && roll >= 0.945 && roll < 0.97) chosenType = EnemyTypes.comm;
+                        if (this.wave >= 11 && roll >= 0.97) chosenType = EnemyTypes.jammer;
                     }
                 }
                 
@@ -36980,6 +37940,7 @@ class Game {
                 let d = this.bossDrones[i];
                 d.update(dt, this);
                 if (d.dead) {
+                    d.stopAudio();
                     this.bossDrones[i] = this.bossDrones[this.bossDrones.length - 1];
                     this.bossDrones.pop();
                 }
@@ -37790,6 +38751,7 @@ class Game {
         this.bullets = [];
         this.grenades = [];
         if (this.bossDrones && this.bossDrones.length > 0) {
+            for (let d of this.bossDrones) d.stopAudio();
             this.bossDrones = [];
         }
         if (this.isBossWave) {
@@ -41034,6 +41996,14 @@ class Game {
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
                 md.stopAudio();
+            }
+        }
+        // Same oscillator-leak class as MiniDrone above: SpotBoss/FPV-pilot
+        // drones hold persistent hums that the update loop no longer drives
+        // once the run ends.
+        if (this.bossDrones) {
+            for (let d of this.bossDrones) {
+                d.stopAudio();
             }
         }
     }
