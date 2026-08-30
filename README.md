@@ -1,99 +1,49 @@
 <div align="center">
-Open source - use to the full extent as you like non-monetarily.
-</div>
-<div align="center">
 
-  <!-- Logo/Title Image -->
-  <img src="images/screenshot2.png" alt="Frozen Soldat" width="600" />
+  <img src="images/screenshot2.png" alt="Frozen Soldat in play" width="600" />
 
-  **A hardcore, tactical top-down shooter and extraction simulator.**<br>  
-  Runs instantly in your browser. No downloads, no game engines, zero assets. 
-  
-  Just deep weapon physics, unforgiving AI, and perimeter defense.
-
-  <br>
-
-  [![Deploy Now](https://img.shields.io/badge/DEPLOY_NOW-(Play_in_Browser)-00ffff?style=for-the-badge&logo=html5&logoColor=black&labelColor=111111)](https://skatardude10.github.io/FrozenSoldat/LATEST_MASTER.html)
-  
-  <br>
-
-  <a href="https://skatardude10.github.io/FrozenSoldat/LATEST_MASTER.html">
-    <img src="images/screenshot.jpg" alt="Frozen Soldat Gameplay Showcase" width="100%" />
-  </a>
+  **A top-down tactical shooter with an extraction mode.**<br>
+  One HTML file. No engine, no asset files, no download — it runs in a browser tab.
 
 </div>
 
----
+Soldat and Frozen Synapse had a baby that got stuck in a browser. You drop into an operational zone and fight enemy squads that actually work together: they flank, they suppress, they share what they see, and they hear your gunshots.
 
-## 🎯 The Rundown
+**Play it:** [frozensoldatgame.com](https://frozensoldatgame.com) — keyboard, gamepad, or touch.
 
-**Frozen Soldat** is a single-file game inspired by two of my favorite games: [Soldat](https://store.steampowered.com/app/638490/Soldat/) and [Frozen Synapse](https://store.steampowered.com/app/98200/Frozen_Synapse/). Additionally, the perks, overclocks, armory, and game mutators take inspiration from titles ranging from *Cyberpunk* to *Vampire Survivors*.
+## Why the guns matter
 
-You are dropped into a hostile, procedurally generated operational zone where the focus is entirely on **game feel and tactics**. 
+Recoil physically pushes your character around. Laser sights drift as barrels heat up. Bullets punch through or ricochet depending on caliber and angle, and some fire open-bolt. All of it is simulated by hand in vanilla JS on a canvas — no engine is doing this for me.
 
-Weapons have physical kickback that affects your movement. Sustained fire causes thermal spread and laser divergence. Bullets penetrate walls or ricochet based on caliber and angle. Enemies don't just swarm you—they flank, suppress, communicate, and react to your noise. Survive, earn Intel, upgrade your kit, and extract.
+There are seven modes; here are the ones worth knowing:
 
-## ✨ Core Features
+- **Normal** — waves, five bosses (a cloaked Infiltrator, a four-seat Hammerhead APC, a mortar-calling Widowmaker Walker), loot, armory upgrades
+- **Extraction** — a 7500×7500 map, rescue captives, reach the uplink before the heat finds you
+- **FPV Operator** — a bunker, a drone, turrets, and a robot dog with a picture-in-picture feed
 
-*   🚁 **Extraction Ops (Flagship Mode):** Infiltrate massive 7500x7500 maps. Crack uplinks, rescue captive assets, and manage the dynamic **Heat Director**—where every gunshot, wall breach, and explosion draws more enemy squads. Get to the evac zone before you are overrun.
-*   💻 **FPV Operator Mode:** A completely asymmetric survival experience. Locked in a bunker, your only offense is piloting FPV bomber drones, deploying automated turrets, and dispatching SPOT robot dogs while monitoring a security feed.
-*   🔫 **Deep Weapon Physics:** Features open-bolt firing delays, dynamic laser sight collimation, stamina-draining equipment weight, and recoil that physically shoves your character.
-*   💥 **Destructible Environments:** Blow open walls with C4, or grind through enemy bunkers cell-by-cell with your breaching drill to create new tactical flanking routes. 
-*   🛠️ **Armory & Meta-Progression:** Extract with Intel to permanently upgrade your operative. Unlock underbarrel grenade launchers, drone deploying mines, extended mags, prism-array laser sights, and Operator Kits (*Breacher, Ghost, Technician*). 
-*   💀 **Dynamic Boss Fights:** Face down 5 distinct bosses, including cloaked Infiltrators, 4-man Hammerhead APCs, and Widowmaker sniper walkers.
-*   🤝 **Couch Co-Op & PvP:** Plug in two controllers for seamless 2-player local co-op. Turn on hardcore friendly fire, or switch to PvP mode and hunt each other down.
-*   🧱 **World Building (Like Minecraft):** As you grind through cells of walls, you gather rubble that shows next to your ammo count. You can then place new world blocks using the same F key to use for anyhting such as making a custom bunker with barriers or create bricks to anchor yourself for high-kickback full-auto sprays or just make it harder for the AI to get to you. I guess it's just up to your imagination what you use this for... 
+Couch co-op for two on one machine (two controllers, friendly fire from off all the way to hardcore), PvP with a kill feed and a timer, a sandbox, and a peaceful mode for map builders. Waves can roll mutators — Blackout, Swarm, Juggernaut, Adrenaline.
 
-## 📸 Field Intel (Gallery)
+You can also break the map. Hold F to drill cells out of a wall; the rubble goes into your bank and you can place it back anywhere. Build a fort, dig under a line of sight, or just make a mess. The armory has underbarrel grenade launchers, extended mags, prism lasers, and operator kits (Breacher, Ghost, Technician).
 
-<div align="center">
-  <table>
-    <tr>
-      <td align="center">
-        <a href="https://skatardude10.github.io/FrozenSoldat/LATEST_MASTER.html">
-          <img src="images/worldbuild.png" alt="Minecraft Update" width="400"/>
-        </a><br>
-        <em>Mine and Build</em>
-      </td>
-      <td align="center">
-        <img src="images/chaos.png" alt="Gameplay Screenshot 2" width="400"/><br>
-        <em>Fun Gambling</em>
-      </td>
-    </tr>
-    <tr>
-      <td align="center">
-        <img src="images/drone.png" alt="Gameplay Screenshot 3" width="400"/><br>
-        <em>FPV Drone Operations</em>
-      </td>
-      <td align="center">
-        <img src="images/menu.png" alt="Gameplay Screenshot 4" width="400"/><br>
-        <em>Armory and Meta-Progression</em>
-      </td>
-    </tr>
-  </table>
-</div>
+## The tech, if you care
 
-## ⚙️ The Tech (Under the Hood)
+Single `index.html`, about 45k lines of vanilla JS. No image files, no audio files: sprites are drawn to the canvas, and all sound and music is synthesized live with WebAudio. Enemy AI runs A* pathfinding over spatial partitioning, and a service worker lets the page install as an app. I keep notes on the internals in `tools/` — per-system dossiers, invariants, a code map — if you want to see how it's put together.
 
-Frozen Soldat is built entirely in **Vanilla JavaScript and HTML5 Canvas**. 
+## Controls
 
-**There are zero external assets.** 
-*   🖼️ **No image files:** Every sprite, shadow, particle, and UI element is drawn via Canvas API.
-*   🎵 **No sound files:** Every gunshot, sonic boom, ricochet, robotic hum, and explosion is synthesized procedurally in real-time using the **Web Audio API**. 
-*   📦 **Single File:** The entire game—engine, rendering, spatial-partitioning AI, A* pathfinding, and UI—lives in a single monolithic `.html` file.
+| Do this | Keys |
+|---|---|
+| Move | WASD / left stick |
+| Aim + fire | mouse / right stick |
+| Swap weapons | scroll wheel |
+| Cycle left gear (4 slots) | Q |
+| Use left / charge grenade launcher | E |
+| Cycle right gear (6 slots) | Z |
+| Use right / place barrier | C |
+| Interact (hold to drill) | F |
 
-## 🎮 Controls
-The engine automatically detects and hot-swaps between inputs without pausing.
+Gamepads get twin-stick; touch gets dual virtual joysticks.
 
-| Input Method | Support Details |
-| :--- | :--- |
-| **Keyboard & Mouse** | Classic WASD movement and mouse aim. Scroll wheel swaps weapons, `Q`/`Z` cycles gear, `E`/`C` uses it, Hold `F` to drill/interact. |
-| **Controller** | Full twin-stick shooter support with aim-assist deadzones and rumble/kickback. |
-| **Mobile / Touch** | Dynamic floating joysticks and context-aware screen tapping for placing waypoints and grabbing loot. |
+## Dev terminal
 
-## 🔓 Classified: Developer Terminal
-
-If you want to break the game, test heavy artillery early, or turn on god mode: 
-1. Rapidly click the "FROZEN SOLDAT" title text on the main menu **10 times**. 
-2. Once the notification pops up, press `~` or `F1` during a match to open the Developer Command Center.
-3. Spawn bosses, force wave mutators (like *Blackout* or *Swarm Season*), and toggle experimental perks.
+Click the "FROZEN SOLDAT" title 10 times on the main menu. In a match, press `~` or F1 — spawners, forced mutators, god mode, infinite cash. Everything I use for testing.
