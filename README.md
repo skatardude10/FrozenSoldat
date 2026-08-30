@@ -25,6 +25,35 @@ Couch co-op for two on one machine (two controllers, friendly fire from off all 
 
 You can also break the map. Hold F to drill cells out of a wall; the rubble goes into your bank and you can place it back anywhere. Build a fort, dig under a line of sight, or just make a mess. The armory has underbarrel grenade launchers, extended mags, prism lasers, and operator kits (Breacher, Ghost, Technician).
 
+## Gallery
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <a href="https://skatardude10.github.io/FrozenSoldat/LATEST_MASTER.html">
+          <img src="images/worldbuild.png" alt="Minecraft Update" width="400"/>
+        </a><br>
+        <em>Mine and Build</em>
+      </td>
+      <td align="center">
+        <img src="images/chaos.png" alt="Gameplay Screenshot 2" width="400"/><br>
+        <em>Fun Gambling</em>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <img src="images/drone.png" alt="Gameplay Screenshot 3" width="400"/><br>
+        <em>FPV Drone Operations</em>
+      </td>
+      <td align="center">
+        <img src="images/menu.png" alt="Gameplay Screenshot 4" width="400"/><br>
+        <em>Armory and Meta-Progression</em>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## The tech, if you care
 
 Single `index.html`, about 45k lines of vanilla JS. No image files, no audio files: sprites are drawn to the canvas, and all sound and music is synthesized live with WebAudio. Enemy AI runs A* pathfinding over spatial partitioning, and a service worker lets the page install as an app. I keep notes on the internals in `tools/` — per-system dossiers, invariants, a code map — if you want to see how it's put together.
