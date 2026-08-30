@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Tactical Wave Survival - Elite Edition</title>
+<title>Frozen Soldat: A top down shooteer game, or something</title>
+<meta name="description" content="A top-down tactical wave shooter in one HTML file. No image or audio assets; every sound is synthesized at runtime.">
+<meta name="og:title" content="Frozen Soldat: A top down shooteer game, or something">
+<meta name="og:description" content="A top-down tactical wave shooter in one HTML file. No image or audio assets; every sound is synthesized at runtime.">
+<meta name="og:image" content="https://raw.githubusercontent.com/skatardude10/FrozenSoldat/main/images/screenshot2.png">
 <!-- ==================================================================
      PWA (Tier A, fully single-file): Add-to-Home-Screen identity.
      * Android/Chrome reads the data-URI manifest (fullscreen, landscape,
@@ -16931,20 +16935,20 @@ class Enemy extends Entity {
             }
 
             // Engagement range cap: `hasLOS` above is a pure wall-occlusion
-            // check with no distance limit, so on the Operator map's long
-            // open corridor (7500x7500, vs. ~2200x2200 for standard maps)
-            // an enemy could have clear line-of-sight (and therefore fire)
-            // from thousands of pixels away -- bullets that never remotely
-            // reach the target, but the gunshot SFX still fires every
-            // cooldown tick. With many enemies alive at once this reads as
-            // constant distant "wall of gunfire" with no visible bullets,
-            // plus the extra WebAudio node churn from all those shots was
-            // contributing to periodic micro-stutter.
-            // Scoped to Operator mode only -- standard/sandbox/PvP maps are
-            // small enough that this was never really observable there, and
-            // this must not change their balance.
+            // check with no distance limit, so an enemy could have clear
+            // line-of-sight (and therefore fire) from thousands of pixels
+            // away -- bullets that never remotely reach the target, but the
+            // gunshot SFX + muzzle flash still fire every cooldown tick.
+            // With many enemies alive at once this reads as a constant
+            // distant "wall of gunfire" that gives every shooter's position
+            // away for free. Originally scoped to Operator mode only (its
+            // 7500x7500 corridor made it unbearable there first); the
+            // swarm-season wave sizes made the same artifact loud on
+            // standard maps too, so it now applies to ALL modes with the
+            // same values (operator playtest report 2026-08-29: "every
+            // enemy shoots at you regardless of how far away they are").
             let inEngagementRange = true;
-            if (game && game.operatorMode) {
+            if (game) {
                 // Snipers keep a longer effective range than regular grunts
                 // since long-range engagement is their whole identity.
                 let engagementRange = (this.weaponType === 'sniper') ? 1600 : 1000;
@@ -16965,13 +16969,32 @@ class Enemy extends Entity {
             // The cadence penalty is the "not constantly" half of the intent;
             // WINDOW_UP_PASS in Bullet.update is the "less often than firing
             // down" half, and neither is touched here.
-            const canShoot = this.cachedHasLOS || this.cachedWindowLOS;
+            //
+            // LIVE TRIGGER-PULL RE-VERIFY (2026-08-29): the cached flags
+            // above are load-bearing for movement/targeting/detection and
+            // are recomputed on the staggered 30-frame AI tick -- up to
+            // ~0.5s stale. Two artifacts came from trusting them at the
+            // trigger: (a) after LOS broke, every nearby enemy kept firing
+            // at the player's LIVE position until its own tick arrived
+            // (dozens of overlapping stale windows = wall of bullets around
+            // corners); (b) non-sniper cached LOS only tests the 3x3 wall
+            // neighborhood (~440px around the shooter), so a distant grunt
+            // "saw through" any wall beyond that. _fireLineClear re-runs
+            // the test with THIS frame's positions and a FULL segment
+            // raycast, plus a portable-barrier capsule test (barriers are
+            // never in the map's spatial grid -- they block GUNFIRE only;
+            // detection/movement deliberately still see through them). All
+            // cheap gates are ordered first so the raycast runs at most
+            // once per fireInterval per enemy -- only when a shot is about
+            // to actually leave the barrel.
             // Comm buff: x0.55 interval = ~1.8x fire rate -- paired with the
             // 1.45 speed surge so the aura reads as "they coordinate".
             const fireInterval = this.fireRate
                 * (this._commBuffTimer > 0 ? 0.55 : 1)
                 * (this.cachedHasLOS ? 1 : SECOND_FLOOR.ENEMY_WINDOW_FIRE_MULT);
-            if (canShoot && inEngagementRange && gameTime - this.lastFire > fireInterval && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact) {
+            if (inEngagementRange && gameTime - this.lastFire > fireInterval && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact
+                && (this.cachedHasLOS || this.cachedWindowLOS) && this.cachedTarget
+                && this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
                 // Phase 3: Suppressing Fire perk blocks return fire while
                 // suppressedTimer runs (set on player bullet hit).
                 this.fire(game);
@@ -17531,7 +17554,41 @@ class Enemy extends Entity {
             game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*400, Math.sin(spreadAngle)*400, this.tracerColor || this.color || '#ff2a5f', 0.04, 3);
         }
     }
-    
+
+    // ==== Fire-gate sightline re-verification (2026-08-29) ====
+    // Portable barriers (game.barriers, capsule segments) are never in the
+    // map's spatial grid, so the wall-raycast LOS tests can't see them.
+    // This is the GUNFIRE-ONLY block: detection, targeting and movement
+    // still route through/around the barrier normally (operator decision
+    // 2026-08-29: enemies keep spotting and chewing the barrier, they just
+    // can't shoot through it). Inherited by Boss/Operative.
+    _barrierBlocksShot(tx, ty) {
+        if (!game || !game.barriers) return false;
+        for (let b of game.barriers) {
+            if (MathUtils.lineIntersectCapsule(this.x, this.y, tx, ty, b)) return true;
+        }
+        return false;
+    }
+    // Live, per-shot sightline check for the fire gate (see the
+    // "LIVE TRIGGER-PULL RE-VERIFY" comment at the call site). Uses a FULL
+    // segment raycast for every weapon (the 3x3 getWallsNear neighborhood
+    // is what let distant grunts see through far walls) and re-runs the
+    // window-shot predicate (sight-class clear + different elevations) when
+    // only the window flag is set. Callers must pass the target's live
+    // x/y (this.cachedTarget) and must only call this when the cached
+    // flags already say "can shoot" -- it is a re-verify, not a scan.
+    _fireLineClear(tx, ty) {
+        if (this._barrierBlocksShot(tx, ty)) return false;
+        const walls = game.map.getWallsAlongSegment(this.x, this.y, tx, ty);
+        if (this.cachedHasLOS) {
+            return !walls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, tx, ty, w));
+        }
+        // window-shot path (deck/street): same predicate as the cached
+        // windowLOS, re-run with this frame's positions
+        return game.map.floorSeparated(this.x, this.y, tx, ty)
+            && !walls.some(w => MathUtils.lineBlocksSight(this.x, this.y, tx, ty, w));
+    }
+
     draw(ctx, cam) {
         if (this.opacity <= 0.01) return; 
 
@@ -18911,7 +18968,12 @@ class Operative extends Enemy {
             if (this._burstLeft > 0) {
                 this._burstTimer = (this._burstTimer || 0) - dt;
                 if (this._burstTimer <= 0) {
-                    if (this.suppressedTimer > 0 || this.fireHoldTimer > 0 || !this.cachedHasLOS || this.cachedRunFromDrone) {
+                    // _fireLineClear (2026-08-29): a burst is 5 shots in
+                    // ~0.45s, so a stale cached flag would drive the whole
+                    // burst through cover; re-verify the sightline on every
+                    // round, same as the suppressed/hold gates above.
+                    if (this.suppressedTimer > 0 || this.fireHoldTimer > 0 || !this.cachedHasLOS || this.cachedRunFromDrone
+                        || !this.cachedTarget || !this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
                         this._burstLeft = 0;               // burst breaks cleanly
                         this._burstCooldown = 1.2;
                     } else {
@@ -18923,7 +18985,8 @@ class Operative extends Enemy {
                 }
             } else if (this._burstCooldown <= 0 && this.cachedHasLOS && !this.cachedRunFromDrone &&
                        this.suppressedTimer <= 0 && this.fireHoldTimer <= 0 &&
-                       this.cachedDistToTarget < 900) {
+                       this.cachedDistToTarget < 900 && this.cachedTarget
+                       && this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
                 this._burstLeft = 5;
                 this._burstTimer = 0;
                 this.lastFire = gameTime; // suppress the stock cadence while bursting
@@ -19295,7 +19358,11 @@ class InfiltratorBoss extends Boss {
             // is) but it means standing off at pistol range and plinking the
             // Infiltrator down is no longer free -- it shoots back.
             this.potshotCooldown -= dt;
-            if (this.potshotCooldown <= 0 && hasLOS && dist > 200) {
+            // 2026-08-29: same fire-gate rules as grunts -- no potshot
+            // through a portable barrier, and a 1500px cap so the cloak
+            // harassment stays at pistol range instead of plinking from
+            // across the arena.
+            if (this.potshotCooldown <= 0 && hasLOS && dist > 200 && dist < 1500 && !this._barrierBlocksShot(target.x, target.y)) {
                 this.potshotCooldown = MathUtils.rand(1.6, 2.6);
                 let fireAngle = angleToTarget + (Math.random() - 0.5) * 0.05;
                 game.bullets.push(game.spawnBullet(this.x, this.y, fireAngle, { name: 'Pistol', dmg: 13, speed: 2600, drag: 0.08, color: this.color }, false, false, false, false));
@@ -19666,7 +19733,10 @@ class ApcBoss extends Boss {
 
             if (seat.burstRemaining > 0) {
                 seat.burstShotTimer -= dt;
-                if (seat.burstShotTimer <= 0 && hasLOS) {
+                // 2026-08-29: seat gunners obey the same fire-gate rules as
+                // grunts -- a portable barrier between the APC and the
+                // target breaks the burst, and shots stop at 1500px.
+                if (seat.burstShotTimer <= 0 && hasLOS && dist < 1500 && !this._barrierBlocksShot(target.x, target.y)) {
                     seat.burstShotTimer = 0.13;
                     seat.burstRemaining--;
                     let seatWorldX = this.x + Math.cos(this.angle) * seat.offX - Math.sin(this.angle) * seat.offY;
