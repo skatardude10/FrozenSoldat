@@ -22402,6 +22402,14 @@ class Bullet {
                         ent.damageSeat(seatKey, calculatedDmg);
                         if (ent.lastHitAngle !== undefined) ent.lastHitAngle = Math.atan2(this.vy, this.vx);
                     } else {
+                        // OQ-076: record the shooter on a scavenger dog so
+                        // spillLoot can tell a Spot retrieval (full hoard
+                        // back) from anyone else's kill (50% smashed). Last
+                        // hit == killing blow; melee and blast paths never
+                        // set it, which is correct -- neither is Spot.
+                        if (typeof ScavengerDog !== 'undefined' && ent instanceof ScavengerDog) {
+                            ent._lastHitBy = bulletOwner;
+                        }
                         ent.takeDamage(calculatedDmg, Math.atan2(this.vy, this.vx), 180);
                     }
                     
@@ -25022,7 +25030,35 @@ const SCAV_DOG_TUNING = {
     ESCAPE_EDGE: 40,        // despawn band at the map border (RUNNER parity)
     BARK_COOLDOWN: 2.5,
     FAILED_BAN: 10.0,       // don't re-eye an unreachable/taken item
-    CARGO_CAP: 100          // effectively uncapped -- greedy hoarders
+    CARGO_CAP: 100,         // effectively uncapped -- greedy hoarders
+    // GORGE PENALTY: every item slows the dog. This is the whole risk/reward
+    // -- kill it now while it's light for a small return, or let it fatten
+    // into something you can actually catch and eat the bigger 50% loss.
+    LOAD_PENALTY: 0.045,    // speed lost per carried item
+    LOAD_PENALTY_MAX: 0.45, // floor: never slower than 55% of base
+    // The escape sprint takes only HALF the penalty. Full penalty on the
+    // work states is the point -- a gorging dog visibly labours and is easy
+    // to shoot while the wave runs. But at full penalty a loaded dog flees
+    // at 187px/s, slower than the player's ~260px/s WALK, which would make
+    // "let it fatten" a free win with no chase. Halved, a fully-loaded dog
+    // still bolts at ~263px/s: catchable, but you have to commit.
+    FLEE_PENALTY_SCALE: 0.5,
+    // SALVAGE: the half that smashes isn't gone, it's scrap. Converting it
+    // to cash is what makes the 50% destruction read as a mechanic instead
+    // of an unexplained tax, and it pays out the instant the dog drops.
+    SALVAGE_MONEY: 14,      // $ per smashed money pickup
+    SALVAGE_ITEM: 45,       // $ per smashed consumable
+    SALVAGE_WEAPON: 90,     // $ per smashed weapon drop
+    // RESUPPLY: what the enemy does with loot that gets carried off the map.
+    // Per-item deltas, consumed by the NEXT wave and hard-capped so a bad
+    // run can't spiral. See Game._applyScavResupply.
+    RSP_ELITE: 0.055,       // money/weapon -> elite roll bonus
+    RSP_HP: 0.07,           // medpack     -> enemy HP multiplier bonus
+    RSP_SPEED: 0.035,       // redbull     -> enemy speed multiplier bonus
+    RSP_ELITE_MAX: 0.20,
+    RSP_HP_MAX: 0.30,
+    RSP_SPEED_MAX: 0.09,
+    RSP_EXTRA_MAX: 4        // grenade     -> +1 body each, capped
 };
 
 class ScavengerDog extends Entity {
@@ -25064,6 +25100,7 @@ class ScavengerDog extends Entity {
         this._bestTargetDist = Infinity; // closest this dog has been to targetItem
         this._panic = false;
         this._hitFlash = 0;
+        this._lastHitBy = null;      // last bullet owner (Spot recovery bonus, see spillLoot)
     }
 
     // FELLPASS item 4 convention (0.06s white flash) -- the shared set/
@@ -25103,30 +25140,60 @@ class ScavengerDog extends Entity {
         }
     }
 
+    // Speed multiplier from carried weight. A dog that has been working the
+    // floor all wave is visibly labouring; an empty one is quick.
+    _loadMult(fleeing) {
+        const T = SCAV_DOG_TUNING;
+        let pen = Math.min(this.cargo.length * T.LOAD_PENALTY, T.LOAD_PENALTY_MAX);
+        if (fleeing) pen *= T.FLEE_PENALTY_SCALE;
+        return 1 - pen;
+    }
+
+    // Scrap value of one smashed pickup. Weapons are worth the most, money
+    // the least (you were only ever going to get ~$18 for it anyway).
+    static salvageValue(t) {
+        const T = SCAV_DOG_TUNING;
+        if (t === 'money') return T.SALVAGE_MONEY;
+        if (typeof Weapons !== 'undefined' && Weapons[t]) return T.SALVAGE_WEAPON;
+        return T.SALVAGE_ITEM;
+    }
+
     spillLoot() {
         if (!this.cargo.length) return;
         const g = (typeof game !== 'undefined' && game) ? game : null;
         if (!g) { this.cargo = []; return; }
         const spilled = this.cargo;
         this.cargo = [];
-        // Operator rule: only about HALF the hoard physically survives the
-        // wreck -- the rest smashes and is gone for good (no refund either
-        // way; a full hoard dumping intact would be a free loot jackpot).
-        let dropped = 0, lost = 0;
+        // SPOT RECOVERY BONUS: if the robot dog landed the killing shot the
+        // whole hoard comes back intact -- it retrieves, you smash. Cheap
+        // synergy that gives the Technician kit a specific reason to exist
+        // against this unit. Any other killer keeps the 50% coin flip.
+        const spotKill = (typeof RobotDog !== 'undefined') && (this._lastHitBy instanceof RobotDog);
+        const dropChance = spotKill ? 1.0 : 0.5;
+        let dropped = 0, salvage = 0;
         for (let t of spilled) {
-            if (Math.random() < 0.5) {
+            if (Math.random() < dropChance) {
                 let it = g.spawnItem(this.x + (Math.random() - 0.5) * 26, this.y + (Math.random() - 0.5) * 26, t);
                 g.items.push(it);
                 dropped++;
             } else {
-                lost++;
+                // Smashed: paid out as scrap instead of vanishing.
+                salvage += ScavengerDog.salvageValue(t);
             }
         }
         if (dropped > 0) {
-            g.floatingTexts.push(g.spawnFloatingText(this.x, this.y - 14, dropped > 1 ? `LOOT RECOVERED x${dropped}` : 'LOOT RECOVERED', '#39ff14', 1.2));
+            g.floatingTexts.push(g.spawnFloatingText(this.x, this.y - 14,
+                spotKill ? `RETRIEVED x${dropped}` : (dropped > 1 ? `LOOT RECOVERED x${dropped}` : 'LOOT RECOVERED'),
+                spotKill ? '#00e5ff' : '#39ff14', 1.4));
         }
-        if (lost > 0) {
-            g.floatingTexts.push(g.spawnFloatingText(this.x, this.y - 26, `x${lost} DESTROYED`, '#ff2a5f', 1.2));
+        if (salvage > 0) {
+            // Same both-players award shape as the boss bounty (Boss.onDeath):
+            // co-op splits nothing, each operator banks the full figure.
+            salvage = Math.round(salvage * (g.cashMultiplier || 1));
+            if (g.player) g.player.cash += salvage;
+            if (g.isTwoPlayer && g.player2) g.player2.cash += salvage;
+            g.floatingTexts.push(g.spawnFloatingText(this.x, this.y - 28, `SALVAGE +$${salvage}`, '#ffb700', 1.5));
+            if (typeof audio !== 'undefined' && audio) audio.playPickup('money');
         }
     }
 
@@ -25230,11 +25297,11 @@ class ScavengerDog extends Entity {
                 // react before the sprint.
                 destX = this.x + Math.cos(this.walkCycle * 2.3) * 40;
                 destY = this.y + Math.sin(this.walkCycle * 1.7) * 40;
-                currentSpeed = SCAV_DOG_TUNING.SPEED_SCOUT + 60;
+                currentSpeed = (SCAV_DOG_TUNING.SPEED_SCOUT + 60) * this._loadMult(true);
                 hasDest = true;
             } else if (this.fleePoint) {
                 destX = this.fleePoint.x; destY = this.fleePoint.y;
-                currentSpeed = SCAV_DOG_TUNING.SPEED_FLEE;
+                currentSpeed = SCAV_DOG_TUNING.SPEED_FLEE * this._loadMult(true);
                 hasDest = true;
             }
             const E = SCAV_DOG_TUNING.ESCAPE_EDGE;
@@ -25253,7 +25320,7 @@ class ScavengerDog extends Entity {
             const a = Math.atan2(this.y - py, this.x - px);
             destX = this.x + Math.cos(a) * 200;
             destY = this.y + Math.sin(a) * 200;
-            currentSpeed = SCAV_DOG_TUNING.SPEED_PANIC;
+            currentSpeed = SCAV_DOG_TUNING.SPEED_PANIC * this._loadMult();
             hasDest = true;
         } else if (this.state === 'HUNTING') {
             // Throttled acquisition scan (same 30-frame stagger cadence
@@ -25384,7 +25451,7 @@ class ScavengerDog extends Entity {
                         }
                     }
                     if (this.targetItem) {
-                        currentSpeed = SCAV_DOG_TUNING.SPEED_SEEK;
+                        currentSpeed = SCAV_DOG_TUNING.SPEED_SEEK * this._loadMult();
                         hasDest = true;
                     }
                 }
@@ -25404,7 +25471,7 @@ class ScavengerDog extends Entity {
                     this._pickLoiterPoint(game, players);
                 }
                 destX = this.scoutX; destY = this.scoutY;
-                currentSpeed = SCAV_DOG_TUNING.SPEED_SCOUT;
+                currentSpeed = SCAV_DOG_TUNING.SPEED_SCOUT * this._loadMult();
                 hasDest = true;
             }
         } else if (this.state === 'CARRYING') {
@@ -25424,7 +25491,7 @@ class ScavengerDog extends Entity {
                 this._pickLoiterPoint(game, players);
             }
             destX = this.scoutX; destY = this.scoutY;
-            currentSpeed = SCAV_DOG_TUNING.SPEED_CARRY;
+            currentSpeed = SCAV_DOG_TUNING.SPEED_CARRY * this._loadMult();
             hasDest = true;
         }
 
@@ -28960,6 +29027,8 @@ class Game {
         this.scavDogs = [];         // OQ-076: hostile scavenger dogs (own pool -- NOT game.enemies)
         this.inactiveScavDogs = []; // OQ-076: scavDogs pool (park on death/escape/wipe, INVARIANT: always park)
         this._scavEscape = null;    // OQ-076: wave-clear hold armed while loaded dogs flee to the edge
+        this._scavStolen = null;    // OQ-076: cargo that made it off-map, PENDING conversion at next wave start
+        this._scavBuff = null;      // OQ-076: converted resupply modifiers ACTIVE for the current wave
         this.hostages = [];      // PHASE 2: escort entities (Asset Recovery)
         this.miniDrones = [];
         this.floatingTexts = [];
@@ -30335,11 +30404,16 @@ class Game {
         // (byte-identical behavior); in extraction it's the heat tier's
         // mapped intensity, so hotter runs field tougher bodies too.
         const iw = this._spawnIntensityWave();
-        let scaleHP = 1.0 + (iw - 1) * 0.04;
+        // OQ-076: resupply modifiers from loot the scavenger carried off
+        // last wave. Zeroed by default; capped in _applyScavResupply.
+        const rsp = this._scavBuff;
+        let scaleHP = 1.0 + (iw - 1) * 0.04 + (rsp ? rsp.hp : 0);
         // Phase 2: speed scaling capped early (~wave 8) -- lategame
         // difficulty comes from smarter squads (flankers, pushes, tougher
         // composition), not permanently faster bodies. HP scaling unchanged.
-        let scaleSpeed = Math.min(TACTICAL_TUNING.SPEED_SCALE_MAX, 1.0 + (iw - 1) * 0.015);
+        // The resupply stim bonus is added AFTER the cap so a stolen redbull
+        // is still felt on a late wave that already sits at SPEED_SCALE_MAX.
+        let scaleSpeed = Math.min(TACTICAL_TUNING.SPEED_SCALE_MAX, 1.0 + (iw - 1) * 0.015) + (rsp ? rsp.speed : 0);
         if (this.activeMutator === 'swarm') {
             enemy.hp = 1; enemy.maxHp = 1;
         } else {
@@ -30350,7 +30424,7 @@ class Game {
 
         let forceElite = (this.activeMutator === 'juggernaut');
         let forceNoElite = (this.activeMutator === 'swarm');
-        if (!forceNoElite && (forceElite || Math.random() < 0.04)) {
+        if (!forceNoElite && (forceElite || Math.random() < 0.04 + (rsp ? rsp.elite : 0))) {
             enemy.isElite = true;
             enemy.hp = Math.round(enemy.hp * 2.2);
             enemy.maxHp = enemy.hp;
@@ -36060,6 +36134,10 @@ class Game {
         }
         this.scavDogs = [];
         this._scavEscape = null;
+        // A fresh run must never inherit a previous run's stolen haul or its
+        // converted difficulty modifiers.
+        this._scavStolen = null;
+        this._scavBuff = null;
         if (!this.hostages) this.hostages = []; // (reset properly in startNewGame; guard for legacy paths)
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
@@ -36447,6 +36525,10 @@ class Game {
         this._medicDelayArmed = false;
         // OQ-076: a stale escape-hold must never leak into a fresh wave.
         this._scavEscape = null;
+        // OQ-076: convert last wave's stolen haul into this wave's difficulty
+        // (after every enemiesToSpawn adjustment above, since the grenade
+        // branch adds to it) and announce what it bought.
+        this._applyScavResupply();
         this.rollScavDogs();
         this.updateHUD();
     }
@@ -36538,6 +36620,56 @@ class Game {
             this.announce('LOOT SCAVENGER FLEEING \u2014 KILL IT OR IT VANISHES', '#ff2a5f', 4.2,
                 'CARRIED SUPPLIES ARE LOST IF IT EXITS THE MAP');
         }
+    }
+
+    // OQ-076 RESUPPLY, step 1: bank what a dog carried off the map. Kept as
+    // raw per-category counts (not deltas) so the wave-start announce can
+    // name exactly what they got. Pending until the next wave converts it.
+    _tallyScavLoot(cargo) {
+        if (!this._scavStolen) this._scavStolen = { money: 0, medpack: 0, redbull: 0, grenade: 0, weapon: 0 };
+        const s = this._scavStolen;
+        for (const t of cargo) {
+            if (t === 'money') s.money++;
+            else if (t === 'medpack') s.medpack++;
+            else if (t === 'redbull') s.redbull++;
+            else if (t === 'grenade') s.grenade++;
+            else s.weapon++; // the stealable whitelist's only other branch
+        }
+    }
+
+    // OQ-076 RESUPPLY, step 2: convert the pending haul into modifiers for
+    // THIS wave and tell the player what it bought. Deliberately routed
+    // through the existing wave-scaling levers (elite roll / HP scale /
+    // speed scale / enemiesToSpawn) rather than new systems -- every delta
+    // is capped, so a bad streak escalates once and then plateaus instead
+    // of spiralling. Called from startNextWave AFTER enemiesToSpawn is set.
+    _applyScavResupply() {
+        const T = SCAV_DOG_TUNING;
+        this._scavBuff = null;
+        const s = this._scavStolen;
+        this._scavStolen = null;
+        if (!s) return;
+        const total = s.money + s.medpack + s.redbull + s.grenade + s.weapon;
+        if (total <= 0) return;
+
+        const buff = {
+            elite: Math.min((s.money + s.weapon) * T.RSP_ELITE, T.RSP_ELITE_MAX),
+            hp:    Math.min(s.medpack * T.RSP_HP, T.RSP_HP_MAX),
+            speed: Math.min(s.redbull * T.RSP_SPEED, T.RSP_SPEED_MAX),
+            extra: Math.min(s.grenade, T.RSP_EXTRA_MAX)
+        };
+        this._scavBuff = buff;
+        if (buff.extra > 0) this.enemiesToSpawn += buff.extra;
+
+        // Sub-line names the CAUSE, not the maths -- "they bought a heavy"
+        // reads; "+0.11 elite roll" does not.
+        const parts = [];
+        if (buff.elite > 0) parts.push('BETTER GEAR');
+        if (buff.hp > 0) parts.push('FIELD MEDICINE');
+        if (buff.speed > 0) parts.push('STIMS');
+        if (buff.extra > 0) parts.push('+' + buff.extra + ' HOSTILE' + (buff.extra > 1 ? 'S' : ''));
+        this.announce('THE SCAVENGER SOLD YOUR SUPPLIES', '#ffb700', 4.2,
+            parts.length ? parts.join(' \u00b7 ') : 'THE ENEMY RESTOCKED');
     }
 
     // Decides whether this wave is a boss wave and, if so, sets up the
@@ -39264,6 +39396,13 @@ class Game {
                 let sd = this.scavDogs[i];
                 sd.update(dt, this);
                 if (sd.dead || sd.escaped) {
+                    // RESUPPLY TALLY: only escapes feed the enemy. A dead
+                    // dog already ran spillLoot in onDeath, so its cargo is
+                    // empty by now -- the escaped check is belt-and-braces,
+                    // and this single park point is the only place cargo can
+                    // leave the field intact.
+                    if (sd.escaped && sd.cargo.length) this._tallyScavLoot(sd.cargo);
+                    sd.cargo = [];
                     this.inactiveScavDogs.push(sd);
                     this.scavDogs[i] = this.scavDogs[this.scavDogs.length - 1];
                     this.scavDogs.pop();
