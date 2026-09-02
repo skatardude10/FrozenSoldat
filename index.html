@@ -2691,6 +2691,7 @@
                         <button class="neon-btn" onclick="game.devSpawnEnemy('fpv_pilot', false)" style="margin: 0; font-size: 9px; padding: 3px 6px;">FPV Pilot</button>
                         <button class="neon-btn" onclick="game.devSpawnEnemy('grunt', true)" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: var(--red); color: var(--red);">Elite Grunt</button>
                         <button class="neon-btn" onclick="game.devSpawnStrikeTeam()" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: #ff2a5f; color: #ff2a5f;">Strike Team</button>
+                        <button class="neon-btn" onclick="game.devSpawnScavDog()" style="margin: 0; font-size: 9px; padding: 3px 6px; border-color: #ffb700; color: #ffb700;">Scavenger Dog</button>
                     </div>
                 </div>
                 <div>
@@ -4136,6 +4137,51 @@ class AudioEngine {
                 osc.start(0);
             }));
 
+            // SCAVENGER DOG (OQ-076): two baked one-shots max, per plan --
+            // a two-blip metallic yip (acquisition/flee alert) and a
+            // scrap-y death clatter. No persistent hum: the dog is silent
+            // by omission, like the mines and cameras.
+            promises.push(this.bakeSound('scav_bark', 0.22, (offlineCtx) => {
+                for (let blip = 0; blip < 2; blip++) {
+                    const t0 = blip * 0.11;
+                    const osc = offlineCtx.createOscillator();
+                    const gain = offlineCtx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(620 - blip * 140, t0);
+                    osc.frequency.exponentialRampToValueAtTime(240 - blip * 60, t0 + 0.07);
+                    gain.gain.setValueAtTime(0.0001, t0);
+                    gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.015);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.08);
+                    osc.connect(gain);
+                    gain.connect(offlineCtx.destination);
+                    osc.start(t0);
+                }
+            }));
+            promises.push(this.bakeSound('scav_death', 0.4, (offlineCtx) => {
+                const osc = offlineCtx.createOscillator();
+                const gain = offlineCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(300, 0);
+                osc.frequency.exponentialRampToValueAtTime(40, 0.3);
+                gain.gain.setValueAtTime(0.22, 0);
+                gain.gain.exponentialRampToValueAtTime(0.001, 0.32);
+                osc.connect(gain);
+                gain.connect(offlineCtx.destination);
+                osc.start(0);
+                // Springy metal "twang" layered on top of the collapse.
+                const osc2 = offlineCtx.createOscillator();
+                const gain2 = offlineCtx.createGain();
+                osc2.type = 'triangle';
+                osc2.frequency.setValueAtTime(880, 0.02);
+                osc2.frequency.exponentialRampToValueAtTime(220, 0.18);
+                gain2.gain.setValueAtTime(0.0001, 0);
+                gain2.gain.exponentialRampToValueAtTime(0.12, 0.03);
+                gain2.gain.exponentialRampToValueAtTime(0.0001, 0.2);
+                osc2.connect(gain2);
+                gain2.connect(offlineCtx.destination);
+                osc2.start(0.02);
+            }));
+
             // 6. Pickup money (duration 0.15s)
             promises.push(this.bakeSound('pickup_money', 0.15, (offlineCtx) => {
                 const osc = offlineCtx.createOscillator();
@@ -4765,6 +4811,33 @@ class AudioEngine {
             delay = settings.delay;
         }
         this.playBakedSound(name, this.sfxGain || this.masterGain, gainVal, cutoff, delay);
+    }
+
+    // SCAVENGER DOG (OQ-076): positional wrappers for the two baked cues.
+    playScavBark(x = null, y = null) {
+        if (!this.ctx) return;
+        let gainVal = 0.9, cutoff = 20000, delay = 0;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('hit', d);
+            gainVal = settings.vol * 0.9;
+            cutoff = settings.cutoff;
+            delay = settings.delay;
+        }
+        this.playBakedSound('scav_bark', this.sfxGain || this.masterGain, gainVal, cutoff, delay);
+    }
+
+    playScavDeath(x = null, y = null) {
+        if (!this.ctx) return;
+        let gainVal = 1.0, cutoff = 20000, delay = 0;
+        if (x !== null && y !== null) {
+            let d = this.getDistanceToPlayers(x, y);
+            let settings = this.getSpatialSettings('explosion', d);
+            gainVal = settings.vol;
+            cutoff = settings.cutoff;
+            delay = settings.delay;
+        }
+        this.playBakedSound('scav_death', this.sfxGain || this.masterGain, gainVal, cutoff, delay);
     }
 
     playHit(x = null, y = null, semitones = 0) {
@@ -14175,6 +14248,22 @@ class Player extends Entity {
             if ((dx / d) * cosA + (dy / d) * sinA < arcCos) continue; // behind the cone
             e.takeDamage(MELEE_TUNING.DMG, Math.atan2(dy, dx), MELEE_TUNING.KNOCKBACK);
         }
+        // OQ-076: the melee shove also reaches scavenger dogs (same arc,
+        // same convention). Shoving a loaded thief is a legit way to break
+        // up a snatch-and-run -- its takeDamage goes straight through the
+        // Entity base, and a kill there spills its cargo.
+        if (game.scavDogs) {
+            for (let i = 0; i < game.scavDogs.length; i++) {
+                const sd = game.scavDogs[i];
+                if (!sd || sd.dead || sd.escaped) continue;
+                const sdx = sd.x - this.x, sdy = sd.y - this.y;
+                const sd2 = sdx * sdx + sdy * sdy;
+                if (sd2 > reach2) continue;
+                const sd0 = Math.sqrt(sd2) || 1;
+                if ((sdx / sd0) * cosA + (sdy / sd0) * sinA < arcCos) continue;
+                sd.takeDamage(MELEE_TUNING.DMG, Math.atan2(sdy, sdx), MELEE_TUNING.KNOCKBACK);
+            }
+        }
     }
 
     checkDiveTrigger(dt, input, gpRawMag, moveX, moveY, gameTime) {
@@ -18748,7 +18837,15 @@ class Enemy extends Entity {
                     let splashDmg = damage * (1.0 - dist / blastRadius);
                     let wasDeadBefore = ent.dead;
                     ent.takeDamage(splashDmg, Math.atan2(ent.y - this.y, ent.x - this.x), 200);
-                    game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                    if (ent instanceof ScavengerDog) {
+                        // Robots don't bleed -- corpse-pop splash on the
+                        // scavenger throws sparks, not blood.
+                        for (let c = 0; c < 4; c++) {
+                            game.addParticle(ent.x, ent.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#ffb700', 0.22, 2);
+                        }
+                    } else {
+                        game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
+                    }
                     if (ent.dead && !wasDeadBefore) {
                         // Chaining assist cash or text triggers could happen here, or let call stack handle it recursively
                     }
@@ -22126,7 +22223,13 @@ class Bullet {
                     canHit = true;
                 } else if (this.isPlayerBullet) {
                     let isTargetAlly = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof SecurityCamera || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage);
-                    let isTargetEnemy = (ent instanceof Enemy);
+                    // OQ-076: the scavenger dog is hostile-but-not-an-Enemy
+                    // instance (own pool). It joins the player-fire target
+                    // set here explicitly -- and NOWHERE else: the enemy-
+                    // fire branch below keys on the player-asset instanceof
+                    // list, so enemy bullets pass straight through the dog
+                    // without any change. It never enters isTargetAlly.
+                    let isTargetEnemy = (ent instanceof Enemy || ent instanceof ScavengerDog);
                     
                     if (isTargetEnemy) {
                         canHit = true;
@@ -22364,8 +22467,8 @@ class Bullet {
                         dmgCol, 0.9,
                         spread_vx, spread_vy, 280, true
                     ));
-                    if (ent instanceof AutoTurret || ent instanceof FPVDrone || ent instanceof RobotDog || ent instanceof SecurityCamera) {
-                        let pColor = ent instanceof AutoTurret ? '#ffd700' : ent instanceof FPVDrone ? '#ffff00' : ent instanceof SecurityCamera ? '#00e5ff' : '#ffffff';
+                    if (ent instanceof AutoTurret || ent instanceof FPVDrone || ent instanceof RobotDog || ent instanceof SecurityCamera || ent instanceof ScavengerDog) {
+                        let pColor = ent instanceof AutoTurret ? '#ffd700' : ent instanceof FPVDrone ? '#ffff00' : ent instanceof SecurityCamera ? '#00e5ff' : ent instanceof ScavengerDog ? '#ffb700' : '#ffffff';
                         for(let c=0; c<4; c++) {
                             game.addParticle(this.x, this.y, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), pColor, 0.22, 2);
                         }
@@ -24223,6 +24326,25 @@ class RobotDog extends Entity {
                 }
             }
 
+            // OQ-076: bespoke thief-scan -- scavenger dogs are Spot's
+            // chosen prey. They NEVER add to activeThreatCount (a scavenger
+            // must not make Spot hunker/retreat; it doesn't shoot back),
+            // and a LOADED dog outranks an empty one at any distance (3x
+            // effective range penalty on unloaded). Their pooled respawn
+            // hands out a fresh _aiStaggerId, so the existing generation
+            // check drops a recycled target exactly like it does Enemies.
+            if (game.scavDogs) {
+                for (let sd of game.scavDogs) {
+                    if (sd.dead || sd.escaped) continue;
+                    let d = Math.hypot(sd.x - this.x, sd.y - this.y);
+                    let midX = (this.x + sd.x) / 2, midY = (this.y + sd.y) / 2;
+                    let localWalls = game.map.getWallsNear(midX, midY);
+                    if (localWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, sd.x, sd.y, w))) continue;
+                    let effDist = sd.cargo.length ? d : d * 3;
+                    if (effDist < closestDist) { closestDist = effDist; closestHostile = sd; }
+                }
+            }
+
             // PvP mode adds a handful of extra targetable assets (the
             // opposing player and their turrets/dogs/drones) -- never more
             // than a few objects, so this stays a plain scan. These never
@@ -24845,6 +24967,797 @@ class RobotDog extends Entity {
         }
         
         ctx.restore();
+    }
+}
+
+// =====================================================================
+// SCAVENGER DOG (OQ-076): a hostile, NON-COMBAT thief robot dog. It
+// scuttles onto the field during normal waves, steals ground loot (money /
+// weapons / medpacks / grenades / energy drinks only -- never perk cases,
+// shields, armor, or intel), and when the wave's last enemy dies, any
+// loaded dog bolts for the nearest map edge. If it exits, the loot is gone
+// for good (no bounty, no refund). If it dies, the carried loot spills
+// back onto the ground. Deliberately NOT an Enemy: it lives in its own
+// pool (game.scavDogs), is absent from game.enemies, is never in
+// isTargetAlly, pays no kill bounty, and records no ledger entries -- the
+// dog is a pure loot-pressure device, not combat pressure.
+// =====================================================================
+const SCAV_DOG_TUNING = {
+    HP: 120,
+    R: 12,
+    SEEK_RANGE: 9999,       // whole-map greed: the dog wants EVERYTHING
+    STEAL_PAD: 6,           // touch slack on top of r + item.r
+    HIDE_DIST: 340,         // player closer than this: dodge logic arms
+    DODGE_DIST: 140,        // AND within this of the dog->loot route: arc
+    DETOUR_OFF: 120,        // how far off-route the arc waypoint swings
+    // Target-choice caution: loot sitting near a player costs EXTRA
+    // effective distance, so an equally-close-but-safer pile wins. Greed
+    // still comes first -- the penalty is finite, so a lone item at the
+    // player's feet is eventually the nearest thing and gets taken.
+    AVOID_RADIUS: 450,      // item-to-player distance under which caution applies
+    AVOID_WEIGHT: 1.6,      // px of fake distance per px inside AVOID_RADIUS
+    // Unreachable-loot ban: findPath has no failure return (it falls back
+    // to a straight line), so "can't get there" is detected by watching
+    // for closing distance instead.
+    NO_PROGRESS_TIME: 4.0,  // s of not getting closer before the item is banned
+    NO_PROGRESS_EPS: 10,    // px of closing that counts as progress
+    PURSUIT_TIMEOUT: 20.0,  // s: absolute cap on chasing ONE item. Backstop for
+                            // the case the delta test misses -- a dog inching
+                            // along a wall closes just over NO_PROGRESS_EPS per
+                            // window and resets the timer forever. 20s at
+                            // SPEED_SEEK is ~5000px of travel, longer than any
+                            // route on a normal map even with a dodge detour.
+    // Idle loiter: the dog wants the map between it and the player.
+    LOITER_SAMPLES: 6,      // ring candidates scored per re-pick
+    LOITER_MIN: 320,        // px: inner radius of the candidate ring
+    LOITER_MAX: 560,        // px: outer radius of the candidate ring
+    SPEED_SEEK: 250,        // trot to a target item
+    SPEED_SCOUT: 120,       // idle drift while hunting
+    SPEED_CARRY: 190,       // loaded lope (slower: carrying is readable)
+    SPEED_PANIC: 320,       // burst away from a player who gets close
+    SPEED_FLEE: 340,        // end-of-wave escape sprint
+    PANIC_RADIUS: 180,      // player proximity that trips the red flash
+    SCRAMBLE_TIME: 1.2,     // hesitation before the escape sprint starts
+    ESCAPE_TIMEOUT: 8.0,    // hard cap on the wave-clear hold (see gate)
+    ESCAPE_EDGE: 40,        // despawn band at the map border (RUNNER parity)
+    BARK_COOLDOWN: 2.5,
+    FAILED_BAN: 10.0,       // don't re-eye an unreachable/taken item
+    CARGO_CAP: 100          // effectively uncapped -- greedy hoarders
+};
+
+class ScavengerDog extends Entity {
+    constructor(x, y) {
+        super(x, y, SCAV_DOG_TUNING.R);
+        this.init(x, y);
+    }
+
+    // Pooled respawn (see spawnScavDog): reset every field so a recycled
+    // dog can never inherit loot, state, or blacklists from its past life
+    // (BUG-010 pooled-entity lesson).
+    init(x, y) {
+        this.x = x; this.y = y;
+        this.vx = 0; this.vy = 0;
+        this.dead = false;
+        this.escaped = false;
+        this.hp = SCAV_DOG_TUNING.HP;
+        this.maxHp = SCAV_DOG_TUNING.HP;
+        this.angle = Math.random() * Math.PI * 2;
+        this.state = 'HUNTING'; // HUNTING | CARRYING | FLEEING
+        this.cargo = [];       // types carried; full (>= CARGO_CAP) flips CARRYING
+        this.targetItem = null;
+        this.failedItems = new Map();
+        this.fleePoint = null;
+        this.scrambleTimer = 0;
+        this.barkCooldown = 0;
+        this.walkCycle = 0;
+        this.scoutTimer = Math.random() * 2;
+        this.scoutX = undefined;
+        this.scoutY = undefined;
+        this.stuckTimer = 0;
+        this.stuckAccumulator = 0;
+        this.stuckStrafeDir = 1;
+        this.cachedMoveAngle = undefined;
+        this.lastTargetKey = "";
+        this._dodging = false;       // arc-around waypoint active (steering-cache key)
+        this._progressTimer = 0;     // s since the target last got closer (unreachable-ban)
+        this._pursuitTimer = 0;      // s spent chasing the current target (absolute backstop)
+        this._bestTargetDist = Infinity; // closest this dog has been to targetItem
+        this._panic = false;
+        this._hitFlash = 0;
+    }
+
+    // FELLPASS item 4 convention (0.06s white flash) -- the shared set/
+    // decay sites are `instanceof Enemy`-gated, so this class sets it here
+    // and decays it in update().
+    takeDamage(amt, pushDir, pushForce) {
+        if (amt > 0) this._hitFlash = 0.06;
+        super.takeDamage(amt, pushDir, pushForce);
+    }
+
+    // Steal whitelist: consumables + weapon drops only. Everything else
+    // (perk_case, shield, armor, intel, intel_cache, sandbox props) is
+    // explicitly off the menu -- a dog that wanders off with a perk case
+    // would eat a run's upgrade path, which is way past "loot pressure".
+    static isStealable(it) {
+        if (!it || it.isSandbox) return false;
+        const t = it.type;
+        if (t === 'money' || t === 'medpack' || t === 'grenade' || t === 'redbull') return true;
+        return (typeof Weapons !== 'undefined' && !!Weapons[t]);
+    }
+
+    onDeath() {
+        this.targetItem = null;
+        this.fleePoint = null;
+        // Death spills the belly cargo at the corpse. spawnItem is a pure
+        // factory and this path never touches runLedger/recordKill/cash --
+        // the dog is not a bounty and its death is not a scored kill.
+        this.spillLoot();
+        if (typeof audio !== 'undefined' && audio && audio.playScavDeath) audio.playScavDeath(this.x, this.y);
+        const g = (typeof game !== 'undefined' && game) ? game : null;
+        if (g) {
+            for (let i = 0; i < 14; i++) {
+                let a = Math.random() * Math.PI * 2;
+                let spd = Math.random() * 140 + 40;
+                g.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#9fb4c7', 0.45, 2.2);
+            }
+        }
+    }
+
+    spillLoot() {
+        if (!this.cargo.length) return;
+        const g = (typeof game !== 'undefined' && game) ? game : null;
+        if (!g) { this.cargo = []; return; }
+        const spilled = this.cargo;
+        this.cargo = [];
+        // Operator rule: only about HALF the hoard physically survives the
+        // wreck -- the rest smashes and is gone for good (no refund either
+        // way; a full hoard dumping intact would be a free loot jackpot).
+        let dropped = 0, lost = 0;
+        for (let t of spilled) {
+            if (Math.random() < 0.5) {
+                let it = g.spawnItem(this.x + (Math.random() - 0.5) * 26, this.y + (Math.random() - 0.5) * 26, t);
+                g.items.push(it);
+                dropped++;
+            } else {
+                lost++;
+            }
+        }
+        if (dropped > 0) {
+            g.floatingTexts.push(g.spawnFloatingText(this.x, this.y - 14, dropped > 1 ? `LOOT RECOVERED x${dropped}` : 'LOOT RECOVERED', '#39ff14', 1.2));
+        }
+        if (lost > 0) {
+            g.floatingTexts.push(g.spawnFloatingText(this.x, this.y - 26, `x${lost} DESTROYED`, '#ff2a5f', 1.2));
+        }
+    }
+
+    // Idle loiter target: sample a ring of candidates around the dog and
+    // keep the one that puts the most distance between it and the nearest
+    // player. Clamped to the playfield, so a dog backed into a corner
+    // scores the along-the-wall candidates higher than the ones that clamp
+    // on top of it and walks out instead of grinding the border. Runs once
+    // per re-pick (~3s), not per frame -- LOITER_SAMPLES hypots is noise.
+    // With no living player it degrades to a plain random drift.
+    _pickLoiterPoint(game, players) {
+        const T = SCAV_DOG_TUNING;
+        const base = Math.random() * Math.PI * 2;
+        let bx = this.x, by = this.y, bestScore = -Infinity;
+        for (let i = 0; i < T.LOITER_SAMPLES; i++) {
+            const a = base + (i / T.LOITER_SAMPLES) * Math.PI * 2;
+            const r = T.LOITER_MIN + Math.random() * (T.LOITER_MAX - T.LOITER_MIN);
+            const cx = Math.max(80, Math.min(game.mapW - 80, this.x + Math.cos(a) * r));
+            const cy = Math.max(80, Math.min(game.mapH - 80, this.y + Math.sin(a) * r));
+            let score = Infinity;
+            for (const p of players) {
+                const d = Math.hypot(cx - p.x, cy - p.y);
+                if (d < score) score = d;
+            }
+            if (score === Infinity) score = Math.random() * 1000; // no players: drift
+            if (score > bestScore) { bestScore = score; bx = cx; by = cy; }
+        }
+        this.scoutX = bx; this.scoutY = by;
+    }
+
+    startFlee(mapW, mapH, px, py) {
+        if (this.state === 'FLEEING') return;
+        this.state = 'FLEEING';
+        this.targetItem = null;
+        this.cachedMoveAngle = undefined;
+        // Nearest edge, biased away from the player(s) -- the exact
+        // scoring the RUNNER final-kill event uses, so the two escapes
+        // read the same way to the player.
+        const edges = [
+            { x: 30, y: this.y }, { x: mapW - 30, y: this.y },
+            { x: this.x, y: 30 }, { x: this.x, y: mapH - 30 }
+        ];
+        let best = edges[0], bd = Infinity;
+        for (const pt of edges) {
+            const dEdge = Math.hypot(pt.x - this.x, pt.y - this.y);
+            const dPlayer = Math.hypot(pt.x - px, pt.y - py);
+            const score = dEdge - dPlayer * 0.5;
+            if (score < bd) { bd = score; best = pt; }
+        }
+        this.fleePoint = best;
+        this.scrambleTimer = SCAV_DOG_TUNING.SCRAMBLE_TIME;
+        if (typeof audio !== 'undefined' && audio && audio.playScavBark) audio.playScavBark(this.x, this.y);
+    }
+
+    update(dt, game) {
+        if (this.dead || this.escaped) return;
+
+        // CONTRACT: getWallsNear() returns a SHARED scratch array (BUG-016 /
+        // INVARIANT 362). This update re-queries it for LOS/pathing after
+        // the fetch, so own a private copy for the frame -- same fix the
+        // RobotDog carries.
+        let nearbyWalls = this._wallScratch || (this._wallScratch = []);
+        {
+            const src = game.map.getWallsNear(this.x, this.y);
+            nearbyWalls.length = 0;
+            for (let i = 0; i < src.length; i++) nearbyWalls.push(src[i]);
+        }
+
+        if (this.barkCooldown > 0) this.barkCooldown -= dt;
+        if (this._hitFlash > 0) { this._hitFlash -= dt; if (this._hitFlash < 0) this._hitFlash = 0; }
+
+        // Nearest living player: drives the panic flash and (via the gate
+        // in Game._updateScavEscapeGate) the flee direction.
+        // Reused scratch (no per-frame array literal): the living players,
+        // shared by the panic check, the caution surcharge in the
+        // acquisition scan, and the loiter scorer.
+        const players = this._playerScratch || (this._playerScratch = []);
+        players.length = 0;
+        if (game.player && !game.player.dead) players.push(game.player);
+        if (game.isTwoPlayer && game.player2 && !game.player2.dead) players.push(game.player2);
+        let px = null, py = null, pd = Infinity;
+        for (const p of players) {
+            const d = Math.hypot(p.x - this.x, p.y - this.y);
+            if (d < pd) { pd = d; px = p.x; py = p.y; }
+        }
+        this._panic = (pd < SCAV_DOG_TUNING.PANIC_RADIUS);
+
+        // A dog that picks something up AFTER the escape gate already
+        // armed (loot grabbed during the scramble window) has to join the
+        // flight too -- no free carry-outs through a closed wave.
+        if (game._scavEscape && this.state !== 'FLEEING' && this.cargo.length) {
+            this.startFlee(game.mapW, game.mapH, px !== null ? px : this.x, py !== null ? py : this.y);
+        }
+
+        let destX = this.x, destY = this.y, currentSpeed = 0, hasDest = false;
+
+        if (this.state === 'FLEEING') {
+            if (this.scrambleTimer > 0) {
+                this.scrambleTimer -= dt;
+                // Scramble: skitter in place so the player gets a beat to
+                // react before the sprint.
+                destX = this.x + Math.cos(this.walkCycle * 2.3) * 40;
+                destY = this.y + Math.sin(this.walkCycle * 1.7) * 40;
+                currentSpeed = SCAV_DOG_TUNING.SPEED_SCOUT + 60;
+                hasDest = true;
+            } else if (this.fleePoint) {
+                destX = this.fleePoint.x; destY = this.fleePoint.y;
+                currentSpeed = SCAV_DOG_TUNING.SPEED_FLEE;
+                hasDest = true;
+            }
+            const E = SCAV_DOG_TUNING.ESCAPE_EDGE;
+            if (this.x < E || this.x > game.mapW - E || this.y < E || this.y > game.mapH - E) {
+                // Straight out of the sim -- deliberately NOT the death
+                // path (no spill, no particles; the loot rides out with
+                // the dog). The driver parks us into inactiveScavDogs.
+                this.escaped = true;
+                game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 14, 'LOOT CARRIED OFF', '#ff2a5f', 1.4));
+                return;
+            }
+        } else if (this._panic && pd < SCAV_DOG_TUNING.PANIC_RADIUS) {
+            // Light-fingered: a player brushing in spooks the dog away
+            // from them (it does NOT drop cargo on panic -- killing it is
+            // the recovery, chasing it is just... chasing).
+            const a = Math.atan2(this.y - py, this.x - px);
+            destX = this.x + Math.cos(a) * 200;
+            destY = this.y + Math.sin(a) * 200;
+            currentSpeed = SCAV_DOG_TUNING.SPEED_PANIC;
+            hasDest = true;
+        } else if (this.state === 'HUNTING') {
+            // Throttled acquisition scan (same 30-frame stagger cadence
+            // as RobotDog/Enemy AI).
+            let stagger = this._aiStaggerId || 0;
+            if (game.frameCounter % 30 === stagger % 30 || !this.targetItem) {
+                // Scored pick, not nearest-wins: cost = real distance PLUS a
+                // caution surcharge for loot parked near a player. Greed is
+                // still primary (the surcharge is finite and bounded by
+                // AVOID_RADIUS * AVOID_WEIGHT), avoidance is the tiebreak --
+                // exactly the "steal everything, but work the far side of
+                // the map first" behaviour the design asks for.
+                // No line-of-sight pre-filter: items BEHIND walls are still
+                // targets -- the steering A* routes around. Unreachable ones
+                // are retired by the no-progress ban below, not by a filter.
+                const AR = SCAV_DOG_TUNING.AVOID_RADIUS, AR2 = AR * AR;
+                let best = null, bestScore = SCAV_DOG_TUNING.SEEK_RANGE;
+                for (const it of game.items) {
+                    if (!ScavengerDog.isStealable(it)) continue;
+                    if (this.failedItems.has(it) && game.gameTime < this.failedItems.get(it)) continue;
+                    let dx = it.x - this.x, dy = it.y - this.y;
+                    let dSq = dx * dx + dy * dy;
+                    // Cheap reject before any sqrt: even a zero surcharge
+                    // can't beat the incumbent if the raw distance already does.
+                    if (dSq >= bestScore * bestScore) continue;
+                    let score = Math.sqrt(dSq);
+                    for (const p of players) {
+                        const pdx = it.x - p.x, pdy = it.y - p.y;
+                        const pdSq = pdx * pdx + pdy * pdy;
+                        if (pdSq < AR2) score += (AR - Math.sqrt(pdSq)) * SCAV_DOG_TUNING.AVOID_WEIGHT;
+                    }
+                    if (score >= bestScore) continue;
+                    bestScore = score; best = it;
+                }
+                if (best && best !== this.targetItem) {
+                    this.targetItem = best;
+                    // Fresh target: restart both unreachable-ban windows.
+                    this._progressTimer = 0;
+                    this._pursuitTimer = 0;
+                    this._bestTargetDist = Math.hypot(best.x - this.x, best.y - this.y);
+                    if (this.barkCooldown <= 0) {
+                        this.barkCooldown = SCAV_DOG_TUNING.BARK_COOLDOWN;
+                        if (typeof audio !== 'undefined' && audio && audio.playScavBark) audio.playScavBark(this.x, this.y);
+                    }
+                } else if (!best) {
+                    this.targetItem = null;
+                }
+            }
+
+            // Items are pooled AND magnetized: re-validate by identity
+            // every frame and re-read the live position -- collectItem's
+            // identity guard (PHASE 5) is the precedent. A stale
+            // reference that got pool-recycled into a non-stealable type
+            // must never be stolen (the whitelist is re-checked at the
+            // steal itself).
+            if (this.targetItem) {
+                if (game.items.indexOf(this.targetItem) === -1) {
+                    this.targetItem = null; // collected/expired under us
+                } else {
+                    // SIGHTLINE AVOIDANCE (arc-around): a close player sitting on the
+                    // dog->loot route swings the destination to a waypoint
+                    // offset perpendicular off that route, so the dog arcs
+                    // around them. It is a one-shot swerve -- within 36px of
+                    // the waypoint (or the player leaves the route) it
+                    // commits to the loot. Bounded by construction: no
+                    // persistent hiding state, so it can never stall in open
+                    // ground or orbit a camped player. Crossing the line is
+                    // free when the player is beyond HIDE_DIST. (Panic
+                    // outranks this -- a close player gets the old-style
+                    // spook dash, handled above.)
+                    destX = this.targetItem.x; destY = this.targetItem.y;
+                    this._dodging = false;
+
+                    // UNREACHABLE-LOOT BAN. findPath has no failure return --
+                    // every path it can't solve degrades to a straight line at
+                    // the destination -- so a dog that targets loot behind a
+                    // sealed wall would beeline, wedge, strafe, and repeat
+                    // forever. Detect it by outcome instead: if the dog hasn't
+                    // closed NO_PROGRESS_EPS on the item in NO_PROGRESS_TIME,
+                    // blacklist it (reusing failedItems/FAILED_BAN) and move on.
+                    // Covers unreachable, barrier-blocked and geometry-wedged
+                    // in one gate. The dodge detour legitimately widens the gap
+                    // for a beat, which is why the window is seconds, not frames.
+                    const tDist = Math.hypot(this.targetItem.x - this.x, this.targetItem.y - this.y);
+                    this._pursuitTimer += dt;
+                    if (tDist < this._bestTargetDist - SCAV_DOG_TUNING.NO_PROGRESS_EPS) {
+                        this._bestTargetDist = tDist;
+                        this._progressTimer = 0;
+                    } else {
+                        this._progressTimer += dt;
+                    }
+                    if (this._progressTimer >= SCAV_DOG_TUNING.NO_PROGRESS_TIME ||
+                        this._pursuitTimer >= SCAV_DOG_TUNING.PURSUIT_TIMEOUT) {
+                        this.failedItems.set(this.targetItem, game.gameTime + SCAV_DOG_TUNING.FAILED_BAN);
+                        this.targetItem = null;
+                        this._progressTimer = 0;
+                        this._pursuitTimer = 0;
+                        this._bestTargetDist = Infinity;
+                        this.cachedMoveAngle = undefined;
+                    }
+
+                    if (this.targetItem && !this._panic && pd < SCAV_DOG_TUNING.HIDE_DIST) {
+                        const rx = this.targetItem.x - this.x, ry = this.targetItem.y - this.y;
+                        const rLen2 = rx * rx + ry * ry;
+                        if (rLen2 > 40 * 40) {
+                            let t = ((px - this.x) * rx + (py - this.y) * ry) / rLen2;
+                            t = Math.max(0.15, Math.min(0.85, t));
+                            const cx = this.x + rx * t, cy = this.y + ry * t;
+                            const ddx = px - cx, ddy = py - cy;
+                            if (ddx * ddx + ddy * ddy < SCAV_DOG_TUNING.DODGE_DIST * SCAV_DOG_TUNING.DODGE_DIST) {
+                                const rLen = Math.sqrt(rLen2);
+                                // Route normal, forced to point AWAY from the
+                                // player: ddx/ddy runs route->player, so a
+                                // POSITIVE dot means the normal agrees with the
+                                // player's side and has to be flipped. Swinging
+                                // the waypoint to cx + n*DETOUR_OFF then puts it
+                                // on the far side, and the berth grows with the
+                                // player's own offset instead of shrinking.
+                                let nx = -ry / rLen, ny = rx / rLen;
+                                if (nx * ddx + ny * ddy > 0) { nx = -nx; ny = -ny; }
+                                const wx = cx + nx * SCAV_DOG_TUNING.DETOUR_OFF, wy = cy + ny * SCAV_DOG_TUNING.DETOUR_OFF;
+                                const wdx = wx - this.x, wdy = wy - this.y;
+                                if (wdx * wdx + wdy * wdy > 36 * 36) {
+                                    destX = wx; destY = wy;
+                                    this._dodging = true;
+                                }
+                            }
+                        }
+                    }
+                    if (this.targetItem) {
+                        currentSpeed = SCAV_DOG_TUNING.SPEED_SEEK;
+                        hasDest = true;
+                    }
+                }
+            }
+
+            if (!this.targetItem) {
+                // Nothing worth stealing: hole up on the far side of the
+                // map rather than drifting in place. Re-picks on the timer
+                // OR on arrival, so a player walking toward a loitering dog
+                // pushes it further out on the next re-pick instead of
+                // letting it sit and get shot.
+                this.scoutTimer -= dt;
+                const arrived = this.scoutX !== undefined &&
+                    Math.hypot(this.scoutX - this.x, this.scoutY - this.y) < 40;
+                if (this.scoutTimer <= 0 || arrived || this.scoutX === undefined) {
+                    this.scoutTimer = Math.random() * 2.0 + 2.0;
+                    this._pickLoiterPoint(game, players);
+                }
+                destX = this.scoutX; destY = this.scoutY;
+                currentSpeed = SCAV_DOG_TUNING.SPEED_SCOUT;
+                hasDest = true;
+            }
+        } else if (this.state === 'CARRYING') {
+            // PACK FULL (cargo >= CARGO_CAP): keep moving (harder to pin),
+            // no new grabs -- the dog hunts again only if respawned.
+            // Same far-side loiter as the idle HUNTING branch: a loaded dog
+            // should be running the perimeter, not circling where it stole.
+            // (scoutX can be undefined here on the first tick after the cap
+            // flips -- the guard below covers it; the old bare hypot on
+            // undefined evaluated NaN < 30 = false and only re-picked on
+            // the timer.)
+            this.scoutTimer -= dt;
+            const carryArrived = this.scoutX !== undefined &&
+                Math.hypot(this.scoutX - this.x, this.scoutY - this.y) < 40;
+            if (this.scoutTimer <= 0 || carryArrived || this.scoutX === undefined) {
+                this.scoutTimer = Math.random() * 2.0 + 2.0;
+                this._pickLoiterPoint(game, players);
+            }
+            destX = this.scoutX; destY = this.scoutY;
+            currentSpeed = SCAV_DOG_TUNING.SPEED_CARRY;
+            hasDest = true;
+        }
+
+        // Steering: same cached-angle + A*-on-blocked pattern as the
+        // RobotDog, staggered per-dog.
+        if (hasDest && currentSpeed > 0) {
+            let desiredAngle = Math.atan2(destY - this.y, destX - this.x);
+            let distToDest = Math.hypot(destX - this.x, destY - this.y);
+            if (distToDest > 5) {
+                let targetKey = this.state + (this.targetItem ? (this._dodging ? "_dodge" : "_item") : this.fleePoint ? "_flee" : "_roam");
+                let targetChanged = (this.lastTargetKey !== targetKey);
+                this.lastTargetKey = targetKey;
+                let stagger = this._aiStaggerId || 0;
+                if (game.frameCounter % 30 === stagger % 30 || this.cachedMoveAngle === undefined || targetChanged) {
+                    let pathBlocked = nearbyWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, destX, destY, w));
+                    if (!pathBlocked && game.barriers) {
+                        pathBlocked = game.barriers.some(b => MathUtils.lineIntersectCapsule(this.x, this.y, destX, destY, b));
+                    }
+                    let moveAngle = desiredAngle;
+                    if (pathBlocked) {
+                        let path = game.map.findPath(this.x, this.y, destX, destY, game.map.walls);
+                        if (path && path.length > 0) moveAngle = Math.atan2(path[0].y - this.y, path[0].x - this.x);
+                    }
+                    this.cachedMoveAngle = moveAngle;
+                }
+                desiredAngle = this.cachedMoveAngle;
+                var moveX = Math.cos(desiredAngle);
+                var moveY = Math.sin(desiredAngle);
+            } else {
+                var moveX = 0, moveY = 0;
+            }
+
+            // Stuck escape (RobotDog parity): back up + strafe when jammed.
+            if (currentSpeed > 0 && (moveX !== 0 || moveY !== 0)) {
+                let actualSpeed = Math.hypot(this.vx, this.vy);
+                if (actualSpeed < 18) {
+                    this.stuckAccumulator += dt;
+                    if (this.stuckAccumulator > 0.45) {
+                        this.stuckTimer = 0.8;
+                        this.stuckStrafeDir = Math.random() > 0.5 ? 1 : -1;
+                        this.stuckAccumulator = 0;
+                    }
+                } else {
+                    this.stuckAccumulator = Math.max(0, this.stuckAccumulator - dt * 2);
+                }
+            }
+            if (this.stuckTimer > 0) {
+                this.stuckTimer -= dt;
+                let refAngle = hasDest ? Math.atan2(destY - this.y, destX - this.x) : this.angle;
+                let escapeAngle = refAngle + Math.PI + this.stuckStrafeDir * Math.PI / 2;
+                moveX = Math.cos(escapeAngle);
+                moveY = Math.sin(escapeAngle);
+                currentSpeed = 240;
+            }
+
+            if (moveX !== 0 || moveY !== 0) {
+                let len = Math.hypot(moveX, moveY);
+                this.vx += (moveX / len) * currentSpeed * 4 * dt;
+                this.vy += (moveY / len) * currentSpeed * 4 * dt;
+                let moveAngle = Math.atan2(this.vy, this.vx);
+                let diff = MathUtils.angleDifference(moveAngle, this.angle);
+                this.angle += Math.sign(diff) * Math.min(Math.abs(diff), 8 * dt);
+                this.walkCycle += dt * 16 * (Math.hypot(this.vx, this.vy) / 220);
+            }
+        } else {
+            this.vx *= Math.pow(0.001, dt);
+            this.vy *= Math.pow(0.001, dt);
+        }
+
+        // Separation: share the dog separation pool so Spot and scavenger
+        // dogs shove each other instead of stacking (getDogSeparationEntities
+        // now carries scavDogs; the self-exclusion rides on selfDog).
+        let sepX = 0, sepY = 0;
+        let sepEnts = game.getDogSeparationEntities(this);
+        for (let other of sepEnts) {
+            if (other === this || other.dead) continue;
+            let d = Math.hypot(other.x - this.x, other.y - this.y);
+            let minDist = this.r + other.r + 8;
+            if (d < minDist && d > 0) {
+                sepX += (this.x - other.x) / d * 120;
+                sepY += (this.y - other.y) / d * 120;
+            }
+        }
+        this.vx += sepX * dt;
+        this.vy += sepY * dt;
+
+        // Barrier collision (RobotDog parity minus the PvP owner skip --
+        // the dog owns nothing).
+        if (game.barriers) {
+            for (let bar of game.barriers) {
+                let col = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
+                if (col.hit) {
+                    let nx = 0, ny = 0, overlap = 0;
+                    if (col.dist > 0) {
+                        nx = col.dx / col.dist;
+                        ny = col.dy / col.dist;
+                        overlap = (this.r + bar.r) - col.dist;
+                    } else {
+                        let segmentAngle = Math.atan2(bar.by - bar.ay, bar.bx - bar.ax);
+                        let perpAngle = segmentAngle + Math.PI / 2;
+                        nx = Math.cos(perpAngle);
+                        ny = Math.sin(perpAngle);
+                        overlap = this.r + bar.r;
+                    }
+                    this.x += nx * overlap;
+                    this.y += ny * overlap;
+                    let dot = this.vx * nx + this.vy * ny;
+                    if (dot < 0) {
+                        this.vx -= nx * dot;
+                        this.vy -= ny * dot;
+                    }
+                }
+            }
+        }
+
+        this.updatePhysics(dt, nearbyWalls);
+
+        // The snatch. Re-validate existence, identity AND whitelist at
+        // the contact frame, then do the pooled round-trip BY HAND --
+        // collectItem is the player pickup path (cash/inventory side
+        // effects) and must not be called here. NOTE: greedyHands-style
+        // auto-vacuum races the dog on purpose -- whoever touches first
+        // wins; no special conflict handling.
+        if (this.state === 'HUNTING' && this.targetItem) {
+            let itemIdx = game.items.indexOf(this.targetItem);
+            if (itemIdx === -1) {
+                this.targetItem = null;
+            } else {
+                const it = this.targetItem;
+                if (!ScavengerDog.isStealable(it)) {
+                    this.failedItems.set(it, game.gameTime + SCAV_DOG_TUNING.FAILED_BAN);
+                    this.targetItem = null;
+                } else {
+                    let dist = Math.hypot(it.x - this.x, it.y - this.y);
+                    if (dist < this.r + it.r + SCAV_DOG_TUNING.STEAL_PAD) {
+                        // floorSeparated guard mirrors the player magnet:
+                        // no reaching through floors. (Cheap; dogs have no
+                        // floor logic of their own.)
+                        if (game.map && game.map.floorSeparated(this.x, this.y, it.x, it.y)) {
+                            this.failedItems.set(it, game.gameTime + 2.0);
+                            this.targetItem = null;
+                        } else {
+                            game.items[itemIdx] = game.items[game.items.length - 1];
+                            game.items.pop();
+                            if (!game.inactiveItems) game.inactiveItems = [];
+                            game.inactiveItems.push(it);
+                            this.cargo.push(it.type);
+                            this.targetItem = null;
+                            // Keep working the floor until the back is
+                            // full; only a FULL dog loiters in CARRYING.
+                            this.state = this.cargo.length >= SCAV_DOG_TUNING.CARGO_CAP ? 'CARRYING' : 'HUNTING';
+                            this.cachedMoveAngle = undefined;
+                            game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 16,
+                                this.cargo.length >= SCAV_DOG_TUNING.CARGO_CAP ? 'PACK FULL!' : 'SNATCHED!', '#ffb700', 1.1));
+                            if (this.barkCooldown <= 0) {
+                                this.barkCooldown = SCAV_DOG_TUNING.BARK_COOLDOWN;
+                                if (typeof audio !== 'undefined' && audio && audio.playScavBark) audio.playScavBark(this.x, this.y);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    draw(ctx, cam) {
+        if (this.dead || this.escaped) return;
+
+        drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.2, this.r * 0.4);
+
+        let scx = this.x - cam.x;
+        let scy = this.y - cam.y;
+
+        ctx.save();
+        ctx.translate(scx, scy);
+        ctx.rotate(this.angle);
+
+        // Quadruped silhouette: boxy chassis + 2-segment legs on a diagonal
+        // gait (FL/RR in phase, FR/RL opposed), trapezoid head, antenna
+        // ears, tail whisk. Reads as "robot dog", top-down, facing +x.
+        const hips = [[9, -6], [9, 6], [-8, -6], [-8, 6]];
+        const gait = [0, Math.PI, Math.PI, 0];
+        const outSign = [-1, 1, -1, 1];
+        ctx.strokeStyle = '#54677a';
+        ctx.lineWidth = 2.6;
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 4; i++) {
+            const hx = hips[i][0], hy = hips[i][1];
+            const swing = Math.sin(this.walkCycle + gait[i]) * 4;
+            const kx = hx + 2 + swing * 0.4, ky = hy + outSign[i] * 4;
+            const fx = hx + swing, fy = hy + outSign[i] * 9;
+            ctx.beginPath();
+            ctx.moveTo(hx, hy); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy);
+            ctx.stroke();
+            ctx.fillStyle = '#2f3d4a';
+            ctx.beginPath(); ctx.arc(fx, fy, 1.8, 0, Math.PI * 2); ctx.fill();
+        }
+
+        // Tail whisk with a red tip
+        ctx.strokeStyle = '#7d8fa0';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(-17, -2); ctx.stroke();
+        ctx.fillStyle = '#ff2a5f';
+        ctx.beginPath(); ctx.arc(-17.5, -2, 1.4, 0, Math.PI * 2); ctx.fill();
+
+        // Armored chassis
+        ctx.fillStyle = '#3a4a59';
+        ctx.strokeStyle = '#7d8fa0';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-9, -7); ctx.lineTo(9, -7); ctx.lineTo(12, -4); ctx.lineTo(12, 4); ctx.lineTo(9, 7); ctx.lineTo(-9, 7); ctx.lineTo(-12, 4); ctx.lineTo(-12, -4);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // Panel seams + rear vents
+        ctx.strokeStyle = 'rgba(160, 180, 200, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-3, -7); ctx.lineTo(-3, 7);
+        ctx.moveTo(4, -7);  ctx.lineTo(4, 7);
+        ctx.moveTo(-10, -3); ctx.lineTo(-6, -3);
+        ctx.moveTo(-10, 0);  ctx.lineTo(-6, 0);
+        ctx.moveTo(-10, 3);  ctx.lineTo(-6, 3);
+        ctx.stroke();
+
+        // Head: angular trapezoid with visor strip
+        ctx.fillStyle = '#46586a';
+        ctx.strokeStyle = '#7d8fa0';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(11, -6); ctx.lineTo(19, -4); ctx.lineTo(21, -2); ctx.lineTo(21, 2); ctx.lineTo(19, 4); ctx.lineTo(11, 6);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // Sensor visor (hostile red, not the player dog's cyan)
+        ctx.fillStyle = '#ff2a5f';
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = '#ff2a5f';
+        ctx.fillRect(14.5, -1.4, 5, 2.8);
+        ctx.shadowBlur = 0;
+        // Antenna ears
+        ctx.strokeStyle = '#9fb4c7';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(12, -5); ctx.lineTo(10, -9);
+        ctx.moveTo(12, 5);  ctx.lineTo(10, 9);
+        ctx.stroke();
+        ctx.fillStyle = '#9fb4c7';
+        ctx.beginPath(); ctx.arc(10, -9, 1.1, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(10, 9, 1.1, 0, Math.PI * 2); ctx.fill();
+        // Jaw block
+        ctx.fillStyle = '#2c3a47';
+        ctx.fillRect(19, -1.8, 3.5, 3.6);
+
+        ctx.restore();
+
+        // White hit-flash overlay (FELLPASS item 4 visual convention).
+        if (this._hitFlash > 0) {
+            ctx.save();
+            ctx.globalAlpha = Math.min(1, this._hitFlash / 0.06) * 0.5;
+            ctx.fillStyle = '#ffffff';
+            ctx.translate(scx, scy);
+            ctx.rotate(this.angle);
+            ctx.fillRect(-12, -7, 24, 14);
+            ctx.restore();
+        }
+
+        // Belly cargo: HUD-matching icons stacked along the spine so a
+        // dog gorging itself visibly gets heavier-looking. Beyond 3 the
+        // pile is summarized as xN.
+        if (this.cargo.length) {
+            ctx.save();
+            ctx.translate(scx, scy + 1);
+            const shown = Math.min(3, this.cargo.length);
+            for (let ci = 0; ci < shown; ci++) {
+                const t = this.cargo[ci];
+                ctx.save();
+                ctx.translate((ci - (shown - 1) / 2) * 8, 0);
+                if (t === 'money') {
+                    ctx.fillStyle = '#0a3d12';
+                    ctx.strokeStyle = '#39ff14';
+                    ctx.lineWidth = 1;
+                    ctx.fillRect(-4, -3, 8, 6);
+                    ctx.strokeRect(-4, -3, 8, 6);
+                    ctx.fillStyle = '#39ff14';
+                    ctx.font = 'bold 6px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('$', 0, 0.5);
+                } else {
+                    let iconKey = t, col = (typeof Weapons !== 'undefined' && Weapons[t] && Weapons[t].color) || '#ffb700';
+                    if (t === 'medpack') { iconKey = 'medpack'; col = ITEM_ICON_COLORS.medpack; }
+                    else if (t === 'grenade') { iconKey = 'grenade'; col = ITEM_ICON_COLORS.grenade; }
+                    else if (t === 'redbull') { iconKey = 'boost'; col = ITEM_ICON_COLORS.boost; }
+                    if (!strokeWorldIcon(ctx, iconKey, col, 0.45)) {
+                        ctx.fillStyle = col;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                ctx.restore();
+            }
+            if (this.cargo.length > 3) {
+                ctx.fillStyle = '#ffb700';
+                ctx.font = 'bold 8px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('x' + this.cargo.length, 0, 9);
+            }
+            ctx.restore();
+        }
+
+        // Status light (readable at a glance, matches the design dial):
+        //   green  = empty / hunting, amber = carrying loot,
+        //   red flash = spooked or running for the edge.
+        let lightColor, flash = false;
+        if (this.state === 'FLEEING' || (this._panic && !this.dead)) {
+            lightColor = '#ff2a5f';
+            flash = true;
+        } else if (this.cargo.length) {
+            lightColor = '#ffb700';
+        } else {
+            lightColor = '#39ff14';
+        }
+        if (!flash || (Math.floor((typeof game !== 'undefined' && game ? game.gameTime : performance.now() / 1000) * 8) % 2 === 0)) {
+            ctx.save();
+            ctx.fillStyle = lightColor;
+            ctx.shadowBlur = 9;
+            ctx.shadowColor = lightColor;
+            ctx.beginPath();
+            ctx.arc(scx, scy - 13, 2.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
     }
 }
 
@@ -28044,6 +28957,9 @@ class Game {
         this.turrets = [];
         this.securityCameras = [];
         this.dogs = [];
+        this.scavDogs = [];         // OQ-076: hostile scavenger dogs (own pool -- NOT game.enemies)
+        this.inactiveScavDogs = []; // OQ-076: scavDogs pool (park on death/escape/wipe, INVARIANT: always park)
+        this._scavEscape = null;    // OQ-076: wave-clear hold armed while loaded dogs flee to the edge
         this.hostages = [];      // PHASE 2: escort entities (Asset Recovery)
         this.miniDrones = [];
         this.floatingTexts = [];
@@ -28268,6 +29184,14 @@ class Game {
                 if (!this.bossDrones[i].dead) arr.push(this.bossDrones[i]);
             }
         }
+        // OQ-076: scavenger dogs sit in the ALWAYS tier (blast damage is
+        // side-agnostic -- explode() only calls ent.takeDamage). Killed by
+        // your grenades is a fair way to get your loot back.
+        if (this.scavDogs) {
+            for (let i = 0; i < this.scavDogs.length; i++) {
+                if (!this.scavDogs[i].dead && !this.scavDogs[i].escaped) arr.push(this.scavDogs[i]);
+            }
+        }
         
         if (this.friendlyFireMode === 'off') {
             return arr;
@@ -28312,6 +29236,12 @@ class Game {
                 if (!this.bossDrones[i].dead) arr.push(this.bossDrones[i]);
             }
         }
+        // OQ-076: same always-tier treatment as getBlastEntities().
+        if (this.scavDogs) {
+            for (let i = 0; i < this.scavDogs.length; i++) {
+                if (!this.scavDogs[i].dead && !this.scavDogs[i].escaped) arr.push(this.scavDogs[i]);
+            }
+        }
         if (this.friendlyFireMode !== 'off') {
             if (this.player && this.player !== shooter) arr.push(this.player);
             if (this.isTwoPlayer && this.player2 && this.player2 !== shooter) arr.push(this.player2);
@@ -28341,6 +29271,14 @@ class Game {
             for (let i = 0; i < this.dogs.length; i++) {
                 let d = this.dogs[i];
                 if (d !== selfDog) arr.push(d);
+            }
+        }
+        // OQ-076: scavenger dogs push Spot (and each other) instead of
+        // stacking -- they share the dog separation pool by design.
+        if (this.scavDogs) {
+            for (let i = 0; i < this.scavDogs.length; i++) {
+                let sd = this.scavDogs[i];
+                if (sd !== selfDog && !sd.escaped) arr.push(sd);
             }
         }
         return arr;
@@ -33446,6 +34384,8 @@ class Game {
         if (this.dogs) {
             for (let d of this.dogs) d.draw(this.ctx, droneCam);
         }
+        // OQ-076: scavenger dogs draw in the same asset band as the dogs.
+        if (this.scavDogs) for (let sd of this.scavDogs) sd.draw(this.ctx, droneCam);
         if (this.miniDrones) {
             for (let md of this.miniDrones) md.draw(this.ctx, droneCam);
         }
@@ -33766,6 +34706,9 @@ class Game {
         if (this.turrets) for (let t of this.turrets) t.draw(this.ctx, baseCam);
         if (this.securityCameras) for (let c of this.securityCameras) c.draw(this.ctx, baseCam);
         if (this.dogs) for (let d of this.dogs) d.draw(this.ctx, baseCam);
+        // OQ-076: scavenger dogs, same asset band as the dogs (below
+        // bullets/parapets/roofs).
+        if (this.scavDogs) for (let sd of this.scavDogs) sd.draw(this.ctx, baseCam);
         for (let e of this.enemies) e.draw(this.ctx, baseCam);
         player.draw(this.ctx, baseCam);
         this.map.drawRoofs(this.ctx, baseCam, pw, ph);
@@ -35104,6 +36047,19 @@ class Game {
         this.turrets = [];
         this.securityCameras = [];
         this.dogs = [];
+        // OQ-076: wipe scavenger dogs with the rest of the run state. Park
+        // every active dog (drop cargo references WITHOUT spilling -- a
+        // run wipe is not a loot recovery) and clear the escape hold.
+        if (!this.inactiveScavDogs) this.inactiveScavDogs = [];
+        if (this.scavDogs) {
+            for (let sd of this.scavDogs) {
+                sd.targetItem = null;
+                sd.cargo = [];
+                this.inactiveScavDogs.push(sd);
+            }
+        }
+        this.scavDogs = [];
+        this._scavEscape = null;
         if (!this.hostages) this.hostages = []; // (reset properly in startNewGame; guard for legacy paths)
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
@@ -35489,7 +36445,99 @@ class Game {
         this._strikeTeamsThisWave = 0;
         this._medicSquadsThisWave = 0;
         this._medicDelayArmed = false;
+        // OQ-076: a stale escape-hold must never leak into a fresh wave.
+        this._scavEscape = null;
+        this.rollScavDogs();
         this.updateHUD();
+    }
+
+    // OQ-076: once-per-wave Scavenger Dog roll (lazy wave-keyed idiom,
+    // same shape as the FPV pilot cap). Wave-start hook, NOT the enemy
+    // faucet: the dog is not an Enemy and must never appear in
+    // game.enemies. Excluded everywhere the plan says: Extraction, boss
+    // waves, operator mode, peaceful/PvP builds.
+    rollScavDogs() {
+        if (this.extractionMode || this.operatorMode || this.peacefulMode ||
+            this.isBossWave || this.friendlyFireMode === 'pvp') return;
+        if (this.wave < 3) return;               // let the run breathe first
+        if (this._scavWave === this.wave) return; // single roll per wave
+        this._scavWave = this.wave;
+        if (!this.scavDogs) this.scavDogs = [];
+        const iw = this._spawnIntensityWave();
+        let count = Math.random() < Math.min(0.55, 0.28 + iw * 0.025) ? 1 : 0;
+        if (count && iw >= 10 && Math.random() < 0.35) count = 2;
+        count = Math.min(count, Math.max(0, 2 - this.scavDogs.length)); // field cap of 2
+        let spawned = 0;
+        for (let n = 0; n < count; n++) {
+            const anchor = this._pickSquadAnchor(); // enemy-edge spawn placement: player keepout + wall validation built in
+            let sd = (this.inactiveScavDogs && this.inactiveScavDogs.length > 0)
+                ? this.inactiveScavDogs.pop()
+                : new ScavengerDog(anchor.x, anchor.y);
+            sd.init(anchor.x, anchor.y);
+            sd._aiStaggerId = (this._scavStaggerNext = ((this._scavStaggerNext || 0) + 1) % 30);
+            this.scavDogs.push(sd);
+            audio.playScavBark(sd.x, sd.y);
+            spawned++;
+        }
+        if (spawned > 0) {
+            this.announce('SCAVENGER DOG DEPLOYED \u2014 GUARD YOUR LOOT', '#ffb700', 4.0,
+                'IT STEALS GROUND SUPPLIES \u00b7 KILL IT BEFORE IT LEAVES');
+        }
+    }
+
+    // OQ-076: wave-clear hold + escape resolution. Armed the frame the
+    // wave's last enemy is gone (same moment the RUNNER final-kill
+    // resolves -- the two coexist independently; this never touches
+    // _finalKill/_nextWaveReinforced). While armed, the standard
+    // round-win branch is held off; it fires once every fleeing dog has
+    // despawned (escaped or killed) or the hard timeout expires.
+    _updateScavEscapeGate(dt) {
+        if (!this.scavDogs) { this._scavEscape = null; return; }
+        if (this._scavEscape) {
+            this._scavEscape.timeout -= dt;
+            let anyFleeing = false;
+            for (let i = 0; i < this.scavDogs.length; i++) {
+                const d = this.scavDogs[i];
+                if (d.state === 'FLEEING' && !d.dead && !d.escaped) { anyFleeing = true; break; }
+            }
+            if (!anyFleeing) { this._scavEscape = null; return; }
+            if (this._scavEscape.timeout <= 0) {
+                // Hard cap (<=8s, per plan): the escape window closes and
+                // everything still loaded is declared gone -- the dog
+                // despawns off-map in the driver, cargo and all.
+                for (let i = 0; i < this.scavDogs.length; i++) {
+                    const d = this.scavDogs[i];
+                    if (d.state === 'FLEEING' && !d.dead && !d.escaped) {
+                        d.escaped = true;
+                        this.floatingTexts.push(this.spawnFloatingText(d.x, d.y - 14, 'LOST IN THE WRECKAGE', '#ff2a5f', 1.4));
+                    }
+                }
+                this.announce('THE SCAVENGER GOT AWAY', '#ff2a5f', 4.0,
+                    'CARRIED LOOT IS GONE \u00b7 NO BOUNTY \u00b7 NO REFUND');
+                this._scavEscape = null;
+            }
+            return;
+        }
+        if (!this.peacefulMode && this.enemies.length === 0 && this.enemiesToSpawn === 0) {
+            let carriers = [];
+            for (let i = 0; i < this.scavDogs.length; i++) {
+                const d = this.scavDogs[i];
+                if (!d.dead && !d.escaped && d.cargo.length && d.state !== 'FLEEING') carriers.push(d);
+            }
+            if (carriers.length === 0) return;
+            this._scavEscape = { timeout: SCAV_DOG_TUNING.ESCAPE_TIMEOUT };
+            const alive = [this.player, this.isTwoPlayer ? this.player2 : null].filter(p => p && !p.dead);
+            let nx = null, ny = null, nd = Infinity;
+            for (const p of alive) {
+                const dd = Math.hypot(p.x - carriers[0].x, p.y - carriers[0].y);
+                if (dd < nd) { nd = dd; nx = p.x; ny = p.y; }
+            }
+            for (const d of carriers) {
+                d.startFlee(this.mapW, this.mapH, nx !== null ? nx : d.x, ny !== null ? ny : d.y);
+            }
+            this.announce('LOOT SCAVENGER FLEEING \u2014 KILL IT OR IT VANISHES', '#ff2a5f', 4.2,
+                'CARRIED SUPPLIES ARE LOST IF IT EXITS THE MAP');
+        }
     }
 
     // Decides whether this wave is a boss wave and, if so, sets up the
@@ -37355,6 +38403,27 @@ class Game {
         this.toggleDevDashboard();
     }
 
+    // OQ-076 dev-menu hook: drop a Scavenger Dog in front of the player
+    // (same placement idiom as devSpawnEnemy -- a dev tool deliberately
+    // ignores the edge-anchor rules of the real rollScavDogs path).
+    devSpawnScavDog() {
+        this.taintRunEligibility('dev_spawn'); // PHASE 0
+        if (this.player) {
+            let spawnX = this.player.x + Math.cos(this.player.angle) * 180;
+            let spawnY = this.player.y + Math.sin(this.player.angle) * 180;
+            spawnX = Math.max(60, Math.min(this.mapW - 60, spawnX));
+            spawnY = Math.max(60, Math.min(this.mapH - 60, spawnY));
+            if (!this.scavDogs) this.scavDogs = [];
+            if (!this.inactiveScavDogs) this.inactiveScavDogs = [];
+            let sd = this.inactiveScavDogs.length > 0 ? this.inactiveScavDogs.pop() : new ScavengerDog(spawnX, spawnY);
+            sd.init(spawnX, spawnY);
+            sd._aiStaggerId = (this._scavStaggerNext = ((this._scavStaggerNext || 0) + 1) % 30);
+            this.scavDogs.push(sd);
+            if (audio) audio.playScavBark(sd.x, sd.y);
+        }
+        this.toggleDevDashboard();
+    }
+
     devSpawnStrikeTeam(compKey = 'assault') {
         this.taintRunEligibility('dev_spawn'); // PHASE 0
         if (this.player) {
@@ -37983,6 +39052,16 @@ class Game {
                 if (d.hp > 0) entities.push(d);
             }
         }
+        // OQ-076: scavenger dogs join the ALWAYS-scanned head of the
+        // candidate list (before _entitiesEnemyStart), so bullet pruning
+        // stays a strict superset of the full scan (INVARIANT 19) -- no
+        // _sepBuckets changes. This also gives them barrel body-push for
+        // free (the barrel push loop iterates this same list).
+        if (this.scavDogs) {
+            for (let sd of this.scavDogs) {
+                if (sd.hp > 0 && !sd.dead && !sd.escaped) entities.push(sd);
+            }
+        }
         if (this.hostages) {
             for (let h of this.hostages) {
                 if (!h.dead) entities.push(h); // PHASE 2: hostages are hittable/pushable
@@ -38172,6 +39251,22 @@ class Game {
                 if (this.dogs[i].dead) {
                     this.dogs[i] = this.dogs[this.dogs.length - 1];
                     this.dogs.pop();
+                }
+            }
+        }
+
+        // OQ-076: Scavenger Dog driver. Removal ALWAYS parks into the pool
+        // (death OR escape -- BUG-010 discipline). Death spill already ran
+        // in onDeath(); escape deliberately spilled nothing.
+        if (this.scavDogs) {
+            if (!this.inactiveScavDogs) this.inactiveScavDogs = [];
+            for (let i = this.scavDogs.length - 1; i >= 0; i--) {
+                let sd = this.scavDogs[i];
+                sd.update(dt, this);
+                if (sd.dead || sd.escaped) {
+                    this.inactiveScavDogs.push(sd);
+                    this.scavDogs[i] = this.scavDogs[this.scavDogs.length - 1];
+                    this.scavDogs.pop();
                 }
             }
         }
@@ -38395,6 +39490,10 @@ class Game {
         // and the runner's own removal.
         this._updateFinalKillEvent(dt);
 
+        // OQ-076: scavenger escape gate (runs right after the final-kill
+        // event so "last enemy gone" is evaluated on the same frame data).
+        this._updateScavEscapeGate(dt);
+
         // PvP RESPAWN: a single death is NOT run-ending in 1v1. Tick each dead
         // operator's respawn countdown; when it expires they revive across the
         // map from the opponent (see _tickPvpRespawn). The run only ends when a
@@ -38466,7 +39565,10 @@ class Game {
                 // unified debrief. The bespoke death-screen is gone.
                 this.endRun(RUN_OUTCOMES.DEATH);
             }
-        } else if (!this.peacefulMode && this.enemies.length === 0 && this.enemiesToSpawn === 0 && this.roundWinDelay === 0) {
+        } else if (!this.peacefulMode && this.enemies.length === 0 && this.enemiesToSpawn === 0 && this.roundWinDelay === 0 && !this._scavEscape) {
+            // OQ-076: the !this._scavEscape clause holds the shop/round-win
+            // transition while loaded scavenger dogs flee (hard-capped by
+            // the gate's own timeout -- this can never stall a wave).
             this.roundWinDelay = 1.5;
             this.triggerRoundWinEffects();
         }
@@ -43232,6 +44334,12 @@ class Game {
                 }
             }
         }
+        // OQ-076: MAIN render pass. (The droneCam/baseCam sites beside the
+        // dog draws there are auxiliary FPV/operator camera passes only --
+        // the dog is invisible without this one.)
+        if (this.scavDogs) {
+            for (let sd of this.scavDogs) sd.draw(this.ctx, cam);
+        }
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
                 md.draw(this.ctx, cam);
@@ -43587,6 +44695,23 @@ class Game {
                     nightCtx.translate(pos.x, pos.y);
                     nightCtx.rotate(dog.angle);
                     nightCtx.drawImage(cachedDogFlashlightCanvas, -coneRadius, -coneRadius, coneRadius * 2, coneRadius * 2);
+                    nightCtx.restore();
+                }
+            }
+
+            // OQ-076: scavenger dogs carry NO flashlight (hostile, dark by
+            // default) -- but a loaded or fleeing dog's status light pokes
+            // a tiny hole so the amber/red tell is visible at night. That
+            // glimmer IS the "go get it" signal the design calls for.
+            if (this.scavDogs) {
+                for (let sd of this.scavDogs) {
+                    if (sd.dead || sd.escaped) continue;
+                    if (!sd.cargo.length && sd.state !== 'FLEEING' && !sd._panic) continue;
+                    let pos = worldToCanvas(sd.x, sd.y);
+                    let holeRadius = 46 * cam.zoom;
+                    nightCtx.save();
+                    nightCtx.translate(pos.x, pos.y);
+                    nightCtx.drawImage(cachedAmbientLightCanvas, -holeRadius, -holeRadius, holeRadius * 2, holeRadius * 2);
                     nightCtx.restore();
                 }
             }
