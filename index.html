@@ -6179,6 +6179,9 @@ const Weapons = {
       postTrickle: 12,       // sec per +1 bay drone on a wired post left alone (Phase 10 idle trickle)
       threatRung: { sapper: 0, jammer: 0 }, // rung-0 types outrank proximity (Phase 11 ladder)
       escalateAt: 6,         // comp cache entries at/above this = numbers running hot (Phase 11)
+      senseRange: 900,       // px the foot player's look publishes (NEXT player-as-sensor)
+      senseHalfAngle: 0.6,   // rad half-cone of the player's publish gaze (NEXT)
+      designateRange: 1200,  // px repair-gun ping reach (NEXT ping-to-designate)
       rfRange: 600,          // px wireless RF uplink proximity range for mobile RobotDogs
       rfPeriod: 1.0,         // sec between RF beacon scans
   };
@@ -13958,6 +13961,30 @@ class Player extends Entity {
                 this._weldTick(game, dt);
             }
         }
+        // NEXT (spotter-scope): rifle-in-hand resolves the crosshair hostile
+        // once per frame; the pip draws iff a wired camera holds it (fresh
+        // cam entry in an own comp). Repair-Gun players get HUD + designate
+        // instead, so this stays off for them.
+        this._scopeLead = null;
+        if (this.weapon && this.weapon.name !== 'RepairGun' && !this.dead && game && game.spotCache) {
+            const tgt = (game.playerCrosshairTarget) ? game.playerCrosshairTarget(this, 1200) : null;
+            if (tgt && tgt._aiStaggerId !== undefined) {
+                const cids = (game.playerCompIds) ? game.playerCompIds(this) : [];
+                const now = game.gameTime || 0;
+                const grace = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.spotGrace) || 2.0;
+                for (const cid of cids) {
+                    const m = game.spotCache.get(cid);
+                    const e = m ? m.get(tgt._aiStaggerId) : null;
+                    if (e && e.pos && e.source === 'cam' && (now - (e.lastSeen || 0)) <= grace) {
+                        const spd = (this.weapon && this.weapon.speed) || 2000;
+                        const d = Math.hypot(tgt.x - this.x, tgt.y - this.y);
+                        const tof = d / spd;
+                        this._scopeLead = { x: tgt.x + (tgt.vx || 0) * tof, y: tgt.y + (tgt.vy || 0) * tof };
+                        break;
+                    }
+                }
+            }
+        }
         if (isFiring && this.weapon.name !== 'RepairGun') {
             let weaponKey = this.weapon.name.toLowerCase();
             let hasAmmo = weaponKey === 'pistol' || this.ammo[weaponKey] > 0;
@@ -15433,6 +15460,39 @@ class Player extends Entity {
     // launchDrone), so fromMine alone marks the bogies. Barriers predate
     // ownership tracking, so an unowned barrier is treated as player tech
     // (only players place barriers; enemy mines live in game.mines).
+    // NEXT (ping-to-designate): Repair-Gun trigger on a hostile sitting on
+    // the aim ray orders every own comp onto it (orderedBy = confirmed fire
+    // order, top ceiling). Runs only from the _weldTick empty swing —
+    // weld/spool keep precedence; battery rules unchanged (tool needs power).
+    // Returns true when the trigger was answered (ping or NO UPLINK).
+    _designateTick(game, dt) {
+        this._pingT = Math.max(0, (this._pingT || 0) - dt);
+        if (this._pingT > 0) return false;
+        const range = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.designateRange) || 1200;
+        const tgt = (game.playerCrosshairTarget) ? game.playerCrosshairTarget(this, range) : null;
+        if (!tgt || tgt._aiStaggerId === undefined) return false;
+        const segWalls = game.map ? game.map.getWallsAlongSegment(this.x, this.y, tgt.x, tgt.y) : [];
+        if (segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, tgt.x, tgt.y, w))) return false;
+        const cids = (game.playerCompIds) ? game.playerCompIds(this) : [];
+        if (!cids.length) {
+            this._pingT = 1.0;
+            const ft0 = game.spawnFloatingText(this.x, this.y - this.r - 20, 'NO UPLINK', '#ffb400', 1.0);
+            if (ft0) game.floatingTexts.push(ft0);
+            return true;
+        }
+        const now = game.gameTime || 0;
+        for (const cid of cids) {
+            let m = game.spotCache.get(cid);
+            if (!m) { m = new Map(); game.spotCache.set(cid, m); }
+            game.publishSpot(m, tgt._aiStaggerId, { pos: { x: tgt.x, y: tgt.y }, lastSeen: now, source: 'ping', tier: 3, orderedBy: this }, this, now);
+        }
+        this._pingT = 1.0;
+        const ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'TARGET DESIGNATED', '#00e5ff', 1.0);
+        if (ft) game.floatingTexts.push(ft);
+        if (typeof audio !== 'undefined' && audio && audio.playDataLinkSpotAlert) audio.playDataLinkSpotAlert(this.x, this.y);
+        return true;
+    }
+
     _weldTick(game, dt) {
         // Data Link: the spool verb takes precedence if targeting/spooling a healthy node.
         // Spooling uses fiber optic cable and costs zero battery, so it can run even if battery is empty.
@@ -15477,6 +15537,10 @@ class Player extends Entity {
             }
         }
         if (!target) {
+            // NEXT (ping-to-designate): hostile on the aim ray = fire order,
+            // answered instead of the fizzle. Weld/spool already had their
+            // chance above, so this only fires when nothing else would.
+            if (this._designateTick(game, dt)) return;
             // Empty swing: never click into silence. Throttled soft fizzle +
             // a couple of blue sparks at the nozzle so the trigger always
             // answers (dead battery already buzzes "BATTERY DEAD" above).
@@ -16177,6 +16241,21 @@ class Player extends Entity {
                 ctx.arc(0, 0, this.r + 6, -(this.carriedShieldArc || 40 * Math.PI / 180) * 0.85, (this.carriedShieldArc || 40 * Math.PI / 180) * 0.85);
                 ctx.stroke();
             }
+            ctx.restore();
+        }
+
+        // NEXT (spotter-scope): lead pip on the camera-held crosshair target
+        // (computed in update). Canvas clips off-screen for free.
+        if (this._scopeLead && !this.dead) {
+            const px = this._scopeLead.x - cam.x, py = this._scopeLead.y - cam.y;
+            ctx.save();
+            ctx.strokeStyle = '#00e5ff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(px, py - 7); ctx.lineTo(px + 7, py);
+            ctx.lineTo(px, py + 7); ctx.lineTo(px - 7, py);
+            ctx.closePath();
+            ctx.stroke();
             ctx.restore();
         }
     }
@@ -24147,6 +24226,10 @@ class AutoTurret extends Entity {
                         if (entry.source === 'cam') {
                             const tKey = 'T' + (entry.tier || 1);
                             ceiling = (LINK_TUNING.spotterCeiling && LINK_TUNING.spotterCeiling[tKey]) || 1400;
+                        } else if (entry.orderedBy) {
+                            // NEXT: a deliberate fire order carries the top
+                            // ceiling — the called shot outranges optics tiers.
+                            ceiling = (LINK_TUNING.spotterCeiling && LINK_TUNING.spotterCeiling.T3) || 2000;
                         }
                         let d = Math.hypot(cand.x - this.x, cand.y - this.y);
                         // PHASE 7 FIX: a network candidate must not be
@@ -35393,14 +35476,44 @@ class Game {
             }
         }
 
+        // NEXT (player-as-sensor): each live player's look publishes what
+        // THEY see into their comps — normal entries, corroboration decides
+        // (a glance never confirms alone). Skipped entirely with no uplink.
+        {
+            const sensers = (this.isTwoPlayer && this.player2) ? [this.player, this.player2] : [this.player];
+            const senseRange = LINK_TUNING.senseRange || 900;
+            const senseHalf = LINK_TUNING.senseHalfAngle || 0.6;
+            for (const p of sensers) {
+                if (!p || p.dead) continue;
+                const compIds = this.playerCompIds(p);
+                if (!compIds.length) continue;
+                const hostiles = this.getHostilesFor(p);
+                for (const h of hostiles) {
+                    if (!h || h.dead || (h._jamTimer > 0) || h._aiStaggerId === undefined) continue;
+                    const dx = h.x - p.x, dy = h.y - p.y;
+                    const d = Math.hypot(dx, dy);
+                    if (d > senseRange) continue;
+                    if (Math.abs(MathUtils.angleDifference(Math.atan2(dy, dx), p.angle)) > senseHalf) continue;
+                    const segWalls = this.map ? this.map.getWallsAlongSegment(p.x, p.y, h.x, h.y) : [];
+                    if (segWalls.some(w => MathUtils.lineIntersectAABB(p.x, p.y, h.x, h.y, w))) continue;
+                    for (const cid of compIds) {
+                        let m = this.spotCache.get(cid);
+                        if (!m) { m = new Map(); this.spotCache.set(cid, m); }
+                        this.publishSpot(m, h._aiStaggerId, { pos: { x: h.x, y: h.y }, lastSeen: now, source: 'player' }, p, now);
+                    }
+                }
+            }
+        }
+
         for (const [cid, m] of this.spotCache) {
             for (const [genId, entry] of m) {
                 if (now - entry.lastSeen > grace) { m.delete(genId); continue; }
                 // PHASE 9: age out corroboration with the same TTL — a track
                 // stays confirmed only while ≥2 distinct sensors hold it.
+                // (A live fire order confirms by itself — see publishSpot.)
                 if (entry.wita && (now - (entry.witat || 0)) > grace) { entry.wita = undefined; entry.witat = 0; }
                 if (entry.witb && (now - (entry.witbt || 0)) > grace) { entry.witb = undefined; entry.witbt = 0; }
-                entry.confirmed = !!entry.wita && !!entry.witb;
+                entry.confirmed = !!entry.orderedBy || (!!entry.wita && !!entry.witb);
             }
             if (!m.size) this.spotCache.delete(cid);
         }
@@ -35415,6 +35528,7 @@ class Game {
         const prev = m.get(genId);
         const e = {
             pos: f.pos, lastSeen: f.lastSeen, source: f.source, tier: f.tier, publisher: f.publisher,
+            orderedBy: (f.orderedBy !== undefined) ? f.orderedBy : (prev ? prev.orderedBy : undefined),
             wita: prev ? prev.wita : undefined, witat: prev ? (prev.witat || 0) : 0,
             witb: prev ? prev.witb : undefined, witbt: prev ? (prev.witbt || 0) : 0,
             confirmed: prev ? !!prev.confirmed : false
@@ -35427,8 +35541,43 @@ class Game {
             } else if (e.wita === witness) e.witat = now;
             else e.witbt = now;
         }
-        e.confirmed = !!e.wita && !!e.witb && (now - (e.witat || 0)) <= grace && (now - (e.witbt || 0)) <= grace;
+        // NEXT (ping-to-designate): a live fire order confirms by itself.
+        e.confirmed = !!e.orderedBy || (!!e.wita && !!e.witb && (now - (e.witat || 0)) <= grace && (now - (e.witbt || 0)) <= grace);
         return e;
+    }
+
+    // NEXT (player in the network): distinct live compIds across the
+    // player's networked nodes. Empty = no uplink (writes skipped).
+    playerCompIds(player) {
+        const ids = [];
+        const take = (n) => {
+            if (!n || n.dead || n.compId === undefined || !n.isNetworked) return;
+            if (ids.indexOf(n.compId) === -1) ids.push(n.compId);
+        };
+        if (!player) return ids;
+        if (this.turrets) for (const t of this.turrets) { if (t.owner === player) take(t); }
+        if (this.securityCameras) for (const c of this.securityCameras) { if (c.owner === player) take(c); }
+        if (this.mines) for (const m of this.mines) { if (m.owner === player) take(m); }
+        if (this.dogs) for (const d of this.dogs) { if (d.owner === player) take(d); }
+        return ids;
+    }
+
+    // NEXT: hostile nearest the player's aim ray (shared by ping-designate
+    // + spotter pip). No LOS here — callers gate what needs it.
+    playerCrosshairTarget(player, range = 1200, perpTol = 50) {
+        if (!player || player.dead) return null;
+        const dx = Math.cos(player.angle), dy = Math.sin(player.angle);
+        let best = null, bestPerp = perpTol;
+        const hostiles = this.getHostilesFor(player);
+        for (const h of hostiles) {
+            if (!h || h.dead || (h._jamTimer > 0)) continue;
+            const rx = h.x - player.x, ry = h.y - player.y;
+            const along = rx * dx + ry * dy;
+            if (along <= 0 || along > range) continue;
+            const perp = Math.abs(rx * dy - ry * dx);
+            if (perp < bestPerp) { best = h; bestPerp = perp; }
+        }
+        return best;
     }
 
     // Spool completion: create the mesh edge + recompute (the new edge merges nets).
