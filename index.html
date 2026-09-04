@@ -3143,7 +3143,37 @@ function useRightItem(player) {
 
 function interactPickUpItem(player) {
     if (!player || player.dead) return;
+
     let interactDist = 45;
+
+    // DATA LINK Phase 10 (Hivemind Directives): Repair-Gun interact on an
+    // OWN WIRED node cycles YOUR doctrine (Standard → Focus Fire →
+    // Overwatch) instead of retrieving. Strict self-ownership (the splice
+    // precedent); recall stays on every other weapon, so no accidents.
+    // NOTE: the registry name is 'RepairGun' (no space) — 'Repair Gun'
+    // with a space matches nothing and silently disables this branch.
+    if (player.weapon && player.weapon.name === 'RepairGun') {
+        let hub = null, hubDist = interactDist;
+        const considerHub = (n) => {
+            if (!n || n.dead || n.owner !== player || !n.isNetworked) return;
+            const d = Math.hypot(n.x - player.x, n.y - player.y);
+            if (d < hubDist) { hubDist = d; hub = n; }
+        };
+        if (game.turrets) for (const t of game.turrets) considerHub(t);
+        if (game.dogs) for (const d of game.dogs) considerHub(d);
+        if (game.securityCameras) for (const c of game.securityCameras) considerHub(c);
+        if (game.mines) for (const m of game.mines) considerHub(m);
+        if (hub) {
+            const cur = player.doctrine || 'standard';
+            player.doctrine = cur === 'standard' ? 'focus' : (cur === 'focus' ? 'overwatch' : 'standard');
+            const label = player.doctrine === 'focus' ? 'FOCUS FIRE' : (player.doctrine === 'overwatch' ? 'OVERWATCH' : 'STANDARD');
+            const ft = game.spawnFloatingText(player.x, player.y - 15, 'DOCTRINE: ' + label, '#f59e0b', 1.2);
+            if (ft) game.floatingTexts.push(ft);
+            if (typeof audio !== 'undefined' && audio && audio.playDataLinkConnected) audio.playDataLinkConnected(hub.x, hub.y);
+            else audio.playPickup('weapon');
+            return;
+        }
+    }
 
     // Check player's specific drone slot
     if (player.activeDrone && !player.activeDrone.dead && !player.activeDrone.isPiloted) {
@@ -3169,6 +3199,7 @@ function interactPickUpItem(player) {
             let dist = Math.hypot(col.x - player.x, col.y - player.y);
             if (dist < interactDist) {
                 player.barriersInventory.push({ hp: bar.hp, maxHp: bar.maxHp, isMKII: bar.isMKII || false });
+                if (game.severDataLinks) game.severDataLinks(bar);
                 game.barriers.splice(i, 1);
                 audio.playPickup('weapon');
                 game.floatingTexts.push(game.spawnFloatingText(
@@ -3187,6 +3218,7 @@ function interactPickUpItem(player) {
                 let dist = Math.hypot(tur.x - player.x, tur.y - player.y);
                 if (dist < interactDist) {
                     player.turretsInventory.push({ hp: tur.hp, maxHp: tur.maxHp, isMKII: tur.isMKII || false });
+                    if (game.severDataLinks) game.severDataLinks(tur);
                     game.turrets.splice(i, 1);
                     audio.playPickup('weapon');
                     game.floatingTexts.push(game.spawnFloatingText(
@@ -3206,6 +3238,7 @@ function interactPickUpItem(player) {
                 let dist = Math.hypot(dog.x - player.x, dog.y - player.y);
                 if (dist < interactDist) {
                     player.dogsInventory.push({ hp: dog.hp, upgraded: dog.upgraded || false });
+                    if (game.severDataLinks) game.severDataLinks(dog);
                     game.dogs.splice(i, 1);
                     audio.playPickup('weapon');
                     game.floatingTexts.push(game.spawnFloatingText(
@@ -3225,6 +3258,7 @@ function interactPickUpItem(player) {
                 let dist = Math.hypot(cam.x - player.x, cam.y - player.y);
                 if (dist < interactDist) {
                     player.camerasInventory.push({ hp: cam.hp, maxHp: cam.maxHp, tier: cam.tier || 1 });
+                    if (game.severDataLinks) game.severDataLinks(cam);
                     game.securityCameras.splice(i, 1);
                     audio.playPickup('weapon');
                     game.floatingTexts.push(game.spawnFloatingText(
@@ -3462,6 +3496,16 @@ function renderHUDSelectors(player, suffix) {
     // once the player has actually mined something.
     if (player.wallMaterial > 0) {
         displayAmmoText += ` <span style="color:#a68a64">| RUBBLE ${Math.floor(player.wallMaterial)}</span>`;
+    }
+    // DATA LINK spool: unspent fiber cables on the repair-gun readout. Rides the
+    // existing per-frame ammo-text update (no new DOM element, no separate cache).
+    if (wKey === 'repairgun' && player.fiberOpticOwned && player.fiberCables > 0) {
+        displayAmmoText += ` <span style="color:#39ff14">| FIBER ${player.fiberCables}</span>`;
+    }
+    // PHASE 10: doctrine readout beside the fiber count (standard = silent).
+    if (wKey === 'repairgun' && (player.doctrine === 'focus' || player.doctrine === 'overwatch')) {
+        const docLabel = player.doctrine === 'focus' ? 'FOCUS' : 'OVERWATCH';
+        displayAmmoText += ` <span style="color:#f59e0b">| ${docLabel}</span>`;
     }
     if (ammoText) {
         ammoText.innerHTML = displayAmmoText;
@@ -4951,6 +4995,126 @@ class AudioEngine {
         });
     }
 
+    // C4ISR Matrix (Phase 4): Tactical Data Network Acoustic Synthesizers
+    // 1. Two-tone affirmative electronic handshake on cable pin / RF uplink
+    playDataLinkConnected(x = null, y = null) {
+        if (!this.ctx) return;
+        let gainVal = 0.45;
+        if (x !== null && y !== null) {
+            const d = this.getDistanceToPlayers(x, y);
+            const settings = this.getSpatialSettings('hit', d);
+            gainVal *= settings.vol;
+            if (gainVal <= 0.005) return;
+        }
+        const sfxVol = (typeof game !== 'undefined' && game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        gainVal *= sfxVol;
+
+        const t0 = this.ctx.currentTime;
+        const tones = [
+            { freq: 880, start: 0, dur: 0.08, peak: 0.35 },
+            { freq: 1760, start: 0.065, dur: 0.15, peak: 0.45 }
+        ];
+        tones.forEach(({ freq, start, dur, peak }) => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, t0 + start);
+            osc.frequency.exponentialRampToValueAtTime(freq * 1.04, t0 + start + dur);
+
+            const g = this.ctx.createGain();
+            g.gain.setValueAtTime(0.0001, t0 + start);
+            g.gain.exponentialRampToValueAtTime(peak * gainVal, t0 + start + 0.015);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+
+            osc.connect(g);
+            g.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+            osc.start(t0 + start);
+            osc.stop(t0 + start + dur);
+            osc.onended = () => { osc.disconnect(); g.disconnect(); };
+        });
+    }
+
+    // 2. Authoritative military datalink tactical sonar chirp on target detection
+    playDataLinkSpotAlert(x = null, y = null) {
+        if (!this.ctx) return;
+        const t0 = this.ctx.currentTime;
+        if (this._lastDataLinkSpotTime && (t0 - this._lastDataLinkSpotTime < 0.60)) return;
+        this._lastDataLinkSpotTime = t0;
+
+        let gainVal = 0.5;
+        if (x !== null && y !== null) {
+            const d = this.getDistanceToPlayers(x, y);
+            const settings = this.getSpatialSettings('hit', d);
+            gainVal *= settings.vol;
+            if (gainVal <= 0.005) return;
+        }
+        const sfxVol = (typeof game !== 'undefined' && game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        gainVal *= sfxVol;
+
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1450, t0);
+        osc.frequency.exponentialRampToValueAtTime(920, t0 + 0.12);
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1150, t0);
+        filter.Q.value = 3.0;
+
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.6 * gainVal, t0 + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.15);
+
+        osc.connect(filter);
+        filter.connect(g);
+        g.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+
+        osc.start(t0);
+        osc.stop(t0 + 0.16);
+        osc.onended = () => { osc.disconnect(); filter.disconnect(); g.disconnect(); };
+    }
+
+    // 3. Dielectric power bus short / snap & electrical static drop on cable severance
+    playDataLinkSevered(x = null, y = null) {
+        if (!this.ctx) return;
+        const t0 = this.ctx.currentTime;
+        if (this._lastDataLinkSeveredTime && (t0 - this._lastDataLinkSeveredTime < 0.20)) return;
+        this._lastDataLinkSeveredTime = t0;
+
+        let gainVal = 0.55;
+        if (x !== null && y !== null) {
+            const d = this.getDistanceToPlayers(x, y);
+            const settings = this.getSpatialSettings('hit', d);
+            gainVal *= settings.vol;
+            if (gainVal <= 0.005) return;
+        }
+        const sfxVol = (typeof game !== 'undefined' && game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        gainVal *= sfxVol;
+
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(620, t0);
+        osc.frequency.exponentialRampToValueAtTime(60, t0 + 0.14);
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(1400, t0);
+        filter.frequency.exponentialRampToValueAtTime(200, t0 + 0.14);
+
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.5 * gainVal, t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+
+        osc.connect(filter);
+        filter.connect(g);
+        g.connect(this.sfxGain || this.masterGain || this.ctx.destination);
+
+        osc.start(t0);
+        osc.stop(t0 + 0.17);
+        osc.onended = () => { osc.disconnect(); filter.disconnect(); g.disconnect(); };
+    }
+
     playFootstep(vol) {
         if (!this.ctx || vol <= 0.01) return;
         this.playBakedSound('footstep', this.sfxGain, vol);
@@ -5993,6 +6157,41 @@ const Weapons = {
       hpPerSec: 40,      // deployable HP restored per second
       reach: 70,         // px from the player to a valid weld target
   };
+
+  // DATA LINK tuning (cables + the shared SPOT cache). Cables are amplifiers,
+  // not lifelines: severing one degrades the component to local fallback.
+  const LINK_TUNING = {
+      cableHp: 60,           // DataCable.maxHp
+      drainPerMeter: 0,      // HP lost per metre of cable length (0 = spooling consumes no battery)
+      maxLen: 800,           // px a single cable may span (doubled from 400px)
+      reach: 105,            // px reach to start spool or pin a cable (forgiving near walls/turrets)
+      maxSpoolCables: 6,     // max unspent spool cables player can carry in inventory
+      spotGrace: 2.0,        // sec a stale SPOT survives after its source goes silent
+      pulsePeriod: 1.0,      // sec between _tickDataLinks pulses
+      stewBonus: 0.05,       // fractional spotter-accuracy bonus per linked component member
+      spotterCeiling: { T1: 1400, T2: 1800, T3: 2000 }, // px per-tier spotter range cap
+      designatedSpeed: 2600, // px/s designated-round velocity (Pillar C: ~1.5x stock 1800)
+      designatedDmg: 20,     // designated-round damage (Pillar C: 2x stock 10)
+      heatPerShot: 0.33,     // heat per designated shot (3 shots to overheat)
+      heatDecay: 0.5,        // heat/sec decay (full-to-zero in ~2s)
+      overheatLock: 3.0,     // sec forced whole-turret lockout at 100% heat
+      networkDroneCap: 12,   // K: global cap on live fromMine drones (Phase 8 post + Phase 10 swarm share it)
+      postTrickle: 12,       // sec per +1 bay drone on a wired post left alone (Phase 10 idle trickle)
+      threatRung: { sapper: 0, jammer: 0 }, // rung-0 types outrank proximity (Phase 11 ladder)
+      escalateAt: 6,         // comp cache entries at/above this = numbers running hot (Phase 11)
+      rfRange: 600,          // px wireless RF uplink proximity range for mobile RobotDogs
+      rfPeriod: 1.0,         // sec between RF beacon scans
+  };
+
+  // DATA LINK Phase 11 (threat ladder): rung 0 = things that eat or blind
+  // the network (table above + Bosses); rung 1 = everything else, which
+  // keeps resolving nearest-wins exactly as before. Called at runtime only.
+  function threatRung(ent) {
+      if (!ent) return 1;
+      if (typeof Boss !== 'undefined' && ent instanceof Boss) return 0;
+      const table = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.threatRung) || {};
+      return (ent.type !== undefined && table[ent.type] === 0) ? 0 : 1;
+  }
 
   // drone_op swarm cadence (C3): overlapping bursts, long loiter, capped
   // concurrency. The cap is the perf bound -- each live drone runs the
@@ -13234,6 +13433,10 @@ class Player extends Entity {
         this.turretsCount = 0;
         this.dronesCount = 0;
         this.fiberOpticOwned = false;
+        this.fiberCables = 0;   // Data Link spool: unspent cables (B11 run-scoped count)
+        this.doctrine = 'standard'; // Hivemind directive: standard | focus | overwatch (Phase 10)
+        this.wiring = null;     // active spool state {source, pts, spooled} or null (transient)
+        this._spoolNoFiberTimer = 0; // throttles the "NO FIBER" floater
         this.medpacks = 1;      
         this.energyDrinks = 3;  // start with 3 rather than 1 -- players shouldn't need to find their first backup
         this.energyDrinkTimer = 0; 
@@ -13748,8 +13951,12 @@ class Player extends Entity {
 
         // REPAIR GUN: the trigger welds instead of shooting -- handled on a
         // side path entirely outside the bullet pipeline (see _weldTick).
-        if (isFiring && this.weapon.name === 'RepairGun') {
-            this._weldTick(game, dt);
+        if (this.weapon.name === 'RepairGun') {
+            if (this.wiring) {
+                this._spoolTick(game, dt);
+            } else if (isFiring) {
+                this._weldTick(game, dt);
+            }
         }
         if (isFiring && this.weapon.name !== 'RepairGun') {
             let weaponKey = this.weapon.name.toLowerCase();
@@ -15099,6 +15306,125 @@ class Player extends Entity {
         }
     }
     
+    // DATA LINK spool/pin verb (Stage 1). Runs inside _weldTick's fire-hold — the
+    // isFiring gate already ran upstream, so there is NO separate spool input
+    // (PLAN §5, reconciled 2026-09-03). Returns true when the spool owned the input
+    // this frame (committed / extending / pinning / just cancelled) so the weld scan
+    // is skipped; returns false to fall through (damaged-ally -> weld, else the
+    // existing empty-swing).
+    //
+    // Node set = the four network node types (turrets, securityCameras, dogs,
+    // mines) — the SAME set _recomputeComponents merges. miniDrones/barriers are
+    // not nodes. Disambiguation is by the NEAREST in-reach node's health:
+    //   damaged  -> false (weld owns it)
+    //   healthy + fiberCables>0 -> START a spool from it
+    _spoolTick(game, dt) {
+        if (this._spoolPostPinCooldown > 0) {
+            this._spoolPostPinCooldown -= dt;
+            return true;
+        }
+        const reach = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.reach) || 105;
+        const reach2 = reach * reach;
+        const ally = this.isPlayer2 ? game.player : game.player2;
+        const isMine = (o) => o === this || (ally && o === ally);
+        const candidates = [];
+        const addNode = (n) => { if (n && !n.dead && isMine(n.owner)) candidates.push(n); };
+        for (const t of game.turrets) addNode(t);
+        for (const c of game.securityCameras) addNode(c);
+        for (const m of game.mines) addNode(m);
+
+        // Aim-weighted nearest candidate inside reach
+        const nearestInReach = (exclude = null) => {
+            let best = null, bestScore = Infinity;
+            for (const n of candidates) {
+                if (exclude && n === exclude) continue;
+                const dx = n.x - this.x, dy = n.y - this.y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 > reach2) continue;
+                const dist = Math.sqrt(d2);
+                const angleTo = Math.atan2(dy, dx);
+                let diff = Math.abs(this.angle - angleTo);
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                diff = Math.abs(diff);
+                const score = dist * (1 + diff * 0.4);
+                if (score < bestScore) { bestScore = score; best = n; }
+            }
+            return best;
+        };
+        const floater = (msg, color) => {
+            const ft = game.spawnFloatingText(this.x, this.y - this.r - 20, msg, color, 1.0);
+            if (ft) game.floatingTexts.push(ft);
+        };
+        const sfx = (name, vol) => { if (typeof audio !== 'undefined' && audio && audio.playBakedSound) audio.playBakedSound(name, audio.sfxGain, vol); };
+
+        // ---- committed: extend / pin / cancel ----
+        if (this.wiring) {
+            const w = this.wiring;
+            const src = w.source;
+            if (!src || src.dead) { this.wiring = null; floater('SPOOL LOST', '#ffb400'); return true; }
+            // floor-cross (SIGNAL LOST): the last laid point and the player must
+            // stay on the same floor or the fiber "jumps" across a deck.
+            const last = w.pts[w.pts.length - 1];
+            if (game.map && game.map.floorSeparated && game.map.floorSeparated(last.x, last.y, this.x, this.y)) {
+                this.wiring = null; floater('SIGNAL LOST', '#ff2a5f'); return true;
+            }
+            const lastPos = w.lastPos || { x: this.x, y: this.y };
+            const walkDelta = Math.hypot(this.x - lastPos.x, this.y - lastPos.y);
+            if (walkDelta >= 40) {
+                w.pts.push({ x: this.x, y: this.y });
+                w.lastPos = { x: this.x, y: this.y };
+                w.spooled += walkDelta;
+            }
+            if (w.spooled >= LINK_TUNING.maxLen) { this.wiring = null; floater('SPOOL TOO LONG', '#ff2a5f'); return true; }
+
+            // Check for pin target (exclude source node)
+            const pin = nearestInReach(src);
+            if (pin) {
+                if (pin.compId !== undefined && src.compId !== undefined && pin.compId === src.compId) return true; // parallel edge merges nothing (B9)
+                const fullPts = [...w.pts, { x: pin.x, y: pin.y }];
+                const cable = game.spawnDataCable(src, pin, this, fullPts);
+                if (cable) {
+                    this.fiberCables = Math.max(0, this.fiberCables - 1);
+                    this.wiring = null;
+                    this._spoolPostPinCooldown = 0.35;
+                    floater('LINKED', '#39ff14');
+                    if (typeof audio !== 'undefined' && audio && audio.playDataLinkConnected) {
+                        audio.playDataLinkConnected(pin.x, pin.y);
+                    } else if (typeof audio !== 'undefined' && audio && audio.playPickup) {
+                        audio.playPickup('weapon');
+                    }
+                }
+                return true;
+            }
+
+            // Cancel only if player re-enters source reach after having walked away
+            if (w.spooled > 60) {
+                const dSrc = Math.hypot(this.x - src.x, this.y - src.y);
+                if (dSrc <= reach) {
+                    this.wiring = null;
+                    floater('SPOOL CANCELLED', '#ffb400');
+                    return true;
+                }
+            }
+
+            return true;
+        }
+
+        // ---- not committed: START only on a healthy, spool-eligible nearest node ----
+        const near = nearestInReach();
+        if (!near) return false;                       // nothing in reach -> weld empty-swing
+        if (near.hp < near.maxHp) return false;        // damaged nearest -> weld owns it
+        if (this.fiberCables <= 0) {
+            this._spoolNoFiberTimer = (this._spoolNoFiberTimer || 0) + dt;
+            if (this._spoolNoFiberTimer >= 0.4) { this._spoolNoFiberTimer = 0; floater('NO FIBER', '#ffb400'); }
+            return false;
+        }
+        this.wiring = { source: near, pts: [{ x: near.x, y: near.y }], lastPos: { x: this.x, y: this.y }, spooled: 0 };
+        floater('SPOOLING', '#39ff14');
+        sfx('repair_fizzle', 0.4);
+        return true;
+    }
+
     // REPAIR GUN weld tick (Player.update fire-block side path; never enters
     // fire()). Holds an arc on the nearest damaged FRIENDLY deployable inside
     // REPAIR_TUNING.reach: battery drains, target HP climbs. Friendly sets
@@ -15108,6 +15434,10 @@ class Player extends Entity {
     // ownership tracking, so an unowned barrier is treated as player tech
     // (only players place barriers; enemy mines live in game.mines).
     _weldTick(game, dt) {
+        // Data Link: the spool verb takes precedence if targeting/spooling a healthy node.
+        // Spooling uses fiber optic cable and costs zero battery, so it can run even if battery is empty.
+        if (this.fiberOpticOwned && this._spoolTick(game, dt)) return;
+
         this._weldActive = true;
         if (this.ammo.repairgun <= 0) {
             if (this.emptyClickCooldown <= 0) {
@@ -15139,6 +15469,13 @@ class Player extends Entity {
         for (const c of game.securityCameras) { if (isMine(c.owner)) consider(c); }
         for (const md of game.miniDrones) { if (!md.fromMine && isMine(md.owner)) consider(md); }
         for (const b of game.barriers) { if (!b.owner || isMine(b.owner)) consider(b); }
+        if (game.dataCables) {
+            for (const cable of game.dataCables) {
+                if (cable.cut && cable.stump && (!cable.a || !cable.a.dead) && (!cable.b || !cable.b.dead)) {
+                    consider(cable);
+                }
+            }
+        }
         if (!target) {
             // Empty swing: never click into silence. Throttled soft fizzle +
             // a couple of blue sparks at the nozzle so the trigger always
@@ -15156,6 +15493,42 @@ class Player extends Entity {
         const tc = centerOf(target);
         this.ammo.repairgun = Math.max(0, this.ammo.repairgun - REPAIR_TUNING.drainPerSec * dt);
         target.hp = Math.min(target.maxHp, target.hp + REPAIR_TUNING.hpPerSec * dt);
+
+        if (target instanceof DataCable) {
+            // Splicing electric sparks and audio
+            if (Math.random() < 0.5) {
+                game.addParticle(tc.x + (Math.random() - 0.5) * 14,
+                    tc.y + (Math.random() - 0.5) * 14,
+                    (Math.random() - 0.5) * 90, -Math.random() * 70, '#00e5ff', 0.25, 2);
+            }
+            this._weldSfxTimer = (this._weldSfxTimer || 0) + dt;
+            if (this._weldSfxTimer >= 0.25) {
+                this._weldSfxTimer = 0;
+                audio.playBakedSound('repair_weld', audio.sfxGain, 0.5);
+            }
+            this._spliceFloaterTimer = (this._spliceFloaterTimer || 0) + dt;
+            if (this._spliceFloaterTimer >= 0.4) {
+                this._spliceFloaterTimer = 0;
+                const pct = Math.floor((target.hp / target.maxHp) * 100);
+                let ft = game.spawnFloatingText(tc.x, tc.y - 14, `SPLICING ${pct}%`, '#00e5ff', 0.7);
+                if (ft) game.floatingTexts.push(ft);
+            }
+            if (target.hp >= target.maxHp) {
+                target.cut = false;
+                target.stump = false;
+                target.linkLive = true;
+                let ft = game.spawnFloatingText(tc.x, tc.y - 16, 'CABLE SPLICED!', '#39ff14', 1.4);
+                if (ft) game.floatingTexts.push(ft);
+                if (typeof audio !== 'undefined' && audio && audio.playDataLinkConnected) {
+                    audio.playDataLinkConnected(tc.x, tc.y);
+                } else if (typeof audio !== 'undefined' && audio && audio.playPickup) {
+                    audio.playPickup('weapon');
+                }
+                game._recomputeComponents();
+            }
+            return;
+        }
+
         // Sparks at the work point + a repeating weld buzz sell the arc.
         if (Math.random() < 0.4) {
             game.addParticle(tc.x + (Math.random() - 0.5) * 18,
@@ -15811,6 +16184,9 @@ class Player extends Entity {
     switchWeapon(dir) {
         this.weaponIdx = (this.weaponIdx + dir + this.inventory.length) % this.inventory.length;
         cancelGLCharge(this);
+        // Data Link: a spool is a RepairGun-only verb; dropping the latch on a
+        // weapon swap means it can't surprise-resume from another gun in hand.
+        this.wiring = null;
         if (audio && audio.playWeaponSwitch) {
             audio.playWeaponSwitch(this.x, this.y);
         }
@@ -15863,6 +16239,7 @@ class Player extends Entity {
     // this must not interfere with).
     onDeath() {
         cancelGLCharge(this);
+        this.wiring = null; // Data Link: a dead player drops the spool latch
         if (game && game.operatorMode && this.activeDrone && !this.activeDrone.dead) {
             this.activeDrone.stopAudio();
             this.activeDrone.isPiloted = false;
@@ -16268,6 +16645,11 @@ class Enemy extends Entity {
                             if (c.hp > 0) sapperTargets.push(c);
                         }
                     }
+                    if (game.dataCables) {
+                        for (let c of game.dataCables) {
+                            if (!c.cut && c.linkLive) sapperTargets.push(c);
+                        }
+                    }
                 }
                 
                 if (sapperTargets.length > 0) {
@@ -16280,6 +16662,17 @@ class Enemy extends Entity {
                             let cp = MathUtils.closestPointOnSegment(this.x, this.y, t.ax, t.ay, t.bx, t.by);
                             tx = cp.x;
                             ty = cp.y;
+                        } else if (t instanceof DataCable && t.pts && t.pts.length >= 2) {
+                            let minCableDist = Infinity;
+                            for (let i = 0; i < t.pts.length - 1; i++) {
+                                let cp = MathUtils.closestPointOnSegment(this.x, this.y, t.pts[i].x, t.pts[i].y, t.pts[i+1].x, t.pts[i+1].y);
+                                let d = (this.x - cp.x)**2 + (this.y - cp.y)**2;
+                                if (d < minCableDist) {
+                                    minCableDist = d;
+                                    tx = cp.x;
+                                    ty = cp.y;
+                                }
+                            }
                         }
                         let dx = tx - this.x;
                         let dy = ty - this.y;
@@ -16721,6 +17114,9 @@ class Enemy extends Entity {
                     const jdx = je.x - this.x, jdy = je.y - this.y;
                     if (jdx * jdx + jdy * jdy < 250000) je._jamTimer = 1.4; // 500px radius
                 }
+                if (game && game.empDisruptNodes) {
+                    game.empDisruptNodes(this.x, this.y, 450, 1.4);
+                }
             }
 
             // NEW ENEMY TYPES: skittish standoff. Comm / bombardier /
@@ -17120,6 +17516,7 @@ class Enemy extends Entity {
                             game.spawnShockwave(this.x, this.y, 100, 0.25);
                             game.camera.punchZoom(0.05);
                             if (game.camera2) game.camera2.punchZoom(0.05);
+                            if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, 120, 300);
                             if (target.hp <= 0) {
                                 game.barriers = game.barriers.filter(b => b !== target);
                             }
@@ -17143,7 +17540,37 @@ class Enemy extends Entity {
                             game.spawnShockwave(this.x, this.y, 100, 0.25);
                             game.camera.punchZoom(0.05);
                             if (game.camera2) game.camera2.punchZoom(0.05);
+                            if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, 120, 300);
                             // Trigger small particle blast
+                            for (let i = 0; i < 20; i++) {
+                                let a = Math.random() * Math.PI*2;
+                                let spd = Math.random() * 400 + 100;
+                                game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#ffea00', 0.5, 3);
+                                game.addParticle(this.x, this.y, Math.cos(a)*spd*0.7, Math.sin(a)*spd*0.7, '#ff3d00', 0.6, 4);
+                            }
+                        }
+                    } else if (target instanceof DataCable) { // data link cable sabotage
+                        let dist = Infinity;
+                        if (target.pts && target.pts.length >= 2) {
+                            for (let i = 0; i < target.pts.length - 1; i++) {
+                                let cp = MathUtils.closestPointOnSegment(this.x, this.y, target.pts[i].x, target.pts[i].y, target.pts[i+1].x, target.pts[i+1].y);
+                                let d = Math.hypot(this.x - cp.x, this.y - cp.y);
+                                if (d < dist) dist = d;
+                            }
+                        } else {
+                            dist = Math.hypot(target.x - this.x, target.y - this.y);
+                        }
+                        if (dist < this.r + 15) {
+                            target.takeDamage(300);
+                            this.hp = 0;
+                            this.dead = true;
+                            this.onDeath();
+                            audio.playExplosion(1.0, this.x, this.y);
+                            game.applyExplosionShake(this.x, this.y, 22, 100);
+                            game.spawnShockwave(this.x, this.y, 100, 0.25);
+                            game.camera.punchZoom(0.05);
+                            if (game.camera2) game.camera2.punchZoom(0.05);
+                            if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, 120, 300);
                             for (let i = 0; i < 20; i++) {
                                 let a = Math.random() * Math.PI*2;
                                 let spd = Math.random() * 400 + 100;
@@ -21189,6 +21616,7 @@ class EnemyFPVDrone {
         }
         if (game.player && game.player.activeDrone) targets.push(game.player.activeDrone);
         if (game.player2 && game.player2.activeDrone) targets.push(game.player2.activeDrone);
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, this.blastRadius, this.blastDmg);
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -21606,6 +22034,7 @@ class MortarMarker {
         game.spawnShockwave(this.x, this.y, this.r * 1.3, 0.3);
 
         let targets = game.getEnemyBulletBlastEntities();
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, this.r, this.dmg);
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -22402,14 +22831,6 @@ class Bullet {
                         ent.damageSeat(seatKey, calculatedDmg);
                         if (ent.lastHitAngle !== undefined) ent.lastHitAngle = Math.atan2(this.vy, this.vx);
                     } else {
-                        // OQ-076: record the shooter on a scavenger dog so
-                        // spillLoot can tell a Spot retrieval (full hoard
-                        // back) from anyone else's kill (50% smashed). Last
-                        // hit == killing blow; melee and blast paths never
-                        // set it, which is correct -- neither is Spot.
-                        if (typeof ScavengerDog !== 'undefined' && ent instanceof ScavengerDog) {
-                            ent._lastHitBy = bulletOwner;
-                        }
                         ent.takeDamage(calculatedDmg, Math.atan2(this.vy, this.vx), 180);
                     }
                     
@@ -23402,6 +23823,7 @@ class FPVDrone {
         // shields entities behind it (see Game.blastOccluded).
         game.map.damageWallsNear(this.x, this.y, blastRadius, 320);
         let entities = game.getBlastEntities();
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, blastRadius, 250);
         
         let preDead = 0;
         for (let ent of entities) {
@@ -23597,6 +24019,11 @@ class AutoTurret extends Entity {
         this.fireCooldown = 0;
         this.maxRange = 1000;
         this.aimSpeed = 5;
+        // DATA LINK Phase 7 (Pillar C): spotter heat. Designated (network-fed)
+        // shots accrue heat; 100% forces a whole-turret lockout. Distinct from
+        // the unrelated extraction-mission heat system.
+        this.heat = 0;
+        this.overheatTimer = 0;
         // PERF (item 12): full-acquisition retarget throttle -- random
         // phase so many turrets never all scan on the same frame. Turrets
         // aren't pooled, but this is set in the constructor for shape
@@ -23633,21 +24060,37 @@ class AutoTurret extends Entity {
 
         this.retargetTimer -= dt;
 
+        // DATA LINK Phase 7: heat decay + overheat lockout tick. Runs on the
+        // update dt (scaledDt like everything else) so slow-mo ages heat with
+        // the world and hit-pause freezes it with the world.
+        if (this.overheatTimer > 0) this.overheatTimer -= dt;
+        if (this.heat > 0) {
+            const decay = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.heatDecay) || 0.5;
+            this.heat = Math.max(0, this.heat - decay * dt);
+        }
+
         // Cheap per-frame validation of the CURRENT target only -- dead,
         // jammed (walks into a jammer field) or out-of-range clears it
         // immediately and forces an instant re-scan next frame (no
         // perceptible delay on target death); a single LOS
         // ray keeps aim-tracking honest about walls the instant LOS breaks,
         // without re-running the full O(hostiles) acquisition scan.
+        let allowedRange = this.maxRange;
+        if (this.isNetworked && this._targetCeiling) {
+            allowedRange = this._targetCeiling;
+        }
         if (this.target) {
-            if (this.target.dead || this.target._jamTimer > 0 || Math.hypot(this.target.x - this.x, this.target.y - this.y) > this.maxRange) {
+            let d = Math.hypot(this.target.x - this.x, this.target.y - this.y);
+            if (this.target.dead || this.target._jamTimer > 0 || d > allowedRange) {
                 this.target = null;
+                this._targetCeiling = null;
                 this.retargetTimer = 0;
             } else {
                 let curSegWalls = game.map.getWallsAlongSegment(this.x, this.y, this.target.x, this.target.y);
                 let curHasLOS = !curSegWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, this.target.x, this.target.y, w));
                 if (!curHasLOS) {
                     this.target = null;
+                    this._targetCeiling = null;
                     this.retargetTimer = 0;
                 }
             }
@@ -23656,6 +24099,8 @@ class AutoTurret extends Entity {
         if (this.retargetTimer <= 0) {
             let nearestHostile = null;
             let nearestDist = this.maxRange;
+            let bestRung = 1;
+            let chosenCeiling = null;
 
             let hostiles = game.getHostilesFor(this);
 
@@ -23663,7 +24108,10 @@ class AutoTurret extends Entity {
                 if (h.dead) continue;
                 if (h.type === 'jammer' || h._jamTimer > 0) continue; // NEW ENEMY TYPES: signal-hardened -- turrets can't lock it (or anything in a jam field)
                 let d = Math.hypot(h.x - this.x, h.y - this.y);
-                if (d < nearestDist) {
+                // PHASE 11 (ladder): rung-0 outranks proximity; rung ties
+                // resolve exactly as before (all rung-1 = byte-identical).
+                const rung = threatRung(h);
+                if (rung < bestRung || (rung === bestRung && d < nearestDist)) {
                     // PERF: per-candidate segment-filtered walls (was: full wall
                     // array per hostile per frame -- the single hottest LOS scan
                     // in the game on dense maps).
@@ -23671,17 +24119,91 @@ class AutoTurret extends Entity {
                     let hasLOS = !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w));
                     if (hasLOS) {
                         nearestDist = d;
+                        bestRung = rung;
                         nearestHostile = h;
+                        chosenCeiling = this.maxRange;
+                    }
+                }
+            }
+
+            // DATA LINK (Stage 2: SPOT & Spotter-Gunner candidate injection):
+            // If networked, inspect comp's spotCache for designated candidates up to spotterCeiling.
+            // PHASE 12: iterate hostiles once with O(1) cache lookups instead
+            // of one hostiles.find per cache entry. Same candidate set —
+            // the min-reduction below is order-independent, so the pick is
+            // identical at a fraction of the scans.
+            if (this.isNetworked && this.compId !== undefined && game.spotCache) {
+                const m = game.spotCache.get(this.compId);
+                if (m && m.size) {
+                    const focusOnly = this.owner && this.owner.doctrine === 'focus';
+                    for (let cand of hostiles) {
+                        if (cand.dead || (cand._jamTimer > 0)) continue;
+                        const entry = m.get(cand._aiStaggerId);
+                        if (!entry || !entry.pos) continue;
+                        // PHASE 10 (Focus Fire): thin preferConfirmed flag —
+                        // unconfirmed tracks don't compete. Phase 11 owns more.
+                        if (focusOnly && !entry.confirmed) continue;
+                        let ceiling = this.maxRange;
+                        if (entry.source === 'cam') {
+                            const tKey = 'T' + (entry.tier || 1);
+                            ceiling = (LINK_TUNING.spotterCeiling && LINK_TUNING.spotterCeiling[tKey]) || 1400;
+                        }
+                        let d = Math.hypot(cand.x - this.x, cand.y - this.y);
+                        // PHASE 7 FIX: a network candidate must not be
+                        // disqualified purely for exceeding the turret's own
+                        // maxRange while still inside the camera's ceiling.
+                        // Compete against a nearer directly-seen hostile, but
+                        // accept when no direct hostile holds the best slot.
+                        // PHASE 11 (ladder): rung beats proximity across the
+                        // direct/network boundary too.
+                        const nrung = threatRung(cand);
+                        if (d <= ceiling && (nrung < bestRung || (nrung === bestRung && (nearestHostile === null || d < nearestDist)))) {
+                            let segWalls = game.map.getWallsAlongSegment(this.x, this.y, cand.x, cand.y);
+                            let hasLOS = !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, cand.x, cand.y, w));
+                            if (hasLOS) {
+                                nearestDist = d;
+                                bestRung = nrung;
+                                nearestHostile = cand;
+                                chosenCeiling = ceiling;
+                            }
+                        }
                     }
                 }
             }
 
             this.target = nearestHostile;
+            this._targetCeiling = chosenCeiling;
             this.retargetTimer = 0.15;
         }
 
+        let preAimPos = null;
+        if (!this.target && this.isNetworked && this.compId !== undefined && game.spotCache) {
+            const m = game.spotCache.get(this.compId);
+            if (m && m.size) {
+                let bestT = 0;
+                for (let [genId, entry] of m) {
+                    if (entry && entry.pos && entry.lastSeen > bestT) {
+                        bestT = entry.lastSeen;
+                        preAimPos = entry.pos;
+                    }
+                }
+            }
+        }
+
         if (this.target) {
-            let targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+            // PHASE 7b: designated shots lead the target — lay the barrel
+            // onto where it will be at time-of-flight, not where it is
+            // (at 1400-2000px even a 2600px/s slug takes ~0.6-0.8s to
+            // arrive). Natural fire keeps the stock direct-aim feel.
+            let aimX = this.target.x, aimY = this.target.y;
+            if ((this._targetCeiling || 0) > this.maxRange) {
+                const ds = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.designatedSpeed) || 2600;
+                const dx0 = this.target.x - this.x, dy0 = this.target.y - this.y;
+                const tof = Math.hypot(dx0, dy0) / ds;
+                aimX += (this.target.vx || 0) * tof;
+                aimY += (this.target.vy || 0) * tof;
+            }
+            let targetAngle = Math.atan2(aimY - this.y, aimX - this.x);
             let diff = MathUtils.angleDifference(targetAngle, this.angle);
             this.angle += Math.sign(diff) * Math.min(Math.abs(diff), this.aimSpeed * dt);
 
@@ -23689,70 +24211,130 @@ class AutoTurret extends Entity {
                 this.fireCooldown -= dt;
             }
 
-            if (Math.abs(diff) < 0.25 && this.fireCooldown <= 0) {
+            // PHASE 7: overheat locks the whole turret (natural + designated).
+            if (Math.abs(diff) < 0.25 && this.fireCooldown <= 0 && !(this.overheatTimer > 0)) {
                 // PvP Safety: 0.5s lock-on delay if targeting a human player
                 if (this.target instanceof Player) {
                     if (!this.playerLockTimer) this.playerLockTimer = 0.5;
                     this.playerLockTimer -= dt;
                     if (this.playerLockTimer <= 0) {
                         if (this.burstCount === 0) {
-                            this.burstCount = 3;
-                            this.burstTimer = 0;
+                            this.startFireCycle(game);
                             this.playerLockTimer = 0.5;
                         }
                     }
                 } else {
                     if (this.burstCount === 0) {
-                        this.burstCount = 3;
-                        this.burstTimer = 0;
+                        this.startFireCycle(game);
                     }
                 }
             } else if (Math.abs(diff) >= 0.25) {
                 this.playerLockTimer = 0.5; // Reset delay if LOS broken or tracking too slow
             }
+        } else if (preAimPos) {
+            let targetAngle = Math.atan2(preAimPos.y - this.y, preAimPos.x - this.x);
+            let diff = MathUtils.angleDifference(targetAngle, this.angle);
+            this.angle += Math.sign(diff) * Math.min(Math.abs(diff), this.aimSpeed * dt);
+            this.playerLockTimer = 0.5;
         } else {
             this.angle += 0.8 * dt;
             this.playerLockTimer = 0.5;
         }
         
         if (this.burstCount > 0) {
-            this.burstTimer -= dt;
-            if (this.burstTimer <= 0) {
-                this.shoot(game);
-                this.burstCount--;
-                if (this.burstCount > 0) {
-                    this.burstTimer = 0.12;
-                } else {
-                    this.fireCooldown = 1.0;
+            // PHASE 7: a mid-burst overheat cancels the remaining burst.
+            if (this.overheatTimer > 0) {
+                this.burstCount = 0;
+            } else {
+                this.burstTimer -= dt;
+                if (this.burstTimer <= 0) {
+                    this.shoot(game);
+                    this.burstCount--;
+                    if (this.burstCount > 0) {
+                        this.burstTimer = 0.12;
+                    } else {
+                        this.fireCooldown = 1.0 * (this.isNetworked ? 0.95 : 1.0);
+                    }
                 }
             }
+        }
+    }
+
+    // PHASE 7b: designated (network-locked) targets get one precision
+    // slug, not a 3-round burst — the long-range shot is taken singly,
+    // straight down a barrel already laid onto the lead point.
+    startFireCycle(game) {
+        if ((this._targetCeiling || 0) > this.maxRange) {
+            this.shoot(game);
+            this.fireCooldown = 1.0 * (this.isNetworked ? 0.95 : 1.0);
+        } else {
+            this.burstCount = 3;
+            this.burstTimer = 0;
         }
     }
     
     shoot(game) {
         if (this.dead) return;
-        audio.playShoot('Pistol', this.x, this.y);
+        // PHASE 7: overheat locks the whole turret — belt-and-suspenders with
+        // the update-side burst gate (covers a mid-burst overheat edge).
+        if (this.overheatTimer > 0) return;
+        // PHASE 7: a shot that only exists because of the network (acquired
+        // via a ceiling above own maxRange) fires the designated round.
+        const isDesignated = (this._targetCeiling || 0) > this.maxRange;
+        const desigSpeed = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.designatedSpeed) || 2600;
+        const desigDmg = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.designatedDmg) || 20;
+        audio.playShoot(isDesignated ? 'Sniper' : 'Pistol', this.x, this.y);
         
         let spawnDist = 18;
         let barrelX = this.x + Math.cos(this.angle) * spawnDist;
         let barrelY = this.y + Math.sin(this.angle) * spawnDist;
         
-        let bulletSpec = { name: 'Pistol', dmg: 10, speed: 1800, drag: 0.1, color: '#ffea00' };
+        let bulletSpec = isDesignated
+            ? { name: 'Pistol', dmg: desigDmg, speed: desigSpeed, drag: 0.1, color: '#00e5ff' }
+            : { name: 'Pistol', dmg: 10, speed: 1800, drag: 0.1, color: '#ffea00' };
+        const muzzleColor = isDesignated ? '#00e5ff' : '#ffea00';
         
-        if (this.isMKII) {
+        if (isDesignated) {
+            // Single precision slug straight down the barrel (laid onto the
+            // lead point by update) — no burst spread, MKII included.
+            let bullet = game.spawnBullet(barrelX, barrelY, this.angle, bulletSpec, true, false, false, false);
+            bullet.owner = this;
+            game.bullets.push(bullet);
+            game.addParticle(barrelX, barrelY, Math.cos(this.angle)*300, Math.sin(this.angle)*300, muzzleColor, 0.04, 2.5);
+        } else if (this.isMKII) {
             let spreadAngles = [this.angle - 0.12, this.angle, this.angle + 0.12];
             for (let a of spreadAngles) {
                 let bullet = game.spawnBullet(barrelX, barrelY, a, bulletSpec, true, false, false, false);
                 bullet.owner = this;
                 game.bullets.push(bullet);
-                game.addParticle(barrelX, barrelY, Math.cos(a)*300, Math.sin(a)*300, '#ffea00', 0.04, 2.5);
+                game.addParticle(barrelX, barrelY, Math.cos(a)*300, Math.sin(a)*300, muzzleColor, 0.04, 2.5);
             }
         } else {
             let spreadAngle = this.angle + (Math.random() - 0.5) * 0.08;
             let bullet = game.spawnBullet(barrelX, barrelY, spreadAngle, bulletSpec, true, false, false, false);
             bullet.owner = this;
             game.bullets.push(bullet);
-            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, '#ffea00', 0.04, 2.5);
+            game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, muzzleColor, 0.04, 2.5);
+        }
+
+        // PHASE 7: designated shots accrue heat; 100% forces a whole-turret
+        // lockout (natural fire included). Natural shots never add heat.
+        if (isDesignated) {
+            const perShot = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.heatPerShot) || 0.33;
+            this.heat = Math.min(1, (this.heat || 0) + perShot);
+            if (this.heat >= 1) {
+                const lock = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.overheatLock) || 3.0;
+                this.overheatTimer = lock;
+                // Set to 1, not 0: the burst-block caller decrements after
+                // shoot() returns, landing at exactly 0 (a 0 here would
+                // underflow to -1 and brick the burst trigger for good).
+                this.burstCount = 1;
+                const ft = game.spawnFloatingText(this.x, this.y - 24, 'OVERHEAT!', '#ff2a5f', 1.2);
+                if (ft) game.floatingTexts.push(ft);
+                for (let i = 0; i < 6; i++) {
+                    game.addParticle(barrelX, barrelY, (Math.random() - 0.5) * 60, -Math.random() * 80, '#cbd5e1', 0.5, 2.5);
+                }
+            }
         }
     }
     
@@ -23786,6 +24368,13 @@ class AutoTurret extends Entity {
             ctx.fillRect(-15, -20, 30, 3);
             ctx.fillStyle = '#39ff14';
             ctx.fillRect(-15, -20, 30 * pct, 3);
+        }
+
+        // PHASE 7: spotter heat bar (orange, red while locked out).
+        if ((this.heat || 0) > 0.01) {
+            let hpct = Math.max(0, Math.min(1, this.heat));
+            ctx.fillStyle = this.overheatTimer > 0 ? '#ff2a5f' : '#fb923c';
+            ctx.fillRect(-15, -16, 30 * hpct, 2.5);
         }
         
         ctx.rotate(this.angle);
@@ -23921,7 +24510,8 @@ class SecurityCamera extends Entity {
         this.spottedEnemies = [];
         this.target = null;
         let hostiles = game.getHostilesFor ? game.getHostilesFor(this) : (game.enemies || []);
-        let closestDist = this.scanRange + 10;
+        let effScanRange = this.scanRange * (this.isNetworked ? 1.05 : 1.0);
+        let closestDist = effScanRange + 10;
 
         for (let h of hostiles) {
             if (!h || h.dead) continue;
@@ -23929,7 +24519,7 @@ class SecurityCamera extends Entity {
             let dx = h.x - this.x;
             let dy = h.y - this.y;
             let dist = Math.hypot(dx, dy);
-            if (dist > this.scanRange) continue;
+            if (dist > effScanRange) continue;
 
             let targetAngle = Math.atan2(dy, dx);
             let angleDiff = Math.abs(MathUtils.angleDifference(targetAngle, this.angle));
@@ -23942,6 +24532,72 @@ class SecurityCamera extends Entity {
                     if (dist < closestDist) {
                         closestDist = dist;
                         this.target = h;
+                    }
+                }
+            }
+        }
+
+        // PHASE 9c: adopt-and-engage — a targetless networked camera adopts
+        // the nearest fresh network track it has its own LOS to (out to its
+        // tier ceiling, past its own scan range). Publishing stays
+        // own-cone-only so adoption can never corroborate itself. Full
+        // multi-target prioritization is Phase 11; here ladder-ordered,
+        // same as the turret. Targetless-only keeps the per-frame scan cheap.
+        // PHASE 10: Overwatch suppresses adoption (sweep coverage over
+        // engaging); Focus Fire takes confirmed tracks only (thin flag).
+        // PHASE 12: hostiles-first iteration (O(1) lookups, no find-per-entry).
+        const camDoctrine = (this.owner && this.owner.doctrine) || 'standard';
+        if (!this.target && camDoctrine !== 'overwatch' && this.isNetworked && this.compId !== undefined && game.spotCache) {
+            const m = game.spotCache.get(this.compId);
+            if (m && m.size) {
+                const now = game.gameTime || 0;
+                const grace = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.spotGrace) || 2.0;
+                const ceilKey = 'T' + (this.tier || 1);
+                const ceil = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.spotterCeiling && LINK_TUNING.spotterCeiling[ceilKey]) || 1400;
+                const focusOnlyCam = (camDoctrine === 'focus');
+                let best = null, bestD = Infinity, bestRung = 1;
+                for (const h of hostiles) {
+                    if (!h || h.dead || (h._jamTimer > 0)) continue;
+                    const entry = m.get(h._aiStaggerId);
+                    if (!entry || !entry.pos || (now - (entry.lastSeen || 0)) > grace) continue;
+                    if (focusOnlyCam && !entry.confirmed) continue;
+                    const d = Math.hypot(h.x - this.x, h.y - this.y);
+                    if (d > ceil) continue;
+                    // PHASE 11 (ladder): rung-0 adoption beats a nearer grunt.
+                    const rung = threatRung(h);
+                    if (rung > bestRung || (rung === bestRung && d >= bestD)) continue;
+                    const segWalls = game.map ? game.map.getWallsAlongSegment(this.x, this.y, h.x, h.y) : [];
+                    if (segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, h.x, h.y, w))) continue;
+                    bestD = d;
+                    bestRung = rung;
+                    best = h;
+                }
+                if (best) this.target = best;
+            }
+        }
+
+        // DATA LINK (Stage 2: TRIP spider-senses / network SPOT alert orientation
+        // + Phase 9: converge-lock onto corroborated tracks)
+        let networkSpotPos = null;
+        let confirmedPos = null;
+        let ownTargetConfirmed = false;
+        if (this.isNetworked && this.compId !== undefined && game.spotCache) {
+            const m = game.spotCache.get(this.compId);
+            if (m && m.size) {
+                const ownGenId = this.target ? this.target._aiStaggerId : undefined;
+                let bestT = 0, bestConfT = 0;
+                for (let [genId, entry] of m) {
+                    if (!entry || !entry.pos) continue;
+                    if (!this.target && entry.lastSeen > bestT) {
+                        bestT = entry.lastSeen;
+                        networkSpotPos = entry.pos;
+                    }
+                    if (entry.confirmed) {
+                        if (ownGenId !== undefined && genId === ownGenId) ownTargetConfirmed = true;
+                        if (entry.lastSeen > bestConfT) {
+                            bestConfT = entry.lastSeen;
+                            confirmedPos = entry.pos;
+                        }
                     }
                 }
             }
@@ -23968,21 +24624,31 @@ class SecurityCamera extends Entity {
             }
 
             // T2: Automated Suppressed Dart Fire (Passive defense: 3.5 dmg; 1.35s cooldown)
+            // PHASE 9b: slaved to facing — the lens must be on the target
+            // (inside its own cone). Holds fire while slewing toward a
+            // converge track; cooldown untouched so it retries next frame.
             if (this.tier === 2 && this.target && this.fireCooldown <= 0) {
+                let aimA = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                if (Math.abs(MathUtils.angleDifference(aimA, this.angle)) > this.halfFov) {
+                    // Slaved: lens off target (slewing to converge) — hold,
+                    // cooldown untouched so it retries next frame.
+                } else {
                 this.fireCooldown = 1.35;
                 if (typeof audio !== 'undefined' && audio.playRicochet) {
                     audio.playRicochet(this.x, this.y);
                 }
-                let aimA = Math.atan2(this.target.y - this.y, this.target.x - this.x);
                 let bulletSpec = { name: 'Dart', dmg: 3.5, speed: 2000, drag: 0.05, color: '#00e5ff' };
                 let bullet = game.spawnBullet(this.x + Math.cos(aimA) * 12, this.y + Math.sin(aimA) * 12, aimA, bulletSpec, true, true, false, false);
                 bullet.owner = this;
                 game.bullets.push(bullet);
                 game.addParticle(this.x + Math.cos(aimA)*12, this.y + Math.sin(aimA)*12, Math.cos(aimA)*120, Math.sin(aimA)*120, '#00e5ff', 0.1, 2);
+                }
             }
 
             // T3: Continuous Thermal Sentry Laser (Passive defense: 7.5 dps; 3 burn dps)
             if (this.tier >= 3 && this.target) {
+                let beamA = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                if (Math.abs(MathUtils.angleDifference(beamA, this.angle)) <= this.halfFov) {
                 let beamDmg = 7.5 * dt;
                 if (this.target.takeDamage) {
                     this.target.takeDamage(beamDmg, Math.atan2(this.target.y - this.y, this.target.x - this.x), 2);
@@ -23995,7 +24661,25 @@ class SecurityCamera extends Entity {
                     let pa = Math.random() * Math.PI * 2;
                     game.addParticle(this.target.x, this.target.y, Math.cos(pa)*60, Math.sin(pa)*60, '#ff4500', 0.15, 1.5);
                 }
+                }
             }
+        } else if (networkSpotPos) {
+            // Spider-senses: camera turns to monitor network SPOT breach bearing
+            let aimAngle = Math.atan2(networkSpotPos.y - this.y, networkSpotPos.x - this.x);
+            let diff = MathUtils.angleDifference(aimAngle, this.angle);
+            this.angle += Math.sign(diff) * Math.min(Math.abs(diff), 2.5 * dt);
+        }
+
+        // PHASE 9 (Pillar E: converge-lock): a corroborated track turns the
+        // whole base — ease onto it with the lock-ease even while holding an
+        // unconfirmed own target. Skipped when the own target IS the
+        // confirmed track (the own-lock above already aims, at live pos).
+        // T2 darts / T3 beam still fire at the own target only (unchanged).
+        // PHASE 10: Overwatch suppresses the converge (sweep over staring).
+        if (confirmedPos && !ownTargetConfirmed && camDoctrine !== 'overwatch') {
+            let confAngle = Math.atan2(confirmedPos.y - this.y, confirmedPos.x - this.x);
+            let confDiff = MathUtils.angleDifference(confAngle, this.angle);
+            this.angle += Math.sign(confDiff) * Math.min(Math.abs(confDiff), 3.0 * dt);
         }
     }
 
@@ -24215,6 +24899,12 @@ class RobotDog extends Entity {
         this.stuckStrafeDir = 1;
         this.cachedMoveAngle = undefined;
         this.lastTargetKey = "";
+
+        // DATA LINK (Phase 2): Wireless RF Uplink Module
+        this.rfLinked = false;
+        this.rfNode = null;
+        this.rfScanTimer = Math.random() * 0.5; // desync scans between dogs
+        this.rfSpotFlashTimer = 0;
     }
     
     takeDamage(amt, pushDir, pushForce) {
@@ -24245,6 +24935,47 @@ class RobotDog extends Entity {
             this.waypointExplorePoints = [];
             this.currentExploreIdx = 0;
             return;
+        }
+
+        if (this.rfSpotFlashTimer > 0) this.rfSpotFlashTimer -= dt;
+
+        // DATA LINK (Phase 2): Wireless RF Proximity Uplink
+        this.rfScanTimer = (this.rfScanTimer || 0) + dt;
+        if (this.rfScanTimer >= (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.rfPeriod ? LINK_TUNING.rfPeriod : 1.0)) {
+            this.rfScanTimer = 0;
+            const rfRange = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.rfRange ? LINK_TUNING.rfRange : 600);
+            const rfRangeSq = rfRange * rfRange;
+            let bestNode = null;
+            let bestDistSq = Infinity;
+            const checkNode = (node) => {
+                if (!node || node.dead || node.compId === undefined || node.compId < 0 || !node.isNetworked) return;
+                if (node.owner && this.owner && node.owner !== this.owner) return;
+                if (game.map && game.map.floorSeparated && game.map.floorSeparated(this.x, this.y, node.x, node.y)) return;
+                const d2 = (node.x - this.x) * (node.x - this.x) + (node.y - this.y) * (node.y - this.y);
+                if (d2 <= rfRangeSq && d2 < bestDistSq) {
+                    bestDistSq = d2;
+                    bestNode = node;
+                }
+            };
+            if (game.turrets) for (const t of game.turrets) checkNode(t);
+            if (game.securityCameras) for (const c of game.securityCameras) checkNode(c);
+            if (game.mines) for (const m of game.mines) checkNode(m);
+
+            if (bestNode) {
+                const wasLinked = this.rfLinked;
+                this.compId = bestNode.compId;
+                this.isNetworked = true;
+                this.rfLinked = true;
+                this.rfNode = bestNode;
+                if (!wasLinked && typeof audio !== 'undefined' && audio && audio.playDataLinkConnected) {
+                    audio.playDataLinkConnected(this.x, this.y);
+                }
+            } else {
+                this.compId = undefined;
+                this.isNetworked = false;
+                this.rfLinked = false;
+                this.rfNode = null;
+            }
         }
         
         // CONTRACT: getWallsNear() returns a SHARED scratch array that the very
@@ -24382,6 +25113,23 @@ class RobotDog extends Entity {
             this.target = closestHostile;
             this.targetGenId = closestHostile ? closestHostile._aiStaggerId : undefined;
             this._cachedActiveThreatCount = activeThreatCount;
+
+            // DATA LINK (Phase 2): RF Dog broadcasts detected enemy to wireless network
+            if (closestHostile && this.rfLinked && this.compId !== undefined && game.spotCache) {
+                let m = game.spotCache.get(this.compId);
+                if (!m) { m = new Map(); game.spotCache.set(this.compId, m); }
+                const gid = closestHostile._aiStaggerId || ('dog_spot_' + Math.round(closestHostile.x) + '_' + Math.round(closestHostile.y));
+                game.publishSpot(m, gid, {
+                    pos: { x: closestHostile.x, y: closestHostile.y },
+                    lastSeen: game.gameTime || 0,
+                    source: 'rf_dog',
+                    publisher: this
+                }, this, game.gameTime || 0);
+                this.rfSpotFlashTimer = 0.35;
+                if (typeof audio !== 'undefined' && audio && audio.playDataLinkSpotAlert) {
+                    audio.playDataLinkSpotAlert(this.x, this.y);
+                }
+            }
         }
 
         let closestHostile = this.target;
@@ -24477,6 +25225,25 @@ class RobotDog extends Entity {
                 }
             } else if (Math.abs(diff) >= 0.25) {
                 this.playerLockTimer = 0.5;
+            }
+        } else if (this.isNetworked && this.compId !== undefined && game.spotCache) {
+            // DATA LINK (Stage 2: Cam->Dog TRACK - aim/alert only per rotation 19 Item 2)
+            // Dog turns to face the network SPOT, does NOT path to it, does NOT fire past 800px.
+            const m = game.spotCache.get(this.compId);
+            if (m && m.size) {
+                let bestEntry = null, bestT = 0;
+                for (let [gid, entry] of m) {
+                    if (entry && entry.pos && entry.lastSeen > bestT) {
+                        bestT = entry.lastSeen;
+                        bestEntry = entry;
+                    }
+                }
+                if (bestEntry && bestEntry.pos) {
+                    let targetAngle = Math.atan2(bestEntry.pos.y - this.y, bestEntry.pos.x - this.x);
+                    let diff = MathUtils.angleDifference(targetAngle, this.angle);
+                    this.angle += Math.sign(diff) * Math.min(Math.abs(diff), 5 * dt); // alert swivel towards SPOT bearing
+                    this.rfSpotFlashTimer = 0.25;
+                }
             }
         }
         
@@ -24810,7 +25577,38 @@ class RobotDog extends Entity {
         if (this.dead) return;
         
         drawDropShadow(ctx, cam, this.x, this.y, this.r * 1.2, this.r * 0.4);
-        
+
+        // 0. Wireless RF Uplink Radio Wave Pulse (every 1.5s expanding cyan pulse ring)
+        if (this.rfLinked && game && game.gameTime) {
+            const pulsePhase = (game.gameTime % 1.5) / 1.5;
+            const ringR = 12 + pulsePhase * 26;
+            const ringAlpha = (1.0 - pulsePhase) * 0.4;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(this.x - cam.x, this.y - cam.y, ringR, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(0, 229, 255, ${ringAlpha})`;
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            // When flashing alert, render faint directional radio-vector ping toward spotted threat
+            if (this.rfSpotFlashTimer > 0) {
+                const pingLen = 50;
+                const px = this.x - cam.x;
+                const py = this.y - cam.y;
+                const tipX = px + Math.cos(this.angle) * pingLen;
+                const tipY = py + Math.sin(this.angle) * pingLen;
+                ctx.beginPath();
+                ctx.moveTo(px, py);
+                ctx.lineTo(tipX, tipY);
+                ctx.setLineDash([4, 4]);
+                ctx.strokeStyle = 'rgba(245, 158, 11, 0.7)';
+                ctx.lineWidth = 1.6;
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            ctx.restore();
+        }
+
         // 1. Draw Aiming Laser in world space (checking walls, fading and stopping)
         let laserAngle = this.angle;
         let lStartX = this.x + Math.cos(laserAngle) * 14;
@@ -24961,8 +25759,43 @@ class RobotDog extends Entity {
         ctx.stroke();
         
         ctx.restore();
-        
-        // Health Indicator Bar above dog (Standard red background, green foreground)
+
+        // RF Uplink Antenna Pack (Phase 2)
+        ctx.save();
+        ctx.translate(-10, 0); // mounted on the rear hips
+        ctx.fillStyle = '#1e293b';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 1.2;
+        ctx.fillRect(-2, -3, 4, 6);
+        ctx.strokeRect(-2, -3, 4, 6);
+
+        // Antenna mast
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-4, -6);
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+
+        // RF Beacon tip emitter
+        const isFlashing = this.rfSpotFlashTimer > 0;
+        ctx.beginPath();
+        ctx.arc(-4, -6, 2, 0, Math.PI * 2);
+        if (isFlashing) {
+            ctx.fillStyle = '#f59e0b'; // Amber tactical alert
+            ctx.shadowColor = '#f59e0b';
+            ctx.shadowBlur = 8;
+        } else if (this.rfLinked) {
+            ctx.fillStyle = '#00e5ff'; // Cyan network link active
+            ctx.shadowColor = '#00e5ff';
+            ctx.shadowBlur = 4;
+        } else {
+            ctx.fillStyle = '#475569'; // Offline grey
+            ctx.shadowBlur = 0;
+        }
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.restore();
         if (this.hp < this.maxHp) {
             ctx.rotate(-this.angle); // orient horizontal
             let barW = 24;
@@ -24998,27 +25831,6 @@ const SCAV_DOG_TUNING = {
     HIDE_DIST: 340,         // player closer than this: dodge logic arms
     DODGE_DIST: 140,        // AND within this of the dog->loot route: arc
     DETOUR_OFF: 120,        // how far off-route the arc waypoint swings
-    // Target-choice caution: loot sitting near a player costs EXTRA
-    // effective distance, so an equally-close-but-safer pile wins. Greed
-    // still comes first -- the penalty is finite, so a lone item at the
-    // player's feet is eventually the nearest thing and gets taken.
-    AVOID_RADIUS: 450,      // item-to-player distance under which caution applies
-    AVOID_WEIGHT: 1.6,      // px of fake distance per px inside AVOID_RADIUS
-    // Unreachable-loot ban: findPath has no failure return (it falls back
-    // to a straight line), so "can't get there" is detected by watching
-    // for closing distance instead.
-    NO_PROGRESS_TIME: 4.0,  // s of not getting closer before the item is banned
-    NO_PROGRESS_EPS: 10,    // px of closing that counts as progress
-    PURSUIT_TIMEOUT: 20.0,  // s: absolute cap on chasing ONE item. Backstop for
-                            // the case the delta test misses -- a dog inching
-                            // along a wall closes just over NO_PROGRESS_EPS per
-                            // window and resets the timer forever. 20s at
-                            // SPEED_SEEK is ~5000px of travel, longer than any
-                            // route on a normal map even with a dodge detour.
-    // Idle loiter: the dog wants the map between it and the player.
-    LOITER_SAMPLES: 6,      // ring candidates scored per re-pick
-    LOITER_MIN: 320,        // px: inner radius of the candidate ring
-    LOITER_MAX: 560,        // px: outer radius of the candidate ring
     SPEED_SEEK: 250,        // trot to a target item
     SPEED_SCOUT: 120,       // idle drift while hunting
     SPEED_CARRY: 190,       // loaded lope (slower: carrying is readable)
@@ -25030,35 +25842,7 @@ const SCAV_DOG_TUNING = {
     ESCAPE_EDGE: 40,        // despawn band at the map border (RUNNER parity)
     BARK_COOLDOWN: 2.5,
     FAILED_BAN: 10.0,       // don't re-eye an unreachable/taken item
-    CARGO_CAP: 100,         // effectively uncapped -- greedy hoarders
-    // GORGE PENALTY: every item slows the dog. This is the whole risk/reward
-    // -- kill it now while it's light for a small return, or let it fatten
-    // into something you can actually catch and eat the bigger 50% loss.
-    LOAD_PENALTY: 0.045,    // speed lost per carried item
-    LOAD_PENALTY_MAX: 0.45, // floor: never slower than 55% of base
-    // The escape sprint takes only HALF the penalty. Full penalty on the
-    // work states is the point -- a gorging dog visibly labours and is easy
-    // to shoot while the wave runs. But at full penalty a loaded dog flees
-    // at 187px/s, slower than the player's ~260px/s WALK, which would make
-    // "let it fatten" a free win with no chase. Halved, a fully-loaded dog
-    // still bolts at ~263px/s: catchable, but you have to commit.
-    FLEE_PENALTY_SCALE: 0.5,
-    // SALVAGE: the half that smashes isn't gone, it's scrap. Converting it
-    // to cash is what makes the 50% destruction read as a mechanic instead
-    // of an unexplained tax, and it pays out the instant the dog drops.
-    SALVAGE_MONEY: 14,      // $ per smashed money pickup
-    SALVAGE_ITEM: 45,       // $ per smashed consumable
-    SALVAGE_WEAPON: 90,     // $ per smashed weapon drop
-    // RESUPPLY: what the enemy does with loot that gets carried off the map.
-    // Per-item deltas, consumed by the NEXT wave and hard-capped so a bad
-    // run can't spiral. See Game._applyScavResupply.
-    RSP_ELITE: 0.055,       // money/weapon -> elite roll bonus
-    RSP_HP: 0.07,           // medpack     -> enemy HP multiplier bonus
-    RSP_SPEED: 0.035,       // redbull     -> enemy speed multiplier bonus
-    RSP_ELITE_MAX: 0.20,
-    RSP_HP_MAX: 0.30,
-    RSP_SPEED_MAX: 0.09,
-    RSP_EXTRA_MAX: 4        // grenade     -> +1 body each, capped
+    CARGO_CAP: 100          // effectively uncapped -- greedy hoarders
 };
 
 class ScavengerDog extends Entity {
@@ -25095,12 +25879,8 @@ class ScavengerDog extends Entity {
         this.cachedMoveAngle = undefined;
         this.lastTargetKey = "";
         this._dodging = false;       // arc-around waypoint active (steering-cache key)
-        this._progressTimer = 0;     // s since the target last got closer (unreachable-ban)
-        this._pursuitTimer = 0;      // s spent chasing the current target (absolute backstop)
-        this._bestTargetDist = Infinity; // closest this dog has been to targetItem
         this._panic = false;
         this._hitFlash = 0;
-        this._lastHitBy = null;      // last bullet owner (Spot recovery bonus, see spillLoot)
     }
 
     // FELLPASS item 4 convention (0.06s white flash) -- the shared set/
@@ -25140,88 +25920,31 @@ class ScavengerDog extends Entity {
         }
     }
 
-    // Speed multiplier from carried weight. A dog that has been working the
-    // floor all wave is visibly labouring; an empty one is quick.
-    _loadMult(fleeing) {
-        const T = SCAV_DOG_TUNING;
-        let pen = Math.min(this.cargo.length * T.LOAD_PENALTY, T.LOAD_PENALTY_MAX);
-        if (fleeing) pen *= T.FLEE_PENALTY_SCALE;
-        return 1 - pen;
-    }
-
-    // Scrap value of one smashed pickup. Weapons are worth the most, money
-    // the least (you were only ever going to get ~$18 for it anyway).
-    static salvageValue(t) {
-        const T = SCAV_DOG_TUNING;
-        if (t === 'money') return T.SALVAGE_MONEY;
-        if (typeof Weapons !== 'undefined' && Weapons[t]) return T.SALVAGE_WEAPON;
-        return T.SALVAGE_ITEM;
-    }
-
     spillLoot() {
         if (!this.cargo.length) return;
         const g = (typeof game !== 'undefined' && game) ? game : null;
         if (!g) { this.cargo = []; return; }
         const spilled = this.cargo;
         this.cargo = [];
-        // SPOT RECOVERY BONUS: if the robot dog landed the killing shot the
-        // whole hoard comes back intact -- it retrieves, you smash. Cheap
-        // synergy that gives the Technician kit a specific reason to exist
-        // against this unit. Any other killer keeps the 50% coin flip.
-        const spotKill = (typeof RobotDog !== 'undefined') && (this._lastHitBy instanceof RobotDog);
-        const dropChance = spotKill ? 1.0 : 0.5;
-        let dropped = 0, salvage = 0;
+        // Operator rule: only about HALF the hoard physically survives the
+        // wreck -- the rest smashes and is gone for good (no refund either
+        // way; a full hoard dumping intact would be a free loot jackpot).
+        let dropped = 0, lost = 0;
         for (let t of spilled) {
-            if (Math.random() < dropChance) {
+            if (Math.random() < 0.5) {
                 let it = g.spawnItem(this.x + (Math.random() - 0.5) * 26, this.y + (Math.random() - 0.5) * 26, t);
                 g.items.push(it);
                 dropped++;
             } else {
-                // Smashed: paid out as scrap instead of vanishing.
-                salvage += ScavengerDog.salvageValue(t);
+                lost++;
             }
         }
         if (dropped > 0) {
-            g.floatingTexts.push(g.spawnFloatingText(this.x, this.y - 14,
-                spotKill ? `RETRIEVED x${dropped}` : (dropped > 1 ? `LOOT RECOVERED x${dropped}` : 'LOOT RECOVERED'),
-                spotKill ? '#00e5ff' : '#39ff14', 1.4));
+            g.floatingTexts.push(g.spawnFloatingText(this.x, this.y - 14, dropped > 1 ? `LOOT RECOVERED x${dropped}` : 'LOOT RECOVERED', '#39ff14', 1.2));
         }
-        if (salvage > 0) {
-            // Same both-players award shape as the boss bounty (Boss.onDeath):
-            // co-op splits nothing, each operator banks the full figure.
-            salvage = Math.round(salvage * (g.cashMultiplier || 1));
-            if (g.player) g.player.cash += salvage;
-            if (g.isTwoPlayer && g.player2) g.player2.cash += salvage;
-            g.floatingTexts.push(g.spawnFloatingText(this.x, this.y - 28, `SALVAGE +$${salvage}`, '#ffb700', 1.5));
-            if (typeof audio !== 'undefined' && audio) audio.playPickup('money');
+        if (lost > 0) {
+            g.floatingTexts.push(g.spawnFloatingText(this.x, this.y - 26, `x${lost} DESTROYED`, '#ff2a5f', 1.2));
         }
-    }
-
-    // Idle loiter target: sample a ring of candidates around the dog and
-    // keep the one that puts the most distance between it and the nearest
-    // player. Clamped to the playfield, so a dog backed into a corner
-    // scores the along-the-wall candidates higher than the ones that clamp
-    // on top of it and walks out instead of grinding the border. Runs once
-    // per re-pick (~3s), not per frame -- LOITER_SAMPLES hypots is noise.
-    // With no living player it degrades to a plain random drift.
-    _pickLoiterPoint(game, players) {
-        const T = SCAV_DOG_TUNING;
-        const base = Math.random() * Math.PI * 2;
-        let bx = this.x, by = this.y, bestScore = -Infinity;
-        for (let i = 0; i < T.LOITER_SAMPLES; i++) {
-            const a = base + (i / T.LOITER_SAMPLES) * Math.PI * 2;
-            const r = T.LOITER_MIN + Math.random() * (T.LOITER_MAX - T.LOITER_MIN);
-            const cx = Math.max(80, Math.min(game.mapW - 80, this.x + Math.cos(a) * r));
-            const cy = Math.max(80, Math.min(game.mapH - 80, this.y + Math.sin(a) * r));
-            let score = Infinity;
-            for (const p of players) {
-                const d = Math.hypot(cx - p.x, cy - p.y);
-                if (d < score) score = d;
-            }
-            if (score === Infinity) score = Math.random() * 1000; // no players: drift
-            if (score > bestScore) { bestScore = score; bx = cx; by = cy; }
-        }
-        this.scoutX = bx; this.scoutY = by;
     }
 
     startFlee(mapW, mapH, px, py) {
@@ -25267,15 +25990,9 @@ class ScavengerDog extends Entity {
 
         // Nearest living player: drives the panic flash and (via the gate
         // in Game._updateScavEscapeGate) the flee direction.
-        // Reused scratch (no per-frame array literal): the living players,
-        // shared by the panic check, the caution surcharge in the
-        // acquisition scan, and the loiter scorer.
-        const players = this._playerScratch || (this._playerScratch = []);
-        players.length = 0;
-        if (game.player && !game.player.dead) players.push(game.player);
-        if (game.isTwoPlayer && game.player2 && !game.player2.dead) players.push(game.player2);
         let px = null, py = null, pd = Infinity;
-        for (const p of players) {
+        for (const p of [game.player, game.isTwoPlayer ? game.player2 : null]) {
+            if (!p || p.dead) continue;
             const d = Math.hypot(p.x - this.x, p.y - this.y);
             if (d < pd) { pd = d; px = p.x; py = p.y; }
         }
@@ -25297,11 +26014,11 @@ class ScavengerDog extends Entity {
                 // react before the sprint.
                 destX = this.x + Math.cos(this.walkCycle * 2.3) * 40;
                 destY = this.y + Math.sin(this.walkCycle * 1.7) * 40;
-                currentSpeed = (SCAV_DOG_TUNING.SPEED_SCOUT + 60) * this._loadMult(true);
+                currentSpeed = SCAV_DOG_TUNING.SPEED_SCOUT + 60;
                 hasDest = true;
             } else if (this.fleePoint) {
                 destX = this.fleePoint.x; destY = this.fleePoint.y;
-                currentSpeed = SCAV_DOG_TUNING.SPEED_FLEE * this._loadMult(true);
+                currentSpeed = SCAV_DOG_TUNING.SPEED_FLEE;
                 hasDest = true;
             }
             const E = SCAV_DOG_TUNING.ESCAPE_EDGE;
@@ -25320,47 +26037,26 @@ class ScavengerDog extends Entity {
             const a = Math.atan2(this.y - py, this.x - px);
             destX = this.x + Math.cos(a) * 200;
             destY = this.y + Math.sin(a) * 200;
-            currentSpeed = SCAV_DOG_TUNING.SPEED_PANIC * this._loadMult();
+            currentSpeed = SCAV_DOG_TUNING.SPEED_PANIC;
             hasDest = true;
         } else if (this.state === 'HUNTING') {
             // Throttled acquisition scan (same 30-frame stagger cadence
             // as RobotDog/Enemy AI).
             let stagger = this._aiStaggerId || 0;
             if (game.frameCounter % 30 === stagger % 30 || !this.targetItem) {
-                // Scored pick, not nearest-wins: cost = real distance PLUS a
-                // caution surcharge for loot parked near a player. Greed is
-                // still primary (the surcharge is finite and bounded by
-                // AVOID_RADIUS * AVOID_WEIGHT), avoidance is the tiebreak --
-                // exactly the "steal everything, but work the far side of
-                // the map first" behaviour the design asks for.
-                // No line-of-sight pre-filter: items BEHIND walls are still
-                // targets -- the steering A* routes around. Unreachable ones
-                // are retired by the no-progress ban below, not by a filter.
-                const AR = SCAV_DOG_TUNING.AVOID_RADIUS, AR2 = AR * AR;
-                let best = null, bestScore = SCAV_DOG_TUNING.SEEK_RANGE;
+                let best = null, bestDSq = SCAV_DOG_TUNING.SEEK_RANGE * SCAV_DOG_TUNING.SEEK_RANGE;
                 for (const it of game.items) {
                     if (!ScavengerDog.isStealable(it)) continue;
                     if (this.failedItems.has(it) && game.gameTime < this.failedItems.get(it)) continue;
                     let dx = it.x - this.x, dy = it.y - this.y;
                     let dSq = dx * dx + dy * dy;
-                    // Cheap reject before any sqrt: even a zero surcharge
-                    // can't beat the incumbent if the raw distance already does.
-                    if (dSq >= bestScore * bestScore) continue;
-                    let score = Math.sqrt(dSq);
-                    for (const p of players) {
-                        const pdx = it.x - p.x, pdy = it.y - p.y;
-                        const pdSq = pdx * pdx + pdy * pdy;
-                        if (pdSq < AR2) score += (AR - Math.sqrt(pdSq)) * SCAV_DOG_TUNING.AVOID_WEIGHT;
-                    }
-                    if (score >= bestScore) continue;
-                    bestScore = score; best = it;
+                    if (dSq >= bestDSq) continue;
+                    // No line-of-sight pre-filter: items BEHIND walls are
+                    // still targets -- the steering A* routes around.
+                    bestDSq = dSq; best = it;
                 }
                 if (best && best !== this.targetItem) {
                     this.targetItem = best;
-                    // Fresh target: restart both unreachable-ban windows.
-                    this._progressTimer = 0;
-                    this._pursuitTimer = 0;
-                    this._bestTargetDist = Math.hypot(best.x - this.x, best.y - this.y);
                     if (this.barkCooldown <= 0) {
                         this.barkCooldown = SCAV_DOG_TUNING.BARK_COOLDOWN;
                         if (typeof audio !== 'undefined' && audio && audio.playScavBark) audio.playScavBark(this.x, this.y);
@@ -25393,36 +26089,7 @@ class ScavengerDog extends Entity {
                     // spook dash, handled above.)
                     destX = this.targetItem.x; destY = this.targetItem.y;
                     this._dodging = false;
-
-                    // UNREACHABLE-LOOT BAN. findPath has no failure return --
-                    // every path it can't solve degrades to a straight line at
-                    // the destination -- so a dog that targets loot behind a
-                    // sealed wall would beeline, wedge, strafe, and repeat
-                    // forever. Detect it by outcome instead: if the dog hasn't
-                    // closed NO_PROGRESS_EPS on the item in NO_PROGRESS_TIME,
-                    // blacklist it (reusing failedItems/FAILED_BAN) and move on.
-                    // Covers unreachable, barrier-blocked and geometry-wedged
-                    // in one gate. The dodge detour legitimately widens the gap
-                    // for a beat, which is why the window is seconds, not frames.
-                    const tDist = Math.hypot(this.targetItem.x - this.x, this.targetItem.y - this.y);
-                    this._pursuitTimer += dt;
-                    if (tDist < this._bestTargetDist - SCAV_DOG_TUNING.NO_PROGRESS_EPS) {
-                        this._bestTargetDist = tDist;
-                        this._progressTimer = 0;
-                    } else {
-                        this._progressTimer += dt;
-                    }
-                    if (this._progressTimer >= SCAV_DOG_TUNING.NO_PROGRESS_TIME ||
-                        this._pursuitTimer >= SCAV_DOG_TUNING.PURSUIT_TIMEOUT) {
-                        this.failedItems.set(this.targetItem, game.gameTime + SCAV_DOG_TUNING.FAILED_BAN);
-                        this.targetItem = null;
-                        this._progressTimer = 0;
-                        this._pursuitTimer = 0;
-                        this._bestTargetDist = Infinity;
-                        this.cachedMoveAngle = undefined;
-                    }
-
-                    if (this.targetItem && !this._panic && pd < SCAV_DOG_TUNING.HIDE_DIST) {
+                    if (!this._panic && pd < SCAV_DOG_TUNING.HIDE_DIST) {
                         const rx = this.targetItem.x - this.x, ry = this.targetItem.y - this.y;
                         const rLen2 = rx * rx + ry * ry;
                         if (rLen2 > 40 * 40) {
@@ -25432,15 +26099,8 @@ class ScavengerDog extends Entity {
                             const ddx = px - cx, ddy = py - cy;
                             if (ddx * ddx + ddy * ddy < SCAV_DOG_TUNING.DODGE_DIST * SCAV_DOG_TUNING.DODGE_DIST) {
                                 const rLen = Math.sqrt(rLen2);
-                                // Route normal, forced to point AWAY from the
-                                // player: ddx/ddy runs route->player, so a
-                                // POSITIVE dot means the normal agrees with the
-                                // player's side and has to be flipped. Swinging
-                                // the waypoint to cx + n*DETOUR_OFF then puts it
-                                // on the far side, and the berth grows with the
-                                // player's own offset instead of shrinking.
                                 let nx = -ry / rLen, ny = rx / rLen;
-                                if (nx * ddx + ny * ddy > 0) { nx = -nx; ny = -ny; }
+                                if (nx * ddx + ny * ddy < 0) { nx = -nx; ny = -ny; }
                                 const wx = cx + nx * SCAV_DOG_TUNING.DETOUR_OFF, wy = cy + ny * SCAV_DOG_TUNING.DETOUR_OFF;
                                 const wdx = wx - this.x, wdy = wy - this.y;
                                 if (wdx * wdx + wdy * wdy > 36 * 36) {
@@ -25450,48 +26110,41 @@ class ScavengerDog extends Entity {
                             }
                         }
                     }
-                    if (this.targetItem) {
-                        currentSpeed = SCAV_DOG_TUNING.SPEED_SEEK * this._loadMult();
-                        hasDest = true;
-                    }
+                    currentSpeed = SCAV_DOG_TUNING.SPEED_SEEK;
+                    hasDest = true;
                 }
             }
 
             if (!this.targetItem) {
-                // Nothing worth stealing: hole up on the far side of the
-                // map rather than drifting in place. Re-picks on the timer
-                // OR on arrival, so a player walking toward a loitering dog
-                // pushes it further out on the next re-pick instead of
-                // letting it sit and get shot.
+                // Idle drift around the last position: the dog always
+                // looks like it's working, even with nothing in range.
                 this.scoutTimer -= dt;
-                const arrived = this.scoutX !== undefined &&
-                    Math.hypot(this.scoutX - this.x, this.scoutY - this.y) < 40;
-                if (this.scoutTimer <= 0 || arrived || this.scoutX === undefined) {
-                    this.scoutTimer = Math.random() * 2.0 + 2.0;
-                    this._pickLoiterPoint(game, players);
+                if (this.scoutTimer <= 0) {
+                    this.scoutTimer = Math.random() * 2.5 + 1.5;
+                    let a = Math.random() * Math.PI * 2;
+                    let d = Math.random() * 90 + 40;
+                    this.scoutX = this.x + Math.cos(a) * d;
+                    this.scoutY = this.y + Math.sin(a) * d;
                 }
-                destX = this.scoutX; destY = this.scoutY;
-                currentSpeed = SCAV_DOG_TUNING.SPEED_SCOUT * this._loadMult();
-                hasDest = true;
+                if (this.scoutX !== undefined) {
+                    destX = this.scoutX; destY = this.scoutY;
+                    currentSpeed = SCAV_DOG_TUNING.SPEED_SCOUT;
+                    hasDest = true;
+                }
             }
         } else if (this.state === 'CARRYING') {
             // PACK FULL (cargo >= CARGO_CAP): keep moving (harder to pin),
             // no new grabs -- the dog hunts again only if respawned.
-            // Same far-side loiter as the idle HUNTING branch: a loaded dog
-            // should be running the perimeter, not circling where it stole.
-            // (scoutX can be undefined here on the first tick after the cap
-            // flips -- the guard below covers it; the old bare hypot on
-            // undefined evaluated NaN < 30 = false and only re-picked on
-            // the timer.)
             this.scoutTimer -= dt;
-            const carryArrived = this.scoutX !== undefined &&
-                Math.hypot(this.scoutX - this.x, this.scoutY - this.y) < 40;
-            if (this.scoutTimer <= 0 || carryArrived || this.scoutX === undefined) {
-                this.scoutTimer = Math.random() * 2.0 + 2.0;
-                this._pickLoiterPoint(game, players);
+            if (this.scoutTimer <= 0 || Math.hypot(this.scoutX - this.x, this.scoutY - this.y) < 30) {
+                this.scoutTimer = Math.random() * 2.5 + 1.5;
+                let a = Math.random() * Math.PI * 2;
+                let d = Math.random() * 160 + 80;
+                this.scoutX = this.x + Math.cos(a) * d;
+                this.scoutY = this.y + Math.sin(a) * d;
             }
             destX = this.scoutX; destY = this.scoutY;
-            currentSpeed = SCAV_DOG_TUNING.SPEED_CARRY * this._loadMult();
+            currentSpeed = SCAV_DOG_TUNING.SPEED_CARRY;
             hasDest = true;
         }
 
@@ -26088,14 +26741,91 @@ class MiniDrone extends Entity {
             let dx = this.target.x - this.x;
             let dy = this.target.y - this.y;
             let dist = Math.hypot(dx, dy);
-            
+
+            // PHASE 8c: route occluded targets through the shared A* cache
+            // (the swarmer recipe: coarse 200px keys, 0.45s TTL, one solve
+            // shared by the whole post swarm) instead of pure pursuit — a
+            // blind launch otherwise rams the wall and detonates en route,
+            // taking nearby cables with it. Open-ground steering below is
+            // untouched; A* is only ever paid when LOS is blocked.
+            let steerX = this.target.x, steerY = this.target.y;
+            const blocked = game.map.getWallsAlongSegment(this.x, this.y, this.target.x, this.target.y)
+                .some(w => MathUtils.lineIntersectAABB(this.x, this.y, this.target.x, this.target.y, w));
+            if (blocked) {
+                this._repathT = (this._repathT === undefined) ? 0 : this._repathT - dt;
+                const wp = this._huntWp;
+                const wpReached = wp && Math.hypot(wp.x - this.x, wp.y - this.y) < 30;
+                if (!wp || wpReached || this._repathT <= 0) {
+                    const path = game.map.getSharedPath(this.x, this.y, this.target.x, this.target.y, game.map.walls);
+                    if (path && path.length) {
+                        let idx = 0;
+                        while (idx < path.length - 1 && Math.hypot(path[idx].x - this.x, path[idx].y - this.y) < 30) idx++;
+                        this._huntWp = path[idx];
+                    } else {
+                        this._huntWp = null;
+                    }
+                    this._repathT = 0.5;
+                }
+                if (this._huntWp) { steerX = this._huntWp.x; steerY = this._huntWp.y; }
+            } else {
+                this._huntWp = null;
+                this._repathT = 0;
+            }
+
+            let sdx = steerX - this.x;
+            let sdy = steerY - this.y;
+            let sdist = Math.hypot(sdx, sdy);
+
             let targetSpeed = 600;
-            if (dist > 0) {
-                let targetVx = (dx / dist) * targetSpeed;
-                let targetVy = (dy / dist) * targetSpeed;
+            if (sdist > 0) {
+                let targetVx = (sdx / sdist) * targetSpeed;
+                let targetVy = (sdy / sdist) * targetSpeed;
                 
                 this.vx += (targetVx - this.vx) * 8 * dt;
                 this.vy += (targetVy - this.vy) * 8 * dt;
+            }
+
+            // Separation: post swarms converging on one SPOT shouldn't ball
+            // up in a pocket. Same 22px/150 values as the ORBITING rule.
+            for (const other of game.miniDrones) {
+                if (other === this || !other || other.dead || other.state !== 'HUNTING') continue;
+                const ox = this.x - other.x, oy = this.y - other.y;
+                const od = Math.hypot(ox, oy);
+                if (od < 22 && od > 0) {
+                    this.vx += (ox / od) * (22 - od) * 150 * dt;
+                    this.vy += (oy / od) * (22 - od) * 150 * dt;
+                }
+            }
+
+            // PHASE 8b: wall repulsion for HUNTING drones — the same
+            // getWallsNear repel ORBITING already uses. Stock launches get
+            // away with pure pursuit (they require LOS at launch); network
+            // launches start blind, so without this they grind head-on into
+            // walls and stall. Same force values, same spatial-hash query —
+            // no new per-frame system, cost already paid by ORBITING drones.
+            {
+                let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+                for (let wall of nearbyWalls) {
+                    let cx = Math.max(wall.x, Math.min(this.x, wall.x + wall.w));
+                    let cy = Math.max(wall.y, Math.min(this.y, wall.y + wall.h));
+                    let wdx = this.x - cx;
+                    let wdy = this.y - cy;
+                    let wdist = Math.hypot(wdx, wdy);
+                    let repelDist = 24;
+                    if (wdist < repelDist) {
+                        let force = (repelDist - wdist) / repelDist;
+                        if (wdist > 0) {
+                            this.vx += (wdx / wdist) * force * 300;
+                            this.vy += (wdy / wdist) * force * 300;
+                        } else {
+                            let wallCx = wall.x + wall.w/2;
+                            let wallCy = wall.y + wall.h/2;
+                            let pushAngle = Math.atan2(this.y - wallCy, this.x - wallCx);
+                            this.vx += Math.cos(pushAngle) * 300;
+                            this.vy += Math.sin(pushAngle) * 300;
+                        }
+                    }
+                }
             }
             
             this.x += this.vx * dt;
@@ -26258,6 +26988,7 @@ class MiniDrone extends Entity {
         // BLAST OCCLUSION: walls first, then entities gated on surviving cover.
         game.map.damageWallsNear(this.x, this.y, blastRadius, 155);
         let entities = game.getBlastEntities();
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, blastRadius, 120);
         let preDead = 0;
         for (let ent of entities) {
             if (ent instanceof Enemy && ent.dead) preDead++;
@@ -26455,6 +27186,7 @@ class ShrapnelGrenade {
         game.map.damageWallsNear(this.x, this.y, blastRadius, 180);
 
         let entities = game.getBlastEntities();
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, blastRadius, 140);
 
         let preDead = 0;
         let preDeadPlayers = null;
@@ -26605,6 +27337,7 @@ class HeCannonShell {
         // are hit and far-side targets are shielded, which is the point.
         game.map.damageWallsNear(this.x, this.y, blastRadius, 70);
         let targets = game.getEnemyBulletBlastEntities();
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, blastRadius, 55);
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -26705,6 +27438,7 @@ class EnemyFragGrenade {
         // an intact wall, which is exactly the fortification promise.
         game.map.damageWallsNear(this.x, this.y, blastRadius, 62);
         let targets = game.getEnemyFragBlastEntities();
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, blastRadius, 48);
         for (let ent of targets) {
             if (!ent || ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
@@ -26839,6 +27573,8 @@ class Flashbang {
 
         // Add up to 15 blast damage to entities (players and enemies) in proximity
         let entities = game.getBlastEntities();
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, 150, 15);
+        if (game.empDisruptNodes) game.empDisruptNodes(this.x, this.y, 450, 4.0);
         
         for (let ent of entities) {
             if (!ent || ent.dead) continue;
@@ -26921,6 +27657,9 @@ class TripMine {
         this.drones = tech.drones;
         this.maxDrones = tech.drones;
         this.reloadPerWave = tech.reload;
+        // PHASE 8 (Pillar A): network-flagged bays are Hivemind Posts — their
+        // drone budget answers to the whole component, not just local contact.
+        this.network = !!tech.network;
         this.droneCooldown = 0;
         // Cosmetic: per-mine ring tint lerped yellow->orange->red so a
         // field of armed mines reads as distinct circles, not one
@@ -26937,6 +27676,20 @@ class TripMine {
         }
         if (this.droneCooldown > 0) this.droneCooldown -= dt;
 
+        // PHASE 10 (reserve trickle): a wired post left alone regenerates
+        // its bay slowly — free when idle, irrelevant under fire (burn rate
+        // dwarfs it). Severed posts don't trickle (a cut hurts).
+        if (this.network && this.isNetworked && this.drones < this.maxDrones) {
+            this._trickleT = (this._trickleT || 0) + dt;
+            const trickleSecs = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.postTrickle) || 12;
+            if (this._trickleT >= trickleSecs) {
+                this._trickleT = 0;
+                this.drones = Math.min(this.maxDrones, this.drones + 1);
+            }
+        } else {
+            this._trickleT = 0;
+        }
+
         // ONE pass over hostiles does double duty: the classic
         // contact trigger (unchanged behavior at every tier) AND the
         // drone-bay's nearest-hostile scan. In non-PvP mode this queries
@@ -26950,7 +27703,8 @@ class TripMine {
             if (ent.dead) continue;
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             let entRadius = ent.r || 12;
-            if (dist < this.r + entRadius + 15) { 
+            let triggerDist = (this.r + entRadius + 15) * (this.isNetworked ? 1.05 : 1.0);
+            if (dist < triggerDist) { 
                 this.explode(game);
                 return false; 
             }
@@ -26961,6 +27715,48 @@ class TripMine {
                     deployDist = dist;
                     deployTarget = ent;
                 }
+            }
+        }
+        // DATA LINK Phase 8 (Pillar A: Hivemind Post deploy gate). A
+        // network-flagged mine wired into a live comp fires its drone budget
+        // at fresh comp-wide SPOTs it cannot see itself — sensor local,
+        // teeth network-wide. The network SPOT takes priority over a local
+        // contact (B14 G4); a severed post (no longer networked) falls
+        // through to the local-only behavior above. Position-only trip pings
+        // (trip_* keys) never launch — a launch needs a live hostile to seed
+        // target/targetGenId (B8: a trip points, a confirm commits). Runs at
+        // the existing droneCooldown re-arm cadence — no new timers.
+        if (this.network && wantDeploy && this.isNetworked && this.compId !== undefined && game.spotCache) {
+            const m = game.spotCache.get(this.compId);
+            if (m && m.size) {
+                const now = game.gameTime || 0;
+                const grace = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.spotGrace) || 2.0;
+                // PHASE 11 (escalation): comp activity at/above escalateAt =
+                // numbers running hot — backup answers rung-0 threats faster.
+                const hot = m.size >= ((typeof LINK_TUNING !== 'undefined' && LINK_TUNING.escalateAt) || 6);
+                let netBestT = -Infinity;
+                let netTarget = null;
+                let netBestRung = 1;
+                // PHASE 12: hostiles-first iteration (O(1) lookups — string
+                // trip_* keys can never match a numeric _aiStaggerId, so the
+                // old explicit skip falls out for free).
+                for (const h of hostiles) {
+                    if (h.dead || (h._jamTimer > 0)) continue;
+                    const entry = m.get(h._aiStaggerId);
+                    if (!entry || !entry.pos || (now - (entry.lastSeen || 0)) > grace) continue;
+                    const rung = threatRung(h);
+                    // Existing MiniDrone anti-stack dedup, shortened for
+                    // rung-0 under heat so backup actually arrives.
+                    const lockout = (hot && rung === 0) ? 1.5 : 5.0;
+                    if (h.lastMiniDroneTargetTime && now - h.lastMiniDroneTargetTime < lockout) continue;
+                    // PHASE 11 (ladder): highest rung wins, freshest within it.
+                    if (rung < netBestRung || (rung === netBestRung && (entry.lastSeen || 0) > netBestT)) {
+                        netBestT = entry.lastSeen || 0;
+                        netBestRung = rung;
+                        netTarget = h;
+                    }
+                }
+                if (netTarget) deployTarget = netTarget;
             }
         }
         if (deployTarget) {
@@ -26980,6 +27776,15 @@ class TripMine {
     // swarm code -- fromMine only excludes it from the player's 12-active
     // swarm cap and deploy counters.
     launchDrone(game, target) {
+        // PHASE 8: global safety cap K across all fromMine drones (shared
+        // with Phase 10's probe swarm). Refused launches spend no budget —
+        // the cooldown re-arms and the mine retries next cadence.
+        const cap = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.networkDroneCap) || 12;
+        const live = (game.countFromMineDrones) ? game.countFromMineDrones() : 0;
+        if (live >= cap) {
+            this.droneCooldown = MINE_TECH.DRONE_COOLDOWN;
+            return false;
+        }
         this.drones--;
         const droneOwner = this.owner || game.player;
         const d = new MiniDrone(this.x, this.y, droneOwner, this.maxDrones - this.drones);
@@ -26988,6 +27793,18 @@ class TripMine {
         d.target = target;
         d.targetGenId = target._aiStaggerId;
         target.lastMiniDroneTargetTime = game.gameTime;
+
+        // DATA LINK (Stage 2: TRIP spider-senses / target publishing)
+        if (this.isNetworked && this.compId !== undefined && game.spotCache) {
+            let m = game.spotCache.get(this.compId);
+            if (!m) { m = new Map(); game.spotCache.set(this.compId, m); }
+            const genId = target._aiStaggerId || ('target_' + Math.round(target.x));
+            game.publishSpot(m, genId, { pos: { x: target.x, y: target.y }, lastSeen: game.gameTime || 0, source: 'trip', publisher: this }, this, game.gameTime || 0);
+            if (typeof audio !== 'undefined' && audio && audio.playDataLinkSpotAlert) {
+                audio.playDataLinkSpotAlert(this.x, this.y);
+            }
+        }
+
         const a = Math.atan2(target.y - this.y, target.x - this.x);
         d.vx = Math.cos(a) * 320;
         d.vy = Math.sin(a) * 320;
@@ -27004,8 +27821,20 @@ class TripMine {
                 (Math.random() - 0.5) * 60, -60, 260, true
             ));
         }
+        return true;
     }
     explode(game) {
+        // DATA LINK (Stage 2: TRIP spider-senses): publish immediate contact breach SPOT
+        if (this.isNetworked && this.compId !== undefined && game.spotCache) {
+            let m = game.spotCache.get(this.compId);
+            if (!m) { m = new Map(); game.spotCache.set(this.compId, m); }
+            game.publishSpot(m, 'trip_' + Math.round(this.x) + '_' + Math.round(this.y), { pos: { x: this.x, y: this.y }, lastSeen: game.gameTime || 0, source: 'trip', publisher: this }, this, game.gameTime || 0);
+            if (typeof audio !== 'undefined' && audio && audio.playDataLinkSpotAlert) {
+                audio.playDataLinkSpotAlert(this.x, this.y);
+            }
+        }
+        if (game.severDataLinks) game.severDataLinks(this);
+
         // SENTINEL MINE PROTOCOL: radius/damage come from the placement-time
         // tech snapshot. Level 0 resolves to exactly the old literals
         // (140 / 110), so unupgraded mines are byte-identical.
@@ -27020,6 +27849,7 @@ class TripMine {
         // BLAST OCCLUSION: walls first, then entities gated on surviving cover.
         game.map.damageWallsNear(this.x, this.y, blastRadius, 140);
         let entities = game.getBlastEntities();
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, blastRadius, this.blastDamage || 110);
         
         let preDead = 0;
         for (let ent of entities) {
@@ -27420,6 +28250,125 @@ class Item {
     }
 }
 
+// Simplifies dense walked points into clean polyline waypoints along corridors and corners
+function simplifyCablePoints(pts, minDist = 25) {
+    if (!pts || pts.length <= 2) return pts ? pts.map(p => ({ x: p.x, y: p.y })) : [];
+    const out = [{ x: pts[0].x, y: pts[0].y }];
+    for (let i = 1; i < pts.length - 1; i++) {
+        const prev = out[out.length - 1];
+        const curr = pts[i];
+        const next = pts[i + 1];
+        const dPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+        if (dPrev < minDist) continue;
+        const dx = next.x - prev.x;
+        const dy = next.y - prev.y;
+        const segLenSq = dx * dx + dy * dy;
+        if (segLenSq > 0.001) {
+            const cross = Math.abs((curr.x - prev.x) * dy - (curr.y - prev.y) * dx);
+            const perpDist = cross / Math.sqrt(segLenSq);
+            // If point is nearly collinear with adjacent waypoints and within 90px, simplify it out
+            if (perpDist < 12 && dPrev < 90) continue;
+        }
+        out.push({ x: curr.x, y: curr.y });
+    }
+    out.push({ x: pts[pts.length - 1].x, y: pts[pts.length - 1].y });
+    return out;
+}
+
+// Non-Entity floor-prop. Cables are amplifiers, not lifelines: a severed
+// cable drops to a repairable half-HP stump and stays in game.dataCables (so
+// it can be spliced back), but is removed from the connectivity graph.
+class DataCable {
+    constructor(a, b, owner, pts = null) {
+        this.a = a;                 // endpoint object with live .x/.y (deployable or player)
+        this.b = b;
+        this.owner = owner;         // player id of who spooled it
+        this.pts = pts && pts.length >= 2 ? simplifyCablePoints(pts) : [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+        this.x = 0; this.y = 0;     // cached midpoint -- hit-test anchor for blast/sapper
+        this.maxHp = LINK_TUNING.cableHp;
+        this.hp = this.maxHp;
+        this.cut = false;           // severed: not carrying signal
+        this.stump = false;         // a repairable half-HP stub remains in the pool
+        this.linkLive = false;      // true while _recomputeComponents says it carries the component
+        this.compId = -1;           // component id (-1 = unassigned)
+        this._mid();
+    }
+
+    _mid() {
+        if (this.pts && this.pts.length >= 2) {
+            this.pts[0].x = this.a.x;
+            this.pts[0].y = this.a.y;
+            this.pts[this.pts.length - 1].x = this.b.x;
+            this.pts[this.pts.length - 1].y = this.b.y;
+            let totalLen = 0;
+            for (let i = 0; i < this.pts.length - 1; i++) {
+                totalLen += Math.hypot(this.pts[i+1].x - this.pts[i].x, this.pts[i+1].y - this.pts[i].y);
+            }
+            let half = totalLen * 0.5;
+            let accum = 0;
+            let mx = (this.a.x + this.b.x) * 0.5, my = (this.a.y + this.b.y) * 0.5;
+            for (let i = 0; i < this.pts.length - 1; i++) {
+                let slen = Math.hypot(this.pts[i+1].x - this.pts[i].x, this.pts[i+1].y - this.pts[i].y);
+                if (accum + slen >= half && slen > 0.001) {
+                    let t = (half - accum) / slen;
+                    mx = this.pts[i].x + (this.pts[i+1].x - this.pts[i].x) * t;
+                    my = this.pts[i].y + (this.pts[i+1].y - this.pts[i].y) * t;
+                    break;
+                }
+                accum += slen;
+            }
+            this.x = mx;
+            this.y = my;
+        } else {
+            this.pts = [{ x: this.a.x, y: this.a.y }, { x: this.b.x, y: this.b.y }];
+            this.x = (this.a.x + this.b.x) * 0.5;
+            this.y = (this.a.y + this.b.y) * 0.5;
+        }
+    }
+
+    takeDamage(dmg) {
+        if (this.cut || !this.hp) return;
+        this.hp -= dmg;
+        if (this.hp <= 0) {
+            // Degrade to a splicable stump, don't destroy: the stub keeps
+            // half HP so a spool can bridge it back to full.
+            this.hp = this.maxHp * 0.5;
+            this.cut = true;
+            this.stump = true;
+            this.linkLive = false;
+            if (this.game && typeof this.game.severDataLinks === 'function') {
+                this.game.severDataLinks(this);
+            } else if (typeof audio !== 'undefined' && audio && audio.playDataLinkSevered) {
+                audio.playDataLinkSevered(this.x, this.y);
+            }
+        }
+    }
+
+    repair(amount) {
+        if (!this.cut && this.hp >= this.maxHp) return false;
+        this.hp = Math.min(this.maxHp, this.hp + amount);
+        if (this.hp >= this.maxHp) {
+            this.cut = false;
+            this.stump = false;
+            this.linkLive = true;
+            if (this.game) {
+                if (typeof this.game.spawnFloatingText === 'function') {
+                    let ft = this.game.spawnFloatingText(this.x, this.y - 12, 'LINK RESTORED', '#00e5ff', 1.2);
+                    if (ft && this.game.floatingTexts) this.game.floatingTexts.push(ft);
+                }
+                if (typeof this.game._recomputeComponents === 'function') {
+                    this.game._recomputeComponents();
+                }
+            }
+            if (typeof audio !== 'undefined' && audio && audio.playDataLinkConnected) {
+                audio.playDataLinkConnected(this.x, this.y);
+            }
+            return true;
+        }
+        return false;
+    }
+}
+
 class ExplosiveBarrel {
     constructor(x, y) {
         this.x = x; this.y = y;
@@ -27509,6 +28458,7 @@ class ExplosiveBarrel {
         // far side (see Game.blastOccluded).
         game.map.damageWallsNear(this.x, this.y, blastRadius, 320);
         let entities = game.getBlastEntities();
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, blastRadius, 250);
 
         let preDead = 0;
         for (let ent of entities) {
@@ -28019,9 +28969,9 @@ const ARMORY_UPGRADES = [
       costPerLevel: [20, 40],
       desc: 'Lvl1: single Swarm Drones in the Shop. Lvl2: 4x Swarm Packs.',
       levelDescs: ['Single Swarm Drones in the Shop', '4× Swarm Packs available'] },
-    { key: 'mineTech', name: 'SENTINEL MINE PROTOCOL', maxLevel: 10,
-      costPerLevel: [15, 20, 25, 30, 40, 50, 60, 75, 90, 110],
-      desc: 'Trip mine upgrade track (stock mines stay cheap and unlocked for everyone). Lvl1 swaps in a heavy charge and paints the live blast radius on armed mines. Lvl2+ bolts on a scanning drone bay: hostiles inside 500px eat a hunter-killer swarm drone; when the bay runs dry the mine reverts to a classic tripwire with the big charge as the last word. Shop price scales with tier ($45 stock up to $275 at max).',
+    { key: 'mineTech', name: 'SENTINEL MINE PROTOCOL', maxLevel: 11,
+      costPerLevel: [15, 20, 25, 30, 40, 50, 60, 75, 90, 110, 135],
+      desc: 'Trip mine upgrade track (stock mines stay cheap and unlocked for everyone). Lvl1 swaps in a heavy charge and paints the live blast radius on armed mines. Lvl2+ bolts on a scanning drone bay: hostiles inside 500px eat a hunter-killer swarm drone; when the bay runs dry the mine reverts to a classic tripwire with the big charge as the last word. Shop price scales with tier ($45 stock up to $320 at max). Lvl11 is the HIVEMIND POST: its bay fires at any fresh network SPOT, even threats the post cannot see itself.',
       levelDescs: [
           'HEAVY CHARGE -- blast radius 140->190px, peak damage 110->152 (30% of the way to a barrel). Armed mines now show their blast ring.',
           'DRONE BAY I -- 1 hunter-killer swarm drone, auto-launches at hostiles within 500px',
@@ -28032,7 +28982,8 @@ const ARMORY_UPGRADES = [
           'DRONE BAY VI -- 6 swarm drones, +2 reloads per wave',
           'DRONE BAY VII -- 7 swarm drones, +3 reloads per wave',
           'DRONE BAY VIII -- 8 swarm drones, +3 reloads per wave',
-          'SENTINEL ARRAY -- 9 swarm drones (MAX), +4 reloads per wave'
+          'SENTINEL ARRAY -- 9 swarm drones (MAX), +4 reloads per wave',
+          'HIVEMIND POST -- 6 swarm drones that launch at any fresh network SPOT (no LOS needed from the post), +2 reloads per wave in wave modes (one-shot burst in extraction/challenge)'
       ] },
     { key: 'unlockTurretMk2', name: 'REQUISITION: TURRET MK.II', maxLevel: 1,
       costPerLevel: [25],
@@ -28109,7 +29060,12 @@ const MINE_TECH = {
         { radius: 190, damage: 152, drones: 6, reload: 2, cost: 185 },
         { radius: 190, damage: 152, drones: 7, reload: 3, cost: 215 },
         { radius: 190, damage: 152, drones: 8, reload: 3, cost: 245 },
-        { radius: 190, damage: 152, drones: 9, reload: 4, cost: 275 }
+        { radius: 190, damage: 152, drones: 9, reload: 4, cost: 275 },
+        // PHASE 8 (Pillar A: Hivemind Post) — a network-flagged bay whose
+        // drones are a network-reserve budget, not a contact burst. Cost
+        // scales past the old max (money-printer invariant holds). Budget
+        // stays monotonic with the track: the top tier is never a downgrade.
+        { radius: 190, damage: 152, drones: 6, reload: 2, cost: 320, network: true }
     ]
 };
 
@@ -29024,11 +29980,14 @@ class Game {
         this.turrets = [];
         this.securityCameras = [];
         this.dogs = [];
+        this.dataCables = [];       // DATA LINK: spooled cables (amplifiers, not lifelines)
+        this.spotCache = new Map(); // DATA LINK: compId -> shared SPOT set (sensor fusion)
+        this._dataLinkTimer = 0;    // DATA LINK: accumulator for the 1Hz _tickDataLinks pulse
+        this._hudNetNodes = [];     // PHASE 12: HUD scratch (reused per frame, never reallocated)
+        this._hudNetDogs = [];      // PHASE 12: HUD scratch (reused per frame, never reallocated)
         this.scavDogs = [];         // OQ-076: hostile scavenger dogs (own pool -- NOT game.enemies)
         this.inactiveScavDogs = []; // OQ-076: scavDogs pool (park on death/escape/wipe, INVARIANT: always park)
         this._scavEscape = null;    // OQ-076: wave-clear hold armed while loaded dogs flee to the edge
-        this._scavStolen = null;    // OQ-076: cargo that made it off-map, PENDING conversion at next wave start
-        this._scavBuff = null;      // OQ-076: converted resupply modifiers ACTIVE for the current wave
         this.hostages = [];      // PHASE 2: escort entities (Asset Recovery)
         this.miniDrones = [];
         this.floatingTexts = [];
@@ -30404,16 +31363,11 @@ class Game {
         // (byte-identical behavior); in extraction it's the heat tier's
         // mapped intensity, so hotter runs field tougher bodies too.
         const iw = this._spawnIntensityWave();
-        // OQ-076: resupply modifiers from loot the scavenger carried off
-        // last wave. Zeroed by default; capped in _applyScavResupply.
-        const rsp = this._scavBuff;
-        let scaleHP = 1.0 + (iw - 1) * 0.04 + (rsp ? rsp.hp : 0);
+        let scaleHP = 1.0 + (iw - 1) * 0.04;
         // Phase 2: speed scaling capped early (~wave 8) -- lategame
         // difficulty comes from smarter squads (flankers, pushes, tougher
         // composition), not permanently faster bodies. HP scaling unchanged.
-        // The resupply stim bonus is added AFTER the cap so a stolen redbull
-        // is still felt on a late wave that already sits at SPEED_SCALE_MAX.
-        let scaleSpeed = Math.min(TACTICAL_TUNING.SPEED_SCALE_MAX, 1.0 + (iw - 1) * 0.015) + (rsp ? rsp.speed : 0);
+        let scaleSpeed = Math.min(TACTICAL_TUNING.SPEED_SCALE_MAX, 1.0 + (iw - 1) * 0.015);
         if (this.activeMutator === 'swarm') {
             enemy.hp = 1; enemy.maxHp = 1;
         } else {
@@ -30424,7 +31378,7 @@ class Game {
 
         let forceElite = (this.activeMutator === 'juggernaut');
         let forceNoElite = (this.activeMutator === 'swarm');
-        if (!forceNoElite && (forceElite || Math.random() < 0.04 + (rsp ? rsp.elite : 0))) {
+        if (!forceNoElite && (forceElite || Math.random() < 0.04)) {
             enemy.isElite = true;
             enemy.hp = Math.round(enemy.hp * 2.2);
             enemy.maxHp = enemy.hp;
@@ -31838,6 +32792,11 @@ class Game {
         cancelGLCharge(this.player2);
         cancelBarrierChain(this.player);
         cancelBarrierChain(this.player2);
+        // Data Link: a focus loss mid-spool cancels it (a stuck latch would keep
+        // "wiring" the fiber after alt-tab). The pointer-LOCK break is a separate
+        // path (pause) that deliberately lets the spool persist as a latch.
+        if (this.player) this.player.wiring = null;
+        if (this.player2) this.player2.wiring = null;
     }
 
     getWorldAimCoords(player) {
@@ -34233,6 +35192,964 @@ class Game {
         }
     }
 
+    // --- DATA LINK (Stage 0 scaffolding; zero behavior change until consumers wire in) ---
+
+    // Event-driven component recompute (a cable add/cut/splice, never per-frame):
+    // BFS over live cables assigns every network node a fresh compId, then CLEAR +
+    // rebuild the shared SPOT cache (compId -> Map(genId -> {pos,lastSeen,source})).
+    _recomputeComponents() {
+        const nodes = [];
+        if (this.turrets) for (let t of this.turrets) nodes.push(t);
+        if (this.securityCameras) for (let c of this.securityCameras) nodes.push(c);
+        if (this.mines) for (let m of this.mines) nodes.push(m);
+        const nodeSet = new Set(nodes);
+
+        const adj = new Map();
+        const addEdge = (u, v) => {
+            if (!adj.has(u)) adj.set(u, []);
+            adj.get(u).push(v);
+            if (!adj.has(v)) adj.set(v, []);
+            adj.get(v).push(u);
+        };
+        // A live (non-cut) cable whose BOTH ends are network nodes is an edge.
+        // linkLive = carrying signal = not cut + both endpoints still live nodes + not EMP disrupted.
+        if (this.dataCables) for (let c of this.dataCables) {
+            const a = nodeSet.has(c.a) ? c.a : null;
+            const b = nodeSet.has(c.b) ? c.b : null;
+            const empDisrupted = (a && a.empTimer > 0) || (b && b.empTimer > 0);
+            c.linkLive = !c.cut && !!a && !!b && !empDisrupted;
+            if (!c.cut && a && b && !empDisrupted) addEdge(a, b);
+        }
+
+        const seen = new Set();
+        let nextComp = 0;
+        for (let n of nodes) {
+            if (seen.has(n)) continue;
+            const id = nextComp++;
+            n.compId = id;
+            seen.add(n);
+            const stack = [n];
+            const compMembers = [n];
+            while (stack.length) {
+                const cur = stack.pop();
+                const nbrs = adj.get(cur);
+                if (!nbrs) continue;
+                for (let nb of nbrs) {
+                    if (seen.has(nb)) continue;
+                    seen.add(nb);
+                    nb.compId = id;
+                    stack.push(nb);
+                    compMembers.push(nb);
+                }
+            }
+            const isNet = compMembers.length > 1;
+            for (let member of compMembers) {
+                if (member.empTimer > 0) {
+                    member.isNetworked = false;
+                    member.networkSize = 1;
+                } else {
+                    member.isNetworked = isNet;
+                    member.networkSize = compMembers.length;
+                }
+            }
+        }
+
+        // CLEAR first, load-bearing: compIds are fresh per recompute, so a plain add
+        // would orphan every prior comp's cache in the Map (unbounded growth).
+        const now = this.gameTime || 0;
+        const grace = LINK_TUNING.spotGrace;
+        const next = new Map();
+        const put = (cid, genId, pos, source, publisher, bearing, lastSeen, tier) => {
+            if (cid === undefined || cid === null || cid < 0) return;
+            let m = next.get(cid);
+            if (!m) { m = new Map(); next.set(cid, m); }
+            const v = { pos, lastSeen: lastSeen !== undefined ? lastSeen : now, source };
+            if (publisher) v.publisher = publisher;
+            if (bearing !== undefined) v.bearing = bearing;
+            if (tier !== undefined) v.tier = tier;
+            m.set(genId, v);
+        };
+        if (this.securityCameras) for (let cam of this.securityCameras) {
+            if (cam.dead || cam.compId === undefined || !cam.spottedEnemies) continue;
+            for (let e of cam.spottedEnemies) {
+                if (!e || e.dead || e._aiStaggerId === undefined) continue;
+                put(cam.compId, e._aiStaggerId, { x: e.x, y: e.y }, 'cam', cam, undefined, undefined, cam.tier || 1);
+            }
+        }
+        if (this.turrets) for (let tur of this.turrets) {
+            if (tur.dead || tur.compId === undefined || !tur.target || tur.target.dead) continue;
+            let t = tur.target;
+            if (t._aiStaggerId === undefined) continue;
+            put(tur.compId, t._aiStaggerId, { x: t.x, y: t.y }, 'turret', tur, undefined, undefined, 1);
+        }
+        // A trip's SPOT is a persistent picture (the web turns to face it), so it
+        // must survive a split. compIds are fresh, so follow it to the publisher's
+        // new comp (drop it if the publisher is gone).
+        if (this.spotCache) {
+            for (const [cid, m] of this.spotCache) {
+                for (const [genId, entry] of m) {
+                    if (entry.source !== 'trip' && entry.source !== 'rf_dog') continue;
+                    if (now - entry.lastSeen > grace) continue;
+                    const pub = entry.publisher;
+                    if (!pub || !nodeSet.has(pub)) continue;
+                    put(pub.compId, genId, entry.pos, 'trip', entry.publisher, entry.bearing, entry.lastSeen, entry.tier);
+                }
+            }
+        }
+        this.spotCache = next;
+    }
+
+    // Polymorphic sever: a dead/recalled NODE drops every cable touching it (removed
+    // from dataCables); a CUT cable (both nodes alive) stays a splicable stump and only
+    // splits the component. Both end in one recompute (split atomic with the cut).
+    severDataLinks(x) {
+        if (!this.dataCables) return;
+        if (x instanceof DataCable) {
+            if (typeof audio !== 'undefined' && audio && audio.playDataLinkSevered) {
+                const mid = x._mid ? x._mid() : { x: (x.a.x + x.b.x) / 2, y: (x.a.y + x.b.y) / 2 };
+                audio.playDataLinkSevered(mid.x, mid.y);
+            }
+            this._recomputeComponents();
+            return;
+        }
+        let hadSevered = false;
+        for (let i = this.dataCables.length - 1; i >= 0; i--) {
+            const c = this.dataCables[i];
+            if (c.a === x || c.b === x) {
+                hadSevered = true;
+                this.dataCables[i] = this.dataCables[this.dataCables.length - 1];
+                this.dataCables.pop();
+            }
+        }
+        if (hadSevered && typeof audio !== 'undefined' && audio && audio.playDataLinkSevered && x) {
+            audio.playDataLinkSevered(x.x, x.y);
+        }
+        this._recomputeComponents();
+    }
+
+    // 1Hz heartbeat (a handshake, not a clock): re-validate linkLive, publish each
+    // camera's current spot to its comp's cache, decay stale entries. Runs on the same
+    // dt as the deployable loops (slow-mo ages the web with the world).
+    _tickDataLinks(dt) {
+        // Tick down EMP disruption on all nodes every frame
+        let empRecovered = false;
+        const tickEmp = (node) => {
+            if (node && node.empTimer > 0) {
+                node.empTimer -= dt;
+                if (node.empTimer <= 0) {
+                    node.empTimer = 0;
+                    empRecovered = true;
+                    if (typeof audio !== 'undefined' && audio && audio.playDataLinkConnected) {
+                        audio.playDataLinkConnected(node.x, node.y);
+                    }
+                }
+            }
+        };
+        if (this.turrets) for (let t of this.turrets) tickEmp(t);
+        if (this.securityCameras) for (let c of this.securityCameras) tickEmp(c);
+        if (this.mines) for (let m of this.mines) tickEmp(m);
+        if (this.dogs) for (let d of this.dogs) tickEmp(d);
+        if (empRecovered) this._recomputeComponents();
+
+        this._dataLinkTimer += dt;
+        if (this._dataLinkTimer < LINK_TUNING.pulsePeriod) return;
+        this._dataLinkTimer -= LINK_TUNING.pulsePeriod;
+        const now = this.gameTime || 0;
+        const grace = LINK_TUNING.spotGrace;
+
+        if (this.dataCables) for (let c of this.dataCables) {
+            const empDisrupted = (c.a && c.a.empTimer > 0) || (c.b && c.b.empTimer > 0);
+            c.linkLive = !c.cut && !!c.a && !!c.b && !c.a.dead && !c.b.dead && !empDisrupted;
+        }
+
+        if (this.securityCameras) for (let cam of this.securityCameras) {
+            if (cam.dead || cam.compId === undefined || !cam.spottedEnemies) continue;
+            let m = this.spotCache.get(cam.compId);
+            if (!m) { m = new Map(); this.spotCache.set(cam.compId, m); }
+            for (let e of cam.spottedEnemies) {
+                if (!e || e.dead || e._aiStaggerId === undefined) continue;
+                const wasSpotted = m.has(e._aiStaggerId);
+                this.publishSpot(m, e._aiStaggerId, { pos: { x: e.x, y: e.y }, lastSeen: now, source: 'cam', tier: cam.tier || 1 }, cam, now);
+                if (!wasSpotted && typeof audio !== 'undefined' && audio && audio.playDataLinkSpotAlert) {
+                    audio.playDataLinkSpotAlert(cam.x, cam.y);
+                }
+            }
+        }
+
+        // Turret -> Turret (SHARE): wired turrets publish acquired targets to their component
+        if (this.turrets) for (let tur of this.turrets) {
+            if (tur.dead || tur.compId === undefined || !tur.target || tur.target.dead) continue;
+            let t = tur.target;
+            if (t._aiStaggerId === undefined) continue;
+            let m = this.spotCache.get(tur.compId);
+            if (!m) { m = new Map(); this.spotCache.set(tur.compId, m); }
+            let existing = m.get(t._aiStaggerId);
+            if (!existing || existing.source !== 'cam') {
+                const wasSpotted = !!existing;
+                this.publishSpot(m, t._aiStaggerId, { pos: { x: t.x, y: t.y }, lastSeen: now, source: 'turret', tier: 1 }, tur, now);
+                if (!wasSpotted && typeof audio !== 'undefined' && audio && audio.playDataLinkSpotAlert) {
+                    audio.playDataLinkSpotAlert(tur.x, tur.y);
+                }
+            }
+        }
+
+        for (const [cid, m] of this.spotCache) {
+            for (const [genId, entry] of m) {
+                if (now - entry.lastSeen > grace) { m.delete(genId); continue; }
+                // PHASE 9: age out corroboration with the same TTL — a track
+                // stays confirmed only while ≥2 distinct sensors hold it.
+                if (entry.wita && (now - (entry.witat || 0)) > grace) { entry.wita = undefined; entry.witat = 0; }
+                if (entry.witb && (now - (entry.witbt || 0)) > grace) { entry.witb = undefined; entry.witbt = 0; }
+                entry.confirmed = !!entry.wita && !!entry.witb;
+            }
+            if (!m.size) this.spotCache.delete(cid);
+        }
+    }
+
+    // DATA LINK Phase 9 (Pillar E): single choke for cache writes. Carries
+    // the two-slot corroboration witness pair across overwrites and derives
+    // `confirmed` (≥2 distinct sensor nodes with LOS inside spotGrace).
+    // Computed here at the 1Hz tick / publish events — never per-frame.
+    publishSpot(m, genId, f, witness, now) {
+        const grace = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.spotGrace) || 2.0;
+        const prev = m.get(genId);
+        const e = {
+            pos: f.pos, lastSeen: f.lastSeen, source: f.source, tier: f.tier, publisher: f.publisher,
+            wita: prev ? prev.wita : undefined, witat: prev ? (prev.witat || 0) : 0,
+            witb: prev ? prev.witb : undefined, witbt: prev ? (prev.witbt || 0) : 0,
+            confirmed: prev ? !!prev.confirmed : false
+        };
+        m.set(genId, e);
+        if (witness) {
+            if (e.wita !== witness && e.witb !== witness) {
+                if ((e.witat || 0) <= (e.witbt || 0)) { e.wita = witness; e.witat = now; }
+                else { e.witb = witness; e.witbt = now; }
+            } else if (e.wita === witness) e.witat = now;
+            else e.witbt = now;
+        }
+        e.confirmed = !!e.wita && !!e.witb && (now - (e.witat || 0)) <= grace && (now - (e.witbt || 0)) <= grace;
+        return e;
+    }
+
+    // Spool completion: create the mesh edge + recompute (the new edge merges nets).
+    // A dead endpoint is refused (a spool can never complete against a dead node).
+    spawnDataCable(a, b, owner, pts = null) {
+        if (!a || !b || a.dead || b.dead) return null;
+        const c = new DataCable(a, b, owner, pts);
+        this.dataCables.push(c);
+        this._recomputeComponents();
+        return c;
+    }
+
+    // Blast damage across physical data cables (Stage 3).
+    // Respects floorSeparated (a deck blast does not cut a ground cable), computes
+    // point-to-segment distance across all cable segments, applies linear falloff,
+    // and batches the recompute so N cables dying from one explosion run _recomputeComponents ONCE.
+    _blastDamageCables(bx, by, radius, peak = 300) {
+        if (!this.dataCables || !this.dataCables.length) return 0;
+        let severedCount = 0;
+        for (let c of this.dataCables) {
+            if (c.cut || !c.hp) continue;
+            // Elevation check: cable midpoint vs blast center
+            if (this.map && this.map.floorSeparated && this.map.floorSeparated(bx, by, c.x, c.y)) continue;
+
+            let minDist = Infinity;
+            if (c.pts && c.pts.length >= 2) {
+                for (let i = 0; i < c.pts.length - 1; i++) {
+                    const cp = MathUtils.closestPointOnSegment(bx, by, c.pts[i].x, c.pts[i].y, c.pts[i+1].x, c.pts[i+1].y);
+                    const d = Math.hypot(bx - cp.x, by - cp.y);
+                    if (d < minDist) minDist = d;
+                }
+            } else {
+                minDist = Math.hypot(bx - c.x, by - c.y);
+            }
+
+            if (minDist < radius) {
+                const dmg = peak * (1.0 - minDist / radius);
+                const prevCut = c.cut;
+                c.takeDamage(dmg);
+                if (c.cut && !prevCut) {
+                    severedCount++;
+                    let ft = this.spawnFloatingText(c.x, c.y - 12, 'LINK SEVERED', '#ff2a5f', 1.2);
+                    if (ft) this.floatingTexts.push(ft);
+                }
+            }
+        }
+        if (severedCount > 0) {
+            this._recomputeComponents();
+            if (typeof audio !== 'undefined' && audio && audio.playDataLinkSevered) {
+                audio.playDataLinkSevered(bx, by);
+            } else if (typeof audio !== 'undefined' && audio && audio.playRicochet) {
+                audio.playRicochet(bx, by);
+            }
+        }
+        return severedCount;
+    }
+
+    // EMP Disruption (Phase 5): Disables data networking and sensor telemetry on affected nodes
+    empDisruptNodes(x, y, radius, duration = 4.0) {
+        let disrupted = 0;
+        const check = (node) => {
+            if (!node || node.dead) return;
+            const dist = Math.hypot(node.x - x, node.y - y);
+            if (dist <= radius) {
+                const wasDisrupted = (node.empTimer > 0);
+                node.empTimer = Math.max(node.empTimer || 0, duration);
+                if (!wasDisrupted) {
+                    disrupted++;
+                    let ft = this.spawnFloatingText(node.x, node.y - 18, 'EMP DISRUPTED', '#38bdf8', 1.2);
+                    if (ft) this.floatingTexts.push(ft);
+                }
+            }
+        };
+        if (this.turrets) for (const t of this.turrets) check(t);
+        if (this.securityCameras) for (const c of this.securityCameras) check(c);
+        if (this.mines) for (const m of this.mines) check(m);
+        if (this.dogs) for (const d of this.dogs) check(d);
+        if (disrupted > 0) {
+            this._recomputeComponents();
+            if (typeof audio !== 'undefined' && audio && audio.playDataLinkSevered) {
+                audio.playDataLinkSevered(x, y);
+            }
+        }
+        return disrupted;
+    }
+
+    // DATA LINK Phase 8: live count of network-launched drones (the shared
+    // K-cap counter — Hivemind Post + Phase 10 probe swarm draw from it).
+    countFromMineDrones() {
+        if (!this.miniDrones) return 0;
+        let n = 0;
+        for (const d of this.miniDrones) {
+            if (d && d.fromMine && !d.dead) n++;
+        }
+        return n;
+    }
+
+    drawDataCables(cam, deckOnly) {
+        if (!this.dataCables || !this.dataCables.length) return;
+        const hasPlat = !!(this.map && this.map.platforms && this.map.platforms.length);
+        if (deckOnly && !hasPlat) return;
+        for (let c of this.dataCables) {
+            if (hasPlat &&
+                (this.map.floorAt(c.x, c.y) === 2) !== !!deckOnly) continue;
+            this.drawDataCable(c, cam);
+        }
+    }
+
+    drawDataCable(c, cam) {
+        if (!c.a || !c.b) return;
+        // PHASE 12: world-space pre-cull BEFORE projecting points and
+        // allocating screenPts (the old check ran after both). Walked
+        // geometry never moves post-spawn, so the polyline bbox is stable.
+        // Same ±30 margin + cam.w guard convention as the check below.
+        if (cam.w) {
+            let wMinX = Infinity, wMaxX = -Infinity, wMinY = Infinity, wMaxY = -Infinity;
+            if (c.pts && c.pts.length >= 2) {
+                for (let i = 0; i < c.pts.length; i++) {
+                    const px = c.pts[i].x, py = c.pts[i].y;
+                    if (px < wMinX) wMinX = px;
+                    if (px > wMaxX) wMaxX = px;
+                    if (py < wMinY) wMinY = py;
+                    if (py > wMaxY) wMaxY = py;
+                }
+            } else {
+                wMinX = Math.min(c.a.x, c.b.x); wMaxX = Math.max(c.a.x, c.b.x);
+                wMinY = Math.min(c.a.y, c.b.y); wMaxY = Math.max(c.a.y, c.b.y);
+            }
+            if (wMaxX < cam.x - 30 || wMinX > cam.x + cam.w + 30 || wMaxY < cam.y - 30 || wMinY > cam.y + cam.h + 30) return;
+        }
+        const pts = (c.pts && c.pts.length >= 2) ? c.pts : [{ x: c.a.x, y: c.a.y }, { x: c.b.x, y: c.b.y }];
+        
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        const screenPts = [];
+        for (let i = 0; i < pts.length; i++) {
+            const sx = pts[i].x - cam.x;
+            const sy = pts[i].y - cam.y;
+            screenPts.push({ x: sx, y: sy });
+            if (sx < minX) minX = sx;
+            if (sx > maxX) maxX = sx;
+            if (sy < minY) minY = sy;
+            if (sy > maxY) maxY = sy;
+        }
+        if (cam.w && (maxX < -30 || minX > cam.w + 30 || maxY < -30 || minY > cam.h + 30)) return;
+
+        const ctx = this.ctx;
+        const live = c.linkLive && !c.cut;
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        const buildPolyPath = () => {
+            ctx.beginPath();
+            ctx.moveTo(screenPts[0].x, screenPts[0].y);
+            for (let i = 1; i < screenPts.length; i++) {
+                ctx.lineTo(screenPts[i].x, screenPts[i].y);
+            }
+        };
+
+        if (live) {
+            // Layer 1: Drop Shadow
+            ctx.save();
+            ctx.translate(1.2, 2.0);
+            buildPolyPath();
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.lineWidth = 4.0;
+            ctx.stroke();
+            ctx.restore();
+
+            // Layer 2: Conduit Core (dark industrial rubber sheath #1a232a)
+            buildPolyPath();
+            ctx.strokeStyle = '#1a232a';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            // Layer 3: Fiber Luminescence Core (high-vis cyan/green with pulse)
+            const pulse = 0.8 + Math.sin(this.gameTime * 4.0) * 0.2;
+            buildPolyPath();
+            ctx.strokeStyle = `rgba(0, 229, 255, ${0.85 * pulse})`;
+            ctx.lineWidth = 1.0;
+            ctx.stroke();
+
+            // Traveling internal luminescence packet ripple
+            let totalLen = 0;
+            for (let i = 0; i < screenPts.length - 1; i++) {
+                totalLen += Math.hypot(screenPts[i+1].x - screenPts[i].x, screenPts[i+1].y - screenPts[i].y);
+            }
+            if (totalLen > 1) {
+                const tt = (this.gameTime % (LINK_TUNING.pulsePeriod || 1.0)) / (LINK_TUNING.pulsePeriod || 1.0);
+                const targetDist = totalLen * tt;
+                let accum = 0;
+                let px = screenPts[0].x, py = screenPts[0].y;
+                for (let i = 0; i < screenPts.length - 1; i++) {
+                    const segLen = Math.hypot(screenPts[i+1].x - screenPts[i].x, screenPts[i+1].y - screenPts[i].y);
+                    if (accum + segLen >= targetDist && segLen > 0.001) {
+                        const st = (targetDist - accum) / segLen;
+                        px = screenPts[i].x + (screenPts[i+1].x - screenPts[i].x) * st;
+                        py = screenPts[i].y + (screenPts[i+1].y - screenPts[i].y) * st;
+                        break;
+                    }
+                    accum += segLen;
+                }
+                ctx.beginPath();
+                ctx.arc(px, py, 2.2, 0, Math.PI * 2);
+                ctx.fillStyle = '#39ff14';
+                ctx.shadowColor = '#39ff14';
+                ctx.shadowBlur = 5;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            // Layer 4: Metallic floor cleats (at bend vertices and every 75-80px)
+            const drawCleat = (cx, cy, ang) => {
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(ang);
+                ctx.fillStyle = '#334155';
+                ctx.fillRect(-2.5, -2.5, 5, 5);
+                ctx.fillStyle = '#64748b';
+                ctx.fillRect(-1.75, -1.75, 3.5, 3.5);
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(-0.7, -0.7, 1.4, 1.4);
+                ctx.restore();
+            };
+
+            for (let i = 0; i < screenPts.length - 1; i++) {
+                const p1 = screenPts[i];
+                const p2 = screenPts[i + 1];
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const segLen = Math.hypot(dx, dy);
+                const ang = Math.atan2(dy, dx);
+
+                if (i > 0) drawCleat(p1.x, p1.y, ang);
+
+                if (segLen > 80) {
+                    const stepCount = Math.floor(segLen / 75);
+                    for (let s = 1; s <= stepCount; s++) {
+                        const frac = s / (stepCount + 1);
+                        drawCleat(p1.x + dx * frac, p1.y + dy * frac, ang);
+                    }
+                }
+            }
+        } else {
+            // Cut / Stump state: dim dashed rubber conduit with jagged severed ends and sparks
+            ctx.setLineDash([5, 5]);
+            buildPolyPath();
+            ctx.strokeStyle = 'rgba(100, 116, 139, 0.55)';
+            ctx.lineWidth = 2.0;
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Severed cut mark
+            const mx = c.x - cam.x;
+            const my = c.y - cam.y;
+            ctx.beginPath();
+            ctx.moveTo(mx - 5, my - 5); ctx.lineTo(mx + 5, my + 5);
+            ctx.moveTo(mx + 5, my - 5); ctx.lineTo(mx - 5, my + 5);
+            ctx.strokeStyle = '#ff2a5f';
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+
+            // Intermittent dielectric sparks from severed conduit ends
+            if (Math.random() < 0.1 && typeof this.spawnParticle === 'function') {
+                const spd = 25 + Math.random() * 55;
+                const ang = Math.random() * Math.PI * 2;
+                this.spawnParticle(c.x, c.y, Math.cos(ang) * spd, Math.sin(ang) * spd, '#fde047', 0.22, 1.8);
+            }
+        }
+        ctx.restore();
+    }
+
+    // Live spool preview: the walked fiber path being laid (player.wiring.pts),
+    // a dashed tip line to the laying player, and a ring on the source node.
+    // Drawn in the floor band next to the committed cables (main viewport only).
+    drawActiveSpools(cam) {
+        const ctx = this.ctx;
+        const drawOne = (p) => {
+            if (!p || !p.wiring || !p.wiring.source) return;
+            const pts = p.wiring.pts;
+            if (!pts || !pts.length) return;
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            const screenPts = pts.map(pt => ({ x: pt.x - cam.x, y: pt.y - cam.y }));
+            const handX = p.x - cam.x;
+            const handY = p.y - cam.y;
+
+            // Layer 1: Drop Shadow
+            ctx.save();
+            ctx.translate(1.2, 2.0);
+            ctx.beginPath();
+            ctx.moveTo(screenPts[0].x, screenPts[0].y);
+            for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i].x, screenPts[i].y);
+            ctx.lineTo(handX, handY);
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+            ctx.lineWidth = 3.8;
+            ctx.stroke();
+            ctx.restore();
+
+            // Layer 2: Dark rubber conduit sheath
+            ctx.beginPath();
+            ctx.moveTo(screenPts[0].x, screenPts[0].y);
+            for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i].x, screenPts[i].y);
+            ctx.lineTo(handX, handY);
+            ctx.strokeStyle = '#1a232a';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            // Layer 3: Dashed live fiber core (neon cyan)
+            ctx.beginPath();
+            ctx.moveTo(screenPts[0].x, screenPts[0].y);
+            for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i].x, screenPts[i].y);
+            ctx.lineTo(handX, handY);
+            ctx.setLineDash([6, 4]);
+            ctx.strokeStyle = 'rgba(0, 229, 255, 0.9)';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Layer 4: Floor cleats pinned at laid waypoints
+            for (let i = 1; i < screenPts.length; i++) {
+                ctx.fillStyle = '#334155';
+                ctx.fillRect(screenPts[i].x - 2.5, screenPts[i].y - 2.5, 5, 5);
+                ctx.fillStyle = '#64748b';
+                ctx.fillRect(screenPts[i].x - 1.75, screenPts[i].y - 1.75, 3.5, 3.5);
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(screenPts[i].x - 0.7, screenPts[i].y - 0.7, 1.4, 1.4);
+            }
+
+            // High-vis glowing ring on the source collar
+            const s = p.wiring.source;
+            const sx = s.x - cam.x, sy = s.y - cam.y;
+            const pulse = 0.8 + Math.sin(Date.now() * 0.008) * 0.2;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(0, 229, 255, ${pulse})`;
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+
+            ctx.restore();
+        };
+        drawOne(this.player);
+        drawOne(this.player2);
+    }
+
+    // C4ISR Matrix (Phase 3): Sensor Fusion Tactical HUD Overlay
+    // Renders inter-node vector links, RF telemetry lines, sensor coverage
+    // arcs/domes (cameras, turrets, mines, dogs), holographic military target
+    // reticles over shared SPOTs, and node diagnostic status badges.
+    drawTacticalDataNetworkHUD(cam, player) {
+        if (!player || player.dead) return;
+        const isRepairEquipped = (player.weapon && player.weapon.name === 'RepairGun');
+        const isSpooling = !!(player.wiring && player.wiring.source);
+        if (!isRepairEquipped && !isSpooling) return;
+
+        const ctx = this.ctx;
+        const now = this.gameTime || 0;
+
+        // 1. Collect active networked deployables (PHASE 12: game-level
+        // scratch arrays, length-reset per call — no per-frame allocation)
+        const networkedNodes = this._hudNetNodes || (this._hudNetNodes = []);
+        networkedNodes.length = 0;
+        if (this.turrets) {
+            for (let i = 0; i < this.turrets.length; i++) {
+                const t = this.turrets[i];
+                if (!t.dead && (t.isNetworked || t.empTimer > 0) && t.compId !== undefined) networkedNodes.push(t);
+            }
+        }
+        if (this.securityCameras) {
+            for (let i = 0; i < this.securityCameras.length; i++) {
+                const c = this.securityCameras[i];
+                if (!c.dead && (c.isNetworked || c.empTimer > 0) && c.compId !== undefined) networkedNodes.push(c);
+            }
+        }
+        if (this.mines) {
+            for (let i = 0; i < this.mines.length; i++) {
+                const m = this.mines[i];
+                if (!m.dead && (m.isNetworked || m.empTimer > 0) && m.compId !== undefined) networkedNodes.push(m);
+            }
+        }
+        const networkedDogs = this._hudNetDogs || (this._hudNetDogs = []);
+        networkedDogs.length = 0;
+        if (this.dogs) {
+            for (let i = 0; i < this.dogs.length; i++) {
+                const d = this.dogs[i];
+                if (!d.dead && d.rfLinked && d.compId !== undefined) networkedDogs.push(d);
+            }
+        }
+
+        const hasSpots = (this.spotCache && this.spotCache.size > 0);
+        const hasCutCables = !!(this.dataCables && this.dataCables.some(c => c.cut && c.stump));
+        if (!networkedNodes.length && !networkedDogs.length && !hasSpots && !hasCutCables) return;
+
+        // PHASE 12: viewport skip for HUD dress — visually identical (canvas
+        // clips anyway), skips big fills + text shaping off-screen. Same
+        // cam.w guard convention as the cable cull.
+        const inView = (sx, sy, margin) => !cam.w || (sx > -margin && sx < cam.w + margin && sy > -margin && sy < cam.h + margin);
+
+        ctx.save();
+
+        // 2. Inter-node Holographic Vector Links
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        if (this.dataCables) {
+            for (let i = 0; i < this.dataCables.length; i++) {
+                const c = this.dataCables[i];
+                if (!c.linkLive || !c.a || !c.b || c.a.dead || c.b.dead) continue;
+                const pts = (c.pts && c.pts.length) ? c.pts : [{ x: c.a.x, y: c.a.y }, { x: c.b.x, y: c.b.y }];
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x - cam.x, pts[0].y - cam.y);
+                for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x - cam.x, pts[j].y - cam.y);
+                ctx.strokeStyle = 'rgba(0, 229, 255, 0.45)';
+                ctx.lineWidth = 1.8;
+                ctx.setLineDash([8, 6]);
+                ctx.lineDashOffset = -Date.now() * 0.015;
+                ctx.stroke();
+            }
+        }
+
+        // Wireless RF Telemetry vectors from stationary base to RobotDogs
+        for (let i = 0; i < networkedDogs.length; i++) {
+            const d = networkedDogs[i];
+            if (!d.rfNode || d.rfNode.dead) continue;
+            const nx = d.rfNode.x - cam.x, ny = d.rfNode.y - cam.y;
+            const dx = d.x - cam.x, dy = d.y - cam.y;
+            const dist = Math.hypot(d.x - d.rfNode.x, d.y - d.rfNode.y);
+            if (!inView(nx, ny, 40) && !inView(dx, dy, 40)) continue;
+
+            ctx.beginPath();
+            ctx.moveTo(nx, ny);
+            ctx.lineTo(dx, dy);
+            ctx.strokeStyle = (dist > 500) ? 'rgba(245, 158, 11, 0.65)' : 'rgba(0, 229, 255, 0.55)';
+            ctx.lineWidth = 1.6;
+            ctx.setLineDash([4, 4]);
+            ctx.lineDashOffset = -Date.now() * 0.02;
+            ctx.stroke();
+
+            // RF distance badge pill at midpoint
+            const mx = (nx + dx) / 2, my = (ny + dy) / 2;
+            ctx.setLineDash([]);
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+            ctx.strokeStyle = (dist > 500) ? '#f59e0b' : '#00e5ff';
+            ctx.lineWidth = 1.0;
+            ctx.beginPath();
+            ctx.roundRect(mx - 28, my - 7, 56, 14, 3);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.font = 'bold 8px "Courier New", Courier, monospace';
+            ctx.fillStyle = (dist > 500) ? '#f59e0b' : '#00e5ff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`RF:${Math.round(dist)}m`, mx, my);
+        }
+
+        // 3. Sensor Coverage Arcs & Domes
+        // Security Cameras: vision cones
+        for (let i = 0; i < this.securityCameras.length; i++) {
+            const c = this.securityCameras[i];
+            if (c.dead || !c.isNetworked) continue;
+            const cx = c.x - cam.x, cy = c.y - cam.y;
+            const range = c.scanRange || 800;
+            if (!inView(cx, cy, range)) continue;
+            const fov = c.fov || (Math.PI / 3);
+            const startAngle = c.angle - fov / 2;
+            const endAngle = c.angle + fov / 2;
+
+            // Vision fan fill
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.arc(cx, cy, range, startAngle, endAngle);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(0, 229, 255, 0.04)';
+            ctx.fill();
+
+            // Outer perimeter arc
+            ctx.beginPath();
+            ctx.arc(cx, cy, range, startAngle, endAngle);
+            ctx.strokeStyle = 'rgba(0, 229, 255, 0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 6]);
+            ctx.stroke();
+
+            // Boundary ray lines
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + Math.cos(startAngle) * range, cy + Math.sin(startAngle) * range);
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + Math.cos(endAngle) * range, cy + Math.sin(endAngle) * range);
+            ctx.strokeStyle = 'rgba(0, 229, 255, 0.2)';
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // AutoTurrets: spotter ceiling + local fire range
+        for (let i = 0; i < this.turrets.length; i++) {
+            const t = this.turrets[i];
+            if (t.dead || !t.isNetworked) continue;
+            const tx = t.x - cam.x, ty = t.y - cam.y;
+            const tierKey = t.tier ? 'T' + t.tier : 'T1';
+            const spotCeiling = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.spotterCeiling && LINK_TUNING.spotterCeiling[tierKey]) || 1400;
+            if (!inView(tx, ty, spotCeiling)) continue;
+
+            // Spotter ceiling outer engagement perimeter
+            ctx.beginPath();
+            ctx.arc(tx, ty, spotCeiling, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(0, 229, 255, 0.12)';
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([8, 8]);
+            ctx.stroke();
+
+            // Local weapon range perimeter with cardinal ticks
+            const localRange = t.range || 500;
+            ctx.beginPath();
+            ctx.arc(tx, ty, localRange, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(0, 229, 255, 0.28)';
+            ctx.lineWidth = 1.0;
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+
+            ctx.setLineDash([]);
+            ctx.strokeStyle = 'rgba(0, 229, 255, 0.4)';
+            for (let a = 0; a < Math.PI * 2; a += Math.PI / 2) {
+                const px1 = tx + Math.cos(a) * (localRange - 5);
+                const py1 = ty + Math.sin(a) * (localRange - 5);
+                const px2 = tx + Math.cos(a) * (localRange + 5);
+                const py2 = ty + Math.sin(a) * (localRange + 5);
+                ctx.beginPath();
+                ctx.moveTo(px1, py1);
+                ctx.lineTo(px2, py2);
+                ctx.stroke();
+            }
+        }
+
+        // TripMines: trigger perimeter
+        for (let i = 0; i < this.mines.length; i++) {
+            const m = this.mines[i];
+            if (m.dead || !m.isNetworked) continue;
+            const mx = m.x - cam.x, my = m.y - cam.y;
+            const trigRadius = m.radius || 120;
+            if (!inView(mx, my, trigRadius)) continue;
+
+            ctx.beginPath();
+            ctx.arc(mx, my, trigRadius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 60, 60, 0.05)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 75, 75, 0.35)';
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // RobotDogs: 600px RF zone around parent station
+        for (let i = 0; i < networkedDogs.length; i++) {
+            const d = networkedDogs[i];
+            if (!d.rfNode || d.rfNode.dead) continue;
+            const rx = d.rfNode.x - cam.x, ry = d.rfNode.y - cam.y;
+            const rfR = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.rfRange) || 600;
+            if (!inView(rx, ry, rfR)) continue;
+
+            ctx.beginPath();
+            ctx.arc(rx, ry, rfR, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(0, 229, 255, 0.15)';
+            ctx.lineWidth = 1.0;
+            ctx.setLineDash([10, 8]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // 4. Target Designation & Shared SPOT Tracking
+        const grace = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.spotGrace) || 2.0;
+        if (this.spotCache) {
+            for (const [cid, m] of this.spotCache) {
+                for (const [genId, entry] of m) {
+                    if (!entry || !entry.pos) continue;
+                    const age = now - entry.lastSeen;
+                    if (age > grace) continue;
+
+                    const ex = entry.pos.x - cam.x;
+                    const ey = entry.pos.y - cam.y;
+                    if (!inView(ex, ey, 30)) continue;
+                    const alpha = Math.max(0.2, 1.0 - (age / grace));
+
+                    // Telemetry vector line from spotter/publisher
+                    if (entry.publisher && !entry.publisher.dead) {
+                        const pubX = entry.publisher.x - cam.x;
+                        const pubY = entry.publisher.y - cam.y;
+                        ctx.beginPath();
+                        ctx.moveTo(pubX, pubY);
+                        ctx.lineTo(ex, ey);
+                        ctx.strokeStyle = (entry.source === 'trip')
+                            ? `rgba(255, 42, 95, ${alpha * 0.45})`
+                            : `rgba(0, 229, 255, ${alpha * 0.35})`;
+                        ctx.lineWidth = 1.0;
+                        ctx.setLineDash([4, 4]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+
+                    // Diamond Target Designator
+                    const sz = 14;
+                    const color = (entry.source === 'trip') ? '#ff2a5f' : (entry.source === 'rf_dog') ? '#f59e0b' : '#00e5ff';
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 1.5;
+                    ctx.globalAlpha = alpha;
+
+                    ctx.beginPath();
+                    ctx.moveTo(ex, ey - sz);
+                    ctx.lineTo(ex + sz, ey);
+                    ctx.lineTo(ex, ey + sz);
+                    ctx.lineTo(ex - sz, ey);
+                    ctx.closePath();
+                    ctx.stroke();
+
+                    // Corner brackets
+                    const bSz = sz + 5;
+                    const bArm = 4;
+                    ctx.beginPath();
+                    // Top-Left
+                    ctx.moveTo(ex - bSz, ey - bSz + bArm); ctx.lineTo(ex - bSz, ey - bSz); ctx.lineTo(ex - bSz + bArm, ey - bSz);
+                    // Top-Right
+                    ctx.moveTo(ex + bSz - bArm, ey - bSz); ctx.lineTo(ex + bSz, ey - bSz); ctx.lineTo(ex + bSz, ey - bSz + bArm);
+                    // Bottom-Left
+                    ctx.moveTo(ex - bSz, ey + bSz - bArm); ctx.lineTo(ex - bSz, ey + bSz); ctx.lineTo(ex - bSz + bArm, ey + bSz);
+                    // Bottom-Right
+                    ctx.moveTo(ex + bSz - bArm, ey + bSz); ctx.lineTo(ex + bSz, ey + bSz); ctx.lineTo(ex + bSz, ey + bSz - bArm);
+                    ctx.stroke();
+
+                    // Tactical Monospace Readout
+                    const distToPlayer = Math.round(Math.hypot(entry.pos.x - player.x, entry.pos.y - player.y));
+                    ctx.font = 'bold 9px "Courier New", Courier, monospace';
+                    ctx.fillStyle = color;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'alphabetic';
+                    const srcTag = (entry.source ? entry.source.toUpperCase() : 'HOSTILE');
+                    ctx.fillText(`[SPOT:${srcTag}]`, ex, ey - sz - 6);
+                    ctx.fillText(`${distToPlayer}m`, ex, ey + sz + 13);
+                    ctx.globalAlpha = 1.0;
+                }
+            }
+        }
+
+        // 5. Node Diagnostic Status Badges
+        for (let i = 0; i < networkedNodes.length; i++) {
+            const node = networkedNodes[i];
+            const nx = node.x - cam.x;
+            const ny = node.y - cam.y - (node.r || 16) - 12;
+            if (!inView(nx, ny, 60)) continue;
+            const isEmp = (node.empTimer > 0);
+            const badgeW = isEmp ? 92 : 68;
+            const badgeH = 14;
+            const badgeColor = isEmp ? '#38bdf8' : '#00e5ff';
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+            ctx.strokeStyle = isEmp ? '#38bdf8' : 'rgba(0, 229, 255, 0.6)';
+            ctx.lineWidth = 1.0;
+            ctx.beginPath();
+            ctx.roundRect(nx - badgeW / 2, ny - badgeH / 2, badgeW, badgeH, 3);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.font = 'bold 8px "Courier New", Courier, monospace';
+            ctx.fillStyle = badgeColor;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(isEmp ? 'NET: EMP OFFLINE' : `NET:C#${node.compId} OK`, nx, ny);
+        }
+
+        for (let i = 0; i < networkedDogs.length; i++) {
+            const d = networkedDogs[i];
+            const dx = d.x - cam.x;
+            const dy = d.y - cam.y - (d.r || 14) - 14;
+            if (!inView(dx, dy, 60)) continue;
+            const badgeW = 72, badgeH = 14;
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+            ctx.strokeStyle = (d.rfSpotFlashTimer > 0) ? '#f59e0b' : 'rgba(0, 229, 255, 0.6)';
+            ctx.lineWidth = 1.0;
+            ctx.beginPath();
+            ctx.roundRect(dx - badgeW / 2, dy - badgeH / 2, badgeW, badgeH, 3);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.font = 'bold 8px "Courier New", Courier, monospace';
+            ctx.fillStyle = (d.rfSpotFlashTimer > 0) ? '#f59e0b' : '#00e5ff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`DOG:RF-LINK C#${d.compId}`, dx, dy);
+        }
+
+        // 6. Severed Cable Splicing Beacons
+        if (this.dataCables) {
+            for (let i = 0; i < this.dataCables.length; i++) {
+                const c = this.dataCables[i];
+                if (!c.cut || !c.stump) continue;
+                const cx = c.x - cam.x, cy = c.y - cam.y;
+                if (!inView(cx, cy, 60)) continue;
+                const pct = Math.floor((c.hp / c.maxHp) * 100);
+
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                ctx.strokeStyle = '#ff2a5f';
+                ctx.lineWidth = 1.0;
+                ctx.beginPath();
+                ctx.roundRect(cx - 48, cy - 22, 96, 14, 3);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.font = 'bold 8px "Courier New", Courier, monospace';
+                ctx.fillStyle = '#ff2a5f';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`CUT CABLE: ${pct}%`, cx, cy - 15);
+            }
+        }
+
+        ctx.restore();
+    }
+
     drawBarrier(bar, cam) {
         let sax = bar.ax - cam.x;
         let say = bar.ay - cam.y;
@@ -34422,8 +36339,10 @@ class Game {
 
         this.map.drawOperatorBiomeBands(this.ctx, droneCam, pw, ph);
         this.drawBarriers(droneCam, false);
+        this.drawDataCables(droneCam, false);
         this.map.draw(this.ctx, droneCam, pw, ph);
         this.drawBarriers(droneCam, true);
+        this.drawDataCables(droneCam, true);
         this.map.drawFoliageGround(this.ctx, droneCam, pw, ph);
         
         for (let i of this.items) i.draw(this.ctx, droneCam);
@@ -34775,8 +36694,10 @@ class Game {
         // clutter and canopy occlusion add visual noise this inset doesn't
         // need; it only has to answer "is the perimeter holding".
         this.drawBarriers(baseCam, false);
+        this.drawDataCables(baseCam, false);
         this.map.draw(this.ctx, baseCam, pw, ph, true);
         this.drawBarriers(baseCam, true);
+        this.drawDataCables(baseCam, true);
         if (this.turrets) for (let t of this.turrets) t.draw(this.ctx, baseCam);
         if (this.securityCameras) for (let c of this.securityCameras) c.draw(this.ctx, baseCam);
         if (this.dogs) for (let d of this.dogs) d.draw(this.ctx, baseCam);
@@ -36052,6 +37973,7 @@ class Game {
                 p.turretsCount = 0;
                 p.dronesCount = 0;
                 p.fiberOpticOwned = true;   // tether removed -- see FPVDrone.update, 1500px unpilot check
+                p.fiberCables = 2;          // operator starts with spool capability + 2 cables
                 p.droneUpgraded = true;     // Bomber payload (3 bombs) granted from wave 1, see bombsDropped checks throughout Game
                 p.inventory = [{ ...Weapons.pistol }];
                 p.weaponIdx = 0;
@@ -36121,6 +38043,9 @@ class Game {
         this.turrets = [];
         this.securityCameras = [];
         this.dogs = [];
+        this.dataCables = [];       // DATA LINK: fresh run, no spooled cables
+        this.spotCache = new Map(); // DATA LINK: reset the shared SPOT cache with the run
+        this._dataLinkTimer = 0;
         // OQ-076: wipe scavenger dogs with the rest of the run state. Park
         // every active dog (drop cargo references WITHOUT spilling -- a
         // run wipe is not a loot recovery) and clear the escape hold.
@@ -36134,10 +38059,6 @@ class Game {
         }
         this.scavDogs = [];
         this._scavEscape = null;
-        // A fresh run must never inherit a previous run's stolen haul or its
-        // converted difficulty modifiers.
-        this._scavStolen = null;
-        this._scavBuff = null;
         if (!this.hostages) this.hostages = []; // (reset properly in startNewGame; guard for legacy paths)
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
@@ -36525,10 +38446,6 @@ class Game {
         this._medicDelayArmed = false;
         // OQ-076: a stale escape-hold must never leak into a fresh wave.
         this._scavEscape = null;
-        // OQ-076: convert last wave's stolen haul into this wave's difficulty
-        // (after every enemiesToSpawn adjustment above, since the grenade
-        // branch adds to it) and announce what it bought.
-        this._applyScavResupply();
         this.rollScavDogs();
         this.updateHUD();
     }
@@ -36620,56 +38537,6 @@ class Game {
             this.announce('LOOT SCAVENGER FLEEING \u2014 KILL IT OR IT VANISHES', '#ff2a5f', 4.2,
                 'CARRIED SUPPLIES ARE LOST IF IT EXITS THE MAP');
         }
-    }
-
-    // OQ-076 RESUPPLY, step 1: bank what a dog carried off the map. Kept as
-    // raw per-category counts (not deltas) so the wave-start announce can
-    // name exactly what they got. Pending until the next wave converts it.
-    _tallyScavLoot(cargo) {
-        if (!this._scavStolen) this._scavStolen = { money: 0, medpack: 0, redbull: 0, grenade: 0, weapon: 0 };
-        const s = this._scavStolen;
-        for (const t of cargo) {
-            if (t === 'money') s.money++;
-            else if (t === 'medpack') s.medpack++;
-            else if (t === 'redbull') s.redbull++;
-            else if (t === 'grenade') s.grenade++;
-            else s.weapon++; // the stealable whitelist's only other branch
-        }
-    }
-
-    // OQ-076 RESUPPLY, step 2: convert the pending haul into modifiers for
-    // THIS wave and tell the player what it bought. Deliberately routed
-    // through the existing wave-scaling levers (elite roll / HP scale /
-    // speed scale / enemiesToSpawn) rather than new systems -- every delta
-    // is capped, so a bad streak escalates once and then plateaus instead
-    // of spiralling. Called from startNextWave AFTER enemiesToSpawn is set.
-    _applyScavResupply() {
-        const T = SCAV_DOG_TUNING;
-        this._scavBuff = null;
-        const s = this._scavStolen;
-        this._scavStolen = null;
-        if (!s) return;
-        const total = s.money + s.medpack + s.redbull + s.grenade + s.weapon;
-        if (total <= 0) return;
-
-        const buff = {
-            elite: Math.min((s.money + s.weapon) * T.RSP_ELITE, T.RSP_ELITE_MAX),
-            hp:    Math.min(s.medpack * T.RSP_HP, T.RSP_HP_MAX),
-            speed: Math.min(s.redbull * T.RSP_SPEED, T.RSP_SPEED_MAX),
-            extra: Math.min(s.grenade, T.RSP_EXTRA_MAX)
-        };
-        this._scavBuff = buff;
-        if (buff.extra > 0) this.enemiesToSpawn += buff.extra;
-
-        // Sub-line names the CAUSE, not the maths -- "they bought a heavy"
-        // reads; "+0.11 elite roll" does not.
-        const parts = [];
-        if (buff.elite > 0) parts.push('BETTER GEAR');
-        if (buff.hp > 0) parts.push('FIELD MEDICINE');
-        if (buff.speed > 0) parts.push('STIMS');
-        if (buff.extra > 0) parts.push('+' + buff.extra + ' HOSTILE' + (buff.extra > 1 ? 'S' : ''));
-        this.announce('THE SCAVENGER SOLD YOUR SUPPLIES', '#ffb700', 4.2,
-            parts.length ? parts.join(' \u00b7 ') : 'THE ENEMY RESTOCKED');
     }
 
     // Decides whether this wave is a boss wave and, if so, sets up the
@@ -38664,7 +40531,7 @@ class Game {
         }
         this.toggleDevDashboard();
     }
-    
+
     devForceMutator(mutatorKey) {
         this.forcedMutator = mutatorKey;
         this.devUpdateForceMutatorHighlight();
@@ -39351,9 +41218,14 @@ class Game {
             }
         }
 
+        // DATA LINK: 1Hz heartbeat runs first in the deployable sequence so every
+        // consumer (turret/camera/dog) reads fresh linkLive/spotCache same-frame.
+        this._tickDataLinks(dt);
+
         for (let i = this.mines.length - 1; i >= 0; i--) {
             let active = this.mines[i].update(dt, this);
             if (!active) {
+                this.severDataLinks(this.mines[i]);
                 this.mines[i] = this.mines[this.mines.length - 1];
                 this.mines.pop();
             }
@@ -39362,6 +41234,7 @@ class Game {
         for (let i = this.turrets.length - 1; i >= 0; i--) {
             this.turrets[i].update(dt, this);
             if (this.turrets[i].dead) {
+                this.severDataLinks(this.turrets[i]);
                 this.turrets[i] = this.turrets[this.turrets.length - 1];
                 this.turrets.pop();
             }
@@ -39371,6 +41244,7 @@ class Game {
             for (let i = this.securityCameras.length - 1; i >= 0; i--) {
                 this.securityCameras[i].update(dt, this);
                 if (this.securityCameras[i].dead) {
+                    this.severDataLinks(this.securityCameras[i]);
                     this.securityCameras[i] = this.securityCameras[this.securityCameras.length - 1];
                     this.securityCameras.pop();
                 }
@@ -39381,6 +41255,7 @@ class Game {
             for (let i = this.dogs.length - 1; i >= 0; i--) {
                 this.dogs[i].update(dt, this);
                 if (this.dogs[i].dead) {
+                    this.severDataLinks(this.dogs[i]);
                     this.dogs[i] = this.dogs[this.dogs.length - 1];
                     this.dogs.pop();
                 }
@@ -39396,13 +41271,6 @@ class Game {
                 let sd = this.scavDogs[i];
                 sd.update(dt, this);
                 if (sd.dead || sd.escaped) {
-                    // RESUPPLY TALLY: only escapes feed the enemy. A dead
-                    // dog already ran spillLoot in onDeath, so its cargo is
-                    // empty by now -- the escaped check is belt-and-braces,
-                    // and this single park point is the only place cargo can
-                    // leave the field intact.
-                    if (sd.escaped && sd.cargo.length) this._tallyScavLoot(sd.cargo);
-                    sd.cargo = [];
                     this.inactiveScavDogs.push(sd);
                     this.scavDogs[i] = this.scavDogs[this.scavDogs.length - 1];
                     this.scavDogs.pop();
@@ -39427,6 +41295,7 @@ class Game {
                 }
             }
         }
+
 
         this.updateDustMotes(dt);
 
@@ -39735,6 +41604,9 @@ class Game {
             p.turretsCount = 0;
             p.dronesCount = 0;
             p.fiberOpticOwned = false;
+                p.fiberCables = 0;   // hardcore death consumes the spool, like cash (B12)
+                p.doctrine = 'standard'; // directives reset with the run (Phase 10)
+            p.wiring = null;
             p.medpacks = 0;
             p.energyDrinks = 0;
             p.energyDrinkTimer = 0;
@@ -39772,6 +41644,7 @@ class Game {
             // Bomber payload for the rest of the run.
             if (this.operatorMode) {
                 p.fiberOpticOwned = true;
+                p.fiberCables = 2;   // spool re-grants on operator-mode death (B12)
                 p.droneUpgraded = true;
                 p.maxArmor = 0;
             }
@@ -40434,14 +42307,19 @@ class Game {
 
             let fiberOpticBtn = document.getElementById('btn-buy-fiber-optic-' + suffix);
             if (fiberOpticBtn && !this._armoryGate(fiberOpticBtn, 'unlockFpvDrone', 3, "Fiber Optic (UNLOCK IN ARMORY)")) {
-                if (p.fiberOpticOwned) {
+                const maxCables = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.maxSpoolCables) || 6;
+                if (!p.fiberOpticOwned) {
+                    fiberOpticBtn.classList.remove('maxed');
+                    fiberOpticBtn.innerText = "Fiber Optic Spool ($600)";
+                    fiberOpticBtn.disabled = p.cash < 600;
+                } else if ((p.fiberCables || 0) >= maxCables) {
                     fiberOpticBtn.classList.add('maxed');
-                    fiberOpticBtn.innerText = "FIBER OPTIC (OWNED)";
+                    fiberOpticBtn.innerText = `FIBER SPOOL (MAX ${p.fiberCables})`;
                     fiberOpticBtn.disabled = true;
                 } else {
                     fiberOpticBtn.classList.remove('maxed');
-                    fiberOpticBtn.innerText = "Fiber Optic Spool ($600)";
-                    fiberOpticBtn.disabled = false;
+                    fiberOpticBtn.innerText = `Fiber Optic Spool ($600) [${p.fiberCables || 0}/${maxCables}]`;
+                    fiberOpticBtn.disabled = p.cash < 600;
                 }
             }
 
@@ -40743,15 +42621,19 @@ class Game {
                 }
                 audio.playPickup('weapon');
             }
-        } else if (type === 'fiber_optic' && p.cash >= 600 && !p.fiberOpticOwned) {
-            p.cash -= 600;
-            p.fiberOpticOwned = true;
-            for (let i = 0; i < 30; i++) {
-                let angle = Math.random() * Math.PI * 2;
-                let spd = Math.random() * 200 + 100;
-                this.addParticle(p.x, p.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#39ff14', 0.6, 3);
+        } else if (type === 'fiber_optic' && p.cash >= 600) {
+            const maxCables = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.maxSpoolCables) || 6;
+            if (!p.fiberOpticOwned || (p.fiberCables || 0) < maxCables) {
+                p.cash -= 600;
+                p.fiberOpticOwned = true;
+                p.fiberCables = Math.min(maxCables, (p.fiberCables || 0) + 2);
+                for (let i = 0; i < 30; i++) {
+                    let angle = Math.random() * Math.PI * 2;
+                    let spd = Math.random() * 200 + 100;
+                    this.addParticle(p.x, p.y, Math.cos(angle)*spd, Math.sin(angle)*spd, '#39ff14', 0.6, 3);
+                }
+                audio.playPickup('weapon');
             }
-            audio.playPickup('weapon');
         } else if (type === 'turret' && p.cash >= 650 && (p.turretsCount || 0) < (this.operatorMode ? OP_TUNING.TURRET_CAP : 1)) {
             p.cash -= 650; p.turretsCount = (p.turretsCount || 0) + 1;
         } else if (type === 'turret_mk2' && p.cash >= 1200 && p.turretsCount < 1) {
@@ -44011,6 +45893,7 @@ class Game {
         // built into the wall. The color-matched mounting plate (drawBarrier)
         // sits on the OUTSIDE face and remains visible.
         this.drawBarriers(cam, false);
+        this.drawDataCables(cam, false);
         this.map.draw(this.ctx, cam, viewportW, viewportH);
         // SIMULATED SECOND FLOOR: gore that landed on a deck is re-drawn
         // here, on top of the platform surface instead of washed out
@@ -44022,6 +45905,8 @@ class Game {
         // gets for free by running before the wall pass.
         this.drawPermanentMarks(this.ctx, cam, visibleW, visibleH, true);
         this.drawBarriers(cam, true);
+        this.drawDataCables(cam, true);
+        this.drawActiveSpools(cam);
         this.map.drawPlatformParapets(this.ctx, cam, viewportW, viewportH, true);
         this.map.drawFoliageGround(this.ctx, cam, viewportW, viewportH);
 
@@ -44490,6 +46375,7 @@ class Game {
         if (this.isTwoPlayer && this.player2) this.drawWallBuildPreview(this.player2, cam);
         
         for (let b of this.bullets) b.draw(this.ctx, cam);
+
         
         // Barriers draw before walls (see above drawOperatorBiomeBands)
         // so wall geometry occludes embedded ends. Mounting plates and
@@ -45022,6 +46908,9 @@ class Game {
                 ft.draw(this.ctx, cam);
             }
         }
+
+        // DATA LINK (Phase 3): C4ISR Sensor Fusion Tactical HUD Overlay
+        this.drawTacticalDataNetworkHUD(cam, player);
 
         this.ctx.restore();
     }
@@ -46861,6 +48750,7 @@ class TouchController {
                 // Retrieve the item
                 if (closestItemType === 'barrier') {
                     game.player.barriersInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, isMKII: closestItem.isMKII || false });
+                    if (game.severDataLinks) game.severDataLinks(closestItem);
                     game.barriers.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
                     game.floatingTexts.push(game.spawnFloatingText(
@@ -46870,6 +48760,7 @@ class TouchController {
                     ));
                 } else if (closestItemType === 'turret') {
                     game.player.turretsInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, isMKII: closestItem.isMKII || false });
+                    if (game.severDataLinks) game.severDataLinks(closestItem);
                     game.turrets.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
                     game.floatingTexts.push(game.spawnFloatingText(
@@ -46879,6 +48770,7 @@ class TouchController {
                     ));
                 } else if (closestItemType === 'dog') {
                     game.player.dogsInventory.push({ hp: closestItem.hp, upgraded: closestItem.upgraded || false });
+                    if (game.severDataLinks) game.severDataLinks(closestItem);
                     game.dogs.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
                     game.floatingTexts.push(game.spawnFloatingText(
@@ -46888,6 +48780,7 @@ class TouchController {
                     ));
                 } else if (closestItemType === 'camera') {
                     game.player.camerasInventory.push({ hp: closestItem.hp, maxHp: closestItem.maxHp, tier: closestItem.tier || 1 });
+                    if (game.severDataLinks) game.severDataLinks(closestItem);
                     game.securityCameras.splice(closestItemIdx, 1);
                     if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
                     game.floatingTexts.push(game.spawnFloatingText(
