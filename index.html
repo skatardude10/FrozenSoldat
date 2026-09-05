@@ -7198,6 +7198,64 @@ const cachedBulletGlowP2Canvas = (() => {
     return canvas;
 })();
 
+// ==== FAKE-BLOOM SPRITE CACHE (batched additive glow pass) =================
+// Tinted radial glow sprites, built lazily per color into a bounded Map
+// (the _vignetteCache idiom — never a per-frame gradient). White-hot core
+// + color mid + transparent edge reads as bloom under 'lighter'. Palette-
+// sized in practice (explosion orange, oracle magenta, eventide violet,
+// laser cyan…); the clear-guard is paranoia, not a path.
+const _glowSpriteCache = new Map();
+function _hexToRgb(hex) {
+    const h = (hex || '#ffffff').replace('#', '');
+    const v = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    const n = parseInt(v, 16) || 0xffffff;
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function getGlowSprite(color) {
+    let c = _glowSpriteCache.get(color);
+    if (!c) {
+        if (_glowSpriteCache.size > 24) _glowSpriteCache.clear();
+        const r = _hexToRgb(color);
+        c = document.createElement('canvas');
+        c.width = 96; c.height = 96;
+        const x = c.getContext('2d');
+        const g = x.createRadialGradient(48, 48, 0, 48, 48, 48);
+        g.addColorStop(0, 'rgba(255,255,255,0.9)');
+        g.addColorStop(0.25, `rgba(${r[0]},${r[1]},${r[2]},0.55)`);
+        g.addColorStop(0.6, `rgba(${r[0]},${r[1]},${r[2]},0.18)`);
+        g.addColorStop(1, `rgba(${r[0]},${r[1]},${r[2]},0)`);
+        x.fillStyle = g;
+        x.beginPath();
+        x.arc(48, 48, 48, 0, Math.PI * 2);
+        x.fill();
+        _glowSpriteCache.set(color, c);
+    }
+    return c;
+}
+
+// ==== BLOB SHADOW SPRITE (grounding pass) ==================================
+// Baked 2:1 squashed ellipse (64×32) so the pass pays one plain drawImage
+// per entity — no save/translate/scale churn in the hot loop.
+const cachedBlobShadowCanvas = (() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(32, 16, 2, 32, 16, 30);
+    grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+    grad.addColorStop(0.7, 'rgba(0,0,0,0.28)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.save();
+    ctx.translate(32, 16);
+    ctx.scale(1, 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, 30, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return canvas;
+})();
+
 const cachedTripMineRedGlowCanvas = (() => {
     const canvas = document.createElement('canvas');
     canvas.width = 64;
@@ -33256,7 +33314,12 @@ class Game {
         this.hitPauseTimer = Math.max(this.hitPauseTimer || 0, duration);
     }
 
-    spawnShockwave(x, y, maxRadius = 150, duration = 0.3) {
+    // The universal explosion visual choke (barrels, grenades, novas,
+    // detonations — every boom registers a ring here). The optional 5th
+    // param blooms the blast in its own color for free via stampGlow, so
+    // every explosion in the game glows with zero caller changes when the
+    // default warm orange fits (it almost always does).
+    spawnShockwave(x, y, maxRadius = 150, duration = 0.3, glowColor) {
         for (let i = 0; i < this.shockwaves.length; i++) {
             let sw = this.shockwaves[i];
             if (!sw.active) {
@@ -33266,9 +33329,11 @@ class Game {
                 sw.maxRadius = maxRadius;
                 sw.life = duration;
                 sw.maxLife = duration;
-                return;
+                break;
             }
         }
+        // Bloom fires even when the ring pool is saturated (cheaper channel).
+        this.stampGlow(x, y, maxRadius * 0.85, glowColor || '#ff9500', 0.5);
     }
 
     // DEATH FX: one-shot expanding spiked ring at a player death site.
@@ -37644,7 +37709,7 @@ class Game {
         };
         if (this.enemies) for (let i = 0; i < this.enemies.length; i++) hit(this.enemies[i]);
         if (this.bossDrones) for (let i = 0; i < this.bossDrones.length; i++) hit(this.bossDrones[i]);
-        this.spawnShockwave(cx, cy, radius, 0.25);
+        this.spawnShockwave(cx, cy, radius, 0.25, '#ff5fd2');
         for (let i = 0; i < 10; i++) {
             const a = Math.random() * Math.PI * 2, s = 100 + Math.random() * 260;
             this.addParticle(cx, cy, Math.cos(a) * s, Math.sin(a) * s, '#ff5fd2', 0.4, 2.5);
@@ -37666,7 +37731,7 @@ class Game {
         const radius = (260 + 40 * res) * (martyr ? 1.4 : 1);
         const dmg = (30 + 12 * res) * (martyr ? 2.5 : 1);
         const r2 = radius * radius;
-        this.spawnShockwave(player.x, player.y, radius, 0.4);
+        this.spawnShockwave(player.x, player.y, radius, 0.4, martyr ? '#ffcc00' : '#ff5fd2');
         this.applyExplosionShake(player.x, player.y, 14, radius);
         if (audio && audio.playMiniExplosion) audio.playMiniExplosion(player.x, player.y);
         for (let i = 0; i < 24; i++) {
@@ -39621,6 +39686,25 @@ class Game {
             this.inactiveParticles.push(p);
         }
         this.isInitializingParticles = false;
+        // FAKE-BLOOM stamp pool: fixed 256 plain slots, reused by index
+        // (ring overwrite when full — never allocates, never grows). Drained
+        // at the end of every draw(), after all viewports consumed them.
+        if (!this._glowPool) {
+            this._glowPool = [];
+            for (let i = 0; i < 256; i++) this._glowPool.push({ x: 0, y: 0, r: 0, color: '#ffffff', a: 0 });
+        }
+        this._glowCount = 0;
+    }
+
+    // FAKE-BLOOM emitter: stamp a glow to be drawn once by this frame's
+    // glow pass (world space). Ring-overwrites past 256 — transient FX
+    // only; the pool is drained every draw.
+    stampGlow(x, y, r, color, alpha) {
+        if (!this._glowPool || !r || r <= 0) return;
+        const s = this._glowPool[this._glowCount & 255];
+        s.x = x; s.y = y; s.r = r; s.color = color || '#ff9500';
+        s.a = (alpha === undefined) ? 0.5 : alpha;
+        this._glowCount++;
     }
 
     spawnParticle(x, y, vx, vy, color, life, size) {
@@ -49064,6 +49148,19 @@ class Game {
         ctx.globalAlpha = 1;
     }
 
+    // Blob shadow: one squashed-sprite blit grounding a mover (the 2:1
+    // squash is baked into cachedBlobShadowCanvas — no save/translate/
+    // scale churn; manual alpha reset, no save/restore). Called for
+    // enemies (fog-scaled), players, dogs, scavengers — never for statics
+    // (turrets/barriers/cameras) or flyers (drones).
+    _drawBlob(sx, sy, r, a) {
+        if (a <= 0 || r <= 0) return;
+        const w = r * 3.4, h = r * 1.7;
+        this.ctx.globalAlpha = a > 1 ? 1 : a;
+        this.ctx.drawImage(cachedBlobShadowCanvas, sx - w / 2, sy - h / 2 + r * 0.3, w, h);
+        this.ctx.globalAlpha = 1;
+    }
+
     drawViewport(cam, player, isPlayer2 = false) {
         let viewportW = this.isTwoPlayer ? this.width / 2 : this.width;
         let viewportH = this.height;
@@ -49474,6 +49571,9 @@ class Game {
                 if (e.x < cam.x - cullM || e.x > cam.x + visibleW + cullM ||
                     e.y < cam.y - cullM || e.y > cam.y + visibleH + cullM) continue;
             }
+            // Blob shadow under the body (fog-scaled like the hit flash, so
+            // unrevealed enemies don't cast through the dark).
+            this._drawBlob(e.x - cam.x, e.y - cam.y, e.r, 0.32 * ((e instanceof Boss) ? 1 : (e.opacity || 0)));
             e.draw(this.ctx, cam);
             // FELLPASS item 4: generic hit flash -- a brief white wash over
             // the body, drawn AFTER e.draw in this shared loop so it sits on
@@ -49565,6 +49665,7 @@ class Game {
         }
         if (this.dogs) {
             for (let d of this.dogs) {
+                if (!d.dead) this._drawBlob(d.x - cam.x, d.y - cam.y, d.r || 10, 0.32);
                 d.draw(this.ctx, cam);
                 
                 if (d.waypoint && !d.dead) {
@@ -49622,15 +49723,15 @@ class Game {
         // dog draws there are auxiliary FPV/operator camera passes only --
         // the dog is invisible without this one.)
         if (this.scavDogs) {
-            for (let sd of this.scavDogs) sd.draw(this.ctx, cam);
+            for (let sd of this.scavDogs) { if (!sd.dead && !sd.escaped) this._drawBlob(sd.x - cam.x, sd.y - cam.y, sd.r || 10, 0.32); sd.draw(this.ctx, cam); }
         }
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
                 md.draw(this.ctx, cam);
             }
         }
-        if (!this.player.dead) this.player.draw(this.ctx, cam);
-        if (this.isTwoPlayer && this.player2 && !this.player2.dead) this.player2.draw(this.ctx, cam);
+        if (!this.player.dead) { this._drawBlob(this.player.x - cam.x, this.player.y - cam.y, this.player.r || 12, 0.32); this.player.draw(this.ctx, cam); }
+        if (this.isTwoPlayer && this.player2 && !this.player2.dead) { this._drawBlob(this.player2.x - cam.x, this.player2.y - cam.y, this.player2.r || 12, 0.32); this.player2.draw(this.ctx, cam); }
         this.drawWallBuildPreview(this.player, cam);
         if (this.isTwoPlayer && this.player2) this.drawWallBuildPreview(this.player2, cam);
         this.drawEventidePreview(this.player, cam);
@@ -49757,6 +49858,12 @@ class Game {
                 this.ctx.globalAlpha = Math.max(0, Math.min(1.0, alpha * 0.85));
                 this.ctx.drawImage(cachedWarmMuzzleFlashCanvas, glowCenterX - glowR, glowCenterY - glowR, glowR * 2, glowR * 2);
                 this.ctx.restore();
+
+                // 1b. Fake-bloom stamp (world space): the direct blit above
+                // is the hot core; the batched glow pass draws the halo.
+                // World coords (wx/wy), so viewport culling in the pass
+                // applies and 2P halves share the stamps.
+                this.stampGlow(wx + Math.cos(angle) * (flameLen * 0.35), wy + Math.sin(angle) * (flameLen * 0.35), glowR * 1.6, '#ffb14e', alpha * 0.4);
                 
                 // 2. High-contrast, sharp solid blast geometry (source-over, crisp and vibrant!)
                 this.ctx.save();
@@ -49822,6 +49929,32 @@ class Game {
             if (this.isTwoPlayer && this.player2) drawMuzzleFlash(this.player2);
             for (let i = 0; i < this.enemies.length; i++) {
                 drawMuzzleFlash(this.enemies[i]);
+            }
+        }
+
+        // === BLOOM DRAW (batched fake-bloom, world space, additive) ===
+        // One culled loop over this frame's stamps (shockwave detonations +
+        // muzzle halos). Sprites are pre-rendered per color (never a per-
+        // frame gradient); the pool is fixed 256, ring-overwritten, drained
+        // at the end of draw() so all viewports share it. At renderScale
+        // < 0.75 the sub-26px halos are skipped (invisible after upscale).
+        {
+            const _gn = Math.min(this._glowCount || 0, 256);
+            if (_gn > 0 && this._glowPool) {
+                const _skipSmall = (this.renderScale || 1) < 0.75;
+                let _prevComp = this.ctx.globalCompositeOperation;
+                this.ctx.globalCompositeOperation = 'lighter';
+                for (let _gi = 0; _gi < _gn; _gi++) {
+                    const _s = this._glowPool[_gi];
+                    if (!_s || !_s.r || _s.a <= 0) continue;
+                    if (_skipSmall && _s.r < 26) continue;
+                    const _sx = _s.x - cam.x, _sy = _s.y - cam.y;
+                    if (_sx < -_s.r || _sy < -_s.r || _sx > viewportW + _s.r || _sy > viewportH + _s.r) continue;
+                    this.ctx.globalAlpha = _s.a > 1 ? 1 : _s.a;
+                    this.ctx.drawImage(getGlowSprite(_s.color), _sx - _s.r, _sy - _s.r, _s.r * 2, _s.r * 2);
+                }
+                this.ctx.globalAlpha = 1;
+                this.ctx.globalCompositeOperation = _prevComp;
             }
         }
 
@@ -51175,6 +51308,13 @@ class Game {
                 this.ctx.restore();
             }
         }
+        // FAKE-BLOOM: drain this frame's stamps AFTER all viewports consumed
+        // them (update() emits during the sim tick, which runs before draw;
+        // draining at the top would wipe update-emitted stamps — shockwave
+        // blooms — before any viewport reads them, leaving only draw-time
+        // muzzle halos. Each viewport's glow pass consumes without
+        // resetting, so 2P halves share the stamps).
+        this._glowCount = 0;
     }
 
     loop(timestamp) {
