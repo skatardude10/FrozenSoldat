@@ -569,11 +569,42 @@
         color: var(--red) !important;
     }
 
-    .shop-container { display: flex; gap: 20px; text-align: left; margin-bottom: 20px; }
-    .shop-panel-stats { flex: 1; border-right: 1px solid rgba(0, 229, 255, 0.2); padding-right: 20px; }
-    .shop-panel-items { flex: 2; height: 350px; overflow-y: auto; padding-right: 10px; }
+    /* SHOP LAYOUT (rework): fixed-footprint window. The top split is a
+       fixed-height flex row — left vitals/loadout, right buy list as ONE
+       scrollport that flexes to fill. The bottom Intel strip is full-width
+       with its own internal scroll, so long blurbs never resize the box. */
+    .shop-container { display: flex; gap: 20px; text-align: left; margin-bottom: 10px; height: 452px; }
+    .shop-panel-stats { flex: 1; border-right: 1px solid rgba(0, 229, 255, 0.2); padding-right: 20px;
+        overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+    .shop-panel-items { flex: 2; height: 100%; overflow-y: auto; padding-right: 10px; min-width: 0; }
     .shop-section-title { font-size: 14px; font-weight: bold; color: var(--neon-blue); margin: 15px 0 8px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.2); padding-bottom: 4px; text-transform: uppercase; }
     .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    /* SHOP LOADOUT STRIP (at-a-glance equipped readout): icon chips driven
+       by SHOP_ITEMS — bright + badge when held, dim silhouette when not.
+       One innerHTML write per shop refresh; zero per-frame cost. */
+    .shop-loadout-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 4px 0; overflow-y: auto; }
+    .loadout-chip { position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+        border: 1px solid rgba(255,255,255,0.14); border-radius: 6px; background: rgba(255,255,255,0.03);
+        color: #4a5560; cursor: pointer; flex: 0 0 auto; }
+    .loadout-chip:hover { border-color: currentColor; filter: brightness(1.5); }
+    .loadout-chip.owned { border-color: currentColor; background: rgba(255,255,255,0.05); box-shadow: 0 0 8px -2px currentColor; }
+    .loadout-chip svg { width: 20px; height: 20px; }
+    .chip-count { position: absolute; right: 1px; bottom: -1px; font-size: 8px; font-weight: bold; color: #fff;
+        text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; white-space: nowrap; }
+    .chip-note { position: absolute; left: 1px; top: -1px; font-size: 7px; font-weight: bold; color: var(--neon-blue);
+        text-shadow: 0 0 3px #000; pointer-events: none; white-space: nowrap; }
+    /* SHOP INSPECTOR (full-width bottom explainer): fixed footprint with
+       internal scroll — follows mouse hover, gamepad focus, and last
+       purchase, per suffix so 2P panels stay independent. */
+    .shop-inspector { min-height: 92px; max-height: 104px; overflow-y: auto; border: 1px solid rgba(0,229,255,0.25); border-radius: 6px;
+        padding: 8px 10px; background: rgba(0,229,255,0.03); margin-top: 0; }
+    #shop-box-p2 .shop-inspector { border-color: rgba(255,183,0,0.35); background: rgba(255,183,0,0.03); }
+    .insp-name { font-size: 13px; font-weight: bold; letter-spacing: 1px; margin-bottom: 3px; }
+    .insp-flavor { font-size: 11px; font-style: italic; color: #9fb3c8; margin-bottom: 4px; line-height: 1.35; }
+    .insp-mech { font-size: 11px; color: #e0f7fa; line-height: 1.45; }
+    .insp-held { font-size: 10px; color: var(--green); letter-spacing: 1px; margin-top: 4px; }
+    .insp-bought { font-size: 10px; color: #ffb700; letter-spacing: 1px; margin-top: 4px; }
+    .insp-hint { font-size: 11px; color: #5a6b7a; letter-spacing: 1px; text-align: center; padding-top: 28px; }
     
     .hidden { display: none !important; }
     
@@ -2194,35 +2225,16 @@
                 ⚠ OUTSIDE BASE PERIMETER -- RETURN TO BASE TO RESUPPLY
             </div>
             <div class="shop-container">
-                <!-- Left: Current Stats -->
+                <!-- Left: Operator vitals + visual loadout (click icons to buy) -->
                 <div class="shop-panel-stats" style="font-size: 11px;">
-                    <div class="shop-section-title">Current Stats</div>
-                    <div class="stat-line">Health: <span id="shop-stat-hp-p1" style="color:var(--green)">100</span> / <span id="shop-stat-maxhp-p1">100</span></div>
-                    <div class="stat-line">Armor: <span id="shop-stat-armor-p1" style="color:var(--neon-blue)">50</span> / 100</div>
-                    <div class="stat-line">Speed Upgrade: <span id="shop-stat-speed-p1" style="color:#ffb700">0</span> / 4</div>
-                    <div class="stat-line">Loadout Weight: <span id="shop-stat-weight-p1" style="color:var(--red)">0</span> lbs</div>
-                    <div class="stat-line">Exosuit Speed: <span id="shop-stat-speed-multi-p1" style="color:var(--red)">100%</span></div>
-                    <div class="stat-line">Grenades: <span id="shop-stat-grenades-p1">0</span> / <span id="shop-stat-maxgrenades-p1">3</span></div>
-                    <div class="stat-line">Trip Mines: <span id="shop-stat-mines-p1">0</span> / 3</div>
-                    <div class="stat-line">Barriers: <span id="shop-stat-barriers-p1">0</span> / 5</div>
-                    <div class="stat-line">Rubble: <span id="shop-stat-rubble-p1">0</span></div>
-                    <div class="stat-line">FPV Drones: <span id="shop-stat-drones-p1">0</span> / 3</div>
-                    <div class="stat-line">Auto Turrets: <span id="shop-stat-turrets-p1">0</span> / <span id="shop-stat-turretcap-p1">1</span></div>
-                    <div class="stat-line">Spot Robots: <span id="shop-stat-dogs-p1">0</span> / 1</div>
-                    <div class="stat-line">Swarm Drones: <span id="shop-stat-hunter-swarm-p1">0</span> / 15 (Active: <span id="shop-stat-hunter-swarm-active-p1">0</span>/12)</div>
-                    <div class="stat-line">Med Packs: <span id="shop-stat-medpacks-p1">0</span> / 3</div>
-                    <div class="stat-line">Energy Drinks: <span id="shop-stat-boosts-p1">0</span> / 6</div>
-                    
-                    <div class="shop-section-title">Inventory Ammunition</div>
-                    <div class="stat-line" style="font-size:10px;">Shotgun: <span id="shop-ammo-shotgun-p1">0</span> Shells</div>
-                    <div class="stat-line" style="font-size:10px;">SMG: <span id="shop-ammo-smg-p1">0</span> (<span id="shop-type-smg-p1">Standard</span>)</div>
-                    <div class="stat-line" style="font-size:10px;">LMG: <span id="shop-ammo-lmg-p1">0</span> (<span id="shop-type-lmg-p1">Standard</span>)</div>
-                    <div class="stat-line" style="font-size:10px;">Sniper: <span id="shop-ammo-sniper-p1">0</span> (<span id="shop-type-sniper-p1">Standard</span>)</div>
-                    <div class="stat-line" style="font-size:10px;">M1A Rifle: <span id="shop-ammo-m1a-p1">0</span> (<span id="shop-type-m1a-p1">Standard</span>)</div>
-                    <div class="stat-line" style="font-size:10px;">Pistol Core: <span id="shop-type-pistol-p1" style="color:var(--neon-blue)">Standard</span></div>
+                    <div class="shop-section-title">Operator</div>
+                    <div class="stat-line">HP <span id="shop-stat-hp-p1" style="color:var(--green)">100</span> / <span id="shop-stat-maxhp-p1">100</span> · ARM <span id="shop-stat-armor-p1" style="color:var(--neon-blue)">50</span> · MOB <span id="shop-stat-speed-p1" style="color:#ffb700">0</span>/4</div>
+                    <div class="stat-line" style="opacity:0.7">Load <span id="shop-stat-weight-p1" style="color:var(--red)">0</span> lbs · <span id="shop-stat-speed-multi-p1" style="color:var(--red)">100%</span> speed</div>
+                    <div class="shop-section-title">Loadout</div>
+                    <div id="shop-loadout-p1" class="shop-loadout-strip"></div>
                 </div>
-                <!-- Right: Interactive Shop -->
-                <div class="shop-panel-items" style="height: 310px;">
+                <!-- Right: Interactive Shop (one flexing scrollport) -->
+                <div class="shop-panel-items">
                     <div class="shop-section-title">Vitality</div>
                     <div class="shop-grid">
                         <button id="btn-buy-hp-p1" onclick="game.buyItem('hp', game.player)">Heal 50 HP ($50)</button>
@@ -2306,6 +2318,10 @@
                     </div>
                 </div>
             </div>
+            <!-- Bottom: full-width Intel explainer (fixed footprint — long
+                 blurbs scroll inside, the window never resizes). -->
+            <div class="shop-section-title">Intel</div>
+            <div id="shop-inspector-p1" class="shop-inspector"><div class="insp-hint">HOVER OR FOCUS AN ITEM — CLICK LOADOUT ICONS TO BUY</div></div>
             <div id="operator-shop-timer-wrap" class="hidden" style="text-align:center; margin-top:8px; font-size:11px; color:#39ff14; letter-spacing:1px;">
                 DEPLOYMENT IN <span id="operator-shop-timer">60</span>s
             </div>
@@ -2325,35 +2341,16 @@
                 ⚠ OUTSIDE BASE PERIMETER -- RETURN TO BASE TO RESUPPLY
             </div>
             <div class="shop-container">
-                <!-- Left: Current Stats -->
+                <!-- Left: Operator vitals + visual loadout (click icons to buy) -->
                 <div class="shop-panel-stats" style="font-size: 11px;">
-                    <div class="shop-section-title">Current Stats</div>
-                    <div class="stat-line">Health: <span id="shop-stat-hp-p2" style="color:var(--green)">100</span> / <span id="shop-stat-maxhp-p2">100</span></div>
-                    <div class="stat-line">Armor: <span id="shop-stat-armor-p2" style="color:var(--neon-blue)">50</span> / 100</div>
-                    <div class="stat-line">Speed Upgrade: <span id="shop-stat-speed-p2" style="color:#ffb700">0</span> / 4</div>
-                    <div class="stat-line">Loadout Weight: <span id="shop-stat-weight-p2" style="color:var(--red)">0</span> lbs</div>
-                    <div class="stat-line">Exosuit Speed: <span id="shop-stat-speed-multi-p2" style="color:var(--red)">100%</span></div>
-                    <div class="stat-line">Grenades: <span id="shop-stat-grenades-p2">0</span> / <span id="shop-stat-maxgrenades-p2">3</span></div>
-                    <div class="stat-line">Trip Mines: <span id="shop-stat-mines-p2">0</span> / 3</div>
-                    <div class="stat-line">Barriers: <span id="shop-stat-barriers-p2">0</span> / 5</div>
-                    <div class="stat-line">Rubble: <span id="shop-stat-rubble-p2">0</span></div>
-                    <div class="stat-line">FPV Drones: <span id="shop-stat-drones-p2">0</span> / 3</div>
-                    <div class="stat-line">Auto Turrets: <span id="shop-stat-turrets-p2">0</span> / <span id="shop-stat-turretcap-p2">1</span></div>
-                    <div class="stat-line">Spot Robots: <span id="shop-stat-dogs-p2">0</span> / 1</div>
-                    <div class="stat-line">Swarm Drones: <span id="shop-stat-hunter-swarm-p2">0</span> / 15 (Active: <span id="shop-stat-hunter-swarm-active-p2">0</span>/12)</div>
-                    <div class="stat-line">Med Packs: <span id="shop-stat-medpacks-p2">0</span> / 3</div>
-                    <div class="stat-line">Energy Drinks: <span id="shop-stat-boosts-p2">0</span> / 6</div>
-                    
-                    <div class="shop-section-title">Inventory Ammunition</div>
-                    <div class="stat-line" style="font-size:10px;">Shotgun: <span id="shop-ammo-shotgun-p2">0</span> Shells</div>
-                    <div class="stat-line" style="font-size:10px;">SMG: <span id="shop-ammo-smg-p2">0</span> (<span id="shop-type-smg-p2">Standard</span>)</div>
-                    <div class="stat-line" style="font-size:10px;">LMG: <span id="shop-ammo-lmg-p2">0</span> (<span id="shop-type-lmg-p2">Standard</span>)</div>
-                    <div class="stat-line" style="font-size:10px;">Sniper: <span id="shop-ammo-sniper-p2">0</span> (<span id="shop-type-sniper-p2">Standard</span>)</div>
-                    <div class="stat-line" style="font-size:10px;">M1A Rifle: <span id="shop-ammo-m1a-p2">0</span> (<span id="shop-type-m1a-p2">Standard</span>)</div>
-                    <div class="stat-line" style="font-size:10px;">Pistol Core: <span id="shop-type-pistol-p2" style="color:var(--neon-blue)">Standard</span></div>
+                    <div class="shop-section-title">Operator</div>
+                    <div class="stat-line">HP <span id="shop-stat-hp-p2" style="color:var(--green)">100</span> / <span id="shop-stat-maxhp-p2">100</span> · ARM <span id="shop-stat-armor-p2" style="color:var(--neon-blue)">50</span> · MOB <span id="shop-stat-speed-p2" style="color:#ffb700">0</span>/4</div>
+                    <div class="stat-line" style="opacity:0.7">Load <span id="shop-stat-weight-p2" style="color:var(--red)">0</span> lbs · <span id="shop-stat-speed-multi-p2" style="color:var(--red)">100%</span> speed</div>
+                    <div class="shop-section-title">Loadout</div>
+                    <div id="shop-loadout-p2" class="shop-loadout-strip"></div>
                 </div>
-                <!-- Right: Interactive Shop -->
-                <div class="shop-panel-items" style="height: 310px;">
+                <!-- Right: Interactive Shop (one flexing scrollport) -->
+                <div class="shop-panel-items">
                     <div class="shop-section-title">Vitality</div>
                     <div class="shop-grid">
                         <button id="btn-buy-hp-p2" onclick="game.buyItem('hp', game.player2)">Heal 50 HP ($50)</button>
@@ -2437,6 +2434,10 @@
                     </div>
                 </div>
             </div>
+            <!-- Bottom: full-width Intel explainer (fixed footprint — long
+                 blurbs scroll inside, the window never resizes). -->
+            <div class="shop-section-title">Intel</div>
+            <div id="shop-inspector-p2" class="shop-inspector"><div class="insp-hint">HOVER OR FOCUS AN ITEM — CLICK LOADOUT ICONS TO BUY</div></div>
             <button id="btn-call-evac-p2" onclick="game.requestEvac(2)" style="width:100%; border-color:#ffb700; color:#ffb700; margin-top: 10px;">&#9742; REQUEST EVAC &mdash; EXTRACT NEXT WAVE ($100 &rarr; 1 INTEL)<br><span style="font-size:9px; letter-spacing:0.5px; opacity:0.75; font-weight:normal;">Converts ALL remaining cash to Intel for the Armory &mdash; but only if you survive the dustoff</span></button>
             <button id="btn-ready-p2" onclick="game.setReady(2)" style="width:100%; border-color:#ffb700; color:#ffb700; margin-top: 10px;">READY (P2)</button>
         </div>
@@ -3019,7 +3020,11 @@ const SVGIcons = {
     eventide: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>`,
     oracle: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/><circle cx="12" cy="12" r="2.5"/></svg>`,
     shield: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 7.6-7 9-4-1.4-7-4.4-7-9V6l7-3z"/></svg>`,
-    armor: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10l2 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7l2-3z"/><path d="M12 8v11"/></svg>`
+    armor: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10l2 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7l2-3z"/><path d="M12 8v11"/></svg>`,
+    fiber: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3.5"/><path d="M5 5l2.5 2.5M19 19l-2.5-2.5"/></svg>`,
+    rubble: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M4 20l3-7 4 4 3-5 4 4 2-3"/></svg>`,
+    ammo: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v6l-1 12h-4L9 9V3z"/><path d="M9 9h6"/></svg>`,
+    oc: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M10 2v4M14 2v4M10 18v4M14 18v4M2 10h4M2 14h4M18 10h4M18 14h4"/></svg>`
 };
 
 // ==== JULY item 4: world-space loot icons ==================================
@@ -3046,7 +3051,11 @@ const ITEM_ICON_COLORS = {
     hunter_swarm: '#d500f9',
     camera:       '#00e5ff',
     eventide:     '#b388ff',
-    oracle:       '#ff5fd2'
+    oracle:       '#ff5fd2',
+    fiber:        '#64ffda',
+    rubble:       '#bcaaa4',
+    ammo:         '#ffe082',
+    oc:           '#80d8ff'
 };
 const _worldIconCache = {};
 function getWorldIconPath(key) {
@@ -16940,7 +16949,7 @@ class Enemy extends Entity {
         // seconds is intentional, and a relocate would yank it mid-root.
         // RELOAD is mobile under FORK-2b, so it stays under the detector and
         // keeps its wedge backstop: a pilot wedged in geometry is an
-        // unclearable wave, since wave clear is enemies.length === 0), and
+        // unclearable wave, since wave clear is unboundHostileCount() === 0), and
         // enemies that are legitimately holding (in firing range with LOS, or
         // fleeing a drone). Note the relocate is LOCAL, not a map-spanning
         // teleport: a relocated enemy gets a <=420px ring move measured from
@@ -16974,10 +16983,23 @@ class Enemy extends Entity {
                             || this.markedTimer > 0
                             || game._isSeenByLiveFeed(this.x, this.y);
                         if (this._intentionalHold || holding || this.cachedRunFromDrone || visible) {
-                            this._stuckSuppressed = (this._stuckSuppressed || 0) + 1;
-                            if (this._stuckSuppressed >= TACTICAL_TUNING.STUCK_ESCALATION_CYCLES) {
-                                this._stuckSuppressed = 0;
-                                game._relocateStuckEnemy(this, true);
+                            // Trip-scripted stands are choreography, not
+                            // wedges: an oracle-slowed holder or a possessed/
+                            // bound ally holding overwatch suppresses this
+                            // cycle's relocate but never arms the 9s
+                            // escalation guillotine (long trips made 9s
+                            // stands common, and escalated relocates bypass
+                            // the live-feed gate — enemies visibly popping
+                            // mid-trip). Baseline behavior for everything
+                            // else is unchanged (BUG-015 backstop intact).
+                            const _tripScripted = this._intentionalHold &&
+                                (game.gameTime < (this._oracleSlowUntil || 0) || this.possessedBy || this.boundTo);
+                            if (!_tripScripted) {
+                                this._stuckSuppressed = (this._stuckSuppressed || 0) + 1;
+                                if (this._stuckSuppressed >= TACTICAL_TUNING.STUCK_ESCALATION_CYCLES) {
+                                    this._stuckSuppressed = 0;
+                                    game._relocateStuckEnemy(this, true);
+                                }
                             }
                         } else {
                             game._relocateStuckEnemy(this, false);
@@ -19012,7 +19034,11 @@ class Enemy extends Entity {
         let best = null, bestTier = 99, bestFrac = 1, bestD2 = Infinity;
         let anchor = null, anchorTier = 99, anchorD2 = AR2;
         for (const e of game.enemies) {
-            if (e === this || e.dead) continue;
+            // ORACLE SPICE: spirits are never the medic's allies — a bound
+            // convert is living (and woundable via traitor-tax), so without
+            // this the medic anchors on, rushes to, and HEALS your convert
+            // with enemy charges. Possessed hosts likewise excluded.
+            if (e === this || e.dead || e.possessedBy || e.boundTo) continue;
             const dx = e.x - this.x, dy = e.y - this.y;
             const d2 = dx * dx + dy * dy;
             const tier = this._medicTier(e);
@@ -19766,6 +19792,12 @@ class Enemy extends Entity {
                                 for (let _li = 0; _li < game.enemies.length; _li++) {
                                     const _le = game.enemies[_li];
                                     if (!_le || _le.dead || _le === this || _le === _tr.host || _le.possessedBy || _le.boundTo || _le.isBoss) continue;
+                                    // SIMULATED SECOND FLOOR: the spirit rides
+                                    // the plane it killed on — never leaps
+                                    // through the floor (host pick, influence,
+                                    // harvest, and lash all floor-gate; leap
+                                    // was the one that didn't).
+                                    if (game.map && game.map.floorSeparated && game.map.floorSeparated(this.x, this.y, _le.x, _le.y)) continue;
                                     const _ldx = _le.x - this.x, _ldy = _le.y - this.y;
                                     const _ld2 = _ldx * _ldx + _ldy * _ldy;
                                     if (_ld2 < _nlD2) { _nlD2 = _ld2; _nl = _le; }
@@ -19786,7 +19818,10 @@ class Enemy extends Entity {
                 }
             }
             if (this.boundTo && this.boundTo.boundAlly === this) this.boundTo.boundAlly = null;
-            if (this.boundTo && game._boundAlive !== undefined) game._boundAlive = Math.max(0, (game._boundAlive || 0) - 1);
+            if (this.boundTo && game._boundAlive !== undefined) {
+                game._boundAlive = Math.max(0, (game._boundAlive || 0) - 1);
+                if (game._untrackBound) game._untrackBound(this);
+            }
             this.possessedBy = null;
             this.boundTo = null;
         }
@@ -21976,6 +22011,18 @@ class HostileMiniDrone {
         this._retiring = true;
         this.life = Math.min(this.life, 3);
     }
+    // C-2b: a retired drone fizzles visibly (cold sparks, no damage/shake/
+    // scorch) instead of popping out of existence mid-chase — the silent
+    // vanish read as a teleport bug in playtest. Natural life-end (18s of
+    // service, usually off-screen) stays silent by design.
+    fizzle() {
+        if (typeof game === 'undefined' || !game) return;
+        for (let c = 0; c < 8; c++) {
+            const a = Math.random() * Math.PI * 2, spd = MathUtils.rand(40, 140);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ff8a80', 0.4, 2);
+        }
+        game.spawnShockwave(this.x, this.y, 40, 0.15);
+    }
     takeDamage(amt = 25) {
         if (this.dead) return;
         this.hp -= amt;
@@ -22019,7 +22066,7 @@ class HostileMiniDrone {
     update(dt, game) {
         if (this.dead) return;
         this.life -= dt;
-        if (this.life <= 0) { this.dead = true; this.stopAudio(); return; } // silent expiry, same contract as BossDrone
+        if (this.life <= 0) { this.dead = true; this.stopAudio(); if (this._retiring) this.fizzle(); return; } // retired drones fizzle (C-2b); natural end stays silent, same contract as BossDrone
         // C-2: owner died -- wind down. Stop homing, drift, fade the hum, and
         // let the life expiry above reap us within ~3s.
         if (this._retiring) {
@@ -22242,6 +22289,16 @@ class EnemyFPVDrone {
         this._retiring = true;
         this.life = Math.min(this.life, 3);
     }
+    // C-2b (shared idiom with HostileMiniDrone): retired FPV drones fizzle
+    // visibly on expiry instead of vanishing mid-drift.
+    fizzle() {
+        if (typeof game === 'undefined' || !game) return;
+        for (let c = 0; c < 8; c++) {
+            const a = Math.random() * Math.PI * 2, spd = MathUtils.rand(40, 140);
+            game.addParticle(this.x, this.y, Math.cos(a) * spd, Math.sin(a) * spd, '#ff8a80', 0.4, 2);
+        }
+        game.spawnShockwave(this.x, this.y, 40, 0.15);
+    }
     takeDamage(amt = 20) {
         if (this.dead) return;
         this.hp -= amt;
@@ -22294,7 +22351,7 @@ class EnemyFPVDrone {
     update(dt, game) {
         if (this.dead) return;
         this.life -= dt;
-        if (this.life <= 0) { this.dead = true; this.stopAudio(); return; } // silent expiry backstop
+        if (this.life <= 0) { this.dead = true; this.stopAudio(); if (this._retiring) this.fizzle(); return; } // retired drones fizzle (C-2b); natural end stays a silent backstop
         // C-2: owner (the pilot) died -- wind down. Stop homing, drift, fade
         // the hum, and let the life expiry above reap us within ~3s.
         if (this._retiring) {
@@ -23355,6 +23412,14 @@ class Bullet {
                     if (!canHit && ent instanceof Enemy && !(ent.possessedBy || ent.boundTo)
                         && !this.isPlayerBullet && !this.isNeutral && game && game._oracleActive
                         && game._oracleCrossfireAt(this.x, this.y)) canHit = true;
+                    // ORACLE SPICE: bound dread-field — a live convert turns
+                    // the pack even with no trip running (bound allies fire
+                    // native hostile ordnance; without this they perform war
+                    // without dealing damage). Positional like crossfire:
+                    // near your convert is dangerous for THEM.
+                    if (!canHit && ent instanceof Enemy && !(ent.possessedBy || ent.boundTo)
+                        && !this.isPlayerBullet && !this.isNeutral && game
+                        && game._boundAllyNear && game._boundAllyNear(this.x, this.y)) canHit = true;
                 }
                 
                 if (!canHit) continue;
@@ -30002,6 +30067,210 @@ const CORRUPTED_OVERCLOCKS = {
         desc: 'Weapon noise -65% (heat) / -15% bullet damage' }
 };
 
+// ==== SHOP_ITEMS: the shop's single item registry ==========================
+// One entry per purchasable (keys match _shopBtnIdMap): the display name,
+// icon + signature color, a two-voice blurb (flavor + mechanical), whether
+// it appears in the at-a-glance LOADOUT strip, and an owned() reader that
+// reports { have, max, note } for the strip badge + inspector HELD line.
+// owned() must never throw on a fresh/partial player — the renderers call
+// it inside try/catch and treat failure as "none held".
+// Guidance §6's earned refactor: adding a shop item is now one entry here
+// (plus its buyItem branch + button), and the strip/inspector/nav pick it
+// up with zero further edits.
+const SHOP_ITEMS = {
+    hp: { name: 'FIELD HEAL', icon: 'medpack', color: '#39ff14', strip: false,
+        flavor: 'Patch up and get back in.',
+        mech: '+50 HP on the spot. Cannot exceed max — buy it hurting, not healthy.',
+        owned: (p) => ({ have: Math.ceil(p.hp), max: p.maxHp, note: '' }) },
+    armor: { name: 'PLATING', icon: 'armor', color: '#00e5ff', strip: false,
+        flavor: 'Plating loves you.',
+        mech: '+50 armor, caps at 100. Armor soaks before flesh does.',
+        owned: (p) => ({ have: Math.ceil(p.armor), max: 100, note: '' }) },
+    speed: { name: 'MOBILITY', icon: 'boost', color: '#ffb700', strip: false,
+        flavor: 'Leg day, exosuit edition.',
+        mech: 'Ranks 1–2: +12% accel each. Ranks 3–4: +25% stamina economy each. 4 ranks max.',
+        owned: (p) => ({ have: p.speedUpgrades || 0, max: 4, note: '' }) },
+    grenade: { name: 'FRAG GRENADE', icon: 'grenade', color: '#ff3d00', strip: true,
+        flavor: 'A pocket argument-ender.',
+        mech: 'Shrapnel frag — throw by hand, or lob an aimed arc by holding Z with the underbarrel tube. Caps at your max.',
+        owned: (p) => ({ have: p.grenades || 0, max: p.maxGrenades || 3, note: '' }) },
+    mine: { name: 'TRIP MINE', icon: 'mine', color: '#ffb700', strip: true,
+        flavor: 'Leave a surprise.',
+        mech: 'Proximity mine for a lane. Sentinel armory tiers teach it to hunt drones and reload between waves. Max 3.',
+        owned: (p) => ({ have: p.mines || 0, max: 3, note: '' }) },
+    medpack: { name: 'MEDPACK', icon: 'medpack', color: '#39ff14', strip: true,
+        flavor: 'Flatline? Never met her.',
+        mech: '+25 HP anywhere, even mid-fight, off the left rail. Max 3.',
+        owned: (p) => ({ have: p.medpacks || 0, max: 3, note: '' }) },
+    boost: { name: 'ENERGY DRINK', icon: 'boost', color: '#00b0ff', strip: true,
+        flavor: 'Liquid 4AM.',
+        mech: '+30 stamina and a 10-second surge, off the left rail. Max 6.',
+        owned: (p) => ({ have: p.energyDrinks || 0, max: 6, note: '' }) },
+    barrier: { name: 'BARRIER', icon: 'barrier', color: '#4a9eff', strip: true,
+        flavor: 'Instant architecture.',
+        mech: 'A portable wall, right now, placed at your feet. Engineer L2 chains whole walls with C held.',
+        owned: (p, g) => ({ have: p.barriersCount || 0, max: (g && g._maxBarriers) ? g._maxBarriers() : 5, note: p.barrierUpgraded ? 'MK.II' : '' }) },
+    barrier_upgrade: { name: 'BARRIER MK.II', icon: 'barrier', color: '#4a9eff', strip: false,
+        flavor: 'Walls with a gym membership.',
+        mech: 'Every barrier you own — placed or pocketed — becomes a 600-HP MK.II slab. One-time.',
+        owned: (p) => ({ have: !!p.barrierUpgraded, max: null, note: '' }) },
+    rubble: { name: 'RUBBLE', icon: 'rubble', color: '#bcaaa4', strip: true,
+        flavor: 'One operator\u2019s trash…',
+        mech: '+2,500 wall material per buy for the Matter Manipulator (F: mine, build). No cap, no gate — the bulk path. Repeat freely.',
+        owned: (p) => ({ have: Math.floor(p.wallMaterial || 0), max: null, note: 'BANK' }) },
+    drone: { name: 'FPV DRONE', icon: 'drone', color: '#ff7a00', strip: true,
+        flavor: 'Be somewhere else.',
+        mech: 'Pilot it yourself — your body goes still while you fly the bomb. Detonates on impact. Max 3 in the rack.',
+        owned: (p, g) => {
+            if (g && g.operatorMode) {
+                const st = (p.activeDrone && !p.activeDrone.dead) ? 'AIRBORNE' : (((p._opLaunchCooldown || 0) > 0) ? 'RECHARGE' : 'READY');
+                return { have: '∞', max: null, note: st };
+            }
+            return { have: (p.dronesCount || 0) + ((p.activeDrone && !p.activeDrone.dead) ? 1 : 0), max: 3, note: p.droneUpgraded ? 'BOMBER' : '' };
+        } },
+    drone_upgrade: { name: 'DRONE BOMBER', icon: 'drone', color: '#ff7a00', strip: false,
+        flavor: 'The bomber always gets through.',
+        mech: 'Your drone drops 3 bomblets on the way in before detonating. Needs a drone to bolt onto. One-time.',
+        owned: (p) => ({ have: !!p.droneUpgraded, max: null, note: '' }) },
+    fiber_optic: { name: 'FIBER OPTIC SPOOL', icon: 'fiber', color: '#64ffda', strip: true,
+        flavor: 'Copper veins for your machine pack.',
+        mech: 'Weld living wire between your deployables with the Repair Gun: everything on one net shares a single targeting picture — cameras spot, turrets and minis shoot. Networked guns cycle ~5% faster and see ~5% farther. +2 cables per spool, 6 max.',
+        owned: (p, g) => ({ have: p.fiberCables || 0, max: (g && typeof LINK_TUNING !== 'undefined' && LINK_TUNING.maxSpoolCables) || 6, note: p.fiberOpticOwned ? '' : 'NO SPOOL' }) },
+    turret: { name: 'AUTO TURRET', icon: 'turret', color: '#ffee00', strip: true,
+        flavor: 'Overwatch that never sleeps.',
+        mech: 'Static gun buddy. Place it, point it with C, it holds the lane. 1 in the field.',
+        owned: (p, g) => {
+            const mk = (p.turretsInventory || []).some(t => typeof t === 'object' && t.isMKII);
+            return { have: p.turretsCount || 0, max: (g && g.operatorMode && typeof OP_TUNING !== 'undefined' && OP_TUNING.TURRET_CAP) ? OP_TUNING.TURRET_CAP : 1, note: mk ? 'MK.II' : '' };
+        } },
+    turret_mk2: { name: 'TURRET MK.II', icon: 'turret', color: '#ffee00', strip: false,
+        flavor: 'Overwatch, promoted.',
+        mech: 'A harder-hitting MK.II turret enters your inventory instead of the stock one. One-time.',
+        owned: (p) => ({ have: (p.turretsInventory || []).some(t => typeof t === 'object' && t.isMKII), max: null, note: '' }) },
+    dog: { name: 'SPOT ROBOT', icon: 'dog', color: '#39ff14', strip: true,
+        flavor: 'Who\u2019s a good gun?',
+        mech: 'Mobile gun buddy that follows, fights, and fetches loot. Tap interact to send it to a waypoint. 1 active.',
+        owned: (p, g) => ({ have: ((p.dogsCount || 0) >= 1 || (g && g.dogs && g.dogs.some(d => d.owner === p && !d.dead))) ? 1 : 0, max: 1, note: p.dogUpgraded ? 'MK.II' : '' }) },
+    dog_upgrade: { name: 'SPOT MK.II', icon: 'dog', color: '#39ff14', strip: false,
+        flavor: 'Good gun, great gun.',
+        mech: 'MK.II chassis: 375 HP, ~3× fire rate, +50% speed — applied to your fielded dog too. One-time.',
+        owned: (p) => ({ have: !!p.dogUpgraded, max: null, note: '' }) },
+    swarm_drone: { name: 'HUNTER SWARM', icon: 'hunter_swarm', color: '#d500f9', strip: true,
+        flavor: 'Pocket confetti, angry.',
+        mech: 'Orbiter that peels off and dive-bombs on its own. 15 owned, 12 hunting at once.',
+        owned: (p, g) => ({ have: p.hunterSwarmCount || 0, max: 15, note: (g && g.miniDrones) ? (g.miniDrones.filter(md => md.owner === p && !md.dead).length + ' OUT') : '' }) },
+    swarm_pack: { name: 'SWARM 4-PACK', icon: 'hunter_swarm', color: '#d500f9', strip: false,
+        flavor: 'Buy the whole argument.',
+        mech: 'Four hunters for less than four singles. Same caps: 15 owned, 12 hunting.',
+        owned: (p, g) => ({ have: p.hunterSwarmCount || 0, max: 15, note: '' }) },
+    camera: { name: 'SECURITY CAM', icon: 'camera', color: '#00e5ff', strip: true,
+        flavor: 'Eyes with opinions.',
+        mech: 'A networked eye that publishes targets for a linked net to shoot. Splice it into fiber and your turrets see around corners. Max 3.',
+        owned: (p) => ({ have: p.camerasCount || 0, max: 3, note: '' }) },
+    repairgun: { name: 'REPAIR GUN', icon: 'repairgun', color: '#00e5ff', strip: true,
+        flavor: 'The duct tape of war.',
+        mech: 'Weld torch: repairs damaged deployables and spools fiber between them — the hands of the whole Data Link. Full battery on purchase; welding never touches ammo.',
+        owned: (p) => ({ have: (p.inventory || []).some(w => w && w.name === 'RepairGun'), max: null, note: '' }) },
+    field_gen: { name: 'EVENTIDE ANCHOR', icon: 'eventide', color: '#b388ff', strip: true,
+        flavor: 'Borrowed time, pylon-mounted.',
+        mech: 'A 500px time-dilation field, ~1000:1 at the device. Tap F to cycle TIDE (slows all) / AEGIS (spares your lineage) / HORIZON (slows the world while you stand inside). Carry 1 — destroyed means gone.',
+        owned: (p) => ({ have: p.fieldGenCount || 0, max: 1, note: '' }) },
+    oracle: { name: 'ORACLE SPICE', icon: 'oracle', color: '#ff5fd2', strip: true,
+        flavor: 'The Dealer only sells clarity.',
+        mech: 'Possess a hostile, turn the pack against itself, end in a nova that binds a survivor to your side. Price wanders per run — cheap today, dear tomorrow.',
+        owned: (p, g) => ({ have: p.oracle || 0, max: (typeof ORACLE_TUNING !== 'undefined' && ORACLE_TUNING.CARRY_MAX) || 3, note: '' }) },
+    ammo_shotgun: { name: 'BUCKSHOT', icon: 'ammo', color: '#ffe082', strip: true,
+        flavor: 'Loud diplomacy.',
+        mech: '12 buckshot shells — conclusive at arm\u2019s length.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.shotgun) || 0, max: (p.maxAmmo && p.maxAmmo.shotgun) || 0, note: 'SHELL' }) },
+    ammo_shotgun_slug: { name: 'SLUGS', icon: 'ammo', color: '#ffe082', strip: false,
+        flavor: 'One precise no.',
+        mech: '8 slugs — rifle manners for a shotgun mouth. Same pool as buckshot; the type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.shotgun) || 0, max: (p.maxAmmo && p.maxAmmo.shotgun) || 0, note: 'SLUG' }) },
+    ammo_smg_std: { name: 'SMG ROUNDS', icon: 'ammo', color: '#ffe082', strip: true,
+        flavor: 'Staple gun, military.',
+        mech: '60 standard rounds. Workmanlike. Shares the pool with hollow-point — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.smg) || 0, max: (p.maxAmmo && p.maxAmmo.smg) || 0, note: ((p.ammoTypes && p.ammoTypes.smg) || 'std').toUpperCase() }) },
+    ammo_smg_hp: { name: 'SMG HOLLOW-POINT', icon: 'ammo', color: '#ffe082', strip: false,
+        flavor: 'Hollow compliments.',
+        mech: '60 hollow-points: +55% flesh damage, halved vs Enforcers. Shares the pool — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.smg) || 0, max: (p.maxAmmo && p.maxAmmo.smg) || 0, note: 'HP' }) },
+    ammo_lmg_std: { name: 'LMG BELT', icon: 'ammo', color: '#ffe082', strip: true,
+        flavor: 'Suppressive paperwork.',
+        mech: '100 standard rounds. Hold the lane down. Shares the pool with AP — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.lmg) || 0, max: (p.maxAmmo && p.maxAmmo.lmg) || 0, note: ((p.ammoTypes && p.ammoTypes.lmg) || 'std').toUpperCase() }) },
+    ammo_lmg_ap: { name: 'LMG AP', icon: 'ammo', color: '#ffe082', strip: false,
+        flavor: 'Armor is a suggestion.',
+        mech: '100 armor-piercing rounds — punches riot shields and bad cover. Shares the pool — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.lmg) || 0, max: (p.maxAmmo && p.maxAmmo.lmg) || 0, note: 'AP' }) },
+    ammo_sniper_std: { name: 'SNIPER ROUNDS', icon: 'ammo', color: '#ffe082', strip: true,
+        flavor: 'Long goodbyes.',
+        mech: '5 standard rounds. Patience, then physics. Shares the pool with AP — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.sniper) || 0, max: (p.maxAmmo && p.maxAmmo.sniper) || 0, note: ((p.ammoTypes && p.ammoTypes.sniper) || 'std').toUpperCase() }) },
+    ammo_sniper_ap: { name: 'SNIPER AP', icon: 'ammo', color: '#ffe082', strip: false,
+        flavor: 'Through the wall, politely.',
+        mech: '5 AP rounds for shielded heavies and bad cover. Shares the pool — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.sniper) || 0, max: (p.maxAmmo && p.maxAmmo.sniper) || 0, note: 'AP' }) },
+    ammo_pistol_hp: { name: 'PISTOL HP', icon: 'ammo', color: '#ffe082', strip: true,
+        flavor: 'The sidearm grows teeth.',
+        mech: 'The pistol loads hollow-point permanently this run. For when the primary runs dry.',
+        owned: (p) => ({ have: !!p.pistolHP, max: null, note: '' }) },
+    ammo_m1a_std: { name: 'M1A ROUNDS', icon: 'ammo', color: '#ffe082', strip: true,
+        flavor: 'Grandpa\u2019s rifle, tuned.',
+        mech: '20 standard rounds. Semi-auto manners. Shares the pool with AP — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.m1a) || 0, max: (p.maxAmmo && p.maxAmmo.m1a) || 0, note: ((p.ammoTypes && p.ammoTypes.m1a) || 'std').toUpperCase() }) },
+    ammo_m1a_ap: { name: 'M1A AP', icon: 'ammo', color: '#ffe082', strip: false,
+        flavor: 'Grandpa means business.',
+        mech: '20 AP rounds. Plates optional. Shares the pool — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.m1a) || 0, max: (p.maxAmmo && p.maxAmmo.m1a) || 0, note: 'AP' }) },
+    oc_hollowPoint: { name: 'HOLLOW POINT', icon: 'oc', color: '#80d8ff', strip: true,
+        flavor: 'Angry geometry.',
+        mech: '+10% bullet damage per rank, every gun, all run. Price climbs 1.5× per rank.',
+        owned: (p, g, sfx) => ({ have: (g && g.runOverclocks && g.runOverclocks[sfx] && g.runOverclocks[sfx].hollowPoint) || 0, max: null, rank: true, note: '' }) },
+    oc_exoServos: { name: 'EXO-SERVOS', icon: 'oc', color: '#80d8ff', strip: true,
+        flavor: 'Calves, outsourced.',
+        mech: '+4% sprint speed and +5% accel per rank. Heavy guns feel lighter.',
+        owned: (p, g, sfx) => ({ have: (g && g.runOverclocks && g.runOverclocks[sfx] && g.runOverclocks[sfx].exoServos) || 0, max: null, rank: true, note: '' }) },
+    oc_extMags: { name: 'EXTENDED MAGS', icon: 'oc', color: '#80d8ff', strip: true,
+        flavor: 'Deeper pockets.',
+        mech: 'Bigger magazines for one non-pistol weapon of your choice — a picker opens on buy. Price climbs with total ranks.',
+        owned: (p, g, sfx) => {
+            const em = (g && g.runOverclocks && g.runOverclocks[sfx] && g.runOverclocks[sfx].extMags) || {};
+            let n = 0; for (const k in em) n += em[k];
+            return { have: n, max: null, rank: true, note: '' };
+        } },
+    oc_fireRate: { name: 'FIRE RATE', icon: 'oc', color: '#80d8ff', strip: true,
+        flavor: 'Insomnia for guns.',
+        mech: 'Ranks 1–2: +5% rate of fire each. Ranks 3–7: handling — less spread, less kick.',
+        owned: (p, g, sfx) => ({ have: (g && g.runOverclocks && g.runOverclocks[sfx] && g.runOverclocks[sfx].fireRate) || 0, max: 7, rank: true, note: '' }) },
+    oc_maxHpOC: { name: 'MAX HP', icon: 'oc', color: '#80d8ff', strip: true,
+        flavor: 'Second ribcage.',
+        mech: '+10 max HP per rank — and the +10 arrives immediately, as a heal.',
+        owned: (p, g, sfx) => ({ have: (g && g.runOverclocks && g.runOverclocks[sfx] && g.runOverclocks[sfx].maxHpOC) || 0, max: null, rank: true, note: '' }) },
+    oc_overpressure: { name: 'OVERPRESSURE', icon: 'oc', color: '#d500f9', strip: true,
+        flavor: 'The gun files a complaint. You file it anyway.',
+        mech: '+25% bullet damage for +25% spread and +40% kickback. CORRUPTED: one-time, permanent this run.',
+        owned: (p, g, sfx) => ({ have: !!(g && g.runOverclocks && g.runOverclocks[sfx] && g.runOverclocks[sfx].corrupted && g.runOverclocks[sfx].corrupted.overpressure), max: null, note: '' }) },
+    oc_glassNerves: { name: 'GLASS NERVES', icon: 'oc', color: '#d500f9', strip: true,
+        flavor: 'Feel everything. Fire faster.',
+        mech: '+28% fire rate for +25% damage taken. CORRUPTED: one-time, permanent this run.',
+        owned: (p, g, sfx) => ({ have: !!(g && g.runOverclocks && g.runOverclocks[sfx] && g.runOverclocks[sfx].corrupted && g.runOverclocks[sfx].corrupted.glassNerves), max: null, note: '' }) },
+    oc_coldBarrel: { name: 'COLD BARREL', icon: 'oc', color: '#d500f9', strip: true,
+        flavor: 'Whisper-quiet war crimes.',
+        mech: '−65% weapon noise (heat) for −15% bullet damage. CORRUPTED: one-time, permanent this run. Loves GHOST kits.',
+        owned: (p, g, sfx) => ({ have: !!(g && g.runOverclocks && g.runOverclocks[sfx] && g.runOverclocks[sfx].corrupted && g.runOverclocks[sfx].corrupted.coldBarrel), max: null, note: '' }) },
+    call_evac: { name: 'REQUEST EVAC', icon: 'oc', color: '#ffb700', strip: false,
+        flavor: 'Dustoff.',
+        mech: 'Extract next wave: converts ALL remaining cash to Intel for the Armory — but only if you survive the dustoff. $100 → 1 intel.',
+        owned: null },
+    ready: { name: 'READY', icon: 'oc', color: '#39ff14', strip: false,
+        flavor: 'Kick the door.',
+        mech: 'Start the next wave. In co-op, both operators must be ready.',
+        owned: null }
+};
+// Loadout-strip order: gear first, ammo pools second, overclocks last.
+const SHOP_STRIP_ORDER = ['grenade', 'mine', 'barrier', 'medpack', 'boost', 'drone', 'turret', 'dog', 'swarm_drone', 'camera', 'fiber_optic', 'repairgun', 'field_gen', 'oracle', 'rubble', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std', 'ammo_pistol_hp', 'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC', 'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel'];
+
 // Escalation Protocols: opt-in pre-mission risk toggles (extraction only).
 // Each raises real danger and pays a flat bonus multiplier on ALL mission
 // intel -- folded into RunConfig.intelMult at snapshot time and applied
@@ -31383,8 +31652,31 @@ class Game {
             e.opAI = null;
         }
         e.operatorExposedTimer = 0; // see FPVDrone.detonate's marked-enemy hook -- must not leak across pool reuse
+        // Arrival shimmer: spawns previously announced only by the CONTACT
+        // floater + blip, which read as teleports under slow-mo. One
+        // proximity-gated puff (off-screen trickle costs a single branch).
+        this._spawnArrivalFx(x, y);
 
         return e;
+    }
+
+    // Arrival shimmer (shared by both spawn factories): a short amber puff
+    // so squad/edge materializations read as arrivals, not teleports.
+    // Proximity-gated (~1600px to any live player) so off-screen trickle
+    // pays one branch. Bosses skip it (separate path + their own banner).
+    _spawnArrivalFx(x, y) {
+        const ps = [this.player, this.isTwoPlayer ? this.player2 : null];
+        for (let i = 0; i < ps.length; i++) {
+            const p = ps[i];
+            if (!p || p.dead) continue;
+            const dx = x - p.x, dy = y - p.y;
+            if (dx * dx + dy * dy > 1600 * 1600) continue;
+            for (let c = 0; c < 6; c++) {
+                const a = Math.random() * Math.PI * 2, spd = MathUtils.rand(50, 150);
+                this.addParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, '#ffb700', 0.5, 2);
+            }
+            return;
+        }
     }
 
     // ==== STRIKE TEAM: Operative object factory & pool dispatcher ====
@@ -31402,6 +31694,7 @@ class Game {
         e._aiStaggerId = this.nextAiStaggerId++;
         e.opAI = null;
         e.operatorExposedTimer = 0;
+        this._spawnArrivalFx(x, y);
         return e;
     }
 
@@ -32276,6 +32569,27 @@ class Game {
         this.enemies.push(enemy);
         this.enemiesToSpawn--;
         return enemy;
+    }
+
+    // EVENTIDE: squad pacing runs on the slowest live player's clock, so a
+    // TIDE-slowed owner isn't swamped by full-rate arrivals while killing
+    // slowly (the wave budget is unchanged — only the cadence follows the
+    // slowed clock). HORIZON-safe: horizon skips the positional path, so
+    // the factor here is 1 and loop()'s global scale is never double-dipped.
+    // AEGIS-exempt owners also read 1 (their clock is full rate — arrivals
+    // match it). No-field cost: one branch, factor 1. NOW/operator/
+    // extraction faucets deliberately untouched (their cadence IS them).
+    _spawnPacingF() {
+        if (!this.fieldGens || !this.fieldGens.length) return 1;
+        let f = 1;
+        const ps = [this.player, this.isTwoPlayer ? this.player2 : null];
+        for (let i = 0; i < ps.length; i++) {
+            const p = ps[i];
+            if (!p || p.dead) continue;
+            const pf = this.fieldTimeFactor(p.x, p.y, p);
+            if (pf < f) f = pf;
+        }
+        return f;
     }
 
     _updateTacticalSpawning(dt) {
@@ -34278,6 +34592,7 @@ class Game {
                 let targetBtn = cells[this.shopSelectedIndexP1].el;
                 targetBtn.classList.add('focused-btn');
                 targetBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                this._showShopInspector('p1', cells[this.shopSelectedIndexP1].id);
             }
         }
 
@@ -34287,8 +34602,155 @@ class Game {
                 let targetBtn = cells[this.shopSelectedIndexP2].el;
                 targetBtn.classList.add('focused-btn');
                 targetBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                this._showShopInspector('p2', cells[this.shopSelectedIndexP2].id);
             }
         }
+    }
+
+    // SHOP LOADOUT STRIP (top-left, at-a-glance equipped readout). One
+    // innerHTML write per shop refresh from SHOP_ITEMS + SHOP_STRIP_ORDER —
+    // never per frame. owned() is exception-guarded: a reader that throws
+    // on a partial player renders as "not held", never a broken shop.
+    _renderShopLoadout(p, suffix) {
+        const el = document.getElementById('shop-loadout-' + suffix);
+        if (!el || !p || typeof SHOP_ITEMS === 'undefined') return;
+        const order = (typeof SHOP_STRIP_ORDER !== 'undefined') ? SHOP_STRIP_ORDER : Object.keys(SHOP_ITEMS);
+        let html = '';
+        for (let i = 0; i < order.length; i++) {
+            const it = SHOP_ITEMS[order[i]];
+            if (!it) continue;
+            let o = null;
+            try { o = it.owned ? it.owned(p, this, suffix) : null; } catch (e) { o = null; }
+            let has = false, badge = '';
+            let note = (o && o.note) ? o.note : '';
+            if (o) {
+                if (o.rank) {
+                    has = (o.have || 0) > 0;
+                    if (has) badge = 'Lv' + o.have + ((o.max != null) ? '/' + o.max : '');
+                } else if (typeof o.have === 'boolean') {
+                    has = o.have;
+                } else if (typeof o.have === 'number') {
+                    has = o.have > 0;
+                    if (o.max != null) badge = o.have + '/' + o.max;
+                    else if (has) badge = Number(o.have).toLocaleString('en-US');
+                } else if (typeof o.have === 'string') {
+                    has = true; badge = o.have;
+                }
+            }
+            // At-a-glance discipline: dim (unheld) chips are silent
+            // silhouettes — no 0/3 noise. Counts and caps live in the
+            // inspector's HELD line on hover/focus.
+            if (!has) { badge = ''; note = ''; }
+            const icon = (typeof SVGIcons !== 'undefined' && SVGIcons[it.icon]) ? SVGIcons[it.icon] : '';
+            // CLICK-TO-BUY: the chip carries its buy key — the strip's
+            // delegated click handler routes it to buyItem/buyOverclock
+            // (which own all caps/cash/gate guards, so no check here).
+            html += '<div class="loadout-chip' + (has ? ' owned' : '') + '" data-item="' + order[i] + '" style="color:' + (has ? it.color : '#4a5560') + '" title="' + it.name + ' — CLICK TO BUY">'
+                + icon
+                + (note ? '<span class="chip-note">' + note + '</span>' : '')
+                + (badge ? '<span class="chip-count">' + badge + '</span>' : '')
+                + '</div>';
+        }
+        el.innerHTML = html;
+    }
+
+    // SHOP INSPECTOR (bottom-left explainer). Populated by mouse hover
+    // (delegated mouseover), gamepad focus (refreshGamepadShopHighlight),
+    // and last purchase (_restoreShopInspectors after every re-render — the
+    // touch path's explainer, since tap buys directly). Change-guarded so
+    // repeat highlights don't rewrite the DOM. Content is static trusted
+    // registry text + numeric owned counts (no user input → innerHTML safe).
+    _showShopInspector(suffix, itemId, justBought) {
+        const box = document.getElementById('shop-inspector-' + suffix);
+        if (!box || typeof SHOP_ITEMS === 'undefined') return;
+        const cur = this._shopInspector || (this._shopInspector = {});
+        if (!itemId || !SHOP_ITEMS[itemId]) {
+            if (cur[suffix] === null && !justBought) return;
+            cur[suffix] = null;
+            box.innerHTML = '<div class="insp-hint">HOVER OR FOCUS AN ITEM — CLICK LOADOUT ICONS TO BUY</div>';
+            return;
+        }
+        if (cur[suffix] === itemId && !justBought) return;
+        cur[suffix] = itemId;
+        const it = SHOP_ITEMS[itemId];
+        const p = (suffix === 'p2') ? this.player2 : this.player;
+        let o = null;
+        try { o = (it.owned && p) ? it.owned(p, this, suffix) : null; } catch (e) { o = null; }
+        let held = '';
+        if (o) {
+            if (o.rank) held = (o.have || 0) > 0 ? ('RANK ' + o.have + ((o.max != null) ? ' / ' + o.max : '')) : 'NOT INSTALLED';
+            else if (typeof o.have === 'boolean') held = o.have ? 'INSTALLED' : 'NOT HELD';
+            else if (typeof o.have === 'number') held = 'HELD: ' + (o.max != null ? (o.have + ' / ' + o.max) : Number(o.have).toLocaleString('en-US')) + (o.note ? ' · ' + o.note : '');
+            else if (typeof o.have === 'string') held = 'HELD: ' + o.have + (o.note ? ' · ' + o.note : '');
+        }
+        box.innerHTML = '<div class="insp-name" style="color:' + it.color + '">' + it.name + '</div>'
+            + '<div class="insp-flavor">' + it.flavor + '</div>'
+            + '<div class="insp-mech">' + it.mech + '</div>'
+            + (held ? '<div class="insp-held">' + held + '</div>' : '')
+            + (justBought ? '<div class="insp-bought">ACQUIRED ✓</div>' : '');
+    }
+
+    // One delegated mouseover per shop box (dataset-guarded: openShopInterface
+    // re-renders every purchase, but the BOX nodes persist, so listeners
+    // attach once). Button id → item id via the reverse of _shopBtnIdMap.
+    // The loadout strip gets a delegated CLICK per panel: chips route to the
+    // real buy paths (buyItem/buyOverclock own every guard, so a maxed or
+    // broke click is a safe no-op) and the re-render lands the ACQUIRED tag.
+    _wireShopInspector() {
+        if (typeof SHOP_ITEMS === 'undefined') return;
+        if (!this._shopBtnReverse) {
+            this._shopBtnReverse = {};
+            const fwd = this._shopBtnIdMap();
+            for (const k in fwd) this._shopBtnReverse[fwd[k]] = k;
+        }
+        const boxes = [['shop-box-p1', 'p1'], ['shop-box-p2', 'p2']];
+        for (let i = 0; i < boxes.length; i++) {
+            const box = document.getElementById(boxes[i][0]);
+            if (!box || box.dataset.inspWired) continue;
+            box.dataset.inspWired = '1';
+            const suffix = boxes[i][1], self = this;
+            box.addEventListener('mouseover', (e) => {
+                const b = e.target && e.target.closest ? e.target.closest('button') : null;
+                if (!b || !box.contains(b)) return;
+                const base = b.id ? b.id.replace(/-p[12]$/, '') : '';
+                const itemId = self._shopBtnReverse[base];
+                if (itemId && SHOP_ITEMS[itemId]) self._showShopInspector(suffix, itemId);
+            });
+            const strip = document.getElementById('shop-loadout-' + suffix);
+            if (strip) strip.addEventListener('click', (e) => {
+                const chip = e.target && e.target.closest ? e.target.closest('.loadout-chip') : null;
+                if (!chip) return;
+                const key = chip.dataset ? chip.dataset.item : null;
+                const p = self._shopRef ? self._shopRef[suffix] : null;
+                if (!key || !p || !SHOP_ITEMS[key]) return;
+                if (key.indexOf('oc_') === 0) self.buyOverclock(key.slice(3), p);
+                else self.buyItem(key, p);
+            });
+        }
+    }
+
+    // Repaint both inspectors after every full shop refresh (the refresh
+    // rebuilds owned counts; the selection in this._shopInspector survives
+    // it). this._shopJustBought (set by _noteShopBuy) adds the ACQUIRED tag
+    // once, then clears — the touch path's post-purchase explainer.
+    _restoreShopInspectors() {
+        const cur = this._shopInspector || {};
+        const bought = this._shopJustBought || {};
+        this._showShopInspector('p1', cur.p1 || null, bought.p1 ? true : false);
+        if (this.isTwoPlayer) this._showShopInspector('p2', cur.p2 || null, bought.p2 ? true : false);
+        this._shopJustBought = {};
+    }
+
+    // Record a successful purchase as the inspector selection (called from
+    // buyItem/buyOverclock tails when cash actually moved). buyId is the
+    // SHOP_ITEMS key ('oc_' + ocType for overclocks).
+    _noteShopBuy(p, buyId) {
+        if (!buyId || typeof SHOP_ITEMS === 'undefined' || !SHOP_ITEMS[buyId]) return;
+        const suffix = (p && p === this.player2) ? 'p2' : 'p1';
+        if (!this._shopInspector) this._shopInspector = {};
+        if (!this._shopJustBought) this._shopJustBought = {};
+        this._shopInspector[suffix] = buyId;
+        this._shopJustBought[suffix] = buyId;
     }
 
     handlePauseMenuNavigation(gpList) {
@@ -37118,6 +37580,7 @@ class Game {
                 const old = _mine.shift();
                 old.boundTo = null;
                 this._boundAlive = Math.max(0, (this._boundAlive || 0) - 1);
+                this._untrackBound(old);
                 this.floatingTexts.push(this.spawnFloatingText(old.x, old.y - 30, 'RELEASED', '#808f9c', 1.2));
             }
             host.possessedBy = null;
@@ -37128,6 +37591,7 @@ class Game {
             host.cachedTarget = null;
             player.boundAlly = host;
             this._boundAlive = (this._boundAlive || 0) + 1;
+            this._trackBound(host);
             this.floatingTexts.push(this.spawnFloatingText(host.x, host.y - 44, 'BOUND — FOLLOWS YOU', '#39ff14', 2.4));
             this.spawnShockwave(host.x, host.y, 170, 0.4);
             this.triggerChromaticAberration(0.4, player);
@@ -37352,7 +37816,17 @@ class Game {
         try { this._orHum.g.gain.value = n > 0 ? 0.04 + 0.02 * n + 0.012 * maxRes : 0; } catch (e) {}
     }
     _stopOracleHum() {
-        if (this._orHum) { try { this._orHum.g.gain.value = 0; } catch (e) {} }
+        //Like _stopEventideHum: the tremolo LFO sums INTO g.gain (Web Audio
+        //adds modulator signals to the param base value), so zeroing .value
+        //only re-centers the swing — the 0.35Hz pulse stays audible. Real
+        //teardown stops the oscillators, disconnects, and nulls; the lazy
+        //ensure rebuilds fresh nodes next trip (never restarts stopped ones).
+        if (!this._orHum) return;
+        try {
+            this._orHum.o1.stop(); this._orHum.o2.stop(); this._orHum.lfo.stop();
+            this._orHum.g.disconnect();
+        } catch (e) {}
+        this._orHum = null;
     }
 
     // EVENTIDE field hum: one lazy global voice (never per-anchor --
@@ -40218,12 +40692,13 @@ class Game {
             // Bound-ally live count (wave-clear + hostile-set + filter gate).
             // Binds never persist across runs (enemies re-init), so 0 here.
             this._boundAlive = 0;
+            this.boundAllies = [];
             this._oracleActive = false;
             this._oracleSampleDebt = 0;
             // A trip's canvas wobble/hum/HUD must never leak into run+1.
             try {
                 if (this.canvas) this.canvas.style.filter = '';
-                if (this._orHum) this._orHum.g.gain.value = 0;
+                this._stopOracleHum();
                 const _oh = document.getElementById('oracle-trip-hud');
                 if (_oh) _oh.classList.add('hidden');
             } catch (e) {}
@@ -42452,6 +42927,9 @@ class Game {
         const suffix = player.isPlayer2 ? 'p2' : 'p1';
         const oc = this.runOverclocks[suffix];
         if (!oc) return;
+        // SHOP REWORK: cash snapshot so a real purchase can claim the
+        // inspector (see tail).
+        const _ocCashBefore = player.cash;
         // PHASE B: capability gate (never trust the UI). Standard OCs need
         // unlockOverclocks L1; Extended Mags L2; Corrupted needs unlockCorrupted.
         // Operator mode exempt. Silent no-op on fail.
@@ -42540,6 +43018,8 @@ class Game {
             }
         }
         
+        // SHOP REWORK: see buyItem tail — 'oc_' + ocType is the registry key.
+        if (player.cash < _ocCashBefore) this._noteShopBuy(player, 'oc_' + type);
         this.openShopInterface();
     }
     
@@ -43188,7 +43668,10 @@ class Game {
             // TACTICAL WAVES: standard wave mode uses squad releases gated by
             // a live-enemy cap (see TACTICAL_TUNING). ACTION NOW mode keeps
             // the original faucet below -- the flood IS that mode's identity.
-            this._updateTacticalSpawning(dt);
+            // Squad pacing follows the slowest live player's clock (see
+            // _spawnPacingF) -- member/gap timers are this function's only
+            // dt uses, so nothing else slows with it.
+            this._updateTacticalSpawning(dt * this._spawnPacingF());
         } else if (this.prepTimer <= 0 && this.enemiesToSpawn > 0) {
             this.spawnTimer -= dt;
             if (this.spawnTimer <= 0) {
@@ -44746,6 +45229,10 @@ class Game {
         
         let updatePanel = (p, suffix) => {
             if (!p) return;
+            // SHOP REWORK: stash the per-suffix player for the inspector's
+            // HELD line; the strip renders at the end of this closure.
+            this._shopRef = this._shopRef || {};
+            this._shopRef[suffix] = p;
             setHtml('shop-cash-' + suffix, p.cash);
             setHtml('shop-stat-hp-' + suffix, Math.ceil(p.hp));
             setHtml('shop-stat-maxhp-' + suffix, p.maxHp);
@@ -44753,46 +45240,9 @@ class Game {
             setHtml('shop-stat-speed-' + suffix, p.speedUpgrades);
             setHtml('shop-stat-weight-' + suffix, p.weight);
             setHtml('shop-stat-speed-multi-' + suffix, Math.round(p.speedPenalty * 100) + '%');
-            setHtml('shop-stat-grenades-' + suffix, p.grenades);
-            setHtml('shop-stat-maxgrenades-' + suffix, p.maxGrenades || 3);
-            setHtml('shop-stat-mines-' + suffix, p.mines);
-            setHtml('shop-stat-barriers-' + suffix, (p.barriersCount || 0) + (p.barrierUpgraded ? ' (MK.II)' : ''));
-            // Rubble bank readout: the in-game RUBBLE HUD line sits behind the
-            // shop overlay's blur, so the bank needs its own line here to be
-            // legible while buying/building planning happens.
-            setHtml('shop-stat-rubble-' + suffix, Math.floor(p.wallMaterial || 0));
-            // FPV OPERATOR MODE: drones are unlimited (launch-cooldown gated,
-            // not inventory-gated -- see handleDroneInput), so the normal
-            // "N / 3" inventory readout would be permanently misleading
-            // (always 0/3 even though the player can always launch another).
-            if (this.operatorMode) {
-                let onCooldown = (p._opLaunchCooldown || 0) > 0;
-                let statusText = (p.activeDrone && !p.activeDrone.dead) ? 'AIRBORNE' : (onCooldown ? 'RECHARGING' : 'READY');
-                setHtml('shop-stat-drones-' + suffix, '∞ (' + statusText + ')');
-            } else {
-                setHtml('shop-stat-drones-' + suffix, ((p.dronesCount || 0) + (p.activeDrone && !p.activeDrone.dead ? 1 : 0)) + (p.droneUpgraded ? ' (BOMBER)' : ''));
-            }
-            let hasMk2Turret = p.turretsInventory.some(t => typeof t === 'object' && t.isMKII);
-            setHtml('shop-stat-turrets-' + suffix, (p.turretsCount || 0) + (hasMk2Turret ? ' (MK.II)' : ''));
-            // HP-15: the static "/ 1" lied in operator mode (TURRET_CAP 3).
-            setHtml('shop-stat-turretcap-' + suffix, (this.operatorMode && typeof OP_TUNING !== 'undefined' && OP_TUNING.TURRET_CAP) ? OP_TUNING.TURRET_CAP : 1);
-            setHtml('shop-stat-dogs-' + suffix, p.dogsCount || 0);
-            setHtml('shop-stat-hunter-swarm-' + suffix, p.hunterSwarmCount || 0);
-            let activeCount = this.miniDrones ? this.miniDrones.filter(md => md.owner === p && !md.dead).length : 0;
-            setHtml('shop-stat-hunter-swarm-active-' + suffix, activeCount);
-            setHtml('shop-stat-medpacks-' + suffix, p.medpacks);
-            setHtml('shop-stat-boosts-' + suffix, p.energyDrinks);
-            
-            setHtml('shop-ammo-shotgun-' + suffix, p.ammo.shotgun);
-            setHtml('shop-ammo-smg-' + suffix, p.ammo.smg);
-            setHtml('shop-type-smg-' + suffix, p.ammoTypes.smg.toUpperCase());
-            setHtml('shop-ammo-lmg-' + suffix, p.ammo.lmg);
-            setHtml('shop-type-lmg-' + suffix, p.ammoTypes.lmg.toUpperCase());
-            setHtml('shop-ammo-sniper-' + suffix, p.ammo.sniper);
-            setHtml('shop-type-sniper-' + suffix, p.ammoTypes.sniper.toUpperCase());
-            setHtml('shop-ammo-m1a-' + suffix, p.ammo.m1a);
-            setHtml('shop-type-m1a-' + suffix, p.ammoTypes.m1a.toUpperCase());
-            setHtml('shop-type-pistol-' + suffix, p.pistolHP ? 'HOLLOW POINT' : 'STANDARD');
+            // SHOP REWORK: per-item counts moved to the LOADOUT strip
+            // (_renderShopLoadout below) — the text-wall spans are gone, and
+            // setHtml is a null-safe no-op, so no per-span writes remain.
 
             let hpBtn = document.getElementById('btn-buy-hp-' + suffix);
             if (hpBtn) {
@@ -45170,16 +45620,34 @@ class Game {
                     }
                 }
             }
+            // SHOP REWORK: visual loadout strip (at-a-glance equipped).
+            this._renderShopLoadout(p, suffix);
         };
 
         updatePanel(this.player, 'p1');
         if (this.isTwoPlayer) {
             updatePanel(this.player2, 'p2');
         }
-        
+
+        // SHOP LAYOUT: a fresh open starts at the top of the buy list — the
+        // scrollport DOM persists across waves, so without this the list
+        // opens mid-scroll wherever the last wave left it. Buy re-renders
+        // (shop already visible) keep their position.
+        const _shopFresh = (() => { const s = document.getElementById('shop-screen'); return s && s.classList.contains('hidden'); })();
         toggleClass('shop-screen', 'hidden', false);
 
         this.buildShopNavModel();
+        // SHOP REWORK: hover wiring (once) + inspector repaint (owned counts
+        // changed under the surviving selection).
+        this._wireShopInspector();
+        this._restoreShopInspectors();
+        if (_shopFresh) {
+            for (const sfx of ['p1', 'p2']) {
+                const box = document.getElementById('shop-box-' + sfx);
+                const list = box ? box.querySelector('.shop-panel-items') : null;
+                if (list) list.scrollTop = 0;
+            }
+        }
 
         if (this.gamepadConnected) {
             this.refreshGamepadShopHighlight();
@@ -45424,6 +45892,9 @@ class Game {
             }
         }
 
+        // SHOP REWORK: a purchase that moved cash becomes the inspector
+        // selection (with ACQUIRED tag) — the touch path's explainer.
+        if (p.cash < _cashBeforeBuy) this._noteShopBuy(p, type);
         this.openShopInterface(); 
     }
 
@@ -48256,6 +48727,39 @@ class Game {
         return n;
     }
 
+    // ORACLE SPICE: live bound-convert registry. `_boundAlive` is the
+    // count, `boundAllies` the members — written together at all four
+    // mutation sites (bind, cap-release, bound death, run reset) so they
+    // can never drift. `_boundAllyNear` reads ONLY this (≤2/owner): the
+    // Bullet.update substep loop must never scan `this.enemies` (an
+    // O(B·S·C·E) trap that bypasses the spatial-hash protection).
+    _trackBound(e) {
+        if (!e) return;
+        if (!this.boundAllies) this.boundAllies = [];
+        if (this.boundAllies.indexOf(e) === -1) this.boundAllies.push(e);
+    }
+    _untrackBound(e) {
+        if (!e || !this.boundAllies) return;
+        const i = this.boundAllies.indexOf(e);
+        if (i !== -1) this.boundAllies.splice(i, 1);
+    }
+
+    // ORACLE SPICE: true when (x,y) sits within dread radius of any live
+    // bound convert. O(bound) FOR REAL — iterates the boundAllies registry,
+    // never this.enemies (see above).
+    _boundAllyNear(x, y) {
+        const allies = this.boundAllies;
+        if (!allies || !allies.length) return false;
+        const R2 = 400 * 400;
+        for (let i = 0; i < allies.length; i++) {
+            const e = allies[i];
+            if (!e || e.dead || !e.boundTo) continue;
+            const dx = x - e.x, dy = y - e.y;
+            if (dx * dx + dy * dy < R2) return true;
+        }
+        return false;
+    }
+
     getHostilesFor(entity) {
         // PERF + CONTRACT: in non-PvP mode when no bossDrones are active, return this.enemies
         // DIRECTLY (no allocation/copy). When bossDrones are active, populate and return
@@ -49008,8 +49512,18 @@ class Game {
         if (this.bossDrones) {
             for (let d of this.bossDrones) d.draw(this.ctx, cam);
         }
-        if (this.enemies.length === 1 && this.enemiesToSpawn === 0) {
-            let lastEnemy = this.enemies[0];
+        // ORACLE SPICE: a possessed/bound ally is never the "last enemy" —
+        // scan for the last UNBOUND hostile (mirrors _updateFinalKillEvent).
+        let _ringE = null, _ringN = 0;
+        if (this.enemiesToSpawn === 0 && this.enemies) {
+            for (let _li = 0; _li < this.enemies.length; _li++) {
+                const _le = this.enemies[_li];
+                if (!_le || _le.dead || _le.possessedBy || _le.boundTo) continue;
+                _ringN++; _ringE = _le;
+            }
+        }
+        if (_ringN === 1 && _ringE) {
+            let lastEnemy = _ringE;
             if (lastEnemy && !lastEnemy.dead) {
                 this.ctx.save();
                 this.ctx.strokeStyle = '#ff2a5f';
@@ -49749,9 +50263,16 @@ class Game {
         // the role's color -- same visual language as the teammate arrow.
         let _lastE = null;
         if (this.state === 'playing' && !this.extractionMode && !this.operatorMode &&
-            this.enemies.length === 1 && this.enemiesToSpawn === 0) {
-            const cand = this.enemies[0];
-            if (cand && !cand.dead && !(cand instanceof Boss)) _lastE = cand;
+            this.enemiesToSpawn === 0 && this.enemies) {
+            // ORACLE SPICE: your convert is never the "last hostile" — scan
+            // for unbound (mirrors _updateFinalKillEvent, not enemies[0]).
+            let _n = 0;
+            for (let _li = 0; _li < this.enemies.length; _li++) {
+                const cand = this.enemies[_li];
+                if (!cand || cand.dead || (cand instanceof Boss) || cand.possessedBy || cand.boundTo) continue;
+                _n++; _lastE = cand;
+            }
+            if (_n !== 1) _lastE = null;
         }
         if (_lastE) {
             const fk = this._finalKill;
