@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Frozen Soldat: A top down shooteer game, or something</title>
+<title>Frozen Soldat: A top down shooter game, or something</title>
 <meta name="description" content="A top-down tactical wave shooter in one HTML file. No image or audio assets; every sound is synthesized at runtime.">
-<meta name="og:title" content="Frozen Soldat: A top down shooteer game, or something">
+<meta name="og:title" content="Frozen Soldat: A top down shooter game, or something">
 <meta name="og:description" content="A top-down tactical wave shooter in one HTML file. No image or audio assets; every sound is synthesized at runtime.">
 <meta name="og:image" content="https://raw.githubusercontent.com/skatardude10/FrozenSoldat/main/images/screenshot2.png">
 <!-- ==================================================================
@@ -847,6 +847,16 @@
     #tab-guide::-webkit-scrollbar-track { background: rgba(0, 229, 255, 0.05); border-radius: 3px; }
     #tab-guide::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, 0.3); border-radius: 3px; }
     #tab-guide::-webkit-scrollbar-thumb:hover { background: rgba(0, 229, 255, 0.6); }
+    /* Guide section cards + sticky section nav. The nav is position:sticky
+       (not new top-level tabs) so the outer #tab-guide stays the single
+       scroll container -- gamepad right-stick scrolling needs no changes. */
+    #guide-secnav { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 2px; margin-bottom: 10px; background: rgba(1, 10, 21, 0.97); border-bottom: 1px solid rgba(0, 229, 255, 0.25); }
+    .guide-sec-btn { font-size: 9px; padding: 5px 9px; margin: 0; letter-spacing: 1px; border: 1px solid rgba(0, 229, 255, 0.25); border-radius: 3px; }
+    .guide-card { border: 1px solid rgba(0, 229, 255, 0.18); background: rgba(0, 10, 25, 0.55); border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; }
+    .guide-rail-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+    .guide-rail-col { flex: 1; min-width: 210px; }
+    .guide-item { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 7px; font-size: 11px; color: #e0f7fa; line-height: 1.45; }
+    .guide-item .g-ico { flex: 0 0 20px; margin-top: 1px; }
 
     #perk-choices-container::-webkit-scrollbar { width: 6px; }
     #perk-choices-container::-webkit-scrollbar-track { background: rgba(0, 229, 255, 0.05); border-radius: 3px; }
@@ -1761,10 +1771,10 @@
                 <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 0; border-bottom: 1px solid rgba(0, 229, 255, 0.08); padding-bottom: 6px;">
                     <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px; text-align: left; width: 180px; flex-shrink: 0;">FRIENDLY FIRE:</label>
                     <div style="display: flex; gap: 8px; justify-content: flex-start; flex-grow: 1;">
-                        <button id="btn-ff-off" onclick="game.setFriendlyFireMode('off')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: OFF</button>
-                        <button id="btn-ff-standard" class="active-mode" onclick="game.setFriendlyFireMode('standard')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: STANDARD</button>
-                        <button id="btn-ff-hardcore" onclick="game.setFriendlyFireMode('hardcore')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: HARDCORE</button>
-                        <button id="btn-ff-pvp" onclick="game.setFriendlyFireMode('pvp')" style="font-size: 11px; padding: 5px 10px; margin: 0;">PvP STRIKE</button>
+                        <button id="btn-ff-opt-off" onclick="game.setFriendlyFireMode('off')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: OFF</button>
+                        <button id="btn-ff-opt-standard" class="active-mode" onclick="game.setFriendlyFireMode('standard')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: STANDARD</button>
+                        <button id="btn-ff-opt-hardcore" onclick="game.setFriendlyFireMode('hardcore')" style="font-size: 11px; padding: 5px 10px; margin: 0;">FF: HARDCORE</button>
+                        <button id="btn-ff-opt-pvp" onclick="game.setFriendlyFireMode('pvp')" style="font-size: 11px; padding: 5px 10px; margin: 0;">PvP STRIKE</button>
                     </div>
                 </div>
 
@@ -1838,8 +1848,9 @@
                             <b>MOUSE AIM</b> - Point reticle to target<br>
                             <b>LEFT CLICK</b> - Fire / Detonate Drone<br>
                             <b>SCROLL WHEEL</b> - Cycle weapons<br>
-                            <b>Q / Z</b> - Cycle Left / Right HUD menus<br>
-                            <b>E / C</b> - Use Left / Right HUD item<br>
+                            <b>Q / Z</b> - Cycle / Use LEFT rail (consumables)<br>
+                            <b>E / C</b> - Cycle / Use RIGHT rail (placeables)<br>
+                            <b>Z / C (hold)</b> - Aim grenade / chain-lay barriers<br>
                             <b>F</b> - Interact / Pick up / Land Drone<br>
                             <b>F (Hold)</b> - Drill Breakable Walls<br>
                             <b>P / ESC</b> - Pause operational area
@@ -2041,54 +2052,130 @@
         <div id="tab-guide" class="tab-content" style="max-height: 400px; overflow-y: auto; touch-action: pan-y; padding-right: 15px;">
             <div style="text-align: left; line-height: 1.6;">
                 <h2 style="color: var(--neon-blue); letter-spacing: 2px; margin-bottom: 5px;">FROZEN SOLDAT: FIELD MANUAL</h2>
-                <p style="font-size: 11px; color: #a9c2c7; margin-top: 0; margin-bottom: 15px;">Quick-reference. Drop in, survive the perimeter, extract with Intel, come back stronger.</p>
+                <p style="font-size: 11px; color: #a9c2c7; margin-top: 0; margin-bottom: 8px;">Learn it in a minute, reference it in seconds. Pick a section:</p>
+                <div id="guide-secnav">
+                    <button id="btn-guide-sec-brief" class="tab-button guide-sec-btn" onclick="game.scrollGuideTo('guide-sec-brief')">Briefing</button>
+                    <button id="btn-guide-sec-hands" class="tab-button guide-sec-btn" onclick="game.scrollGuideTo('guide-sec-hands')">Hands</button>
+                    <button id="btn-guide-sec-rails" class="tab-button guide-sec-btn" onclick="game.scrollGuideTo('guide-sec-rails')">Rails</button>
+                    <button id="btn-guide-sec-modes" class="tab-button guide-sec-btn" onclick="game.scrollGuideTo('guide-sec-modes')">Modes</button>
+                    <button id="btn-guide-sec-field" class="tab-button guide-sec-btn" onclick="game.scrollGuideTo('guide-sec-field')">Field</button>
+                    <button id="btn-guide-sec-armory" class="tab-button guide-sec-btn" onclick="game.scrollGuideTo('guide-sec-armory')">Armory</button>
+                    <button id="btn-guide-sec-link" class="tab-button guide-sec-btn" onclick="game.scrollGuideTo('guide-sec-link')">Data Link</button>
+                    <button id="btn-guide-sec-after" class="tab-button guide-sec-btn" onclick="game.scrollGuideTo('guide-sec-after')">After-Action</button>
+                    <button id="btn-guide-sec-classified" class="tab-button guide-sec-btn" onclick="game.scrollGuideTo('guide-sec-classified')">Classified</button>
+                </div>
 
-                <h3 style="color: #39ff14; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(57, 255, 20, 0.3); padding-bottom: 3px;">1. THE CORE LOOP</h3>
-                <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li><b>Survive waves → earn Cash → spend it between waves → repeat.</b> Cash is per-run; it dies when you do.</li>
-                    <li><b>Intel</b> is the permanent currency. Clear waves and kill Elites to bank it, then spend it in the <b>Armory</b> on the menu for upgrades that stick across every future run.</li>
-                    <li><b>Elites</b> (2.2x HP) drop cash, ammo, health, and sometimes a blue <b>Perk Case</b> — grab it to pause and pick a run-defining perk (Vampiric, Explosive, Smart Munitions…).</li>
-                    <li><b>Wave Mutators</b> (Blackout, Swarm, Juggernaut, Adrenaline) shake up individual waves. Roll with them or exploit them.</li>
-                </ul>
+                <div id="guide-sec-brief" class="guide-card" style="border-color: rgba(57, 255, 20, 0.35);">
+                    <h3 style="color: #39ff14; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">BRIEFING: THREE LAWS</h3>
+                    <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.55;">
+                        <li><b style="color: #39ff14;">CASH dies with you.</b> Earned from kills and cleared waves, spent between waves on guns, ammo, and deployables. Unspent cash is gone when the run ends — unless you cash out via EVAC.</li>
+                        <li><b style="color: #00e5ff;">INTEL is forever.</b> Banked from waves, Elites, bosses, and extractions — even when you die. Spend it in the Armory on upgrades that carry into every future run.</li>
+                        <li><b style="color: #ffb700;">NOISE gets you hunted.</b> Gunfire, blasts, breaching, and being spotted feed the Heat director; high Heat means more enemies, faster. Quiet weapons and Cold Barrel run cooler.</li>
+                    </ul>
+                </div>
 
-                <h3 style="color: #00e5ff; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(0, 229, 255, 0.3); padding-bottom: 3px;">2. GAME MODES</h3>
-                <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li><b>Normal Wave Ops:</b> The main event. Build a loadout wave by wave, fight bosses, extract.</li>
-                    <li><b>Action Now:</b> Instant horde mode. Fixed loadout, free perks, cash to burn, minimal prep — pure combat.</li>
-                    <li><b>Extraction:</b> Big open maps with objectives (uplinks, hostages) and a Heat Director that escalates as you make noise. Get loud, get hunted. Extract before you're overrun.</li>
-                    <li><b>FPV Operator:</b> Asymmetric bunker defense. You're locked in base — fight only through drones, turrets, and Spot robots watching the feed.</li>
-                    <li><b>Chaos Draft:</b> Roguelite. No shop — after each wave you draft 1 of 3 random cards. Landmark waves (5/10/15/20) spawn mutated bosses. Also home to the <b>Black Market</b> (below).</li>
-                </ul>
+                <div id="guide-sec-hands" class="guide-card" style="border-color: rgba(0, 229, 255, 0.35);">
+                    <h3 style="color: #00e5ff; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">HANDS: CONTROLS AT A GLANCE</h3>
+                    <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.6;">
+                        <li><b>WASD</b> move · <b>SHIFT</b> sprint (stamina) · <b>MOUSE</b> aim · <b>CLICK</b> fire · <b>WHEEL</b> weapons.</li>
+                        <li><b>Q / Z</b> — cycle / use the <b>LEFT rail</b> (consumables). <b>Z (hold)</b> aims grenades with Launcher L2.</li>
+                        <li><b>E / C</b> — cycle / use the <b>RIGHT rail</b> (placeables). <b>C (hold)</b> chain-lays barriers with Engineer L2.</li>
+                        <li><b>F</b> interact / pick up · <b>F (hold)</b> drill walls into rubble — or spend rubble building it back.</li>
+                        <li><b>P / ESC</b> pause · <b>Pad:</b> twin-stick, RT fire, LB/RB weapons, D-pad + L3 left rail, Y/A + R3 right rail · <b>Touch:</b> dual sticks, tap slots to use.</li>
+                    </ul>
+                </div>
 
-                <h3 style="color: #ffb700; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 183, 0, 0.3); padding-bottom: 3px;">3. TACTICAL ASSETS</h3>
-                <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li><b>FPV Drone:</b> Fly it yourself — your operative is locked while piloting. Upgrade to <b>Bomber</b> to drop 3 bombs before you detonate on-target.</li>
-                    <li><b>Spot Robot:</b> Ground companion that shoots on its own. Tap the screen / hit interact to send it to a waypoint. MK.II = faster, hits way harder.</li>
-                    <li><b>Hunter Swarm:</b> Mini-drones that orbit you and peel off to dive-bomb whatever's close.</li>
-                    <li><b>Auto Turret &amp; Barrier:</b> Drop static defense. Turret MK.II and Barrier MK.II add serious durability and firepower.</li>
-                    <li><i>Most advanced assets must be unlocked in the Armory first — see below.</i></li>
-                </ul>
+                <div id="guide-sec-rails" class="guide-card" style="border-color: rgba(255, 183, 0, 0.35);">
+                    <h3 style="color: #ffb700; font-size: 13px; margin: 0 0 8px; letter-spacing: 1px;">RAILS: YOUR LOADOUT, LEFT AND RIGHT</h3>
+                    <div class="guide-rail-grid">
+                        <div class="guide-rail-col">
+                            <div style="color: #39ff14; font-weight: bold; font-size: 11px; letter-spacing: 1px; margin-bottom: 6px;">LEFT RAIL — CONSUMABLES (Q cycle · Z use)</div>
+                            <div class="guide-item"><span class="g-ico" style="color: #39ff14;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M9 3h6v3H9zM12 10v6M9 13h6"/></svg></span><span><b>Medpack</b> — +25 HP on the spot.</span></div>
+                            <div class="guide-item"><span class="g-ico" style="color: #00b0ff;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M11 8l-3 4h6l-3 4"/></svg></span><span><b>Energy Drink</b> — +30 stamina and a 10-second surge.</span></div>
+                            <div class="guide-item"><span class="g-ico" style="color: #ff3d00;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="14" r="7"/><path d="M12 7V3M10 3h4M15 5a2 2 0 1 1-4 0"/></svg></span><span><b>Grenade</b> — shrapnel frag. Launcher tube fires flat; hold Z with L2 to lob an aimed arc.</span></div>
+                            <div class="guide-item"><span class="g-ico" style="color: #ffb700;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l3-6h10l3 6M12 8v4M7 14h10v3H7v-3z"/></svg></span><span><b>Trip Mine</b> — stick it on a lane and walk away.</span></div>
+                            <div class="guide-item"><span class="g-ico" style="color: #ff5fd2;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/><circle cx="12" cy="12" r="2.5"/></svg></span><span><b>Oracle Spice</b> (carry 3) — possess a hostile, turn the pack, end in a nova that converts a survivor.</span></div>
+                        </div>
+                        <div class="guide-rail-col">
+                            <div style="color: #00e5ff; font-weight: bold; font-size: 11px; letter-spacing: 1px; margin-bottom: 6px;">RIGHT RAIL — PLACEABLES (E cycle · C use)</div>
+                            <div class="guide-item"><span class="g-ico" style="color: #ff7a00;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6l-12 12"/><circle cx="12" cy="12" r="3"/><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/></svg></span><span><b>FPV Drone</b> — pilot it yourself (your body goes still). Bomber upgrade drops 3 before detonating.</span></div>
+                            <div class="guide-item"><span class="g-ico" style="color: #4a9eff;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17V7h18v10H3zM8 7v10M16 7v10"/></svg></span><span><b>Barrier</b> — instant cover. Engineer L2 + hold C chain-lays whole walls.</span></div>
+                            <div class="guide-item"><span class="g-ico" style="color: #ffee00;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14v4M5 18h14v2H5v-2z"/><circle cx="12" cy="11" r="5"/><path d="M12 11h8v2h-8z"/></svg></span><span><b>Auto Turret</b> (+MK.II) — static overwatch that never sleeps.</span></div>
+                            <div class="guide-item"><span class="g-ico" style="color: #39ff14;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="8" width="12" height="6" rx="1"/><line x1="8" y1="14" x2="6" y2="19"/><line x1="16" y1="14" x2="18" y2="19"/><line x1="10" y1="14" x2="9" y2="19"/><line x1="14" y1="14" x2="15" y2="19"/><circle cx="15" cy="6" r="1.5"/><line x1="13.5" y1="7.5" x2="15" y2="6"/></svg></span><span><b>Spot Robot</b> (+MK.II) — gun buddy; tap interact to send it to a waypoint.</span></div>
+                            <div class="guide-item"><span class="g-ico" style="color: #d500f9;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="17" cy="14" r="1.5"/></svg></span><span><b>Hunter Swarm</b> — orbiters that peel off and dive-bomb (12 active max).</span></div>
+                            <div class="guide-item"><span class="g-ico" style="color: #00e5ff;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/><circle cx="8" cy="12" r="3"/><line x1="4" y1="8" x2="4" y2="8.01"/></svg></span><span><b>Security Camera</b> — networked eyes that publish targets for a linked net to shoot.</span></div>
+                            <div class="guide-item"><span class="g-ico" style="color: #b388ff;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></span><span><b>Eventide Anchor</b> — time-dilation pylon. TIDE slows all, AEGIS spares allies, HORIZON slows the world while you stand inside.</span></div>
+                        </div>
+                    </div>
+                </div>
 
-                <h3 style="color: #d500f9; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(213, 0, 249, 0.3); padding-bottom: 3px;">4. OVERCLOCKS &amp; PERKS</h3>
-                <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li><b>Clean Overclocks:</b> Straight upgrades bought with cash for the current run — Hollow Point, Exo-Servos, Extended Mags, Fire Rate, Max HP.</li>
-                    <li><b>Corrupted Overclocks:</b> Power with a price. Overpressure (+dmg / +kick &amp; spread), Glass Nerves (+fire rate / +damage taken), Cold Barrel (silent / -dmg). High risk, high reward.</li>
-                    <li><b>Operator Kits:</b> Unlock in the Armory, pick one per player on the menu — each gives a starting loadout, a passive, and cash-back on a shop category.</li>
-                    <li><b>Escalation Protocols:</b> Opt-in extraction risk toggles that crank danger for bonus Intel.</li>
-                </ul>
+                <div id="guide-sec-modes" class="guide-card" style="border-color: rgba(0, 229, 255, 0.35);">
+                    <h3 style="color: #00e5ff; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">MODES: PICK YOUR WAR</h3>
+                    <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.6;">
+                        <li><b>NORMAL</b> — waves, elites, 5 bosses, shop, extract. The main event.</li>
+                        <li><b>ACTION NOW</b> — $10k budget, Shotgun/LMG/M1A in hand, a wave-5 swarm the moment you hit READY, 2 free perks. No buildup, all contact.</li>
+                        <li><b>EXTRACTION</b> — a 7500×7500 zone with uplink and hostage objectives under a Heat director. Get loud, get hunted. Reach the dustoff.</li>
+                        <li><b>FPV OPERATOR</b> — sealed in the bunker. No rifle — only drones, turrets, and Spot on the feed.</li>
+                        <li><b>CHAOS DRAFT</b> — no shop. Draft 1 of 3 after every wave; mutated bosses at 5/10/15/20. The <b>Black Market</b> takes surplus cash: reroll, take-two, launder into Intel, Blood Wager, contraband slots.</li>
+                        <li><b>TOGETHER &amp; MORE</b> — 2P couch co-op (friendly fire off all the way to hardcore), PvP duels, Sandbox, Peaceful builder. Save battlefields as custom maps; settle scores with challenge links.</li>
+                    </ul>
+                </div>
 
-                <h3 style="color: #ff2a5f; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 42, 95, 0.3); padding-bottom: 3px;">5. ARMORY, BLACK MARKET &amp; PRESTIGE</h3>
-                <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li><b>Armory (menu):</b> Spend Intel to permanently boost base stats (Kevlar, Cardio, First Aid…) AND to <b>unlock shop capabilities</b> — FPV drones, Spot, Swarms, MK.II gear, and the Overclock markets. Locked gear shows "UNLOCK IN ARMORY" in the shop until you own it.</li>
-                    <li><b>Chaos Draft Black Market:</b> Blow surplus cash between draft cards — Reroll the hand, Take Two, launder cash into Intel, sign a push-your-luck <b>Blood Wager</b>, or yank the Contraband Slots.</li>
-                    <li><b>Prestige:</b> Max out <i>every</i> Armory upgrade and the Prestige button unlocks. Prestiging wipes your Intel and upgrades back to zero, bumps your Prestige level, and rewards a fresh menu color theme + a rank badge. The ultimate flex.</li>
-                </ul>
+                <div id="guide-sec-field" class="guide-card" style="border-color: rgba(213, 0, 249, 0.35);">
+                    <h3 style="color: #d500f9; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">FIELD: WHAT THE WAR THROWS AT YOU</h3>
+                    <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.6;">
+                        <li><b>ELITES</b> (2.2× HP) drop cash, ammo, health — and blue <b>Perk Cases</b>: pause, pick 1 run-defining perk (Vampiric, Explosive, Smart Munitions…).</li>
+                        <li><b>MUTATORS</b> roll each wave (never on boss waves): BLACKOUT dark-and-deadly, SWARM flood, JUGGERNAUT elites, ADRENALINE fast clock.</li>
+                        <li><b>BOSSES</b> — <b style="color:#39ff14;">INFILTRATOR</b> (cloak), <b style="color:#ffb700;">HAMMERHEAD APC</b> (3 gunner seats), <b style="color:#ff2a5f;">JUGGERNAUT GUNNER</b> (armor), <b style="color:#00e5ff;">HOUND-9 SENTRY</b> (drone swarm), <b style="color:#d500f9;">WIDOWMAKER WALKER</b> (mortars). Watch the telegraphs.</li>
+                        <li><b>DRILL &amp; BUILD</b> — hold F on a wall to grind it into banked rubble; hold F in open ground to spend rubble raising fresh walls. Forts, breaches, mayhem.</li>
+                        <li><b>DATA LINK</b> — spool fiber between deployables with the Repair Gun. The linked net shares vision and focuses fire. Set doctrines; mind the heat.</li>
+                        <li><b style="color:#ff2a5f;">SCAVENGER DOG</b> — hostile thief bot. It steals ground loot and bolts at wave-clear. Drop it on sight.</li>
+                        <li><b>KITS, OVERCLOCKS, ESCALATIONS</b> — 8 Armory-unlocked kits (Breacher, Ghost, Technician…) for loadout + passive + shop rebate. Clean overclocks upgrade; Corrupted ones (Overpressure, Glass Nerves, Cold Barrel) charge a price. Escalations (Bloodhound, Ironclad, Exposed) crank extraction risk for bonus Intel.</li>
+                    </ul>
+                </div>
 
-                <h3 style="color: #ff0055; font-size: 13px; margin-bottom: 5px; border-bottom: 1px solid rgba(255, 0, 85, 0.3); padding-bottom: 3px;">6. CLASSIFIED: DEV TERMINAL</h3>
-                <ul style="font-size: 11px; color: #e0f7fa; padding-left: 20px; margin-bottom: 15px;">
-                    <li><b>Unlock:</b> Rapidly click the "FROZEN SOLDAT" title on the main menu <b>10 times</b>.</li>
-                    <li><b>Open:</b> In a match, press <b>~</b> or <b>F1</b> for the Developer Command Center — god mode, spawners, infinite cash, forced mutators.</li>
-                </ul>
+                <div id="guide-sec-armory" class="guide-card" style="border-color: rgba(57, 255, 20, 0.35);">
+                    <h3 style="color: #39ff14; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">ARMORY: 17,685 REASONS TO FIGHT</h3>
+                    <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.6;">
+                        <li><b>FIELD STATS (10,945)</b> — Kevlar, First Aid, Cardio, 3 mag feeds, Laser array, Magnetic Gear + Greedy Hands capstone (auto-loots the field on wave-clear), Offshore Account. The quiet power that stacks every run.</li>
+                        <li><b>OPERATOR KITS (2,900)</b> — Breacher, Ghost, Technician, Medic, Pathfinder, Vanguard, Heavy (350–450 each). One per player: starting loadout + passive + cash-back on a shop category.</li>
+                        <li><b>GEAR UNLOCKS (2,195)</b> — FPV / Spot / Swarm requisitions, Turret + Barrier MK.II, Combat Engineer (barrier chains), Sentinel Cam, Field Welder (Repair Gun), Overclock + Corrupted markets, Underbarrel Launcher, Mine Protocol. Locked shop gear reads UNLOCK IN ARMORY until you own it.</li>
+                        <li><b>MANIPULATOR (610)</b> — paint, Dense Matter, Mining Rig, Rampart Fabricator. Drill deeper, build meaner.</li>
+                        <li><b>TOP SECRET (1,000)</b> — Eventide Anchor 500, Oracle Spice 500. The weird stuff. Worth it.</li>
+                        <li><b>PRESTIGE</b> — max all 36 and the button unlocks: wipe to zero, +1 level, a fresh menu theme and rank badge.</li>
+                    </ul>
+                </div>
+
+                <div id="guide-sec-link" class="guide-card" style="border-color: rgba(0, 229, 255, 0.35);">
+                    <h3 style="color: #00e5ff; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">DATA LINK: WIRE YOUR ARMY TOGETHER</h3>
+                    <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.6;">
+                        <li><b>1. BUY</b> — Fiber Optic Spool $600 (shop, repeatable to 6 cables; you carry 2) + Repair Gun $1,250 (25-Intel armory unlock).</li>
+                        <li><b>2. PLACE</b> — 2+ deployables: turrets, cameras, mines. Spot dogs join over wireless RF.</li>
+                        <li><b>3. SPOOL</b> — hold Repair-Gun fire by a healthy node, walk to another, pin. Damaged nodes weld first — spool from a healthy one.</li>
+                        <li><b>4. PROFIT</b> — the net shares vision: cameras and dogs publish targets, turrets and the Hivemind Post shoot off it, every node gets +5%. Interact on a wired node with the Repair Gun to cycle doctrines (Standard / Focus / Overwatch).</li>
+                        <li><b>5. DEFEND</b> — blasts, sappers, and EMP cut fiber (your own grenades too). Weld your own stumps to splice the net back together.</li>
+                    </ul>
+                </div>
+
+                <div id="guide-sec-after" class="guide-card" style="border-color: rgba(255, 42, 95, 0.35);">
+                    <h3 style="color: #ff2a5f; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">AFTER-ACTION: HOW INTEL PAYS</h3>
+                    <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.6;">
+                        <li><b>WAVES</b> — each clear pays 2 + 1 per 5 waves + 4 per elite killed. Elites also carry chips ~10% of the time.</li>
+                        <li><b>BOSSES</b> — every boss drops 2 intel chips on top of the cash bounty. Crack the black box, grab the chips.</li>
+                        <li><b>EXTRACTION</b> — the rich path: uplink hacks (20–35), hostage rescue (50), completion bonus (up to 80), and every elite drops a chip.</li>
+                        <li><b>EVAC</b> — REQUEST EVAC converts all remaining cash to Intel ($100 → 1), but only if you survive the dustoff.</li>
+                        <li><b>MULTIPLIERS</b> — difficulty, night ops, and escalations scale every payout. Chaos Draft pays through the Black Market, not waves.</li>
+                        <li><b>ZERO-INTEL RUNS</b> — sandbox, peaceful, testing, starting-cash bonus, and dev-tainted runs bank nothing (banner shows it). Custom maps in normal modes pay full — builders earn.</li>
+                    </ul>
+                </div>
+
+                <div id="guide-sec-classified" class="guide-card" style="border-color: rgba(255, 0, 85, 0.35);">
+                    <h3 style="color: #ff0055; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">CLASSIFIED: DEV TERMINAL</h3>
+                    <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.6;">
+                        <li><b>Unlock:</b> Rapidly click the "FROZEN SOLDAT" title on the main menu <b>10 times</b>.</li>
+                        <li><b>Open:</b> In a match, press <b>~</b> or <b>F1</b> for the Developer Command Center — god mode, spawners, infinite cash, forced mutators.</li>
+                    </ul>
+                </div>
             </div>
         </div>
     </div>
@@ -2120,11 +2207,11 @@
                     <div class="stat-line">Barriers: <span id="shop-stat-barriers-p1">0</span> / 5</div>
                     <div class="stat-line">Rubble: <span id="shop-stat-rubble-p1">0</span></div>
                     <div class="stat-line">FPV Drones: <span id="shop-stat-drones-p1">0</span> / 3</div>
-                    <div class="stat-line">Auto Turrets: <span id="shop-stat-turrets-p1">0</span> / 1</div>
+                    <div class="stat-line">Auto Turrets: <span id="shop-stat-turrets-p1">0</span> / <span id="shop-stat-turretcap-p1">1</span></div>
                     <div class="stat-line">Spot Robots: <span id="shop-stat-dogs-p1">0</span> / 1</div>
                     <div class="stat-line">Swarm Drones: <span id="shop-stat-hunter-swarm-p1">0</span> / 15 (Active: <span id="shop-stat-hunter-swarm-active-p1">0</span>/12)</div>
                     <div class="stat-line">Med Packs: <span id="shop-stat-medpacks-p1">0</span> / 3</div>
-                    <div class="stat-line">Energy Drinks: <span id="shop-stat-boosts-p1">0</span> / 3</div>
+                    <div class="stat-line">Energy Drinks: <span id="shop-stat-boosts-p1">0</span> / 6</div>
                     
                     <div class="shop-section-title">Inventory Ammunition</div>
                     <div class="stat-line" style="font-size:10px;">Shotgun: <span id="shop-ammo-shotgun-p1">0</span> Shells</div>
@@ -2180,6 +2267,7 @@
                     <div class="shop-section-title" style="color:#b388ff; border-color:rgba(179,136,255,0.4);">Top Secret Tech</div>
                     <div class="shop-grid">
                         <button id="btn-buy-field-gen-p1" onclick="game.buyItem('field_gen', game.player)">Eventide Anchor ($20000)</button>
+                        <button id="btn-buy-oracle-p1" onclick="game.buyItem('oracle', game.player)">Oracle Spice ($300)</button>
                     </div>
                     
                     <div class="shop-section-title">Standard Munitions</div>
@@ -2250,11 +2338,11 @@
                     <div class="stat-line">Barriers: <span id="shop-stat-barriers-p2">0</span> / 5</div>
                     <div class="stat-line">Rubble: <span id="shop-stat-rubble-p2">0</span></div>
                     <div class="stat-line">FPV Drones: <span id="shop-stat-drones-p2">0</span> / 3</div>
-                    <div class="stat-line">Auto Turrets: <span id="shop-stat-turrets-p2">0</span> / 1</div>
+                    <div class="stat-line">Auto Turrets: <span id="shop-stat-turrets-p2">0</span> / <span id="shop-stat-turretcap-p2">1</span></div>
                     <div class="stat-line">Spot Robots: <span id="shop-stat-dogs-p2">0</span> / 1</div>
                     <div class="stat-line">Swarm Drones: <span id="shop-stat-hunter-swarm-p2">0</span> / 15 (Active: <span id="shop-stat-hunter-swarm-active-p2">0</span>/12)</div>
                     <div class="stat-line">Med Packs: <span id="shop-stat-medpacks-p2">0</span> / 3</div>
-                    <div class="stat-line">Energy Drinks: <span id="shop-stat-boosts-p2">0</span> / 3</div>
+                    <div class="stat-line">Energy Drinks: <span id="shop-stat-boosts-p2">0</span> / 6</div>
                     
                     <div class="shop-section-title">Inventory Ammunition</div>
                     <div class="stat-line" style="font-size:10px;">Shotgun: <span id="shop-ammo-shotgun-p2">0</span> Shells</div>
@@ -2310,6 +2398,7 @@
                     <div class="shop-section-title" style="color:#b388ff; border-color:rgba(179,136,255,0.4);">Top Secret Tech</div>
                     <div class="shop-grid">
                         <button id="btn-buy-field-gen-p2" onclick="game.buyItem('field_gen', game.player2)">Eventide Anchor ($20000)</button>
+                        <button id="btn-buy-oracle-p2" onclick="game.buyItem('oracle', game.player2)">Oracle Spice ($300)</button>
                     </div>
                     
                     <div class="shop-section-title">Standard Munitions</div>
@@ -2470,8 +2559,9 @@
                         <b>MOUSE AIM</b> - Point reticle to target<br>
                         <b>LEFT CLICK</b> - Fire / Detonate Drone<br>
                         <b>SCROLL WHEEL</b> - Cycle weapons<br>
-                        <b>Q / Z</b> - Cycle Left / Right HUD menus<br>
-                        <b>E / C</b> - Use Left / Right HUD item<br>
+                        <b>Q / Z</b> - Cycle / Use LEFT rail (consumables)<br>
+                        <b>E / C</b> - Cycle / Use RIGHT rail (placeables)<br>
+                        <b>Z / C (hold)</b> - Aim grenade / chain-lay barriers<br>
                         <b>F</b> - Interact / Pick up / Land Drone<br>
                         <b>F (Hold)</b> - Drill Breakable Walls<br>
                         <b>P / ESC</b> - Pause operational area
@@ -2927,6 +3017,7 @@ const SVGIcons = {
     hunter_swarm: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="17" cy="14" r="1.5"/></svg>`,
     camera: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/><circle cx="8" cy="12" r="3"/><line x1="4" y1="8" x2="4" y2="8.01"/></svg>`,
     eventide: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>`,
+    oracle: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/><circle cx="12" cy="12" r="2.5"/></svg>`,
     shield: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 7.6-7 9-4-1.4-7-4.4-7-9V6l7-3z"/></svg>`,
     armor: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10l2 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7l2-3z"/><path d="M12 8v11"/></svg>`
 };
@@ -2954,7 +3045,8 @@ const ITEM_ICON_COLORS = {
     dog:          '#39ff14',
     hunter_swarm: '#d500f9',
     camera:       '#00e5ff',
-    eventide:     '#b388ff'
+    eventide:     '#b388ff',
+    oracle:       '#ff5fd2'
 };
 const _worldIconCache = {};
 function getWorldIconPath(key) {
@@ -3043,6 +3135,21 @@ function useLeftItem(player) {
             if (audio && audio.playMinePlace) {
                 audio.playMinePlace(player.x, player.y);
             }
+        }
+    } else if (player.leftSelectIdx === 4) {
+        // ORACLE SPICE (slot 4): Operator-banned, Chaos-Draft-skipped (no
+        // shop there), PvP-defanged inside ingest. Never wastes: whiff still
+        // pays an aura-consolation trip. Stuck-trip failsafe: a trip older
+        // than 40s wall clock is force-ended (tick + shop + death funnels
+        // should have caught it long before).
+        if (game && game.operatorMode) return;
+        if (player.oracle > 0 && !player.trip && !player.dead) {
+            player.oracle--;
+            if (typeof game.ingestOracle === 'function') game.ingestOracle(player);
+            else if (audio && audio.playPickup) audio.playPickup('weapon');
+        } else if (player.trip && player.trip.t > 40) {
+            if (typeof game._endOracleTrip === 'function') game._endOracleTrip(player, 'cleared');
+            else player.trip = null;
         }
     }
 }
@@ -3364,6 +3471,7 @@ function getHUDSelectorStateKey(player, suffix) {
         player.energyDrinks,
         player.grenades,
         player.mines,
+        player.oracle,
         player.barriersCount,
         player.barrierUpgraded,
         player.turretsCount,
@@ -3398,7 +3506,8 @@ function renderHUDSelectors(player, suffix) {
                 { name: 'Medpack', count: player.medpacks, max: 3, icon: SVGIcons.medpack, color: ITEM_ICON_COLORS.medpack },
                 { name: 'Energy Drink', count: player.energyDrinks, max: 6, icon: SVGIcons.boost, color: ITEM_ICON_COLORS.boost },
                 { name: 'Grenade', count: player.grenades, max: player.maxGrenades || 3, icon: SVGIcons.grenade, color: ITEM_ICON_COLORS.grenade },
-                { name: 'Trip Mine', count: player.mines, max: 3, icon: SVGIcons.mine, color: ITEM_ICON_COLORS.mine }
+                { name: 'Trip Mine', count: player.mines, max: 3, icon: SVGIcons.mine, color: ITEM_ICON_COLORS.mine },
+                { name: 'Oracle Spice', count: player.oracle || 0, max: 3, icon: SVGIcons.oracle, color: ITEM_ICON_COLORS.oracle }
             ];
             items.forEach((item, idx) => {
                 let slot = document.createElement('div');
@@ -3409,7 +3518,7 @@ function renderHUDSelectors(player, suffix) {
                 slot.innerHTML = `
                     <div class="item-icon-wrapper" style="color: ${item.color}">${item.icon}</div>
                     <div class="item-count" style="color: ${countColor}">${item.count}</div>
-                    <div class="item-label-overlay">${item.name.toUpperCase()} [E / L3]</div>
+                    <div class="item-label-overlay">${item.name.toUpperCase()} [Z / L3]</div>
                 `;
                 leftTrack.appendChild(slot);
             });
@@ -3564,11 +3673,6 @@ function renderHUDSelectors(player, suffix) {
     if (ammoText) {
         ammoText.innerHTML = displayAmmoText;
     }
-}
-
-function toggleClass(id, className, force) {
-    const el = document.getElementById(id);
-    if (el) el.classList.toggle(className, force);
 }
 
 /**
@@ -5262,15 +5366,25 @@ class AudioEngine {
         source.connect(gainNode);
         
         // 3. Stereo Panning
+        let panner = null;
         if (this.ctx.createStereoPanner) {
-            const panner = this.ctx.createStereoPanner();
+            panner = this.ctx.createStereoPanner();
             panner.pan.value = Math.max(-1.0, Math.min(1.0, pan));
             gainNode.connect(panner);
             panner.connect(this.sfxGain || this.masterGain || this.ctx.destination);
         } else {
             gainNode.connect(this.sfxGain || this.masterGain || this.ctx.destination);
         }
-        
+
+        // HP-16: disconnect the per-call nodes when the one-shot ends --
+        // the playHat/playKick idiom. Sustained supersonic fire otherwise
+        // grows the retained audio graph for the whole session.
+        source.onended = () => {
+            try { source.disconnect(); } catch (e) {}
+            try { gainNode.disconnect(); } catch (e) {}
+            if (panner) { try { panner.disconnect(); } catch (e) {} }
+        };
+
         source.start(0);
     }
 }
@@ -6284,6 +6398,41 @@ const Weapons = {
       PROJ_CAP: 4,       // max projected fields per network comp (freshest+rung wins)
   };
 
+  // ORACLE SPICE (top-secret astral consumable, L2 track): Don Mazatl Reserve.
+  // Left-carousel slot 4. Ingestion builds ONE TripContext (resolve-once),
+  // then the trip runs on its own numbers — no per-frame cross-system polls.
+  // Variable shop price keeps the dealer mysterious; carry 3; Operator banned.
+  const ORACLE_TUNING = {
+      PRICE_BASE: 300,  // base cash before per-run wander + wave drift
+      PRICE_MIN: 1,      // FREE SAMPLE floor ($1 + next-wave +1 enemy tradeoff)
+      CARRY_MAX: 3,      // triple-carry (consumed = gone)
+      DURATION_MIN: 8,   // s rolled trip length floor
+      DURATION_MAX: 34,  // s rolled trip length ceiling
+      DURATION_CAP: 42,  // s hard cap with zone extensions
+      RADIUS: 950,       // px influence radius around the HOST (not the body)
+      RESONANCE_MAX: 5,  // mandala stack cap (compounding, bounded)
+      CONFUSE_CHANCE: 0.7, // influenced enemies target each other
+      SLOW_FACTOR: 0.6,  // influenced enemies dt multiply (min, never product)
+      CONE_DEG: 65,      // aim-cone half-angle for host candidacy
+      REACH: 1700,       // px max host distance (same engagement read as grunts)
+      BOSS_TIME_MULT: 0.5, // bosses possessable at half time, never convertible
+      DUD_RATE: 0.12,    // fry-trip chance (debuff paired with hidden buff)
+      STOCKOUT_RATE: 0.10, // shop sold-out chance per run
+      SAMPLE_RATE: 0.1, // $1 sample chance per run
+  };
+  // Per-run Oracle shop roll (seeded wander, stockout, sample). Resolved once
+  // in startNewGame so the price is stable for the whole run; the wave drift
+  // applies on top at buy time. Positive prices only — never negative.
+  function oracleShopPrice(game, p) {
+      const T = (typeof ORACLE_TUNING !== 'undefined') ? ORACLE_TUNING : { PRICE_BASE: 300 };
+      if (game && game._oracleShop && game._oracleShop.soldOut) return null;
+      if (game && game._oracleShop && game._oracleShop.sample) return 1;
+      let wander = (game && game._oracleShop && game._oracleShop.wander) || 1;
+      let waveDrift = 1 + ((game && game.wave ? game.wave : 1) - 1) * 0.05;
+      let price = Math.round((T.PRICE_BASE || 300) * wander * waveDrift);
+      return Math.max(1, price);
+  }
+
   // Anchor modes: TIDE slows everything symmetric (incl. the owner's own
   // bullets -- the cordon tool); AEGIS exempts the owner's whole lineage
   // (owner, their assets, their projectiles) so THEY run full rate while
@@ -6415,14 +6564,14 @@ const BossTypes = {
         name: 'THE INFILTRATOR',
         color: '#39ff14',
         desc: 'Cloaked recon operative. Closes distance fast, strikes, vanishes.',
-        baseHp: 900,
+        baseHp: 1150, // must match InfiltratorBoss.setup hp (base, pre-multiplier)
         get bossClass() { return InfiltratorBoss; }
     },
     apc: {
         name: 'HAMMERHEAD APC',
         color: '#ffb700',
-        desc: 'Four-seat armored fire-support vehicle. Kill the crew, stop the truck.',
-        baseHp: 1600, // split across 4 gunner seats, ~400 each
+        desc: 'Three-seat armored fire-support vehicle. Kill the crew, stop the truck.',
+        baseHp: 780, // 3 gunner seats x 260 -- must match ApcBoss.setup seatHp (base, pre-multiplier)
         get bossClass() { return ApcBoss; }
     },
     juggernaut: {
@@ -7308,6 +7457,17 @@ class Camera {
         aimWeight = Math.min(Math.max(aimWeight, 0.35), 0.60);
         let camCenterX = player.x * (1 - aimWeight) + aimX * aimWeight;
         let camCenterY = player.y * (1 - aimWeight) + aimY * aimWeight;
+
+        // ORACLE SPICE: while astral with a live host, the camera RIDES THE
+        // HOST — the possession only reads if you see through its eyes. The
+        // follow-spring below smooths the zip-out; the >800px snap becomes a
+        // smash cut (and snaps you home on comedown). Aim input still steers
+        // (owner angle is camera-independent), so no feedback loop.
+        {
+            const _trip = player.trip;
+            const _host = (_trip && _trip.host && !_trip.host.dead) ? _trip.host : null;
+            if (_host) { camCenterX = _host.x; camCenterY = _host.y; }
+        }
 
         // Camera follow lag (see CAMERA_FOLLOW_SPRING above): spring the
         // actual tracked center toward the instant target above instead of
@@ -13532,6 +13692,11 @@ class Player extends Entity {
         this.grenades = 1;
         this.maxGrenades = 3;
         this.mines = 0;
+        // ORACLE SPICE (L2 top-secret consumable, left-carousel slot 4):
+        // run-scoped by construction (Player rebuilt in startNewGame).
+        this.oracle = 0;
+        this.trip = null; // active TripContext or null
+        this.boundAlly = null; // permanently converted follower (cap 1)
         // PHASE 5 (FLATLINE redesign): counts down from 2.5s after sprint
         // ends (held, not drained, WHILE sprinting -- see Player.update).
         this.flatlinePrimeTimer = 0;
@@ -13984,6 +14149,14 @@ class Player extends Entity {
             moveX = 0;
             moveY = 0;
         }
+        // ORACLE SPICE: out-of-body — the body hunkers (near-stationary,
+        // vulnerable, 50% resist handled in takeDamage via respawnInvuln-free
+        // path? No: hunker is movement only; damage still lands, fake-death
+        // is the safety net). Input drives the host (see _tickOracleTrips).
+        if (this.trip) {
+            moveX *= 0.15;
+            moveY *= 0.15;
+        }
 
         // --- Combat Dive Trigger (double-tap WASD / analog stick flick) ---
         // Cheap: a handful of comparisons against values already computed
@@ -14055,6 +14228,16 @@ class Player extends Entity {
 
         // Lock weapons firing if player is actively piloting drone
         if (this.activeDrone && this.activeDrone.isPiloted && !this.activeDrone.dead) {
+            isFiring = false;
+        }
+        // ORACLE SPICE: raw trigger state for the Spirit Lash edge (read
+        // before the trip lock below zeroes the body's own fire — covers
+        // mouse, pad RT, and touch alike).
+        this._fireHeld = isFiring;
+        // ORACLE SPICE: the body doesn't shoot while astral — the host does
+        // (see _tickOracleTrips). The trigger still steers (aim), it just
+        // doesn't leave this barrel.
+        if (this.trip) {
             isFiring = false;
         }
 
@@ -14606,6 +14789,8 @@ class Player extends Entity {
         for (let i = 0; i < game.enemies.length; i++) {
             const e = game.enemies[i];
             if (!e || e.dead || typeof e.takeDamage !== 'function') continue;
+            // ORACLE SPICE: the shove passes through your own spirits.
+            if (e.possessedBy || e.boundTo) continue;
             const dx = e.x - this.x, dy = e.y - this.y;
             const d2 = dx * dx + dy * dy;
             if (d2 > reach2) continue;
@@ -14668,7 +14853,9 @@ class Player extends Entity {
         // rapid double-tap of a key.
         if (!triggered) {
             let mag = gpRawMag || 0;
-            if (mag === 0 && window.touchController && window.touchController.enabled && window.touchController.leftStick.active) {
+            // HP-21: the touch stick is P1 hardware -- P2 (pad-only by
+            // construction) must not read it, or P1 wiggles dive P2.
+            if (mag === 0 && !this.isPlayer2 && window.touchController && window.touchController.enabled && window.touchController.leftStick.active) {
                 mag = window.touchController.leftStick.dist;
             }
             if (mag < DIVE_CONFIG.STICK_FLICK_LOW) {
@@ -15691,10 +15878,18 @@ class Player extends Entity {
             return;
         }
         const tc = centerOf(target);
-        this.ammo.repairgun = Math.max(0, this.ammo.repairgun - REPAIR_TUNING.drainPerSec * dt);
-        target.hp = Math.min(target.maxHp, target.hp + REPAIR_TUNING.hpPerSec * dt);
+        // HP-19: cable splicing runs through DataCable.repair() (the live
+        // path was inline-duplicated below while repair() sat dead with no
+        // game ref -- now wired via spawnDataCable). Skip the generic hp
+        // write for cables so the heal isn't applied twice.
+        if (!(target instanceof DataCable)) {
+            this.ammo.repairgun = Math.max(0, this.ammo.repairgun - REPAIR_TUNING.drainPerSec * dt);
+            target.hp = Math.min(target.maxHp, target.hp + REPAIR_TUNING.hpPerSec * dt);
+        }
 
         if (target instanceof DataCable) {
+            if (target.game !== game) target.game = game;
+            this.ammo.repairgun = Math.max(0, this.ammo.repairgun - REPAIR_TUNING.drainPerSec * dt);
             // Splicing electric sparks and audio
             if (Math.random() < 0.5) {
                 game.addParticle(tc.x + (Math.random() - 0.5) * 14,
@@ -15713,19 +15908,7 @@ class Player extends Entity {
                 let ft = game.spawnFloatingText(tc.x, tc.y - 14, `SPLICING ${pct}%`, '#00e5ff', 0.7);
                 if (ft) game.floatingTexts.push(ft);
             }
-            if (target.hp >= target.maxHp) {
-                target.cut = false;
-                target.stump = false;
-                target.linkLive = true;
-                let ft = game.spawnFloatingText(tc.x, tc.y - 16, 'CABLE SPLICED!', '#39ff14', 1.4);
-                if (ft) game.floatingTexts.push(ft);
-                if (typeof audio !== 'undefined' && audio && audio.playDataLinkConnected) {
-                    audio.playDataLinkConnected(tc.x, tc.y);
-                } else if (typeof audio !== 'undefined' && audio && audio.playPickup) {
-                    audio.playPickup('weapon');
-                }
-                game._recomputeComponents();
-            }
+            target.repair(REPAIR_TUNING.hpPerSec * dt);
             return;
         }
 
@@ -15980,6 +16163,9 @@ class Player extends Entity {
             const gnOc = game.runOverclocks[this.isPlayer2 ? 'p2' : 'p1'];
             if (gnOc && gnOc.corrupted && gnOc.corrupted.glassNerves) amt *= 1.25;
         }
+        // ORACLE SPICE: IRON BODY omen — the sleeping body endures (half
+        // damage while tripping). One comparison, before armor math.
+        if (amt > 0 && this.trip && this.trip.omens && this.trip.omens.indexOf('IRON') !== -1) amt *= 0.5;
 
         let projectedHp = this.hp;
         if (this.armor && this.armor > 0) {
@@ -15987,6 +16173,25 @@ class Player extends Entity {
             projectedHp -= (amt - absorb);
         } else {
             projectedHp -= amt;
+        }
+        // ORACLE SPICE fake-death: a lethal hit mid-trip is cheated once —
+        // the body drops to 1 HP, the trip aborts, brief invuln. You were not
+        // actually dead (the spirit was elsewhere). Only from normal damage;
+        // the pill itself never kills.
+        if (projectedHp <= 0 && !this.dead && this.trip && !(this.trip._fakeUsed) && amt > 0) {
+            this.trip._fakeUsed = true;
+            const _abs = (this.armor && this.armor > 0) ? Math.min(this.armor, amt) : 0;
+            amt = Math.max(0, _abs + this.hp - 1);
+            projectedHp = 1;
+            this.respawnInvuln = Math.max(this.respawnInvuln || 0, 2.0);
+            if (game) {
+                game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 44, 'NOT ACTUALLY DEAD', '#ff5fd2', 2.4));
+                game.triggerChromaticAberration(0.5, this);
+                if (game._endOracleTrip) { try { game._endOracleTrip(this, 'cleared'); } catch (e) {} }
+                else this.trip = null;
+            } else {
+                this.trip = null;
+            }
         }
         if (projectedHp <= 0 && !this.dead) {
             const retention = ((game.saveData && game.saveData.metaUpgrades ? game.saveData.metaUpgrades.offshoreAccount : 0) * 0.20);
@@ -16460,7 +16665,19 @@ class Player extends Entity {
     onDeath() {
         cancelGLCharge(this);
         this.wiring = null; // Data Link: a dead player drops the spool latch
-        if (game && game.operatorMode && this.activeDrone && !this.activeDrone.dead) {
+        // ORACLE SPICE: death ends the trip; the host is released (not bound).
+        // Explicit FX teardown (not tick-dependent — the hum/filter must die
+        // on this frame even if update stalls behind the death linger).
+        if (this.trip) {
+            const _h = this.trip.host;
+            if (_h && !_h.dead && !_h.boundTo) _h.possessedBy = null;
+            this.trip = null;
+            if (game && game._maybeClearOracleFx) { try { game._maybeClearOracleFx(); } catch (e) {} }
+        }
+        if (game && this.activeDrone && !this.activeDrone.dead) {
+            // HP-09: a dead pilot can't keep remote-flying -- unpilot in ALL
+            // modes (was operator-only, so co-op dead pilots kept clearing
+            // waves on live P1 keyboard until the wave-end shop).
             this.activeDrone.stopAudio();
             this.activeDrone.isPiloted = false;
         }
@@ -16557,6 +16774,8 @@ class Enemy extends Entity {
         this.markedTimer = 0;      // Combat Scanner: tracked through walls
         this.suppressedTimer = 0;  // Suppressing Fire: return fire blocked
         this.enragedTimer = 0;     // chaos-perk aggro cost: brief speed surge
+        this.burnTimer = 0;        // HP-14: T3 thermal-sentry burn DoT (pool-reset)
+        this.burnDps = 0;          // HP-14: burn dps while burnTimer > 0
         // NEW ENEMY TYPES: ALL pool-reset per the Phase 1 gotcha about
         // fields leaking across Enemy pool reuse.
         this._commBuffTimer = 0;                       // comm aura: brief speed/fire-rate surge on nearby enemies
@@ -16639,8 +16858,8 @@ class Enemy extends Entity {
         this._fleePoint = null;
         this._bountyIntel = false;
 
-        // Cached variables for AI Throttling
-        this.aiTimer = 0;
+        // Cached variables for AI Throttling (HP-19: the old aiTimer field
+        // here was write-only -- the throttle runs on _aiStaggerId/frameCounter)
         this.cachedTarget = null;
         this.target = null;
         this.waypoint = null;
@@ -16693,10 +16912,23 @@ class Enemy extends Entity {
         // _patrolWp: current beat waypoint (a nearby nav node).
         this.patrolUntilContact = false;
         this._patrolWp = null;
+        // ORACLE SPICE: possession/bind + influence timers. Pool-reset per
+        // the Phase 1 gotcha — a recycled enemy must not inherit a trip.
+        this.possessedBy = null;
+        this.boundTo = null;
+        this._oracleSlowUntil = 0;
+        this._oracleSlowMult = 0.6;
+        this._oracleConfuseUntil = 0;
+        this._oracleFrailUntil = 0;
+        this._oracleFrailMult = 1.5;
     }
     
     update(dt, player, walls, gameTime, allEnemies) {
         if (this.dead) return;
+
+        // ORACLE SPICE: influenced slow (local dt only, never global timeScale;
+        // the mult deepens with the trip's resonance — time crawls harder).
+        if (game && game.gameTime < (this._oracleSlowUntil || 0)) dt *= (this._oracleSlowMult || 0.6);
 
         // PHASE 1 (stuck-enemy fix): generalization of the throttled
         // position-delta check _updateOperatorAI already uses, applied at
@@ -16959,6 +17191,13 @@ class Enemy extends Entity {
                             if (g.hp > 0) targets.push(g);
                         }
                     }
+                    // ORACLE SPICE: bound converts read as traitors — the
+                    // squad turns on them (real stakes for the reward).
+                    if (game._boundAlive > 0 && game.enemies) {
+                        for (let b of game.enemies) {
+                            if (b && !b.dead && b.boundTo && b !== this) targets.push(b);
+                        }
+                    }
                 }
                 
                 let preferredPlayer = null;
@@ -16998,6 +17237,45 @@ class Enemy extends Entity {
                         }
                     }
                     target = closestT;
+                }
+            }
+
+            // ORACLE SPICE: possessed/bound hosts hunt the owner's enemies
+            // (nearest hostile + owner-aim bias), not players. No-hostile =
+            // follow the owner (movement) with fire held. Runs on the AI tick
+            // only — same cost class as the scans around it.
+            {
+                const _od = (this.possessedBy && !this.possessedBy.dead) ? this.possessedBy
+                    : (this.boundTo && !this.boundTo.dead) ? this.boundTo : null;
+                if (_od && game) {
+                    let _best = null, _bestScore = Infinity;
+                    const _oax = Math.cos(_od.angle || 0), _oay = Math.sin(_od.angle || 0);
+                    const _pool = game.enemies;
+                    if (_pool) for (let _i = 0; _i < _pool.length; _i++) {
+                        const _e = _pool[_i];
+                        if (!_e || _e.dead || _e === this || _e.possessedBy || _e.boundTo) continue;
+                        const _dx = _e.x - this.x, _dy = _e.y - this.y;
+                        const _d2 = _dx * _dx + _dy * _dy;
+                        if (_d2 > 1200 * 1200) continue;
+                        const _ox = _e.x - _od.x, _oy = _e.y - _od.y;
+                        const _odl = Math.hypot(_ox, _oy) || 1;
+                        const _dot = (_ox * _oax + _oy * _oay) / _odl;
+                        const _sc = _d2 * (_dot > 0.7 ? 0.7 : 1);
+                        if (_sc < _bestScore) { _bestScore = _sc; _best = _e; }
+                    }
+                    if (!_best && game.bossDrones) for (let _i = 0; _i < game.bossDrones.length; _i++) {
+                        const _d = game.bossDrones[_i];
+                        if (!_d || _d.dead) continue;
+                        const _dx = _d.x - this.x, _dy = _d.y - this.y;
+                        const _d2 = _dx * _dx + _dy * _dy;
+                        if (_d2 < _bestScore && _d2 < 1200 * 1200) { _bestScore = _d2; _best = _d; }
+                    }
+                    if (_best) {
+                        target = _best;
+                    } else {
+                        target = _od; // follow; fire held below
+                        this.fireHoldTimer = Math.max(this.fireHoldTimer || 0, 1.0);
+                    }
                 }
             }
 
@@ -17886,7 +18164,10 @@ class Enemy extends Entity {
             // 1.45 speed surge so the aura reads as "they coordinate".
             const fireInterval = this.fireRate
                 * (this._commBuffTimer > 0 ? 0.55 : 1)
-                * (this.cachedHasLOS ? 1 : SECOND_FLOOR.ENEMY_WINDOW_FIRE_MULT);
+                * (this.cachedHasLOS ? 1 : SECOND_FLOOR.ENEMY_WINDOW_FIRE_MULT)
+                // ORACLE SPICE: panicked shooters fire ~40% slower (wild aim —
+                // one comparison, same cost class as the comm line above).
+                * ((game && game.gameTime < (this._oracleConfuseUntil || 0)) ? 1.6 : 1);
             if (inEngagementRange && gameTime - this.lastFire > fireInterval && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact
                 && (this.cachedHasLOS || this.cachedWindowLOS) && this.cachedTarget
                 && this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
@@ -18592,6 +18873,15 @@ class Enemy extends Entity {
     // interrupt"). Every other type takes full damage, unmodified.
     takeDamage(amt, pushDir, pushForce) {
         if (this.type === 'fpv_pilot' && this._fpvDmgResist < 1) amt *= this._fpvDmgResist;
+        // ORACLE SPICE: shaman shielding — possessed hosts and bound allies
+        // take half damage (lore: the spirit holds them; containment: keeps
+        // the host alive long enough to matter without touching bullet gates).
+        if ((this.possessedBy && !this.possessedBy.dead) || (this.boundTo && !this.boundTo.dead)) amt *= 0.5;
+        // ORACLE SPICE: frailty — the turned break easy (BLOOD MOON doubles).
+        // One gameTime comparison per damage event; negligible cost.
+        if (typeof game !== 'undefined' && game && game.gameTime < (this._oracleFrailUntil || 0)) {
+            amt *= (this._oracleFrailMult || 1.5);
+        }
         if (this.type === 'medic' && this._medicChannel > 0) {
             this._medicChannel = 0;
             this._medicTarget = null;
@@ -19391,6 +19681,115 @@ class Enemy extends Entity {
     }
 
     onDeath() {
+        // ORACLE SPICE hook (runs first — resonance + host/bound bookkeeping
+        // before the payout cascade). Host death snaps the trip (no convert);
+        // any death inside an active influence radius feeds resonance (+1s to
+        // cap); a bound ally's death releases the owner's slot.
+        if (typeof game !== 'undefined' && game) {
+            const _pls = [];
+            if (game.player && game.player.trip) _pls.push(game.player);
+            if (game.isTwoPlayer && game.player2 && game.player2.trip) _pls.push(game.player2);
+            for (let _i = 0; _i < _pls.length; _i++) {
+                const _p = _pls[_i], _tr = _p.trip;
+                if (!_tr) continue;
+                if (_tr.host === this) {
+                    _tr.host = null;
+                    _tr._hostDeadHandled = true;
+                    _tr.timeLeft = Math.min(_tr.timeLeft, 1.2);
+                    game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 30, 'HOST LOST', '#ff5fd2', 1.6));
+                    game.triggerChromaticAberration(0.35, _p);
+                } else {
+                    const _hx = (_tr.host && !_tr.host.dead) ? _tr.host.x : _p.x;
+                    const _hy = (_tr.host && !_tr.host.dead) ? _tr.host.y : _p.y;
+                    const _rr = (_tr.radius || 950);
+                    const _dx = this.x - _hx, _dy = this.y - _hy;
+                    if (_dx * _dx + _dy * _dy < _rr * _rr) {
+                        const _cap = (typeof ORACLE_TUNING !== 'undefined' && ORACLE_TUNING.RESONANCE_MAX) || 5;
+                        if ((_tr.resonance || 0) < _cap) {
+                            _tr.resonance++;
+                            _tr.timeLeft = Math.min((typeof ORACLE_TUNING !== 'undefined' && ORACLE_TUNING.DURATION_CAP) || 42, _tr.timeLeft + 1.0);
+                            // Every pip PAYS (GOLDEN TIDE pays triple) — resonance
+                            // is a bounty ladder, not a sticker chart.
+                            const _gold = _tr.omens && _tr.omens.indexOf('GOLDEN') !== -1;
+                            const _gain = (_gold ? 50 : 15) * _tr.resonance;
+                            _p.cash += _gain;
+                            game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 40, 'RESONANCE ' + _tr.resonance + ' +$' + _gain, _gold ? '#ffcc00' : '#ff5fd2', 1.4));
+                            game.triggerChromaticAberration(0.2, _p);
+                            if (_p.camera) _p.camera.punchZoom(0.03);
+                            if (_tr.resonance >= 2) game.spawnShockwave(this.x, this.y, 60 + 20 * _tr.resonance, 0.2);
+                            // At 3 the bind is armed — call it out, loudly.
+                            if (_tr.resonance === 3 && _tr.host && !_tr.host.dead && !_tr.host.isBoss) {
+                                game.floatingTexts.push(game.spawnFloatingText(_p.x, _p.y - 70, 'BIND READY — FINISH THE TRIP', '#39ff14', 2.4));
+                                if (audio && audio.playPickup) audio.playPickup('weapon');
+                            }
+                        }
+                        // Trip kills always show their bounty (normal kills pay
+                        // silently — spirit kills must READ).
+                        {
+                            const _kAmt = Math.round((this.scoreVal || 0) * (game.cashMultiplier || 1));
+                            if (_kAmt > 0) game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 62, 'SPIRIT KILL +$' + _kAmt, '#ff5fd2', 1.2));
+                        }
+                        // SOUL HARVEST: trip-radius kills pop — a small corpse
+                        // burst that hurts other hostiles (reentrancy-guarded:
+                        // harvest pops never re-harvest, or one grenade clears
+                        // the map through a recursion fountain).
+                        if ((game._harvestDepth || 0) === 0) {
+                            game._harvestDepth = 1;
+                            try {
+                                const _hd = 25 + 10 * (_tr.resonance || 0), _hr = 90, _hr2 = _hr * _hr;
+                                for (let _hi = 0; _hi < game.enemies.length; _hi++) {
+                                    const _he = game.enemies[_hi];
+                                    if (!_he || _he.dead || _he === this || _he.possessedBy || _he.boundTo) continue;
+                                    const _hdx = _he.x - this.x, _hdy = _he.y - this.y;
+                                    if (_hdx * _hdx + _hdy * _hdy > _hr2) continue;
+                                    if (game.map && game.map.floorSeparated && game.map.floorSeparated(this.x, this.y, _he.x, _he.y)) continue;
+                                    if (game.blastOccluded && game.blastOccluded(this.x, this.y, _he)) continue;
+                                    _he.takeDamage(_hd, Math.atan2(_hdy, _hdx), 180);
+                                }
+                                game.spawnShockwave(this.x, this.y, _hr, 0.2);
+                                for (let _hc = 0; _hc < 6; _hc++) {
+                                    const _ha = Math.random() * Math.PI * 2;
+                                    game.addParticle(this.x, this.y, Math.cos(_ha) * 140, Math.sin(_ha) * 140, '#ff5fd2', 0.35, 2);
+                                }
+                            } finally {
+                                game._harvestDepth = 0;
+                            }
+                        }
+                        // SPIRIT LEAP: the ride doesn't end with the kill — on
+                        // a roll the spirit jumps to the nearest live vessel
+                        // near the corpse (camera glides on the spring) and
+                        // keeps the resonance it earned. Non-boss vessels only.
+                        if (_tr.host && !_tr.host.dead) {
+                            const _leapCh = 0.20 + 0.05 * (_tr.resonance || 0);
+                            if (Math.random() < _leapCh) {
+                                let _nl = null, _nlD2 = 400 * 400;
+                                for (let _li = 0; _li < game.enemies.length; _li++) {
+                                    const _le = game.enemies[_li];
+                                    if (!_le || _le.dead || _le === this || _le === _tr.host || _le.possessedBy || _le.boundTo || _le.isBoss) continue;
+                                    const _ldx = _le.x - this.x, _ldy = _le.y - this.y;
+                                    const _ld2 = _ldx * _ldx + _ldy * _ldy;
+                                    if (_ld2 < _nlD2) { _nlD2 = _ld2; _nl = _le; }
+                                }
+                                if (_nl) {
+                                    _tr.host.possessedBy = null;
+                                    _nl.possessedBy = _p;
+                                    _nl.suppressedTimer = Math.max(_nl.suppressedTimer || 0, 0.3);
+                                    _nl.markedTimer = Math.max(_nl.markedTimer || 0, 0.5);
+                                    _tr.host = _nl;
+                                    _tr._hostAim = undefined;
+                                    game.floatingTexts.push(game.spawnFloatingText(_nl.x, _nl.y - 44, 'SPIRIT LEAPS', '#ff5fd2', 2.0));
+                                    game.triggerChromaticAberration(0.25, _p);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (this.boundTo && this.boundTo.boundAlly === this) this.boundTo.boundAlly = null;
+            if (this.boundTo && game._boundAlive !== undefined) game._boundAlive = Math.max(0, (game._boundAlive || 0) - 1);
+            this.possessedBy = null;
+            this.boundTo = null;
+        }
         // C-2: an operator's drones are its doctrine -- when it dies they
         // retire (stop homing, drift, expire in ~3s) instead of hunting for
         // the rest of their life. Marking only: retireFromOwnerDeath() never
@@ -19563,6 +19962,13 @@ class Enemy extends Entity {
                         perkX, perkY - 20, '⚡ PERK CASE DROPPED', '#00e5ff', 2.0
                     ));
                 }
+
+                // INTEL TRICKLE (balance): elites sometimes carry a chip.
+                // Wave modes only -- extraction elites already drop one
+                // guaranteed, and operator mode suppresses all item drops.
+                if (!game.extractionMode && Math.random() < 0.10) {
+                    game.items.push(game.spawnItem(this.x + (Math.random() - 0.5) * 30, this.y + (Math.random() - 0.5) * 30, 'intel'));
+                }
             } else {
                 game.floatingTexts.push(game.spawnFloatingText(
                     this.x, this.y - 20, 'ELITE DOWN', '#ffcc00', 1.6, (Math.random() - 0.5) * 60, -90, 200, true
@@ -19609,8 +20015,9 @@ class Enemy extends Entity {
             }
         }
 
-        // Glory Kill trigger: last wave enemy OR an elite
-        let remainingAlive = game.enemies.filter(e => !e.dead && e !== this).length;
+        // Glory Kill trigger: last wave enemy OR an elite. Bound allies and
+        // possessed hosts never count (your own spirits can't be the finale).
+        let remainingAlive = game.enemies.filter(e => !e.dead && e !== this && !e.boundTo && !e.possessedBy).length;
         let isLastEnemy = (remainingAlive === 0 && game.enemiesToSpawn === 0);
         if (game && (isLastEnemy || this.isElite)) {
             game.triggerGloryKill(this);
@@ -20465,7 +20872,11 @@ class Boss extends Enemy {
         this.deathHandled = false;
 
         this.setup();
-        this.hp = Math.round(this.hp * hpMultiplier);
+        // HP-01: most bosses set pre-multiplier hp in setup() and the shared
+        // multiply below scales it. The APC instead scales its own seats
+        // inside setup() (damage routes via damageSeat, never this.hp) and
+        // flags hpPreScaled so this shared multiply doesn't double-scale it.
+        if (!this.hpPreScaled) this.hp = Math.round(this.hp * hpMultiplier);
         this.maxHp = this.hp;
     }
 
@@ -20478,7 +20889,7 @@ class Boss extends Enemy {
     }
 
     // 0..1 remaining health, used by the HUD boss bar. Overridden by bosses
-    // with independently-tracked sub-parts (e.g. the APC's four seats) so
+    // with independently-tracked sub-parts (e.g. the APC's three seats) so
     // the bar reflects the true remaining threat, not just a raw hp field
     // that might not mean the same thing once parts are involved.
     healthFraction() {
@@ -20544,6 +20955,11 @@ class Boss extends Enemy {
         game.items.push(game.spawnItem(this.x - 20, this.y, 'medpack'));
         game.items.push(game.spawnItem(this.x + 20, this.y, 'grenade'));
         game.items.push(game.spawnItem(this.x, this.y + 20, 'perk_case'));
+        // BLACK BOX (intel balance): the boss's cracked command core --
+        // 2 intel chips, banked through the ledger on pickup like every
+        // other chip (ineligible runs render INTEL LOCKED, as usual).
+        game.items.push(game.spawnItem(this.x - 20, this.y + 20, 'intel'));
+        game.items.push(game.spawnItem(this.x + 20, this.y + 20, 'intel'));
         for (let i = 0; i < 3; i++) {
             game.items.push(game.spawnItem(this.x + MathUtils.rand(-40, 40), this.y + MathUtils.rand(-40, 40), 'money'));
         }
@@ -20824,9 +21240,9 @@ class InfiltratorBoss extends Boss {
 }
 
 // ---- Boss 2: Hammerhead APC ----
-// A four-seat armored vehicle: driver (undamageable, just drives), left
-// gunner, right gunner, roof gunner (20mm HE cannon). Each gunner seat is an
-// independently-trackable quarter of the boss's total HP -- kill a seat and
+// A three-seat armored vehicle: left gunner, right gunner, roof gunner
+// (20mm HE cannon). Each gunner seat is an independently-trackable third
+// of the boss's total HP -- kill a seat and
 // that gun goes silent for good, even though the vehicle keeps driving until
 // all three gunners are down. This is the "kill the crew, stop the truck"
 // boss the roadmap sketched out.
@@ -20844,7 +21260,12 @@ class ApcBoss extends Boss {
         // reason for a 4th invulnerable seat; the vehicle simply stops once
         // all three riders are dead, same "kill the crew, stop the truck"
         // beat as before but without a seat that could never be shot.
-        let seatHp = 260;
+        // HP-01: seats scale with the run's hpMultiplier HERE (this.hpMultiplier
+        // is assigned before setup() runs) because damage routes via
+        // damageSeat -- the base constructor's shared multiply is skipped via
+        // hpPreScaled, so this is the single scaling site for the APC.
+        let seatHp = Math.round(260 * (this.hpMultiplier || 1));
+        this.hpPreScaled = true;
         const mkSeat = (offX, offY, coneOffset) => ({
             hp: seatHp, maxHp: seatHp, alive: true,
             offX, offY,              // seat position relative to vehicle center, in vehicle-local space
@@ -22895,7 +23316,11 @@ class Bullet {
                     let isTargetEnemy = (ent instanceof Enemy || ent instanceof ScavengerDog);
                     
                     if (isTargetEnemy) {
-                        canHit = true;
+                        // ORACLE SPICE: possessed hosts + bound allies fight
+                        // for a player now — player fire passes through them
+                        // (no griefing your own spirit; splash tax still
+                        // applies, halved by shaman shielding in takeDamage).
+                        canHit = !(ent.possessedBy || ent.boundTo);
                     } else if (isTargetAlly) {
                         if (game.friendlyFireMode === 'off') {
                             canHit = false;
@@ -22916,7 +23341,20 @@ class Bullet {
                 } else {
                     // PHASE 2: hostile fire also threatens the escort --
                     // that risk IS the Asset Recovery mission.
+                    // ORACLE SPICE: possessed hosts + bound converts are
+                    // hittable by enemy fire (the traitor tax, halved by
+                    // shaman shielding in Enemy.takeDamage).
                     canHit = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof SecurityCamera || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage || ent instanceof EventideAnchor);
+                    if (!canHit && ent instanceof Enemy && (ent.possessedBy || ent.boundTo)) canHit = true;
+                    // ORACLE SPICE: panicked crossfire — inside a live influence
+                    // aura, hostile bullets connect with ordinary hostiles
+                    // (the turn made real; positional, not shooter-tagged:
+                    // enemy bullets carry no shooter ref). Spirits
+                    // (possessed/bound) are excluded: the crowd turns on
+                    // itself, never on your converts.
+                    if (!canHit && ent instanceof Enemy && !(ent.possessedBy || ent.boundTo)
+                        && !this.isPlayerBullet && !this.isNeutral && game && game._oracleActive
+                        && game._oracleCrossfireAt(this.x, this.y)) canHit = true;
                 }
                 
                 if (!canHit) continue;
@@ -23700,6 +24138,12 @@ class FPVDrone {
     
     update(dt, game) {
         if (this.dead) return;
+        // HP-09: belt-and-suspenders -- a dead pilot's drone drops out of
+        // piloted mode even if a death path missed onDeath (penalties/shop).
+        if (this.isPiloted && this.pilot && this.pilot.dead) {
+            this.stopAudio();
+            this.isPiloted = false;
+        }
 
         if (this.isPiloted) {
             let dist = Math.hypot(this.x - this.pilot.x, this.y - this.pilot.y);
@@ -25414,9 +25858,21 @@ class RobotDog extends Entity {
             let items = game.items;
             let targetItem = null;
             let minItemDistSq = 350 * 350;
+            // HP-11: lazy-prune expired bans (value = {exp, type}); the type
+            // check defeats pooled-ref aliasing (same object recycled into a
+            // new drop must not inherit the old ban).
+            if (this.failedItems && this.failedItems.size > 32) {
+                for (const [k, v] of this.failedItems) {
+                    if (!v || game.gameTime >= v.exp) this.failedItems.delete(k);
+                }
+            }
             for (let it of items) {
-                if (this.failedItems && this.failedItems.has(it) && game.gameTime < this.failedItems.get(it)) {
-                    continue;
+                if (this.failedItems) {
+                    const ban = this.failedItems.get(it);
+                    if (ban) {
+                        if (ban.type === it.type && game.gameTime < ban.exp) continue;
+                        this.failedItems.delete(it);
+                    }
                 }
                 let dx = it.x - this.x;
                 let dy = it.y - this.y;
@@ -25769,8 +26225,11 @@ class RobotDog extends Entity {
                         }
                     } else {
                         // Failed to collect (e.g. inventory is full). Blacklist for 10 seconds.
+                        // HP-11: value carries the item type so a pooled-ref
+                        // recycle doesn't inherit the ban; expired entries are
+                        // pruned lazily at the scan above.
                         if (this.failedItems) {
-                            this.failedItems.set(this.targetItem, game.gameTime + 10.0);
+                            this.failedItems.set(this.targetItem, { exp: game.gameTime + 10.0, type: this.targetItem.type });
                         }
                     }
                     this.targetItem = null;
@@ -26287,9 +26746,19 @@ class ScavengerDog extends Entity {
             let stagger = this._aiStaggerId || 0;
             if (game.frameCounter % 30 === stagger % 30 || !this.targetItem) {
                 let best = null, bestDSq = SCAV_DOG_TUNING.SEEK_RANGE * SCAV_DOG_TUNING.SEEK_RANGE;
+                // HP-11: lazy-prune expired bans (see RobotDog scan).
+                if (this.failedItems.size > 32) {
+                    for (const [k, v] of this.failedItems) {
+                        if (!v || game.gameTime >= v.exp) this.failedItems.delete(k);
+                    }
+                }
                 for (const it of game.items) {
                     if (!ScavengerDog.isStealable(it)) continue;
-                    if (this.failedItems.has(it) && game.gameTime < this.failedItems.get(it)) continue;
+                    const ban = this.failedItems.get(it);
+                    if (ban) {
+                        if (ban.type === it.type && game.gameTime < ban.exp) continue;
+                        this.failedItems.delete(it);
+                    }
                     let dx = it.x - this.x, dy = it.y - this.y;
                     let dSq = dx * dx + dy * dy;
                     if (dSq >= bestDSq) continue;
@@ -26517,7 +26986,8 @@ class ScavengerDog extends Entity {
             } else {
                 const it = this.targetItem;
                 if (!ScavengerDog.isStealable(it)) {
-                    this.failedItems.set(it, game.gameTime + SCAV_DOG_TUNING.FAILED_BAN);
+                    // HP-11: type-tagged ban (see scan above).
+                    this.failedItems.set(it, { exp: game.gameTime + SCAV_DOG_TUNING.FAILED_BAN, type: it.type });
                     this.targetItem = null;
                 } else {
                     let dist = Math.hypot(it.x - this.x, it.y - this.y);
@@ -26526,7 +26996,7 @@ class ScavengerDog extends Entity {
                         // no reaching through floors. (Cheap; dogs have no
                         // floor logic of their own.)
                         if (game.map && game.map.floorSeparated(this.x, this.y, it.x, it.y)) {
-                            this.failedItems.set(it, game.gameTime + 2.0);
+                            this.failedItems.set(it, { exp: game.gameTime + 2.0, type: it.type });
                             this.targetItem = null;
                         } else {
                             game.items[itemIdx] = game.items[game.items.length - 1];
@@ -28397,6 +28867,13 @@ class Item {
             return tLeft < 10 ? 0.4 : 1;
         }
         let age = this.waveAge();
+        // HP-12: extraction wall-clock fade across the 120s window above
+        // (last 40s dim) so expiry doesn't pop.
+        if (typeof game !== 'undefined' && game && game.extractionMode) {
+            if (this.pvpWallAge >= 120) return 0;
+            if (this.pvpWallAge >= 100) return 1 / 3;
+            if (this.pvpWallAge >= 80) return 2 / 3;
+        }
         if (age <= 0) return 1;
         if (age === 1) return 2 / 3;
         if (age === 2) return 1 / 3;
@@ -28412,6 +28889,11 @@ class Item {
         if (this.isShieldDrop()) return this.waveAge() >= 1 || this.pvpWallAge >= 45;
         // WI-2: PvP drops expire on wall-clock shelf life.
         if (this.pvpExpires && this.pvpWallAge >= PVP_TUNING.PVP_ITEM_EXPIRE) return true;
+        // HP-12: 120s wall-clock fallback on extraction runs -- wave is
+        // parked at 1 there so waveAge() never advances and loot would
+        // otherwise accumulate unbounded (per-frame update + blurred draw
+        // per item). Sandbox fixtures stay permanent (isSandbox above).
+        if (typeof game !== 'undefined' && game && game.extractionMode && this.pvpWallAge >= 120) return true;
         return this.waveAge() >= 3;
     }
 
@@ -28421,7 +28903,9 @@ class Item {
         // so slow-mo / hurt-drag never stretch their shelf life. The dt
         // fallback (first frame, before loop() has stashed _rawDt) still
         // ages them -- just at game speed; it never stops aging.
-        if (this.pvpExpires || this.isShieldDrop()) {
+        // HP-12: extraction runs age it too (feeds the 120s fallback in
+        // isExpired -- wave is parked at 1 there).
+        if (this.pvpExpires || this.isShieldDrop() || (typeof game !== 'undefined' && game && game.extractionMode)) {
             this.pvpWallAge += (typeof game !== 'undefined' && game && game._rawDt) ? game._rawDt : dt;
         }
         if (activePlayers) {
@@ -29393,7 +29877,15 @@ const ARMORY_UPGRADES = [
     { key: 'topSecretAnchor', name: 'TOP SECRET: EVENTIDE ANCHOR', maxLevel: 1,
       costPerLevel: [500],
       desc: 'Declassifies the EVENTIDE ANCHOR in the Shop (Top Secret Tech): a deployable pylon projecting a 500px time-dilation field, slowing everything inside down to ~1000:1 at the device. Symmetric -- your own time slows too. $20,000 per deployment.',
-      levelDescs: ['Eventide Anchor available in the Shop (Top Secret Tech)'] }
+      levelDescs: ['Eventide Anchor available in the Shop (Top Secret Tech)'] },
+    // TOP SECRET track (L2): ORACLE SPICE — DON MAZATL RESERVE. Own entry;
+    // never raise topSecretAnchor.maxLevel for it (L2 guidance). 500 intel
+    // unlocks the variable-price left-carousel pill under Top Secret Tech.
+    // D.M. Traineraha — the initials are the point. Banned in Operator.
+    { key: 'topSecretOracle', name: 'TOP SECRET: ORACLE SPICE', maxLevel: 1,
+      costPerLevel: [50],
+      desc: 'Declassifies ORACLE SPICE — DON MAZATL RESERVE in the Shop (Top Secret Tech): an astral consumable (left carousel). Out-of-body possession + influence aura + resonance compounding. Variable price, carry 3. By D.M. Trainer.',
+      levelDescs: ['Oracle Spice available in the Shop (Top Secret Tech)'] }
 ];
 
 // GL_ARC: Underbarrel Launcher Lvl2 ARC SIGHTS tuning (replaces the old
@@ -30439,7 +30931,7 @@ class Game {
         this.shopItemIDs = [
             'hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost', 
             'barrier', 'rubble', 'barrier_upgrade', 'drone', 'drone_upgrade', 'fiber_optic', 'turret', 'turret_mk2',
-            'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'camera', 'repairgun', 'field_gen', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
+            'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'camera', 'repairgun', 'field_gen', 'oracle', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
             'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap', 'ammo_shotgun_slug',
             'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC',
             'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel', 'call_evac', 'ready'
@@ -32614,7 +33106,11 @@ class Game {
         const btnExit = document.getElementById('btn-exit');
         if (btnExit) {
             btnExit.onclick = () => {
-                window.close();
+                // HP-18: window.close() is a silent no-op in browser tabs --
+                // say so instead of a dead button. (Still attempted: wrapped
+                // players like Electron honor it.)
+                try { window.close(); } catch (e) {}
+                if (this._menuToast) this._menuToast('BROWSER BUILD: CLOSE THIS TAB TO EXIT', '#ffb700', 2500);
             };
         }
         
@@ -32623,9 +33119,11 @@ class Game {
             const initSplash = () => {
                 audio.resume();
                 if (typeof musicEngine !== 'undefined') {
+                    // HP-18: respect a saved BGM Off (the old fallback forced
+                    // the Action track even when the player muted music).
                     let track = this.saveData.musicTrack;
-                    if (!track || track === 'off') track = 'action'; 
-                    this.setMusicTrack(track); 
+                    if (!track) track = 'action';
+                    if (track !== 'off') this.setMusicTrack(track);
                 }
                 splash.style.opacity = '0';
                 setTimeout(() => splash.remove(), 1500);
@@ -32650,7 +33148,9 @@ class Game {
             if (this.renderCustomMapsList) this.renderCustomMapsList();
         }
         this.selectedMapId = mapId;
-        const ids = ['random', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '12', '13', '14', '15', '16'];
+        // HP-10: '17' (Terraces) is a real selectable template (btn-map-17)
+        // -- '11' stays omitted (operator-forced, not a menu pick).
+        const ids = ['random', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '12', '13', '14', '15', '16', '17'];
         ids.forEach(id => {
             const btn = document.getElementById('btn-map-' + id);
             if (btn) {
@@ -33038,14 +33538,16 @@ class Game {
                     return;
                 }
                 
+                // LEFT rail = Q cycle / Z use · RIGHT rail = E cycle / C use.
+                // Vertical keyboard columns mirror the left/right screen rails.
                 if (key === 'q') {
                     cancelGLCharge(this.player);
-                    this.player.leftSelectIdx = (this.player.leftSelectIdx + 1) % 4;
-                }
-                if (key === 'e') {
-                    if (!tryStartGLCharge(this.player)) useLeftItem(this.player);
+                    this.player.leftSelectIdx = (this.player.leftSelectIdx + 1) % 5;
                 }
                 if (key === 'z') {
+                    if (!tryStartGLCharge(this.player)) useLeftItem(this.player);
+                }
+                if (key === 'e') {
                     cancelBarrierChain(this.player);
                     this.player.rightSelectIdx = (this.player.rightSelectIdx + 1) % 7;
                 }
@@ -33070,7 +33572,7 @@ class Game {
             if (key === 'f' && this.state === 'playing' && this.player && !this.player.dead) {
                 this._fRelease(this.player);
             }
-            if (key === 'e' && this.state === 'playing' && this.player && !this.player.dead) {
+            if (key === 'z' && this.state === 'playing' && this.player && !this.player.dead) {
                 releaseGLCharge(this.player);
             }
             if (key === 'c' && this.state === 'playing' && this.player && !this.player.dead) {
@@ -33177,7 +33679,7 @@ class Game {
     _releaseAllHeldInput() {
         this.input.keys = {};
         this.input.mouseDown = false;
-        // The 'e'/'c' keyup normally ends these holds; if that keyup was eaten
+        // The 'z'/'c' keyup normally ends these holds; if that keyup was eaten
         // by the focus loss, cancel here so a charge isn't stuck mid-hold.
         // cancel* (not release*) => no accidental grenade/barrier fire on
         // alt-tab. Both are null-safe, matching togglePause()'s cancel block.
@@ -33501,11 +34003,11 @@ class Game {
                 if (this.dpadCooldown <= 0) {
                     if (gp.buttons[12].pressed) { // Dpad Up
                         cancelGLCharge(playerInstance);
-                        playerInstance.leftSelectIdx = (playerInstance.leftSelectIdx - 1 + 4) % 4;
+                        playerInstance.leftSelectIdx = (playerInstance.leftSelectIdx - 1 + 5) % 5;
                         this.dpadCooldown = 0.18;
                     } else if (gp.buttons[13].pressed) { // Dpad Down
                         cancelGLCharge(playerInstance);
-                        playerInstance.leftSelectIdx = (playerInstance.leftSelectIdx + 1) % 4;
+                        playerInstance.leftSelectIdx = (playerInstance.leftSelectIdx + 1) % 5;
                         this.dpadCooldown = 0.18;
                     }
                 }
@@ -33628,6 +34130,7 @@ class Game {
             camera: 'btn-buy-camera',
             repairgun: 'btn-buy-repairgun',
             field_gen: 'btn-buy-field-gen',
+            oracle: 'btn-buy-oracle',
             ammo_shotgun: 'btn-buy-ammo-shotgun', ammo_smg_std: 'btn-buy-ammo-smg-std', ammo_smg_hp: 'btn-buy-ammo-smg-hp',
             ammo_lmg_std: 'btn-buy-ammo-lmg-std', ammo_lmg_ap: 'btn-buy-ammo-lmg-ap',
             ammo_sniper_std: 'btn-buy-ammo-sniper-std', ammo_sniper_ap: 'btn-buy-ammo-sniper-ap', ammo_pistol_hp: 'btn-buy-ammo-pistol-hp',
@@ -34226,7 +34729,7 @@ class Game {
             ],
             gameoptions: [
                 ['btn-cash-down', 'btn-cash-up'],
-                ['btn-ff-off', 'btn-ff-standard', 'btn-ff-hardcore', 'btn-ff-pvp'],
+                ['btn-ff-opt-off', 'btn-ff-opt-standard', 'btn-ff-opt-hardcore', 'btn-ff-opt-pvp'],
                 ['sld-time-scale'],
                 ['sld-start-wave']
             ],
@@ -34245,7 +34748,10 @@ class Game {
                 ['btn-armory-reset'],
                 ['btn-prestige']
             ],
-            guide: []
+            guide: [
+                ['btn-guide-sec-brief', 'btn-guide-sec-hands', 'btn-guide-sec-rails', 'btn-guide-sec-modes'],
+                ['btn-guide-sec-field', 'btn-guide-sec-armory', 'btn-guide-sec-link', 'btn-guide-sec-after', 'btn-guide-sec-classified']
+            ]
         };
     }
 
@@ -36077,6 +36583,778 @@ class Game {
         return ent._dilNow;
     }
 
+    // ORACLE SPICE core (L2 top-secret consumable). One TripContext per
+    // ingestion, resolved ONCE (candidates, archetype, duration, radius) so
+    // the per-frame tick only reads its own numbers + cheap live focus.
+    // Containment rules: aberration ABERRATION only as pulses (never a
+    // sustained hold — the 207ms half-res stall); influence scan staggered
+    // 4x/sec per trip; host fires real player bullets (enemy bullets can't
+    // friendly-fire, so native Enemy.fire stays suppressed while possessed).
+    ingestOracle(player) {
+        if (!player || player.dead || player.trip) return;
+        if (this.operatorMode) return; // banned in Operator
+        const T = (typeof ORACLE_TUNING !== 'undefined') ? ORACLE_TUNING : {};
+        const DUR_MIN = T.DURATION_MIN || 8, DUR_MAX = T.DURATION_MAX || 34;
+        const RADIUS = T.RADIUS || 950;
+        const isPvp = (this.friendlyFireMode === 'pvp' && this.isTwoPlayer);
+        // DUD roll: debuff (aim wobble via hit-flinch-sized kick) paired with
+        // hidden buffs (resist + resonance head-start + convert bias). The
+        // spice takes, then gives — always net-positive ledger.
+        const dud = Math.random() < (T.DUD_RATE || 0.12);
+        // Archetype: stillness biases REVENANT/SHEPHERD, steady aim + motion
+        // biases SOVEREIGN. Read cheap live fields only (no scans here).
+        const moving = Math.hypot(player.vx || 0, player.vy || 0) > 60;
+        const focus = player.focusLevel || 0;
+        let arch = 'SOVEREIGN';
+        const ar = Math.random();
+        if (!moving && ar < 0.45) arch = 'REVENANT';
+        else if (!moving && ar < 0.75) arch = 'SHEPHERD';
+        else if (moving && focus > 0.5 && ar < 0.7) arch = 'SOVEREIGN';
+        else if (ar < 0.3) arch = 'SHEPHERD';
+        // Host candidacy: aim cone + reach + LOS + same floor. Bosses score
+        // x2 but cost half time and can never convert (locked decision).
+        let host = null;
+        if (!isPvp || (this.enemies && this.enemies.length)) {
+            host = this._oraclePickHost(player);
+        }
+        // Mercy/greed: low HP biases weak-host + longer time; high HP hotter.
+        const hpFrac = (player.maxHp > 0) ? (player.hp / player.maxHp) : 1;
+        let dur = DUR_MIN + Math.random() * (DUR_MAX - DUR_MIN);
+        if (hpFrac < 0.35) dur += 2.5;
+        if (arch === 'REVENANT') dur *= 0.7;
+        if (host && host.isBoss) dur *= (T.BOSS_TIME_MULT || 0.5);
+        if (dud) dur += 2;
+        dur = Math.min(T.DURATION_CAP || 42, dur);
+        let radius = RADIUS * (arch === 'SOVEREIGN' ? 1.15 : arch === 'SHEPHERD' ? 1.35 : 0.85);
+        if (focus > 0.6) radius *= 1.2;
+        // Network knowledge: a wired owner reveals (mark) the influenced.
+        const net = this._oracleOwnerNetworked(player);
+        // OMENS: one rolled fate per trip (two on a dud — the spice takes,
+        // then gives). Each is LOUD and mechanical, never flavor-only.
+        const _omenPool = ['BLOOD', 'GOLDEN', 'IRON', 'HASTE', 'PLAGUE', 'SEER', 'MARTYR'];
+        const _omens = [];
+        {
+            let _n = dud ? 2 : 1;
+            const _deck = _omenPool.slice();
+            for (let _k = 0; _k < _n && _deck.length; _k++) {
+                _omens.push(_deck.splice(Math.floor(Math.random() * _deck.length), 1)[0]);
+            }
+        }
+        const _hasOmen = (o) => _omens.indexOf(o) !== -1;
+        if (_hasOmen('SEER')) { dur = Math.min(T.DURATION_CAP || 42, dur + 5); radius *= 1.2; }
+        if (_hasOmen('PLAGUE')) radius *= 1.6;
+        player.trip = {
+            t: 0, timeLeft: dur, dur: dur, arch: arch, dud: dud,
+            host: host || null, aura: !host,
+            radius: radius, resonance: (dud ? 1 : 0) + (_hasOmen('SEER') ? 1 : 0),
+            omens: _omens,
+            _infTimer: 0, _fireCd: 0.4, _focusAcc: 0,
+            _fakeUsed: false, _fxTick: 0, _warned: false, _hintCd: 0,
+            _wobTick: 0,
+            pvp: isPvp, networked: net,
+            hx: player.x, hy: player.y
+        };
+        this._oracleActive = true;
+        if (host) { host.possessedBy = player; host.suppressedTimer = Math.max(host.suppressedTimer || 0, 0.3); }
+        // IRON BODY omen: the host carries half again as much hull.
+        if (host && !host.dead && _hasOmen('IRON') && !host.isBoss) {
+            host.maxHp = (host.maxHp || host.hp) * 1.5;
+            host.hp = (host.hp || 1) * 1.5;
+        }
+        // PvP defang (locked): never touch the opposing operator's controls —
+        // just thin the veil: brief wobble on their viewport + a tell.
+        if (isPvp) {
+            const other = (player === this.player2) ? this.player : this.player2;
+            if (other && !other.dead) {
+                this.triggerChromaticAberration(0.3, other);
+                this.floatingTexts.push(this.spawnFloatingText(other.x, other.y - 36, 'THE VEIL THINS', '#ff5fd2', 1.4));
+            }
+        }
+        // ONSET: zoom punch + aberration PULSE (not hold) + ring + voice.
+        if (player.camera) player.camera.punchZoom(0.08);
+        else if (this.camera) this.camera.punchZoom(0.08);
+        this.triggerChromaticAberration(0.45, player);
+        this.spawnDeployRing(player.x, player.y);
+        for (let i = 0; i < 14; i++) {
+            const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 220;
+            this.addParticle(player.x, player.y, Math.cos(a)*s, Math.sin(a)*s, '#ff5fd2', 0.7, 3);
+        }
+        if (audio && audio.playPickup) audio.playPickup('weapon');
+        const hostLbl = host ? ((host.bossName || host.type || 'HOST') + '') : 'THE VOID ANSWERS';
+        const _omenNames = { BLOOD: 'BLOOD MOON', GOLDEN: 'GOLDEN TIDE', IRON: 'IRON BODY', HASTE: 'HASTE SPIRIT', PLAGUE: 'PLAGUE BEARER', SEER: 'SEER', MARTYR: "MARTYR'S BARGAIN" };
+        const _omenSubs = { BLOOD: 'THEY BREAK EASY', GOLDEN: 'KILLS RAIN CASH', IRON: 'YOUR BODY ENDURES', HASTE: 'EVERYTHING QUICKENS', PLAGUE: 'THE TURN SPREADS WIDE', SEER: 'THE TRIP RUNS LONG', MARTYR: 'THE END WILL BLOSSOM' };
+        const _omenLbl = _omens.map(o => _omenNames[o] || o).join(' + ');
+        const _omenSub = _omens.map(o => _omenSubs[o] || o).join(' · ');
+        // EXPERIENCE: the headline + the contract. The sub tells the hands
+        // what changed (body sleeps, aim steers, trigger talks through the
+        // host) so the no-fire body never reads as a bug. Omens get equal
+        // billing — they are the reason to buy the next one.
+        this.announce('OUT OF BODY — ' + arch, dud ? '#ffb700' : '#ff5fd2', 2.6,
+            (host ? ('RIDING ' + hostLbl + ' · BODY SLEEPS · AIM STEERS · TRIGGER SPEAKS')
+                 : 'NO HOST IN SIGHT · THE AURA FIGHTS FOR YOU · KILLS FEED RESONANCE')
+            + ' · OMEN: ' + _omenLbl + ' — ' + _omenSub);
+        for (let _oi = 0; _oi < _omens.length; _oi++) {
+            this.floatingTexts.push(this.spawnFloatingText(player.x, player.y - 70 - _oi * 22,
+                'OMEN: ' + (_omenNames[_omens[_oi]] || _omens[_oi]), '#ffb700', 2.6));
+        }
+        // WHY-lines: every trip means something — name the inputs that
+        // shaped it (stillness, hurt, crowd, focus) so the randomness reads
+        // as fate with causes, not dice.
+        {
+            const _why = [];
+            if (!moving) _why.push('YOU STOOD STILL');
+            if (hpFrac < 0.5) _why.push('YOU WERE HURTING');
+            if (this.enemies && this.enemies.length >= 10) _why.push('THE FIELD IS CROWDED');
+            if (focus > 0.6) _why.push('YOUR AIM WAS STEADY');
+            for (let _wi = 0; _wi < Math.min(2, _why.length); _wi++) {
+                this.floatingTexts.push(this.spawnFloatingText(player.x, player.y - 96 - (_omens.length * 22) - _wi * 20,
+                    _why[_wi], '#00e5ff', 2.4));
+            }
+        }
+        this.floatingTexts.push(this.spawnFloatingText(player.x, player.y - 44,
+            (arch === 'REVENANT' ? 'REVENANT: ' : arch === 'SHEPHERD' ? 'SHEPHERD: ' : 'SOVEREIGN: ') + hostLbl,
+            dud ? '#ffb700' : '#ff5fd2', 2.2));
+        if (dud && player.kickAim) player.kickAim('aimHitFlinchOffset', 6);
+    }
+
+    // Weighted host lottery: power x alignment, softmax-sampled so the
+    // strongest is likely but never guaranteed. PvP: AI units only — never
+    // the opposing operator (defanged by design).
+    _oraclePickHost(player) {
+        if (!this.enemies || !this.enemies.length) return null;
+        const T = (typeof ORACLE_TUNING !== 'undefined') ? ORACLE_TUNING : {};
+        const coneCos = Math.cos(((T.CONE_DEG || 65) * Math.PI / 180));
+        const reach = T.REACH || 1700;
+        const px = player.x, py = player.y;
+        const ax = Math.cos(player.angle || 0), ay = Math.sin(player.angle || 0);
+        const cands = [];
+        for (let i = 0; i < this.enemies.length; i++) {
+            const e = this.enemies[i];
+            if (!e || e.dead || e.possessedBy || e.boundTo) continue;
+            // (HP-19: removed a dead `e.type === 'medic' && false` exclusion
+            // here -- medics are welcome hosts at a 0.6 mercy weight below.)
+            const dx = e.x - px, dy = e.y - py;
+            const d = Math.hypot(dx, dy);
+            if (d > reach || d < 1) continue;
+            const dot = (dx * ax + dy * ay) / d;
+            if (dot < coneCos) continue;
+            if (this.map && this.map.floorSeparated && this.map.floorSeparated(px, py, e.x, e.y)) continue;
+            if (this.map && this.map.getWallsAlongSegment) {
+                const segs = this.map.getWallsAlongSegment(px, py, e.x, e.y);
+                let blocked = false;
+                for (let k = 0; k < segs.length; k++) {
+                    if (MathUtils.lineIntersectAABB(px, py, e.x, e.y, segs[k])) { blocked = true; break; }
+                }
+                if (blocked) continue;
+            }
+            let power = (e.maxHp || e.hp || 40);
+            if (e.isElite) power *= 1.5;
+            if (e.isBoss) power *= 2;
+            if (e.type === 'medic') power *= 0.6; // mercy weight, not exclusion
+            const align = 0.5 + dot; // 0.5..1.5
+            // Low-HP mercy: weak hosts score up when the owner is hurting.
+            const hpFrac = (player.maxHp > 0) ? (player.hp / player.maxHp) : 1;
+            if (hpFrac < 0.35 && power < 120) power *= 1.6;
+            cands.push({ e: e, w: Math.max(0.01, power * align) });
+        }
+        if (!cands.length) return null;
+        // Softmax sample (temperature 1 on normalized weights).
+        let sum = 0;
+        for (let i = 0; i < cands.length; i++) sum += cands[i].w;
+        let r = Math.random() * sum;
+        for (let i = 0; i < cands.length; i++) { r -= cands[i].w; if (r <= 0) return cands[i].e; }
+        return cands[cands.length - 1].e;
+    }
+
+    _oracleOwnerNetworked(player) {
+        if (!player) return false;
+        if (player.fiberOpticOwned) return true;
+        if (this.turrets) for (let i = 0; i < this.turrets.length; i++) {
+            const t = this.turrets[i];
+            if (t && !t.dead && t.owner === player && t.isNetworked) return true;
+        }
+        if (this.securityCameras) for (let i = 0; i < this.securityCameras.length; i++) {
+            const c = this.securityCameras[i];
+            if (c && !c.dead && c.owner === player && c.isNetworked) return true;
+        }
+        if (this.mines) for (let i = 0; i < this.mines.length; i++) {
+            const m = this.mines[i];
+            if (m && !m.dead && m.owner === player && m.isNetworked) return true;
+        }
+        return false;
+    }
+
+    // Per-frame trip tick (called from Game.update next to the PvP respawn
+    // ticks). O(trips) + staggered O(enemies) at 4Hz per trip — never a
+    // per-enemy per-frame scan. Host native fire stays suppressed; the host
+    // deals damage via real PLAYER bullets below (credit + FF correct).
+    _tickOracleTrips(dt) {
+        const ps = [];
+        if (this.player && this.player.trip) ps.push(this.player);
+        if (this.isTwoPlayer && this.player2 && this.player2.trip) ps.push(this.player2);
+        if (!ps.length) { this._oracleActive = false; this._maybeClearOracleFx(); return; }
+        this._oracleActive = true;
+        const T = (typeof ORACLE_TUNING !== 'undefined') ? ORACLE_TUNING : {};
+        // TWIN FLAME: overlapping co-op trips (never PvP) knit a small
+        // shared link — slow heal trickle + the influence marks already read
+        // as shared vision. No control theft, ever.
+        const twin = (ps.length === 2 && !ps[0].trip.pvp);
+        if (twin) {
+            for (const _p of ps) {
+                if (!_p.dead) _p.hp = Math.min(_p.maxHp, _p.hp + dt * 2);
+            }
+        }
+        for (let pi = 0; pi < ps.length; pi++) {
+            const p = ps[pi];
+            const trip = p.trip;
+            if (!trip) continue;
+            if (p.dead) { this._endOracleTrip(p, 'body-dead'); continue; }
+            trip.t += dt;
+            trip.timeLeft -= dt;
+            // Absolute failsafe: no trip outlives 40s no matter what.
+            if (trip.t > 40) { this._endOracleTrip(p, 'cleared'); continue; }
+            const host = trip.host;
+            const cx = (host && !host.dead) ? host.x : p.x;
+            const cy = (host && !host.dead) ? host.y : p.y;
+            // Host bookkeeping: suppress native enemy fire, keep it slow-proof.
+            if (host && !host.dead) {
+                host.suppressedTimer = Math.max(host.suppressedTimer || 0, 0.25);
+                host.possessedBy = p;
+                // The host reads as YOURS: tracked through walls (the Combat
+                // Scanner idiom) so the eye always finds the ride.
+                host.markedTimer = Math.max(host.markedTimer || 0, 0.5);
+                // BOSSES are ridden, not driven (Boss subclasses override
+                // update/fire entirely — no shared gate to flip): the camera
+                // rides, the aura + chip damage pay, the boss stays
+                // dangerous. Half time, never convertible (locked).
+                // Possessed summoners hold their launches (the host's own
+                // bullets do the talking); possessed medics hold channel
+                // (else they'd heal the other side mid-trip).
+                if (host.type === 'medic') host._medicChannel = 0;
+                if (host.type === 'drone_op') host._droneCooldown = Math.max(host._droneCooldown || 0, 1.5);
+                // Springy host aim: the gun WANTS the owner's aim but lags and
+                // breathes (turn-limited chase + slow wander) — wanty, never
+                // exact, never detached. Native AI still walks the body (the
+                // target override reads possessedBy); this owns the facing,
+                // and fire below leaves along it, so gun and bullets agree.
+                if (trip._hostAim === undefined) trip._hostAim = host.angle || 0;
+                {
+                    const _want = p.angle || 0;
+                    const _diff = MathUtils.angleDifference(_want, trip._hostAim);
+                    const _turn = 3.5 * dt;
+                    trip._hostAim += MathUtils.clamp(_diff, -_turn, _turn) + Math.sin(trip.t * 6.3) * 0.55 * dt;
+                }
+                host.angle = trip._hostAim;
+            } else if (host && host.dead && !trip._hostDeadHandled) {
+                trip._hostDeadHandled = true;
+                // Snap-back burst at the corpse (no convert — host died).
+                this.spawnShockwave(cx, cy, 130, 0.3);
+                this.triggerChromaticAberration(0.35, p);
+                this.floatingTexts.push(this.spawnFloatingText(cx, cy - 30, 'SNAPPED BACK', '#ff5fd2', 1.6));
+                trip.timeLeft = Math.min(trip.timeLeft, 1.2);
+                trip.host = null;
+            }
+            // Host fire: real player bullets down the HOST'S OWN gun angle
+            // (the springy trip._hostAim above — gun and bullets agree by
+            // construction). Turret idiom: only loose when roughly settled
+            // (|diff| < 0.6), so the gun visibly swings, settles, then barks.
+            // Damage inherits the owner's held weapon (capped) — your gun
+            // speaks through whatever body it wears.
+            trip._fireCd -= dt;
+            if (host && !host.dead && trip._fireCd <= 0) {
+                const tgt = this._oracleHostTarget(p, host);
+                if (tgt) {
+                    const _ta = Math.atan2(tgt.y - host.y, tgt.x - host.x);
+                    const _off = Math.abs(MathUtils.angleDifference(_ta, trip._hostAim === undefined ? host.angle : trip._hostAim));
+                    if (_off > 0.6) {
+                        trip._fireCd = 0.15; // still swinging — hold fire
+                    } else {
+                        const _haste = trip.omens && trip.omens.indexOf('HASTE') !== -1;
+                        trip._fireCd = Math.max(0.35, (host.fireRate || 1.0) * (trip.resonance > 0 ? 0.85 : 1.0) * (_haste ? 0.55 : 1));
+                        const a = trip._hostAim;
+                        const _wd = host.isBoss ? 26 : Math.min(50, Math.max(12, (p.weapon && p.weapon.dmg) || 16));
+                        const dmg = _wd * (1 + 0.1 * (trip.resonance || 0));
+                        const b = this.spawnBullet(host.x, host.y, a + (Math.random() - 0.5) * 0.06,
+                            { name: 'Pistol', dmg: dmg, speed: 2400, drag: 0.05, color: '#ff5fd2' }, true, false, false, false);
+                        if (b) { b.shooter = p; b.owner = p; b.creditOwner = p; this.bullets.push(b); }
+                        if (audio && audio.playShoot) audio.playShoot('SMG', host.x, host.y);
+                        // Muzzle kiss: a magenta spit so each host shot READS.
+                        for (let _m = 0; _m < 3; _m++) {
+                            this.addParticle(host.x + Math.cos(a) * 14, host.y + Math.sin(a) * 14,
+                                Math.cos(a + (Math.random() - 0.5)) * 160, Math.sin(a + (Math.random() - 0.5)) * 160,
+                                '#ff5fd2', 0.25, 2);
+                        }
+                        host.lastFire = this.gameTime;
+                    }
+                } else {
+                    trip._fireCd = 0.2;
+                }
+            }
+            // SPIRIT LASH: the trigger is a verb, not a hint — rising edge
+            // discharges a psychic burst around the host (or the body on
+            // aura-only trips). 3s cooldown. This is the hands' toy mid-trip.
+            trip._lashCd = (trip._lashCd === undefined ? 0 : trip._lashCd) - dt;
+            {
+                const _held = !!p._fireHeld;
+                const _edge = _held && !trip._firePrev;
+                trip._firePrev = _held;
+                if (_edge && trip._lashCd <= 0) {
+                    trip._lashCd = 3;
+                    this._oracleLash(p, trip, cx, cy);
+                }
+            }
+            // Influence aura, staggered 4Hz: slow + mark + frail + confuse.
+            trip._infTimer -= dt;
+            if (trip._infTimer <= 0) {
+                trip._infTimer = 0.25;
+                this._oracleApplyInfluence(p, trip, cx, cy);
+            }
+            // Zone focus: steady aim trickles resonance (the buffs follow focus).
+            const fl = p.focusLevel || 0;
+            if (fl > 0.7) {
+                trip._focusAcc += dt;
+                if (trip._focusAcc >= 2.5) {
+                    trip._focusAcc = 0;
+                    if ((trip.resonance || 0) < (T.RESONANCE_MAX || 5)) {
+                        trip.resonance++;
+                        trip.timeLeft = Math.min(trip.dur > 0 ? (T.DURATION_CAP || 42) : trip.timeLeft + 1, trip.timeLeft + 1);
+                        this.floatingTexts.push(this.spawnFloatingText(cx, cy - 54, 'RESONANCE ' + trip.resonance, '#ff5fd2', 1.2));
+                    }
+                }
+            } else {
+                trip._focusAcc = 0;
+            }
+            // SECOND SIGHT + sustain (1Hz per trip): the SEEING thing, felt
+            // in the bars, not discovered — every hostile revealed through
+            // walls, the sleeping body mended (hp/armor/stamina trickle).
+            trip._seerTimer = (trip._seerTimer === undefined ? 0 : trip._seerTimer) - dt;
+            if (trip._seerTimer <= 0) {
+                trip._seerTimer = 1.0;
+                if (this.enemies) for (let _si = 0; _si < this.enemies.length; _si++) {
+                    const _se = this.enemies[_si];
+                    if (_se && !_se.dead) _se.markedTimer = Math.max(_se.markedTimer || 0, 1.2);
+                }
+                if (!p.dead) {
+                    p.hp = Math.min(p.maxHp, p.hp + 4);
+                    p.armor = Math.min(100, (p.armor || 0) + 6);
+                    if (p.maxStamina) p.stamina = p.maxStamina;
+                }
+                // FLIPPED EFFECT: a possessed medic's channel is held shut
+                // (see above), but its presence still mends — nearby owners
+                // get the heal instead of the enemy squad. Their tool, your
+                // side.
+                if (host && !host.dead && host.type === 'medic') {
+                    const _mp = [this.player, (this.isTwoPlayer ? this.player2 : null)];
+                    for (let _mi = 0; _mi < _mp.length; _mi++) {
+                        const _mpl = _mp[_mi];
+                        if (!_mpl || _mpl.dead) continue;
+                        const _mdx = _mpl.x - host.x, _mdy = _mpl.y - host.y;
+                        if (_mdx * _mdx + _mdy * _mdy < 300 * 300) {
+                            _mpl.hp = Math.min(_mpl.maxHp, _mpl.hp + 10);
+                            this.addParticle(_mpl.x, _mpl.y - 10, (Math.random() - 0.5) * 40, -60, '#39ff14', 0.6, 2);
+                        }
+                    }
+                }
+            }
+            // VEIL SURGE: every few seconds reality shudders around the
+            // trip's heart — pure ambience with teeth removed (no damage, no
+            // heat), so the trip breathes even between kills.
+            trip._surgeTimer = (trip._surgeTimer === undefined ? 3 : trip._surgeTimer) - dt;
+            if (trip._surgeTimer <= 0) {
+                trip._surgeTimer = 4 + Math.random() * 2;
+                this.spawnShockwave(cx, cy, 220, 0.3);
+                for (let _gi = 0; _gi < 8; _gi++) {
+                    const _ga = Math.random() * Math.PI * 2;
+                    this.addParticle(cx, cy, Math.cos(_ga) * 200, Math.sin(_ga) * 200, '#ff5fd2', 0.5, 2);
+                }
+                this.triggerChromaticAberration(0.12, p);
+                if (Math.random() < 0.3) {
+                    const _wh = ['THE VEIL SHUDDERS', 'REALITY THINS', 'STAY WITH IT'];
+                    this.floatingTexts.push(this.spawnFloatingText(cx, cy - 70, _wh[Math.floor(Math.random() * _wh.length)], '#b388ff', 1.4));
+                }
+            }
+            // Mandala legibility pulse (cheap, event-tied — not a hold).
+            trip._fxTick -= dt;
+            if (trip._fxTick <= 0) {
+                trip._fxTick = 1.0;
+                for (let k = 0; k < (trip.resonance || 0); k++) {
+                    const a = Math.random() * Math.PI * 2;
+                    this.addParticle(cx, cy, Math.cos(a) * 120, Math.sin(a) * 120, '#ff5fd2', 0.5, 2);
+                }
+            }
+            // Comedown warning: the last 3s get a countdown so the snap-back
+            // never surprises.
+            if (!trip._warned && trip.timeLeft <= 3 && trip.timeLeft > 0) {
+                trip._warned = true;
+                this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 52, 'COMEDOWN INCOMING', '#ffb700', 2.2));
+            }
+            // Trigger-hint: pulling the trigger does nothing in the body —
+            // say so once per few seconds instead of letting it read broken.
+            trip._hintCd -= dt;
+            if (trip._hintCd <= 0) {
+                let _firing = false;
+                try {
+                    const _inp = p.isPlayer2 ? this.input2 : this.input;
+                    _firing = !!(_inp && _inp.mouseDown);
+                } catch (e) {}
+                if (_firing) {
+                    trip._hintCd = 4;
+                    this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 64, 'ASTRAL: AIM STEERS THE HOST', '#ff5fd2', 1.6));
+                } else {
+                    trip._hintCd = 0.5;
+                }
+            }
+            // Trip feel: canvas wobble + hum ride the staggered wobble tick.
+            trip._wobTick -= dt;
+            if (trip._wobTick <= 0) {
+                trip._wobTick = 0.25;
+                this._tickOracleWobble(p, trip);
+                try { this._updateOracleHud(); } catch (e) {}
+            }
+            if (trip.timeLeft <= 0) this._endOracleTrip(p, 'expired');
+        }
+    }
+
+    _oracleHostTarget(owner, host) {
+        // Nearest hostile-of-owner to the host: live enemies (not self, not
+        // possessed/bound) + live bossDrones. O(n), called at most ~3Hz/host.
+        let best = null, bestD2 = 1000 * 1000;
+        // Aim bias: prefer what the owner looks at (steering feel).
+        const ax = Math.cos(owner.angle || 0), ay = Math.sin(owner.angle || 0);
+        const consider = (e) => {
+            if (!e || e.dead || e === host || e.possessedBy || e.boundTo) return;
+            const dx = e.x - host.x, dy = e.y - host.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 > bestD2) return;
+            // Owner-aim alignment bonus (up to 25% effective closer).
+            const odx = e.x - owner.x, ody = e.y - owner.y;
+            const od = Math.hypot(odx, ody) || 1;
+            const dot = (odx * ax + ody * ay) / od;
+            const score = d2 * (dot > 0.7 ? 0.75 : 1);
+            if (score < bestD2) { bestD2 = score; best = e; }
+        };
+        if (this.enemies) for (let i = 0; i < this.enemies.length; i++) consider(this.enemies[i]);
+        if (this.bossDrones) for (let i = 0; i < this.bossDrones.length; i++) {
+            const d = this.bossDrones[i];
+            if (d && !d.dead) consider(d);
+        }
+        return best;
+    }
+
+    _oracleApplyInfluence(owner, trip, cx, cy) {
+        const T = (typeof ORACLE_TUNING !== 'undefined') ? ORACLE_TUNING : {};
+        const r = trip.radius || 950;
+        const r2 = r * r;
+        const plague = trip.omens && trip.omens.indexOf('PLAGUE') !== -1;
+        const hold = plague ? 0.9 : 0.45;
+        const until = this.gameTime + hold;
+        const blood = trip.omens && trip.omens.indexOf('BLOOD') !== -1;
+        const slowBase = (T.SLOW_FACTOR !== undefined) ? T.SLOW_FACTOR : 0.6;
+        const confuseCh = (T.CONFUSE_CHANCE !== undefined) ? T.CONFUSE_CHANCE : 0.7;
+        if (this.enemies) for (let i = 0; i < this.enemies.length; i++) {
+            const e = this.enemies[i];
+            if (!e || e.dead || e === trip.host || e.possessedBy || e.boundTo) continue;
+            const dx = e.x - cx, dy = e.y - cy;
+            if (dx * dx + dy * dy > r2) continue;
+            if (this.map && this.map.floorSeparated && this.map.floorSeparated(cx, cy, e.x, e.y)) continue;
+            // The turn: slowed (deeper with resonance) + marked (the aura
+            // must READ) + frail (everything you own shreds them) +
+            // confused (panicked: they fire ~40% slower AND their bullets
+            // can hit each other — see the bullet gate + fire interval.
+            // Deliberately NOT suppressed: a suppressed crowd can't
+            // crossfire, and the turn is only real if they keep pulling
+            // the trigger). Confusion is a per-enemy roll at CONFUSE_CHANCE
+            // so the knob actually moves the needle; slow/frail/mark always
+            // apply. No targeting surgery.
+            e._oracleSlowUntil = until;
+            e._oracleSlowMult = Math.max(0.35, slowBase - 0.05 * (trip.resonance || 0));
+            if (Math.random() < confuseCh) e._oracleConfuseUntil = until;
+            e._oracleFrailUntil = until;
+            e._oracleFrailMult = blood ? 2 : 1.5;
+            e.markedTimer = Math.max(e.markedTimer || 0, hold);
+        }
+    }
+
+    // Positional crossfire test for the bullet gate (see above): true when
+    // (x,y) sits inside any live trip's influence aura. O(trips) — at most
+    // two — and only evaluated while a trip is live.
+    _oracleCrossfireAt(x, y) {
+        const ps = [];
+        if (this.player && this.player.trip) ps.push(this.player);
+        if (this.isTwoPlayer && this.player2 && this.player2.trip) ps.push(this.player2);
+        for (let i = 0; i < ps.length; i++) {
+            const t = ps[i].trip;
+            const h = (t.host && !t.host.dead) ? t.host : ps[i];
+            const r = t.radius || 950;
+            const dx = x - h.x, dy = y - h.y;
+            if (dx * dx + dy * dy > r * r) continue;
+            if (this.map && this.map.floorSeparated && this.map.floorSeparated(x, y, h.x, h.y)) continue;
+            return true;
+        }
+        return false;
+    }
+
+    _endOracleTrip(player, reason) {
+        const trip = player ? player.trip : null;
+        if (!trip) return;
+        const host = trip.host;
+        const validHost = host && !host.dead;
+        // MARTYR'S BARGAIN / finale nova: every natural expiry ends in
+        // blossom — a radial burst around the BODY (the spirit slamming
+        // home), scaled by resonance. One O(n) pass, expiry-only.
+        if (reason === 'expired') this._oracleNova(player, trip);
+        // Convert check: natural expiry + live non-boss host + resonance>=3.
+        // Bosses never convert (locked). Pack cap scales with the trip:
+        // resonance 5 holds TWO converts ("one or multiple enemies"), else
+        // the oldest is released to make room.
+        if (reason === 'expired' && validHost && !host.isBoss && (trip.resonance || 0) >= 3 && !host.boundTo) {
+            const _capB = (trip.resonance || 0) >= 5 ? 2 : 1;
+            let _mine = [];
+            if (this.enemies) for (let _bi = 0; _bi < this.enemies.length; _bi++) {
+                const _be = this.enemies[_bi];
+                if (_be && !_be.dead && _be.boundTo === player && _be !== host) _mine.push(_be);
+            }
+            while (_mine.length >= _capB) {
+                const old = _mine.shift();
+                old.boundTo = null;
+                this._boundAlive = Math.max(0, (this._boundAlive || 0) - 1);
+                this.floatingTexts.push(this.spawnFloatingText(old.x, old.y - 30, 'RELEASED', '#808f9c', 1.2));
+            }
+            host.possessedBy = null;
+            host.boundTo = player;
+            host.owner = player;
+            host.hp = Math.min(host.maxHp || host.hp, host.hp + (host.maxHp || 0) * 0.3);
+            host.suppressedTimer = 0;
+            host.cachedTarget = null;
+            player.boundAlly = host;
+            this._boundAlive = (this._boundAlive || 0) + 1;
+            this.floatingTexts.push(this.spawnFloatingText(host.x, host.y - 44, 'BOUND — FOLLOWS YOU', '#39ff14', 2.4));
+            this.spawnShockwave(host.x, host.y, 170, 0.4);
+            this.triggerChromaticAberration(0.4, player);
+            if (audio && audio.playTadah) audio.playTadah();
+            if (this.runLedger) this.runLedger.addIntel(2, 'oracle_bind');
+        } else {
+            // Fizzle grant: the trip never wastes. Small heal + trickle.
+            if (reason === 'expired') {
+                player.hp = Math.min(player.maxHp, player.hp + (trip.dud ? 15 : 8));
+                if (this.runLedger && !trip.host) this.runLedger.addIntel(1, 'oracle_aura');
+            }
+        }
+        if (validHost && !host.boundTo) host.possessedBy = null;
+        player.trip = null;
+        // COMEDOWN pulse (not hold): clear wobble, snap camera back.
+        this.triggerChromaticAberration(0.3, player);
+        if (player.camera) player.camera.punchZoom(0.05);
+        this._maybeClearOracleFx();
+        if (reason === 'body-dead' || reason === 'cleared') return;
+        this.floatingTexts.push(this.spawnFloatingText(player.x, player.y - 36,
+            reason === 'host-dead' ? 'HOST LOST' : 'COMEDOWN', '#ff5fd2', 1.4));
+    }
+
+    _oracleAbortAll(reason) {
+        if (this.player && this.player.trip) this._endOracleTrip(this.player, reason || 'cleared');
+        if (this.isTwoPlayer && this.player2 && this.player2.trip) this._endOracleTrip(this.player2, reason || 'cleared');
+        this._oracleActive = false;
+        this._clearOracleWobble();
+        this._stopOracleHum();
+    }
+
+    // SPIRIT LASH: trigger-edge burst around (cx,cy) — host-centered, or
+    // body-centered on aura-only trips. Psychic (ignores cover, honors
+    // floors), never touches spirits. Small enough to spam every 3s, big
+    // enough to feel. Floater only on a connect.
+    _oracleLash(player, trip, cx, cy) {
+        if (!player || player.dead) return;
+        const res = trip.resonance || 0;
+        const radius = 200 + 20 * res;
+        const dmg = 25 + 12 * res;
+        const r2 = radius * radius;
+        let hits = 0;
+        const hit = (e) => {
+            if (!e || e.dead || e.possessedBy || e.boundTo) return;
+            const dx = e.x - cx, dy = e.y - cy;
+            if (dx * dx + dy * dy > r2) return;
+            if (this.map && this.map.floorSeparated && this.map.floorSeparated(cx, cy, e.x, e.y)) return;
+            hits++;
+            e.takeDamage(dmg, Math.atan2(dy, dx), 260);
+        };
+        if (this.enemies) for (let i = 0; i < this.enemies.length; i++) hit(this.enemies[i]);
+        if (this.bossDrones) for (let i = 0; i < this.bossDrones.length; i++) hit(this.bossDrones[i]);
+        this.spawnShockwave(cx, cy, radius, 0.25);
+        for (let i = 0; i < 10; i++) {
+            const a = Math.random() * Math.PI * 2, s = 100 + Math.random() * 260;
+            this.addParticle(cx, cy, Math.cos(a) * s, Math.sin(a) * s, '#ff5fd2', 0.4, 2.5);
+        }
+        if (audio && audio.playMiniExplosion) audio.playMiniExplosion(cx, cy);
+        this.triggerChromaticAberration(0.15, player);
+        if (hits > 0) {
+            this.floatingTexts.push(this.spawnFloatingText(cx, cy - 40, 'SPIRIT LASH ×' + hits, '#ff5fd2', 1.2));
+        }
+    }
+
+    // Comedown nova: radial spirit-burst around the owner's body on natural
+    // expiry. Skips spirits (never nukes your own), respects cover
+    // (blastOccluded) and floors. MARTYR'S BARGAIN more than doubles it.
+    _oracleNova(player, trip) {
+        if (!player || player.dead) return;
+        const res = trip.resonance || 0;
+        const martyr = trip.omens && trip.omens.indexOf('MARTYR') !== -1;
+        const radius = (260 + 40 * res) * (martyr ? 1.4 : 1);
+        const dmg = (30 + 12 * res) * (martyr ? 2.5 : 1);
+        const r2 = radius * radius;
+        this.spawnShockwave(player.x, player.y, radius, 0.4);
+        this.applyExplosionShake(player.x, player.y, 14, radius);
+        if (audio && audio.playMiniExplosion) audio.playMiniExplosion(player.x, player.y);
+        for (let i = 0; i < 24; i++) {
+            const a = Math.random() * Math.PI * 2, s = 120 + Math.random() * 320;
+            this.addParticle(player.x, player.y, Math.cos(a) * s, Math.sin(a) * s, martyr ? '#ffcc00' : '#ff5fd2', 0.6, 3);
+        }
+        const hit = (e) => {
+            // Never nukes your own (host or converts) — the finale frees
+            // the host for binding, it doesn't execute it.
+            if (!e || e.dead || e.possessedBy || e.boundTo || e === trip.host) return;
+            const dx = e.x - player.x, dy = e.y - player.y;
+            if (dx * dx + dy * dy > r2) return;
+            if (this.map && this.map.floorSeparated && this.map.floorSeparated(player.x, player.y, e.x, e.y)) return;
+            if (this.blastOccluded && this.blastOccluded(player.x, player.y, e)) return;
+            const d = Math.sqrt(dx * dx + dy * dy) || 1;
+            e.takeDamage(dmg * (1 - (d / radius) * 0.5), Math.atan2(dy, dx), 200);
+        };
+        if (this.enemies) for (let i = 0; i < this.enemies.length; i++) hit(this.enemies[i]);
+        if (this.bossDrones) for (let i = 0; i < this.bossDrones.length; i++) hit(this.bossDrones[i]);
+        this.floatingTexts.push(this.spawnFloatingText(player.x, player.y - 58,
+            martyr ? 'MARTYR BLOSSOMS ' + Math.round(dmg) : 'COMEDOWN NOVA ' + Math.round(dmg),
+            martyr ? '#ffcc00' : '#ff5fd2', 2.0));
+    }
+
+    // Trip wobble: a GPU-cheap canvas CSS filter (saturate + hue drift with
+    // trip age, scaled by resonance) — the world warps with zero buffer
+    // passes, zero per-draw cost. Staggered 4Hz; cleared whenever no trip
+    // is live (end/abort paths below all funnel through _maybeClearOracleFx).
+    _tickOracleWobble(player, trip) {
+        if (!this.canvas) return;
+        try {
+            const age = trip.t || 0;
+            const res = trip.resonance || 0;
+            const hue = Math.round((Math.sin(age * 1.7) * 24 + res * 9));
+            const sat = (1.35 + res * 0.12).toFixed(2);
+            this.canvas.style.filter = 'saturate(' + sat + ') hue-rotate(' + hue + 'deg)';
+        } catch (e) {}
+        this._tickOracleHum();
+    }
+    _clearOracleWobble() {
+        if (!this.canvas) return;
+        try {
+            const anyTrip = (this.player && this.player.trip) || (this.isTwoPlayer && this.player2 && this.player2.trip);
+            if (!anyTrip && this.canvas.style.filter && this.canvas.style.filter.indexOf('hue-rotate') !== -1) {
+                this.canvas.style.filter = '';
+            }
+        } catch (e) {}
+    }
+    // Trip HUD strip: one persistent DOM readout while any trip is live
+    // (archetype + omens + seconds + resonance pips + host hull). Updated at
+    // the 4Hz wobble cadence — one textContent write, negligible cost. This
+    // is the trip's face: no squinting at floaters required.
+    _ensureOracleHud() {
+        let el = document.getElementById('oracle-trip-hud');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'oracle-trip-hud';
+            el.style.cssText = [
+                'position: fixed', 'top: 11%', 'left: 50%', 'transform: translateX(-50%)',
+                'font-family: "Courier New", Courier, monospace', 'font-size: 13px', 'font-weight: bold',
+                'letter-spacing: 1px', 'color: #ff5fd2', 'white-space: pre',
+                'background: rgba(0, 4, 12, 0.55)', 'border: 1px solid rgba(255, 95, 210, 0.5)',
+                'border-radius: 4px', 'padding: 6px 14px', 'z-index: 50000',
+                'pointer-events: none', 'text-shadow: 0 0 8px rgba(255, 95, 210, 0.8)'
+            ].join('; ');
+            el.classList.add('hidden');
+            document.body.appendChild(el);
+        }
+        return el;
+    }
+    _updateOracleHud() {
+        let el = null;
+        try { el = this._ensureOracleHud(); } catch (e) { return; }
+        if (!el) return;
+        const lines = [];
+        const ps = [];
+        if (this.player && this.player.trip) ps.push(this.player);
+        if (this.isTwoPlayer && this.player2 && this.player2.trip) ps.push(this.player2);
+        for (let i = 0; i < ps.length; i++) {
+            const p = ps[i], t = p.trip;
+            const res = t.resonance || 0, cap = (typeof ORACLE_TUNING !== 'undefined' && ORACLE_TUNING.RESONANCE_MAX) || 5;
+            let pips = '';
+            for (let k = 0; k < cap; k++) pips += (k < res) ? '◆' : '◇';
+            const om = (t.omens && t.omens.length) ? t.omens.join('+') : '—';
+            let host = 'AURA';
+            if (t.host && !t.host.dead) {
+                const hf = Math.max(0, Math.round(100 * (t.host.hp || 0) / (t.host.maxHp || 1)));
+                host = ((t.host.bossName || t.host.type || 'HOST') + '').toUpperCase().slice(0, 12) + ' ' + hf + '%';
+            } else if (t.host) {
+                host = 'HOST LOST';
+            }
+            lines.push('◈ ' + t.arch + ' · ' + om + ' · ' + Math.max(0, t.timeLeft).toFixed(1) + 's\n' + pips + ' · ' + host);
+        }
+        if (!lines.length) {
+            el.classList.add('hidden');
+        } else {
+            el.textContent = lines.join('\n');
+            el.classList.remove('hidden');
+        }
+    }
+    _hideOracleHud() {
+        try {
+            const el = document.getElementById('oracle-trip-hud');
+            if (el) el.classList.add('hidden');
+        } catch (e) {}
+    }
+
+    _maybeClearOracleFx() {
+        const anyTrip = (this.player && this.player.trip) || (this.isTwoPlayer && this.player2 && this.player2.trip);
+        if (!anyTrip) {
+            this._clearOracleWobble();
+            this._stopOracleHum();
+            this._hideOracleHud();
+        }
+    }
+
+    // Oracle hum: one lazy global detuned pair (never per-trip — a trip's
+    // own clock is the thing that's warping). Gain follows live-trip count;
+    // hard-stopped with the wobble when the last trip ends (AUD-1 discipline:
+    // every teardown path funnels through _maybeClearOracleFx).
+    _ensureOracleHum() {
+        if (typeof audio === 'undefined' || !audio || !audio.ctx) return false;
+        if (!this._orHum) {
+            try {
+                const ctx = audio.ctx;
+                const g = ctx.createGain(); g.gain.value = 0;
+                const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900;
+                const o1 = ctx.createOscillator(); o1.type = 'triangle'; o1.frequency.value = 110;
+                const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 165.5;
+                const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.35;
+                const lg = ctx.createGain(); lg.gain.value = 0.03;
+                lfo.connect(lg); lg.connect(g.gain);
+                o1.connect(f); o2.connect(f); f.connect(g);
+                g.connect(audio.sfxGain || audio.masterGain);
+                o1.start(); o2.start(); lfo.start();
+                this._orHum = { g, o1, o2, lfo };
+            } catch (e) { return false; }
+        }
+        return !!this._orHum;
+    }
+    _tickOracleHum() {
+        if (!this._ensureOracleHum()) return;
+        let n = 0, maxRes = 0;
+        if (this.player && this.player.trip) { n++; maxRes = Math.max(maxRes, this.player.trip.resonance || 0); }
+        if (this.isTwoPlayer && this.player2 && this.player2.trip) { n++; maxRes = Math.max(maxRes, this.player2.trip.resonance || 0); }
+        // The hum deepens as the mandala stacks — you HEAR the resonance.
+        try { this._orHum.g.gain.value = n > 0 ? 0.04 + 0.02 * n + 0.012 * maxRes : 0; } catch (e) {}
+    }
+    _stopOracleHum() {
+        if (this._orHum) { try { this._orHum.g.gain.value = 0; } catch (e) {} }
+    }
+
     // EVENTIDE field hum: one lazy global voice (never per-anchor --
     // an anchor's own clock freezes at the epicenter, so per-anchor clocks
     // can't drive it). A deep detuned fifth that breathes via LFO; gain
@@ -36532,6 +37810,7 @@ class Game {
     spawnDataCable(a, b, owner, pts = null) {
         if (!a || !b || a.dead || b.dead) return null;
         const c = new DataCable(a, b, owner, pts);
+        c.game = this; // HP-19: DataCable.repair() needs the game ref (floaters + recompute)
         this.dataCables.push(c);
         this._recomputeComponents();
         return c;
@@ -36993,7 +38272,10 @@ class Game {
             const cx = c.x - cam.x, cy = c.y - cam.y;
             const range = c.scanRange || 800;
             if (!inView(cx, cy, range)) continue;
-            const fov = c.fov || (Math.PI / 3);
+            // HP-13: the cone's full width is sweepArc (halfFov is the half
+            // angle) -- c.fov doesn't exist, so the old fallback always drew
+            // the 60° T1 fan and under-drew T2/T3.
+            const fov = (c.halfFov !== undefined) ? c.halfFov * 2 : ((c.sweepArc !== undefined) ? c.sweepArc : (c.fov || (Math.PI / 3)));
             const startAngle = c.angle - fov / 2;
             const endAngle = c.angle + fov / 2;
 
@@ -37029,7 +38311,11 @@ class Game {
             const t = this.turrets[i];
             if (t.dead || !t.isNetworked) continue;
             const tx = t.x - cam.x, ty = t.y - cam.y;
-            const tierKey = t.tier ? 'T' + t.tier : 'T1';
+            // HP-13: AutoTurret has no tier -- the ceiling always read T1
+            // 1400 (documented honestly now instead of implying per-turret
+            // tiers); the ceiling keys off the SPOTTING CAMERA's tier at the
+            // validation site, which this per-turret ring can't know.
+            const tierKey = 'T1';
             const spotCeiling = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.spotterCeiling && LINK_TUNING.spotterCeiling[tierKey]) || 1400;
             if (!inView(tx, ty, spotCeiling)) continue;
 
@@ -37042,7 +38328,9 @@ class Game {
             ctx.stroke();
 
             // Local weapon range perimeter with cardinal ticks
-            const localRange = t.range || 500;
+            // HP-13: read maxRange (1000) -- t.range doesn't exist, so the
+            // old fallback always drew a 500px ring at half the real reach.
+            const localRange = t.maxRange || 500;
             ctx.beginPath();
             ctx.arc(tx, ty, localRange, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(0, 229, 255, 0.28)';
@@ -37069,7 +38357,10 @@ class Game {
             const m = this.mines[i];
             if (m.dead || !m.isNetworked) continue;
             const mx = m.x - cam.x, my = m.y - cam.y;
-            const trigRadius = m.radius || 120;
+            // HP-13: TripMine has no radius field -- trigger is
+            // (this.r + entRadius + 15) ≈ r + 27 at typical entRadius 12
+            // (r = 8), not 120px.
+            const trigRadius = (m.r !== undefined ? m.r : 8) + 27;
             if (!inView(mx, my, trigRadius)) continue;
 
             ctx.beginPath();
@@ -38124,8 +39415,9 @@ class Game {
                 const validModes = ['normal', 'sandbox', 'operator', 'now', 'extraction', 'chaos_draft', 'peaceful'];
                 if (validModes.includes(c.mode)) this.setGameMode(c.mode);
                 // Operator forces map 11 inside setGameMode; don't fight it.
+                // HP-10: 17 (Terraces) is legal -- 11 stays excluded (operator-only).
                 if (c.mode !== 'operator' && Number.isFinite(c.mapId)) {
-                    const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16];
+                    const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17];
                     if (legalMaps.includes(c.mapId)) this.setMap(c.mapId);
                 }
                 if (typeof DIFFICULTY_TUNING !== 'undefined' && DIFFICULTY_TUNING[c.diff]) this.setDifficulty(c.diff);
@@ -38182,7 +39474,7 @@ class Game {
         const validModes = ['normal', 'sandbox', 'operator', 'now', 'extraction', 'chaos_draft', 'peaceful'];
         if (validModes.includes(c.mode)) this.setGameMode(c.mode);
         if (c.mode !== 'operator' && Number.isFinite(c.mapId)) {
-            const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16];
+            const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17];
             if (legalMaps.includes(c.mapId)) this.setMap(c.mapId);
         }
         if (typeof DIFFICULTY_TUNING !== 'undefined' && DIFFICULTY_TUNING[c.diff]) this.setDifficulty(c.diff);
@@ -38347,8 +39639,8 @@ class Game {
         if (!entry) { this._menuToast('CUSTOM MAP NOT FOUND', 'var(--red)'); return; }
         // Point the base template selector at the saved map (updates preview +
         // highlight). Do this FIRST: setMap clears any *prior* custom staging,
-        // then we install this one on top.
-        const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16];
+        // then we install this one on top. HP-10: 17 (Terraces) is legal.
+        const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17];
         if (legalMaps.includes(entry.mapId)) this.setMap(entry.mapId);
         this._pendingCustomMap = entry;                    // stage the wall payload
         this.pendingMapSeed = entry.mapSeed >>> 0;          // force the exact base (buildRunConfig lever)
@@ -38582,7 +39874,7 @@ class Game {
                 : [],
             rewardRules: this.extractionMode
                 ? Object.assign({ intelPerWave: 2, intelPerElite: 3, intelPerChip: 5, completionIntel: 0 }, this._selectedMission().rewardRules)
-                : { intelPerWave: 2, intelPerElite: 3, intelPerChip: 5 },
+                : { intelPerWave: 2, intelPerElite: 4, intelPerChip: 5 },
             missionHeat: missionHeat,
             // PHASE 3: active protocol ids + total bonus (debrief display)
             // and BLOODHOUND's noise amplifier (consumed in registerNoise).
@@ -38910,6 +40202,33 @@ class Game {
             this.timeScale = sld ? (parseFloat(sld.value) || 1.0) : (this.saveData.timeScale || 1.0);
         }
 
+        // ORACLE SPICE: per-run dealer roll (price wander + stockout/sample).
+        // Resolved once here so the shop price is stable all run; wave drift
+        // applies on top at buy time. Trips/binds are Player/enemy-scoped and
+        // reset by construction (players rebuilt below, enemies re-init on
+        // spawn); nothing else persists.
+        {
+            const r1 = Math.random(), r2 = Math.random(), r3 = Math.random();
+            const soldOut = r2 < ((typeof ORACLE_TUNING !== 'undefined' && ORACLE_TUNING.STOCKOUT_RATE) || 0.10);
+            this._oracleShop = {
+                wander: 0.5 + r1 * 1.0,
+                soldOut: soldOut,
+                sample: (!soldOut && r3 < ((typeof ORACLE_TUNING !== 'undefined' && ORACLE_TUNING.SAMPLE_RATE) || 0.1))
+            };
+            // Bound-ally live count (wave-clear + hostile-set + filter gate).
+            // Binds never persist across runs (enemies re-init), so 0 here.
+            this._boundAlive = 0;
+            this._oracleActive = false;
+            this._oracleSampleDebt = 0;
+            // A trip's canvas wobble/hum/HUD must never leak into run+1.
+            try {
+                if (this.canvas) this.canvas.style.filter = '';
+                if (this._orHum) this._orHum.g.gain.value = 0;
+                const _oh = document.getElementById('oracle-trip-hud');
+                if (_oh) _oh.classList.add('hidden');
+            } catch (e) {}
+        }
+
         // PHASE 1: heat + objectives reset (components instantiated below,
         // after the map exists -- placement needs nav nodes).
         // PHASE 2: missions can start pre-heated / with a faster floor.
@@ -38946,6 +40265,12 @@ class Game {
             takeTwoBought: false,
             activeWager: null   // { wavesRemaining, failed }
         };
+        // HP-07: draft linger/queue/flags are run-scoped -- a stale 1.5s
+        // timeout must never resurrect a new run (generation guard).
+        this._chaosDraftQueue = [];
+        this._chaosDraftActive = false;
+        this._chaosDraftAdvancing = false;
+        this._chaosDraftGen = (this._chaosDraftGen || 0) + 1;
         this._strikeTeams = [];
         this._strikeTeamsThisWave = 0;
         this._medicSquadsThisWave = 0;
@@ -38974,6 +40299,7 @@ class Game {
         this._evacObjectiveSpawned = false;
         this.isDevShopActive = false;
         this._manualShopActive = false;
+        this._shopIntelPaidWave = null;
         this.winFlashIntensity = 0;
         this.roundWinDelay = 0;
         toggleClass('start-screen', 'hidden', true);
@@ -38991,8 +40317,9 @@ class Game {
         this.permanentMarks = [];
         this.casingMarks = [];   // JULY item 2: dedicated capped casing FIFO
         if (this.groundTiles) this.groundTiles.clear(); if (this.deckTiles) this.deckTiles.clear(); // drop old decal tiles on new map
-        
-        this.friendlyFire = true;
+
+        // (HP-19: removed a write-only `this.friendlyFire = true` here --
+        // the live field is friendlyFireMode, owned by setFriendlyFireMode.)
         this.p1Ready = false;
         this.p2Ready = false;
         if (this.isTwoPlayer) {
@@ -39170,6 +40497,7 @@ class Game {
         }
         this.scavDogs = [];
         this._scavEscape = null;
+        this._scavWave = 0; // HP-02: stale wave guard would skip one scav roll if a new run ever reached the old run's wave number
         if (!this.hostages) this.hostages = []; // (reset properly in startNewGame; guard for legacy paths)
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
@@ -39429,6 +40757,11 @@ class Game {
         this.prepTimer = this.nowMode ? NOW_MODE.PREP_TIME : (this.chaosDraftMode ? 5.0 : 15.0);
         
         this.enemiesToSpawn = 5 + this.wave * 4;
+        // ORACLE SPICE sample debt: the dealer's +1 per sample buy.
+        if (this._oracleSampleDebt > 0) {
+            this.enemiesToSpawn += this._oracleSampleDebt;
+            this._oracleSampleDebt = 0;
+        }
         if (this.peacefulMode) {
             // NO ENEMIES: empty the spawn queue and skip all boss / mutator /
             // reinforcement / evac setup. State was already flipped to
@@ -39628,7 +40961,7 @@ class Game {
             }
             return;
         }
-        if (!this.peacefulMode && this.enemies.length === 0 && this.enemiesToSpawn === 0) {
+        if (!this.peacefulMode && (typeof this.unboundHostileCount === 'function' ? this.unboundHostileCount() : (this.enemies.length - (this._boundAlive || 0))) === 0 && this.enemiesToSpawn === 0) {
             let carriers = [];
             for (let i = 0; i < this.scavDogs.length; i++) {
                 const d = this.scavDogs[i];
@@ -40272,6 +41605,10 @@ class Game {
     openChaosDraftInterface() {
         this.isPaused = true;
         this.state = 'shop';
+        // HP-07: generation-guard the 1.5s linger timeout in
+        // _pickChaosDraftCard -- abandon/endRun bumps the generation so a
+        // stale timeout can never resurrect the run behind the debrief.
+        this._chaosDraftGen = (this._chaosDraftGen || 0) + 1;
 
         // Replenish players
         let activePlayers = [this.player];
@@ -40461,7 +41798,16 @@ class Game {
         if (modWrap) modWrap.style.pointerEvents = 'none';
 
         this._chaosDraftAdvancing = true;
+        // HP-07: capture the draft generation + ledger identity; a stale
+        // timeout (abandon/pause/new-run during the 1.5s linger) must no-op
+        // instead of draining the queue into startNextWave() behind debrief.
+        const _draftGen = this._chaosDraftGen;
+        const _draftLedger = this.runLedger;
         setTimeout(() => {
+            if (_draftGen !== this._chaosDraftGen) return;
+            if (_draftLedger !== this.runLedger) return;
+            if (this.state === 'debrief') return;
+            if (!this._chaosDraftActive) return;
             this._chaosDraftAdvancing = false;
             if (container) container.style.pointerEvents = '';
             if (modWrap) modWrap.style.pointerEvents = '';
@@ -41393,6 +42739,10 @@ class Game {
             this.toggleDevDashboard();
             return;
         }
+        // HP-06: opening the shop mid-round is a run-altering dev tool --
+        // taint first like every other cheat verb, and flag the visit so
+        // openShopInterface() skips the wave-clear Intel grant.
+        this.taintRunEligibility('dev_shop');
         this.isDevShopActive = true;
         this.state = 'shop';
         this.openShopInterface();
@@ -41467,7 +42817,13 @@ class Game {
         this.taintRunEligibility('dev_spawn'); // PHASE 0
         if (this.player) {
             this.player.addWeapon(weaponKey);
-            this.player.weapon = this.player.inventory[this.player.inventory.length - 1];
+            // HP-19: the old equip line assigned to getter-only
+            // `get weapon()` (silent no-op) -- addWeapon() already selects a
+            // first-time pickup, but a duplicate leaves the old gun in hand,
+            // so pin weaponIdx to the spawned entry explicitly.
+            const wantName = (typeof Weapons !== 'undefined' && Weapons[weaponKey]) ? Weapons[weaponKey].name : weaponKey;
+            const idx = this.player.inventory.findIndex(w => w.name === wantName);
+            if (idx >= 0) this.player.weaponIdx = idx;
             const baseMax = {
                 shotgun: 48,
                 smg: 360,
@@ -42158,6 +43514,16 @@ class Game {
             // update without super.update, so the old base-class decay never ran
             // for bosses and the first hit latched a permanent white disc.
             if (e._hitFlash > 0) { e._hitFlash -= dt; if (e._hitFlash < 0) e._hitFlash = 0; }
+            // HP-14: T3 thermal-sentry burn DoT -- the camera sets
+            // burnTimer/burnDps but nothing ever ticked damage (same A1
+            // rationale: shared loop covers Boss subclasses that skip
+            // super.update, so bosses burn too).
+            if (e.burnTimer > 0 && !e.dead && e.takeDamage) {
+                e.burnTimer -= enemyDt;
+                if (e.burnTimer < 0) e.burnTimer = 0;
+                if (e.burnDps > 0) e.takeDamage(e.burnDps * enemyDt, 0, 0);
+                if (e.burnTimer === 0) e.burnDps = 0;
+            }
         }
 
 
@@ -42584,7 +43950,13 @@ class Game {
                     continue;
                 }
 
-                this.items.push(this.spawnItem(e.x, e.y, 'money'));
+                // HP-12: FPV OPERATOR MODE drops no items per spec section 4
+                // (the elite branch in Enemy.onDeath already suppresses; this
+                // generic loop did not -- money was collectible and spendable).
+                // Operator income is the wave payout (grantOperatorWavePayout).
+                if (!this.operatorMode) {
+                    this.items.push(this.spawnItem(e.x, e.y, 'money'));
+                }
 
                 // JULY item 8b (KILL PAYOFFS): catching a special final
                 // enemy before its threat lands is celebrated explicitly,
@@ -42623,17 +43995,20 @@ class Game {
                     this.items.push(this.spawnItem(e.x + MathUtils.rand(-12, 12), e.y + MathUtils.rand(-12, 12), 'intel'));
                 }
 
-                let dropRoll = Math.random();
-                if (dropRoll < 0.08) {
-                    let weapons = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a'];
-                    let weaponToDrop = weapons[Math.floor(Math.random() * weapons.length)];
-                    this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), weaponToDrop));
-                } else if (dropRoll < 0.13) {
-                    this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'grenade'));
-                } else if (dropRoll < 0.15) { 
-                    this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'medpack'));
-                } else if (dropRoll < 0.17) {
-                    this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'redbull'));
+                // HP-12 (same): consumable/weapon bands suppressed in operator.
+                if (!this.operatorMode) {
+                    let dropRoll = Math.random();
+                    if (dropRoll < 0.08) {
+                        let weapons = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a'];
+                        let weaponToDrop = weapons[Math.floor(Math.random() * weapons.length)];
+                        this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), weaponToDrop));
+                    } else if (dropRoll < 0.13) {
+                        this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'grenade'));
+                    } else if (dropRoll < 0.15) { 
+                        this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'medpack'));
+                    } else if (dropRoll < 0.17) {
+                        this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'redbull'));
+                    }
                 }
                 
                 // Sterilize pooled references immediately on death rather
@@ -42707,6 +44082,13 @@ class Game {
             }
         }
 
+        // ORACLE SPICE: trip tick (possession + influence + resonance). Runs
+        // wherever PvP respawn ticks run — same cadence, same dt. On error
+        // ABORT (never strand: a stranded trip would mute the body forever).
+        if (this._oracleActive) {
+            try { this._tickOracleTrips(dt); } catch (e) { console.error('oracle tick', e); try { this._oracleAbortAll('cleared'); } catch (e2) {} }
+        }
+
         let bothDead = this.player.dead && (!this.isTwoPlayer || !this.player2 || this.player2.dead);
         if (bothDead && !pvpActive) {
             // DEATH LINGER + DEATH FX: hold in 'playing' for 2 wall-clock
@@ -42748,7 +44130,7 @@ class Game {
                 // unified debrief. The bespoke death-screen is gone.
                 this.endRun(RUN_OUTCOMES.DEATH);
             }
-        } else if (!this.peacefulMode && this.enemies.length === 0 && this.enemiesToSpawn === 0 && this.roundWinDelay === 0 && !this._scavEscape) {
+        } else if (!this.peacefulMode && (typeof this.unboundHostileCount === 'function' ? this.unboundHostileCount() : (this.enemies.length - (this._boundAlive || 0))) === 0 && this.enemiesToSpawn === 0 && this.roundWinDelay === 0 && !this._scavEscape) {
             // OQ-076: the !this._scavEscape clause holds the shop/round-win
             // transition while loaded scavenger dogs flee (hard-capped by
             // the gate's own timeout -- this can never stall a wave).
@@ -42853,12 +44235,22 @@ class Game {
     // startNextWave(); enemy-side flags are pool-reset in Enemy.init().
     _updateFinalKillEvent(dt) {
         if (this.extractionMode || this.operatorMode || this.isBossWave) { this._finalKill = null; return; }
-        const oneLeft = (this.enemies.length === 1 && this.enemiesToSpawn === 0 && !this.enemies[0].dead && !(this.enemies[0] instanceof Boss));
+        // ORACLE SPICE: possessed/bound allies live in game.enemies but are
+        // not hostiles — the 1v1 must pick the last UNBOUND hostile, never
+        // your own spirit. Allocation-free scan (per-frame path).
+        let _e1v1 = null, _unboundN = 0;
+        if (this.enemies) for (let _fi = 0; _fi < this.enemies.length; _fi++) {
+            const _fe = this.enemies[_fi];
+            if (!_fe || _fe.dead || _fe.possessedBy || _fe.boundTo) continue;
+            _unboundN++;
+            if (!_e1v1) _e1v1 = _fe;
+        }
+        const oneLeft = (_unboundN === 1 && this.enemiesToSpawn === 0 && _e1v1 && !(_e1v1 instanceof Boss));
         if (!oneLeft) {
-            if (this._finalKill && this.enemies.length === 0) this._finalKill = null; // wave over
+            if (this._finalKill && _unboundN === 0) this._finalKill = null; // wave over
             return;
         }
-        const e = this.enemies[0];
+        const e = _e1v1;
 
         // --- 1v1 transition: decide (once per wave) ---
         if (!this._finalKill) {
@@ -43093,6 +44485,7 @@ class Game {
         const allIds = ['hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost',
             'barrier', 'barrier-upgrade', 'rubble', 'drone', 'drone-upgrade', 'fiber-optic',
             'turret', 'turret-mk2', 'dog', 'dog-upgrade', 'swarm-drone', 'swarm-pack',
+            'oracle',
             'ammo-shotgun', 'ammo-smg-std', 'ammo-lmg-std', 'ammo-sniper-std', 'ammo-m1a-std',
             'ammo-smg-hp', 'ammo-lmg-ap', 'ammo-sniper-ap', 'ammo-pistol-hp', 'ammo-m1a-ap',
             'oc-hollow', 'oc-servos', 'oc-mags', 'oc-firerate', 'oc-maxhp'];
@@ -43224,6 +44617,8 @@ class Game {
         if (this.isPaused) this._safeUnpause && this._safeUnpause();
         this._manualShopActive = true;
         this.state = 'shop';
+        // ORACLE SPICE: manual shop is its own visit — roll the dealer.
+        this._oracleShopWave = '__manual__' + Date.now();
         this.openShopInterface();
     }
 
@@ -43242,14 +44637,20 @@ class Game {
         // waveStarted guard: openShopInterface() also runs on the INITIAL
         // shop of Sandbox/ACTION NOW (before any wave) -- the old inline code
         // leaked +2 Intel for that no-op "wave". Fixed here.
-        if (this.runLedger && this.waveStarted && !this.peacefulMode && !this._manualShopActive) {
+        // HP-05: buyItem/buyOverclock/_cancelExtMags tail-call this method to
+        // re-render, so the grant is once-per-wave (not once-per-render).
+        // HP-06: a dev-opened mid-round shop must neither grant nor consume
+        // the pending elite credit.
+        if (this.runLedger && this.waveStarted && !this.peacefulMode && !this._manualShopActive && !this.isDevShopActive && this._shopIntelPaidWave !== this.wave) {
+            this._shopIntelPaidWave = this.wave;
             this.runLedger.recordWaveCleared();
-            const rr = (this.runConfig && this.runConfig.rewardRules) || { intelPerWave: 2, intelPerElite: 3 };
-            const intelGained = rr.intelPerWave + (this._elitesKilledThisWave || 0) * rr.intelPerElite;
+            const rr = (this.runConfig && this.runConfig.rewardRules) || { intelPerWave: 2, intelPerElite: 4 };
+            // Deep runs pay for being deep: +1 base per 5 waves cleared.
+            const intelGained = rr.intelPerWave + Math.floor((this.wave || 0) / 5) + (this._elitesKilledThisWave || 0) * rr.intelPerElite;
             this.runLedger.addIntel(intelGained, 'wave_clear');
             this.intelEarnedThisRun = this.runLedger.intelEarned; // legacy mirror
+            this._elitesKilledThisWave = 0;
         }
-        this._elitesKilledThisWave = 0;
 
         if (this.player && this.player.activeDrone) {
             this.player.activeDrone.stopAudio();
@@ -43265,6 +44666,25 @@ class Game {
         // JULY item 11: evac button reflects current run state (called /
         // available / unsupported) every time the shop opens.
         this._refreshEvacButtons();
+
+        // ORACLE SPICE: trips never span waves — wave-clear shop forces the
+        // comedown (convert allowed if earned). The dealer re-rolls once per
+        // WAVE (not per in-shop refresh), so the price visibly moves round
+        // to round. Manual (peaceful) shop rolls explicitly in openManualShop.
+        if (this._oracleShopWave !== this.wave) {
+            this._oracleShopWave = this.wave;
+            const r1 = Math.random(), r2 = Math.random(), r3 = Math.random();
+            const soldOut = r2 < ((typeof ORACLE_TUNING !== 'undefined' && ORACLE_TUNING.STOCKOUT_RATE) || 0.10);
+            this._oracleShop = {
+                wander: 0.5 + r1 * 1.0,
+                soldOut: soldOut,
+                sample: (!soldOut && r3 < ((typeof ORACLE_TUNING !== 'undefined' && ORACLE_TUNING.SAMPLE_RATE) || 0.1))
+            };
+        }
+        if (this._oracleActive && this._oracleAbortAll) { try {
+            if (this.player && this.player.trip) this._endOracleTrip(this.player, 'expired');
+            if (this.isTwoPlayer && this.player2 && this.player2.trip) this._endOracleTrip(this.player2, 'expired');
+        } catch (e) {} }
 
         if (this.chaosDraftMode) {
             // Apply automatic wave completion replenishment
@@ -43354,6 +44774,8 @@ class Game {
             }
             let hasMk2Turret = p.turretsInventory.some(t => typeof t === 'object' && t.isMKII);
             setHtml('shop-stat-turrets-' + suffix, (p.turretsCount || 0) + (hasMk2Turret ? ' (MK.II)' : ''));
+            // HP-15: the static "/ 1" lied in operator mode (TURRET_CAP 3).
+            setHtml('shop-stat-turretcap-' + suffix, (this.operatorMode && typeof OP_TUNING !== 'undefined' && OP_TUNING.TURRET_CAP) ? OP_TUNING.TURRET_CAP : 1);
             setHtml('shop-stat-dogs-' + suffix, p.dogsCount || 0);
             setHtml('shop-stat-hunter-swarm-' + suffix, p.hunterSwarmCount || 0);
             let activeCount = this.miniDrones ? this.miniDrones.filter(md => md.owner === p && !md.dead).length : 0;
@@ -43605,6 +45027,28 @@ class Game {
                 }
             }
 
+            // ORACLE SPICE (Top Secret Tech L2): variable price, carry 3,
+            // per-run stockout/sample. Operator-banned: hidden by the
+            // whitelist (see applyOperatorShopWhitelist allIds).
+            let oracleBtn = document.getElementById('btn-buy-oracle-' + suffix);
+            if (oracleBtn && !this._armoryGate(oracleBtn, 'topSecretOracle', 1, "Oracle Spice (UNLOCK IN ARMORY)")) {
+                const _oCap = ((typeof ORACLE_TUNING !== 'undefined' && ORACLE_TUNING.CARRY_MAX) || 3);
+                if ((p.oracle || 0) >= _oCap) {
+                    oracleBtn.classList.add('maxed');
+                    oracleBtn.innerText = "ORACLE SPICE (MAX " + _oCap + ")";
+                    oracleBtn.disabled = true;
+                } else if (this._oracleShop && this._oracleShop.soldOut) {
+                    oracleBtn.classList.add('maxed');
+                    oracleBtn.innerText = "ORACLE SPICE (OUT OF STOCK)";
+                    oracleBtn.disabled = true;
+                } else {
+                    const oP = (typeof oracleShopPrice === 'function') ? oracleShopPrice(this, p) : 300;
+                    oracleBtn.classList.remove('maxed');
+                    oracleBtn.innerText = ((this._oracleShop && this._oracleShop.sample) ? "Oracle Spice — FREE SAMPLE ($1)" : ("Oracle Spice ($" + oP + ")"));
+                    oracleBtn.disabled = false;
+                }
+            }
+
             let checkAmmoCap = (id, cur, max, label) => {
                 let el = document.getElementById(id);
                 if (el) {
@@ -43761,7 +45205,8 @@ class Game {
                 turret_mk2: ['unlockTurretMk2', 1], barrier_upgrade: ['unlockBarrierMk2', 1],
                 camera: ['unlockSecurityCamera', 1],
                 repairgun: ['unlockRepairGun', 1],
-                field_gen: ['topSecretAnchor', 1]
+                field_gen: ['topSecretAnchor', 1],
+                oracle: ['topSecretOracle', 1]
             };
             const g = GATE[type];
             if (g && (MA[g[0]] || 0) < g[1]) return;
@@ -43906,6 +45351,26 @@ class Game {
             p.cash -= 20000;
             p.fieldGenCount = (p.fieldGenCount || 0) + 1;
             audio.playPickup('weapon');
+        } else if (type === 'oracle' && !this.operatorMode && (p.oracle || 0) < (((typeof ORACLE_TUNING !== 'undefined' && ORACLE_TUNING.CARRY_MAX) || 3))) {
+            // ORACLE SPICE: top-secret L2 consumable (carry 3). Variable
+            // price via oracleShopPrice (per-run wander + wave drift);
+            // sold-out (null) never buys; $1 sample adds a next-wave +1
+            // enemy tradeoff instead of negative cash. Chaos Draft has no
+            // shop so it simply never reaches here; Operator is banned.
+            const oPrice = (typeof oracleShopPrice === 'function') ? oracleShopPrice(this, p) : 300;
+            if (oPrice == null) { /* sold out — silent no-op */ }
+            else if (p.cash >= oPrice) {
+                p.cash -= oPrice;
+                p.oracle = (p.oracle || 0) + 1;
+                if (this._oracleShop && this._oracleShop.sample) {
+                    // Dealer's tradeoff: +1 next wave (debt flag consumed in
+                    // startNextWave — the budget recompute there would
+                    // otherwise overwrite a direct bump).
+                    this._oracleSampleDebt = (this._oracleSampleDebt || 0) + 1;
+                    this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 40, "THE DEALER SMILES: +1 NEXT WAVE", '#ff5fd2', 2.0));
+                }
+                audio.playPickup('weapon');
+            }
         } else if (type === 'repairgun' && p.cash >= 1250 && !p.inventory.some(w => w.name === 'RepairGun')) {
             // REPAIR GUN: bought once, kept all run (see shop refresh for the
             // OWNED state). Full battery on purchase; welding never touches
@@ -44430,6 +45895,12 @@ class Game {
             { to: 17, up: (sd) => {
                 if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
                 if (typeof sd.metaUpgrades.topSecretAnchor !== 'number') sd.metaUpgrades.topSecretAnchor = 0;
+            }},
+            // v18 (TOP SECRET track L2): Oracle Spice armory gate. Additive
+            // only — never edit an older step.
+            { to: 18, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.topSecretOracle !== 'number') sd.metaUpgrades.topSecretOracle = 0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -44482,6 +45953,8 @@ class Game {
         if (MA.unlockRepairGun === undefined) MA.unlockRepairGun = 0;
         // v17: TOP SECRET Eventide Anchor gate (mirrors the v17 migration).
         if (MA.topSecretAnchor === undefined) MA.topSecretAnchor = 0;
+        // v18: TOP SECRET Oracle Spice gate (mirrors the v18 migration).
+        if (MA.topSecretOracle === undefined) MA.topSecretOracle = 0;
         if (typeof this.saveData.buildTier !== 'string') this.saveData.buildTier = '';
         if (typeof this.saveData.hasSeenArmoryTutorial !== 'boolean') this.saveData.hasSeenArmoryTutorial = false;
         if (typeof this.saveData.touchFireHintDone !== 'boolean') this.saveData.touchFireHintDone = false;
@@ -44844,6 +46317,15 @@ class Game {
         if (tabBtn) tabBtn.classList.remove('armory-attn');
         if (openGuide) this.switchTab('guide');
         this.refreshMainMenuHighlight();
+    }
+
+    // Guide section nav: scroll the #tab-guide pane to a section card.
+    // Rect-based (immune to offsetParent quirks); gamepad A-presses land
+    // here through the same synthetic .click() as every other menu button.
+    scrollGuideTo(secId) {
+        let pane = document.getElementById('tab-guide');
+        let el = document.getElementById(secId);
+        if (pane && el) pane.scrollTop += el.getBoundingClientRect().top - pane.getBoundingClientRect().top - 56;
     }
 
     // Switches between the Controls / Audio / Performance panels nested
@@ -46079,8 +47561,9 @@ class Game {
 
         // Operator mode forces template 11, hardcore FF, and 1P -- lock the
         // relevant selectors so the player can't pick an inconsistent combo.
+        // HP-08: cover both the wizard cards and the Game Options duplicates.
         const mapListEl = document.querySelector('.map-list-scroll');
-        const ffButtons = ['off', 'standard', 'hardcore', 'pvp'].map(m => document.getElementById('btn-ff-' + m));
+        const ffButtons = ['off', 'standard', 'hardcore', 'pvp'].flatMap(m => [document.getElementById('btn-ff-' + m), document.getElementById('btn-ff-opt-' + m)]);
         const coopBtn = document.getElementById('btn-mode-2p');
         const soloBtn = document.getElementById('btn-mode-1p');
 
@@ -46172,12 +47655,16 @@ class Game {
         this.friendlyFireMode = mode;
         const modes = ['off', 'standard', 'hardcore', 'pvp'];
         modes.forEach(m => {
-            let btn = document.getElementById(`btn-ff-${m}`);
-            if (btn) {
-                if (m === mode) {
-                    btn.classList.add('active-mode');
-                } else {
-                    btn.classList.remove('active-mode');
+            // HP-08: wizard cards (btn-ff-*) + Game Options buttons
+            // (btn-ff-opt-*) are distinct IDs sharing one setter.
+            for (const id of [`btn-ff-${m}`, `btn-ff-opt-${m}`]) {
+                let btn = document.getElementById(id);
+                if (btn) {
+                    if (m === mode) {
+                        btn.classList.add('active-mode');
+                    } else {
+                        btn.classList.remove('active-mode');
+                    }
                 }
             }
         });
@@ -46359,8 +47846,17 @@ class Game {
     endRun(outcome) {
         if (this.state === 'debrief') return;                 // double-entry guard
         if (!this.runLedger) { this.returnToMainMenu(); return; } // pathological (no run ever started)
+        // HP-07: kill any in-flight chaos-draft linger timeout + release the
+        // gamepad dispatch guard so it can't resurrect the run behind debrief.
+        this._chaosDraftGen = (this._chaosDraftGen || 0) + 1;
+        this._chaosDraftActive = false;
+        this._chaosDraftAdvancing = false;
+        this._chaosDraftQueue = [];
+        try { toggleClass('chaos-draft-screen', 'hidden', true); } catch (e) {}
         // EVENTIDE: hard-stop the field hum (update stops in debrief/menu).
         this._stopEventideHum();
+        // ORACLE SPICE: trips never survive the debrief (comedown now, no convert).
+        if (this._oracleActive && this._oracleAbortAll) { try { this._oracleAbortAll('cleared'); } catch (e) {} }
 
         // WI-3: the kill feed + timer are match state -- a match-winning kill
         // must not leave its entry floating over the debrief screen.
@@ -46738,22 +48234,56 @@ class Game {
         }
     }
 
+    // ORACLE SPICE: live unbound-hostile count (wave-clear + final-kill gate).
+    // Possessed hosts + bound converts live in game.enemies (they run the
+    // Enemy loop) but fight FOR an owner now — player fire passes through
+    // them by design, so counting them as wave enemies soft-locks the clear
+    // when the last hostile is riding with you. Allocation-free O(n) count;
+    // the wave-clear checks below run per frame so no filter() garbage here.
+    unboundHostileCount() {
+        if (!this.enemies || !this.enemies.length) return 0;
+        if (!this._oracleActive && !(this._boundAlive > 0)) {
+            let _n = 0;
+            for (let i = 0; i < this.enemies.length; i++) if (!this.enemies[i].dead) _n++;
+            return _n;
+        }
+        let n = 0;
+        for (let i = 0; i < this.enemies.length; i++) {
+            const e = this.enemies[i];
+            if (!e || e.dead || e.possessedBy || e.boundTo) continue;
+            n++;
+        }
+        return n;
+    }
+
     getHostilesFor(entity) {
         // PERF + CONTRACT: in non-PvP mode when no bossDrones are active, return this.enemies
         // DIRECTLY (no allocation/copy). When bossDrones are active, populate and return
         // a shared scratch array to avoid per-call allocations.
         const hasBossDrones = this.bossDrones && this.bossDrones.length > 0;
+        // ORACLE SPICE: possessed hosts + bound allies are never valid
+        // turret/dog/camera targets. Fast path stays byte-identical unless a
+        // trip/bind is live (the _oracleActive flag), so the no-trip game
+        // pays nothing.
+        const oracleFilter = !!(this._oracleActive || (this._boundAlive || 0) > 0);
         if (this.friendlyFireMode !== 'pvp') {
-            if (!hasBossDrones) return this.enemies;
+            if (!hasBossDrones && !oracleFilter) return this.enemies;
             let hostiles = this._hostilesScratch || (this._hostilesScratch = []);
             hostiles.length = 0;
-            for (let i = 0; i < this.enemies.length; i++) hostiles.push(this.enemies[i]);
+            for (let i = 0; i < this.enemies.length; i++) {
+                const _e = this.enemies[i];
+                if (oracleFilter && (_e.possessedBy || _e.boundTo)) continue;
+                hostiles.push(_e);
+            }
             for (let i = 0; i < this.bossDrones.length; i++) {
                 if (!this.bossDrones[i].dead) hostiles.push(this.bossDrones[i]);
             }
             return hostiles;
         }
         let hostiles = [...this.enemies];
+        // ORACLE SPICE: strip possessed/bound from the PvP copy too (they
+        // fight for an owner now — never valid targets).
+        if (oracleFilter) hostiles = hostiles.filter(e => !e.possessedBy && !e.boundTo);
         if (hasBossDrones) {
             for (let i = 0; i < this.bossDrones.length; i++) {
                 if (!this.bossDrones[i].dead) hostiles.push(this.bossDrones[i]);
@@ -49727,8 +51257,8 @@ class TouchController {
                     let dy = e.clientY - this.hudTouchState.left.startY;
                     let indexShift = Math.round(dy / 35);
                     if (indexShift !== 0) {
-                        let newIdx = (this.hudTouchState.left.lastSelectIdx - indexShift) % 4;
-                        if (newIdx < 0) newIdx += 4;
+                        let newIdx = (this.hudTouchState.left.lastSelectIdx - indexShift) % 5;
+                        if (newIdx < 0) newIdx += 5;
                         if (game.player.leftSelectIdx !== newIdx) {
                             // Swiping away from the charging slot cancels cleanly
                             // (weapon-swap-away) rather than firing.
@@ -49778,8 +51308,10 @@ class TouchController {
                     let dy = e.clientY - this.hudTouchState.right.startY;
                     let indexShift = Math.round(dy / 35);
                     if (indexShift !== 0) {
-                        let newIdx = (this.hudTouchState.right.lastSelectIdx - indexShift) % 6;
-                        if (newIdx < 0) newIdx += 6;
+                        // HP-21: 7 right-rail slots (0-6, Eventide Anchor is
+                        // 6) -- the old % 6 made the Anchor unreachable by swipe.
+                        let newIdx = (this.hudTouchState.right.lastSelectIdx - indexShift) % 7;
+                        if (newIdx < 0) newIdx += 7;
                         if (game.player.rightSelectIdx !== newIdx) {
                             game.player.rightSelectIdx = newIdx;
                             if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('money');
