@@ -2176,6 +2176,11 @@
                         <button id="btn-buy-fiber-optic-p1" onclick="game.buyItem('fiber_optic', game.player)">Fiber Optic Spool ($600)</button>
                         <button id="btn-buy-repairgun-p1" onclick="game.buyItem('repairgun', game.player)">Repair Gun ($1250)</button>
                     </div>
+
+                    <div class="shop-section-title" style="color:#b388ff; border-color:rgba(179,136,255,0.4);">Top Secret Tech</div>
+                    <div class="shop-grid">
+                        <button id="btn-buy-field-gen-p1" onclick="game.buyItem('field_gen', game.player)">Eventide Anchor ($20000)</button>
+                    </div>
                     
                     <div class="shop-section-title">Standard Munitions</div>
                     <div class="shop-grid">
@@ -2300,6 +2305,11 @@
                     <div class="shop-grid">
                         <button id="btn-buy-fiber-optic-p2" onclick="game.buyItem('fiber_optic', game.player2)">Fiber Optic Spool ($600)</button>
                         <button id="btn-buy-repairgun-p2" onclick="game.buyItem('repairgun', game.player2)">Repair Gun ($1250)</button>
+                    </div>
+
+                    <div class="shop-section-title" style="color:#b388ff; border-color:rgba(179,136,255,0.4);">Top Secret Tech</div>
+                    <div class="shop-grid">
+                        <button id="btn-buy-field-gen-p2" onclick="game.buyItem('field_gen', game.player2)">Eventide Anchor ($20000)</button>
                     </div>
                     
                     <div class="shop-section-title">Standard Munitions</div>
@@ -2916,6 +2926,7 @@ const SVGIcons = {
     dog: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="8" width="12" height="6" rx="1"/><line x1="8" y1="14" x2="6" y2="19"/><line x1="16" y1="14" x2="18" y2="19"/><line x1="10" y1="14" x2="9" y2="19"/><line x1="14" y1="14" x2="15" y2="19"/><circle cx="15" cy="6" r="1.5"/><line x1="13.5" y1="7.5" x2="15" y2="6"/></svg>`,
     hunter_swarm: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="17" cy="14" r="1.5"/></svg>`,
     camera: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/><circle cx="8" cy="12" r="3"/><line x1="4" y1="8" x2="4" y2="8.01"/></svg>`,
+    eventide: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>`,
     shield: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 7.6-7 9-4-1.4-7-4.4-7-9V6l7-3z"/></svg>`,
     armor: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10l2 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7l2-3z"/><path d="M12 8v11"/></svg>`
 };
@@ -2942,7 +2953,8 @@ const ITEM_ICON_COLORS = {
     turret:       '#ffee00',
     dog:          '#39ff14',
     hunter_swarm: '#d500f9',
-    camera:       '#00e5ff'
+    camera:       '#00e5ff',
+    eventide:     '#b388ff'
 };
 const _worldIconCache = {};
 function getWorldIconPath(key) {
@@ -3170,10 +3182,12 @@ function useRightItem(player) {
         }
     } else if (player.rightSelectIdx === 5) {
         game.placeSecurityCamera(player);
+    } else if (player.rightSelectIdx === 6) {
+        game.placeEventideAnchor(player);
     }
 }
 
-function interactPickUpItem(player) {
+function interactPickUpItem(player, skipMode = false) {
     if (!player || player.dead) return;
 
     let interactDist = 45;
@@ -3182,29 +3196,12 @@ function interactPickUpItem(player) {
     // OWN WIRED node cycles YOUR doctrine (Standard → Focus Fire →
     // Overwatch) instead of retrieving. Strict self-ownership (the splice
     // precedent); recall stays on every other weapon, so no accidents.
-    // NOTE: the registry name is 'RepairGun' (no space) — 'Repair Gun'
+    // NOTE: the registry name is 'RepairGun' (no space) -- 'Repair Gun'
     // with a space matches nothing and silently disables this branch.
-    if (player.weapon && player.weapon.name === 'RepairGun') {
-        let hub = null, hubDist = interactDist;
-        const considerHub = (n) => {
-            if (!n || n.dead || n.owner !== player || !n.isNetworked) return;
-            const d = Math.hypot(n.x - player.x, n.y - player.y);
-            if (d < hubDist) { hubDist = d; hub = n; }
-        };
-        if (game.turrets) for (const t of game.turrets) considerHub(t);
-        if (game.dogs) for (const d of game.dogs) considerHub(d);
-        if (game.securityCameras) for (const c of game.securityCameras) considerHub(c);
-        if (game.mines) for (const m of game.mines) considerHub(m);
-        if (hub) {
-            const cur = player.doctrine || 'standard';
-            player.doctrine = cur === 'standard' ? 'focus' : (cur === 'focus' ? 'overwatch' : 'standard');
-            const label = player.doctrine === 'focus' ? 'FOCUS FIRE' : (player.doctrine === 'overwatch' ? 'OVERWATCH' : 'STANDARD');
-            const ft = game.spawnFloatingText(player.x, player.y - 15, 'DOCTRINE: ' + label, '#f59e0b', 1.2);
-            if (ft) game.floatingTexts.push(ft);
-            if (typeof audio !== 'undefined' && audio && audio.playDataLinkConnected) audio.playDataLinkConnected(hub.x, hub.y);
-            else audio.playPickup('weapon');
-            return;
-        }
+    // F-HOLD: tap/hold routing calls this with skipMode on hold-pickup
+    // (the tap already cycled); direct callers keep today's press behavior.
+    if (!skipMode && player.weapon && player.weapon.name === 'RepairGun') {
+        if (game._cycleDoctrine(player)) return;
     }
 
     // Check player's specific drone slot
@@ -3255,6 +3252,28 @@ function interactPickUpItem(player) {
                     audio.playPickup('weapon');
                     game.floatingTexts.push(game.spawnFloatingText(
                         player.x, player.y - 15, `+RETRIEVED TURRET (${Math.round(tur.hp)}HP)`,
+                        '#39ff14', 1.2,
+                        (Math.random() - 0.5) * 60, -80, 240, true
+                    ));
+                    return;
+                }
+            }
+        }
+    }
+    // EVENTIDE ANCHOR retrieve (owner-only, live HP round-trip like turrets).
+    if (game.fieldGens) {
+        for (let i = 0; i < game.fieldGens.length; i++) {
+            let gen = game.fieldGens[i];
+            if (gen.owner === player) {
+                let dist = Math.hypot(gen.x - player.x, gen.y - player.y);
+                if (dist < interactDist) {
+                    player.fieldGensInventory.push({ hp: gen.hp, maxHp: gen.maxHp, mode: gen.mode || 'tide' });
+                    // Wired node coming home: sever like every other node.
+                    if (game.severDataLinks) game.severDataLinks(gen);
+                    game.fieldGens.splice(i, 1);
+                    audio.playPickup('weapon');
+                    game.floatingTexts.push(game.spawnFloatingText(
+                        player.x, player.y - 15, `+RETRIEVED ANCHOR (${Math.round(gen.hp)}HP)`,
                         '#39ff14', 1.2,
                         (Math.random() - 0.5) * 60, -80, 240, true
                     ));
@@ -3349,6 +3368,7 @@ function getHUDSelectorStateKey(player, suffix) {
         player.barrierUpgraded,
         player.turretsCount,
         player.camerasCount,
+        player.fieldGenCount,
         player.pistolHP
     ].join('|');
 }
@@ -3448,7 +3468,8 @@ function renderHUDSelectors(player, suffix) {
                 { name: 'Auto Turret', countText: player.turretsCount, countColor: player.turretsCount === 0 ? '#ff2a5f' : player.turretsCount >= 1 ? '#39ff14' : 'white', icon: SVGIcons.turret },
                 { name: dogName, countText: dogCountText, countColor: dogCountColor, icon: SVGIcons.dog },
                 { name: 'Hunter Swarm', countText: player.hunterSwarmCount.toString(), countColor: player.hunterSwarmCount === 0 ? '#ff2a5f' : '#39ff14', icon: SVGIcons.hunter_swarm },
-                { name: 'Security Camera', countText: (player.camerasCount || 0).toString(), countColor: (player.camerasCount || 0) === 0 ? '#ff2a5f' : ((player.camerasCount || 0) >= 3 ? '#39ff14' : '#00e5ff'), icon: SVGIcons.camera }
+                { name: 'Security Camera', countText: (player.camerasCount || 0).toString(), countColor: (player.camerasCount || 0) === 0 ? '#ff2a5f' : ((player.camerasCount || 0) >= 3 ? '#39ff14' : '#00e5ff'), icon: SVGIcons.camera },
+                { name: 'Eventide Anchor', countText: (player.fieldGenCount || 0).toString(), countColor: (player.fieldGenCount || 0) === 0 ? '#ff2a5f' : '#b388ff', icon: SVGIcons.eventide }
             ];
             items.forEach((item, idx) => {
                 let slot = document.createElement('div');
@@ -3460,6 +3481,7 @@ function renderHUDSelectors(player, suffix) {
                 else if (idx === 3) iconCol = dogColor;
                 else if (idx === 4) iconCol = (player.hunterSwarmCount > 0 ? ITEM_ICON_COLORS.hunter_swarm : '#808f9c');
                 else if (idx === 5) iconCol = (player.camerasCount > 0 ? ITEM_ICON_COLORS.camera : '#808f9c');
+                else if (idx === 6) iconCol = (player.fieldGenCount > 0 ? ITEM_ICON_COLORS.eventide : '#808f9c');
                 slot.innerHTML = `
                     <div class="item-icon-wrapper" style="color: ${iconCol}">${item.icon}</div>
                     <div class="item-count" style="color: ${item.countColor}">${item.countText}</div>
@@ -4811,7 +4833,7 @@ class AudioEngine {
         source.start(this.ctx.currentTime + delay);
     }
 
-    playShoot(type, x = null, y = null) {
+    playShoot(type, x = null, y = null, src = null) {
         let idx = Math.floor(Math.random() * 4);
         let name = 'shoot_' + type + '_' + idx;
 
@@ -4825,7 +4847,27 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound(name, this.sfxGain, gainVal, cutoff, delay);
+        // EVENTIDE: voices born deep in a field play slowed (slow-motion
+        // world, slow-motion sound). Pass the shooter for AEGIS exemption.
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff, delay, this.eventideRate(x, y, src));
+    }
+
+    // EVENTIDE time-rate for a world-space voice: min positional × global
+    // field depth, floored at 0.3 so epicenter audio stays a deep crawl
+    // instead of subsonic mush. Null-safe with no anchors placed (fast 1).
+    eventideRate(x, y, ent = null) {
+        if (x === null || y === null) return 1.0;
+        if (typeof game === 'undefined' || !game || !game.fieldGens || !game.fieldGens.length) return 1.0;
+        const f = game.fieldTimeFactor(x, y, ent);
+        const g = game._evGlobal || 1;
+        return Math.min(1, Math.max(0.3, f * g));
+    }
+
+    // EVENTIDE shorthand for entity-bound voices (reloads, tools, steps,
+    // drills): full rate when exempt, slowed with the body otherwise.
+    rateFor(ent) {
+        if (!ent) return 1.0;
+        return this.eventideRate(ent.x, ent.y, ent);
     }
 
     playRicochet(x = null, y = null) {
@@ -4842,7 +4884,7 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound(name, this.sfxGain, gainVal, cutoff, delay);
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff, delay, this.eventideRate(x, y));
     }
 
     playExplosion(volumeScale = 1.0, x = null, y = null) {
@@ -4867,7 +4909,7 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound(name, this.sfxGain, gainVal, cutoff, delay);
+        this.playBakedSound(name, this.sfxGain, gainVal, cutoff, delay, this.eventideRate(x, y));
     }
 
     playMiniExplosion(x = null, y = null) {
@@ -4886,7 +4928,7 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound(name, this.sfxGain || this.masterGain, gainVal, cutoff, delay);
+        this.playBakedSound(name, this.sfxGain || this.masterGain, gainVal, cutoff, delay, this.eventideRate(x, y));
     }
 
     // SCAVENGER DOG (OQ-076): positional wrappers for the two baked cues.
@@ -4900,7 +4942,7 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound('scav_bark', this.sfxGain || this.masterGain, gainVal, cutoff, delay);
+        this.playBakedSound('scav_bark', this.sfxGain || this.masterGain, gainVal, cutoff, delay, this.eventideRate(x, y));
     }
 
     playScavDeath(x = null, y = null) {
@@ -4913,7 +4955,7 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound('scav_death', this.sfxGain || this.masterGain, gainVal, cutoff, delay);
+        this.playBakedSound('scav_death', this.sfxGain || this.masterGain, gainVal, cutoff, delay, this.eventideRate(x, y));
     }
 
     playHit(x = null, y = null, semitones = 0) {
@@ -4929,7 +4971,10 @@ class AudioEngine {
         }
         // Kill-cadence pitch ladder (FELLPASS item 9): semitones > 0 plays
         // the confirmation pitch-shifted up; 0 = unchanged base pitch.
-        this.playBakedSound('hit', this.sfxGain, gainVal, cutoff, delay, semitones > 0 ? Math.pow(2, semitones / 12) : 1.0);
+        // EVENTIDE composes multiplicatively (a slowed double-kill still
+        // climbs, from a deeper floor).
+        const ladderRate = semitones > 0 ? Math.pow(2, semitones / 12) : 1.0;
+        this.playBakedSound('hit', this.sfxGain, gainVal, cutoff, delay, ladderRate * this.eventideRate(x, y));
     }
 
     playGrenadeThrow(x = null, y = null) {
@@ -4945,7 +4990,7 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound('grenade_throw', this.sfxGain, gainVal, cutoff, delay);
+        this.playBakedSound('grenade_throw', this.sfxGain, gainVal, cutoff, delay, this.eventideRate(x, y));
     }
 
     playMinePlace(x = null, y = null) {
@@ -4961,7 +5006,7 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound('mine_place', this.sfxGain, gainVal, cutoff, delay);
+        this.playBakedSound('mine_place', this.sfxGain, gainVal, cutoff, delay, this.eventideRate(x, y));
     }
 
     playFpvLaunch(x = null, y = null) {
@@ -4977,7 +5022,7 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound('fpv_launch', this.sfxGain, gainVal, cutoff, delay);
+        this.playBakedSound('fpv_launch', this.sfxGain, gainVal, cutoff, delay, this.eventideRate(x, y));
     }
 
     playWeaponSwitch(x = null, y = null) {
@@ -4993,7 +5038,7 @@ class AudioEngine {
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
-        this.playBakedSound('weapon_switch', this.sfxGain, gainVal, cutoff, delay);
+        this.playBakedSound('weapon_switch', this.sfxGain, gainVal, cutoff, delay, this.eventideRate(x, y));
     }
     
     playPickup(type) {
@@ -5041,10 +5086,12 @@ class AudioEngine {
         const sfxVol = (typeof game !== 'undefined' && game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
         gainVal *= sfxVol;
 
+        // EVENTIDE: slowed handshake (lower + longer in dilated space).
+        const evR = this.eventideRate(x, y);
         const t0 = this.ctx.currentTime;
         const tones = [
-            { freq: 880, start: 0, dur: 0.08, peak: 0.35 },
-            { freq: 1760, start: 0.065, dur: 0.15, peak: 0.45 }
+            { freq: 880 * evR, start: 0, dur: 0.08 / evR, peak: 0.35 },
+            { freq: 1760 * evR, start: 0.065 / evR, dur: 0.15 / evR, peak: 0.45 }
         ];
         tones.forEach(({ freq, start, dur, peak }) => {
             const osc = this.ctx.createOscillator();
@@ -5054,7 +5101,7 @@ class AudioEngine {
 
             const g = this.ctx.createGain();
             g.gain.setValueAtTime(0.0001, t0 + start);
-            g.gain.exponentialRampToValueAtTime(peak * gainVal, t0 + start + 0.015);
+            g.gain.exponentialRampToValueAtTime(peak * gainVal, t0 + start + 0.015 / evR);
             g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
 
             osc.connect(g);
@@ -5082,10 +5129,12 @@ class AudioEngine {
         const sfxVol = (typeof game !== 'undefined' && game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
         gainVal *= sfxVol;
 
+        // EVENTIDE: slowed sonar chirp.
+        const evR = this.eventideRate(x, y);
         const osc = this.ctx.createOscillator();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(1450, t0);
-        osc.frequency.exponentialRampToValueAtTime(920, t0 + 0.12);
+        osc.frequency.setValueAtTime(1450 * evR, t0);
+        osc.frequency.exponentialRampToValueAtTime(920 * evR, t0 + 0.12 / evR);
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'bandpass';
@@ -5094,15 +5143,15 @@ class AudioEngine {
 
         const g = this.ctx.createGain();
         g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(0.6 * gainVal, t0 + 0.015);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.15);
+        g.gain.exponentialRampToValueAtTime(0.6 * gainVal, t0 + 0.015 / evR);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.15 / evR);
 
         osc.connect(filter);
         filter.connect(g);
         g.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
         osc.start(t0);
-        osc.stop(t0 + 0.16);
+        osc.stop(t0 + 0.16 / evR);
         osc.onended = () => { osc.disconnect(); filter.disconnect(); g.disconnect(); };
     }
 
@@ -5123,33 +5172,35 @@ class AudioEngine {
         const sfxVol = (typeof game !== 'undefined' && game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
         gainVal *= sfxVol;
 
+        // EVENTIDE: slowed dielectric snap.
+        const evR = this.eventideRate(x, y);
         const osc = this.ctx.createOscillator();
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(620, t0);
-        osc.frequency.exponentialRampToValueAtTime(60, t0 + 0.14);
+        osc.frequency.setValueAtTime(620 * evR, t0);
+        osc.frequency.exponentialRampToValueAtTime(60 * evR, t0 + 0.14 / evR);
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(1400, t0);
-        filter.frequency.exponentialRampToValueAtTime(200, t0 + 0.14);
+        filter.frequency.setValueAtTime(1400 * evR, t0);
+        filter.frequency.exponentialRampToValueAtTime(200 * evR, t0 + 0.14 / evR);
 
         const g = this.ctx.createGain();
         g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(0.5 * gainVal, t0 + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+        g.gain.exponentialRampToValueAtTime(0.5 * gainVal, t0 + 0.01 / evR);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16 / evR);
 
         osc.connect(filter);
         filter.connect(g);
         g.connect(this.sfxGain || this.masterGain || this.ctx.destination);
 
         osc.start(t0);
-        osc.stop(t0 + 0.17);
+        osc.stop(t0 + 0.17 / evR);
         osc.onended = () => { osc.disconnect(); filter.disconnect(); g.disconnect(); };
     }
 
-    playFootstep(vol) {
+    playFootstep(vol, ent = null) {
         if (!this.ctx || vol <= 0.01) return;
-        this.playBakedSound('footstep', this.sfxGain, vol);
+        this.playBakedSound('footstep', this.sfxGain, vol, 20000, 0, this.rateFor(ent));
     }
 
     // Drill tool tick -- called repeatedly on a countdown timer while F is
@@ -5157,10 +5208,10 @@ class AudioEngine {
     // block). One-shot baked buffer per call, same as playFootstep, so
     // there's no persistent node to leak even if drilling is interrupted
     // mid-sound (pause, death, wall breaking).
-    playDrill(vol = 0.5) {
+    playDrill(vol = 0.5, ent = null) {
         if (!this.ctx || vol <= 0.01) return;
         let idx = Math.floor(Math.random() * 4);
-        this.playBakedSound('drill_' + idx, this.sfxGain, vol);
+        this.playBakedSound('drill_' + idx, this.sfxGain, vol, 20000, 0, this.rateFor(ent));
     }
     
     playFlashbangRing() {
@@ -5172,8 +5223,10 @@ class AudioEngine {
         this.playBakedSound('flashbangRing', this.masterGain, sfxVol);
     }
 
-    playFlyby(intensity, pan, speed) {
+    playFlyby(intensity, pan, speed, src = null) {
         if (!this.ctx || intensity <= 0.01) return;
+        // EVENTIDE: slowed bullets whiz low (AEGIS-exempt shooters pass through).
+        const evRate = (src && src.x !== undefined) ? this.eventideRate(src.x, src.y, src) : 1.0;
 
         let now = this.ctx.currentTime;
         if (now - this.lastFlybyTime < 0.04) return; // rate limit
@@ -5198,7 +5251,7 @@ class AudioEngine {
         } else {
             rate = Math.max(0.65, Math.min(2.0, speed / 1200)); // Dynamic whoosh pitch
         }
-        source.playbackRate.value = rate;
+        source.playbackRate.value = rate * evRate;
 
         // 2. Gain/Volume (Supersonic cracks are noticeably louder/harsher)
         let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
@@ -6217,6 +6270,36 @@ const Weapons = {
       rfRange: 600,          // px wireless RF uplink proximity range for mobile RobotDogs
       rfPeriod: 1.0,         // sec between RF beacon scans
   };
+
+  // EVENTIDE ANCHOR (top-secret temporal ordnance): local time-dilation
+  // field. Linear falloff from full rate at RADIUS to MIN_FACTOR at the
+  // device. Composes multiplicatively AFTER the global timeScale, so the
+  // slider / Adrenaline / Chronos / death slow-mo are untouched.
+  const EVENTIDE_TUNING = {
+      RADIUS: 500,       // px field radius (deploy preview draws this ring)
+      MIN_FACTOR: 0.001, // local rate standing ON the device (~1000:1)
+      HP: 400,           // generator hull (turret 120 < anchor < barrier 600)
+      SHOP_PRICE: 20000, // in-run cash price (armory unlock is 500 intel)
+      HOLD_S: 0.38,      // F-hold seconds to retrieve a mode-bearing node
+      PROJ_CAP: 4,       // max projected fields per network comp (freshest+rung wins)
+  };
+
+  // Anchor modes: TIDE slows everything symmetric (incl. the owner's own
+  // bullets -- the cordon tool); AEGIS exempts the owner's whole lineage
+  // (owner, their assets, their projectiles) so THEY run full rate while
+  // the world crawls -- the duel/breach tool; HORIZON drops the positional
+  // field entirely and slows the WHOLE WORLD while a live player stands
+  // inside (the global-timescale tool). Colors flip with the mode.
+  function eventideRgba(mode, a) {
+      if (mode === 'aegis') return `rgba(255, 196, 77, ${a})`;
+      if (mode === 'horizon') return `rgba(255, 95, 109, ${a})`;
+      return `rgba(179, 136, 255, ${a})`;
+  }
+  function eventideHex(mode) {
+      if (mode === 'aegis') return '#ffc44d';
+      if (mode === 'horizon') return '#ff5f6d';
+      return '#b388ff';
+  }
 
   // DATA LINK Phase 11 (threat ladder): rung 0 = things that eat or blind
   // the network (table above + Bosses); rung 1 = everything else, which
@@ -13444,6 +13527,7 @@ class Player extends Entity {
         this.barriersInventory = [];
         this.turretsInventory = [];
         this.camerasInventory = [];
+        this.fieldGensInventory = [];
         
         this.grenades = 1;
         this.maxGrenades = 3;
@@ -13618,6 +13702,20 @@ class Player extends Entity {
         }
         while (this.camerasInventory.length > val) {
             this.camerasInventory.pop();
+        }
+    }
+    // EVENTIDE ANCHOR inventory (carry 1; setter default mirrors the tuner HP).
+    get fieldGenCount() {
+        return this.fieldGensInventory ? this.fieldGensInventory.length : 0;
+    }
+    set fieldGenCount(val) {
+        if (!this.fieldGensInventory) this.fieldGensInventory = [];
+        const HP = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.HP) || 400;
+        while (this.fieldGensInventory.length < val) {
+            this.fieldGensInventory.push({ hp: HP, maxHp: HP, mode: 'tide' });
+        }
+        while (this.fieldGensInventory.length > val) {
+            this.fieldGensInventory.pop();
         }
     }
 
@@ -14000,13 +14098,14 @@ class Player extends Entity {
         this._scopeLead = null;
         if (this.weapon && this.weapon.name !== 'RepairGun' && !this.dead && game && game.spotCache) {
             const tgt = (game.playerCrosshairTarget) ? game.playerCrosshairTarget(this, 1200) : null;
-            if (tgt && tgt._aiStaggerId !== undefined) {
+            const tgtKey = tgt ? game.spotKeyFor(tgt) : undefined;
+            if (tgt && tgtKey !== undefined) {
                 const cids = (game.playerCompIds) ? game.playerCompIds(this) : [];
                 const now = game.gameTime || 0;
                 const grace = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.spotGrace) || 2.0;
                 for (const cid of cids) {
                     const m = game.spotCache.get(cid);
-                    const e = m ? m.get(tgt._aiStaggerId) : null;
+                    const e = m ? m.get(tgtKey) : null;
                     if (e && e.pos && e.source === 'cam' && (now - (e.lastSeen || 0)) <= grace) {
                         const spd = (this.weapon && this.weapon.speed) || 2000;
                         const d = Math.hypot(tgt.x - this.x, tgt.y - this.y);
@@ -14066,7 +14165,7 @@ class Player extends Entity {
                     this.pendingFireTimer = openBoltDelay;
                     this.pendingFireWeaponKey = weaponKey;
                     this.boltCycled = true;
-                    audio.playBakedSound('bolt_clack', audio.sfxGain, 0.55);
+                    audio.playBakedSound('bolt_clack', audio.sfxGain, 0.55, 20000, 0, audio.rateFor(this));
                 } else {
                     this.fire(game);
                 }
@@ -14076,7 +14175,7 @@ class Player extends Entity {
                     input.mouseDown = false; 
                 }
             } else if (!hasAmmo && canFireSemi && this.emptyClickCooldown <= 0) {
-                audio.playBakedSound('empty_click', audio.sfxGain, 0.6);
+                audio.playBakedSound('empty_click', audio.sfxGain, 0.6, 20000, 0, audio.rateFor(this));
                 let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'OUT OF AMMO!', '#ff2a5f', 1.0);
                 if (ft) game.floatingTexts.push(ft);
                 this.emptyClickCooldown = 0.4;
@@ -14185,7 +14284,7 @@ class Player extends Entity {
                 // mid-drill for any reason.
                 this.drillSoundTimer -= dt;
                 if (this.drillSoundTimer <= 0) {
-                    audio.playDrill(0.5);
+                    audio.playDrill(0.5, this);
                     this.drillSoundTimer = 0.11;
                 }
             } else if (!latchDrill && this.wallMaterial >= ((typeof game !== 'undefined' && game && game.manipBuildTierInfo) ? game.manipBuildTierInfo().cellCost : MATTER_MANIPULATOR.CELL_COST)) {
@@ -14490,7 +14589,7 @@ class Player extends Entity {
         // Loud close-quarters clash -- feeds the extraction Heat director
         // exactly like gunfire does (same registerNoise lever, same mag).
         if (game && game.registerNoise) game.registerNoise(this.x, this.y, MELEE_TUNING.NOISE);
-        if (typeof audio !== 'undefined' && audio && audio.playBakedSound) audio.playBakedSound('melee_swish', audio.sfxGain, 0.6);
+        if (typeof audio !== 'undefined' && audio && audio.playBakedSound) audio.playBakedSound('melee_swish', audio.sfxGain, 0.6, 20000, 0, audio.rateFor(this));
 
         // Forward arc: anything within REACH whose direction from us is
         // within ARC radians of our aim takes the shove. takeDamage(amt,
@@ -14612,7 +14711,7 @@ class Player extends Entity {
 
         let cam = this.camera;
         if (cam && cam.punchZoom) cam.punchZoom(0.04);
-        if (audio && audio.playFootstep) audio.playFootstep(0.7);
+        if (audio && audio.playFootstep) audio.playFootstep(0.7, this);
         if (game) {
             let kickAngle = Math.atan2(this.vy, this.vx) + Math.PI;
             for (let i = 0; i < 5; i++) {
@@ -14816,7 +14915,7 @@ class Player extends Entity {
         if (currentVelocity > 40) {
             this.footstepTimer -= dt;
             if (this.footstepTimer <= 0) {
-                audio.playFootstep(0.4);
+                audio.playFootstep(0.4, this);
                 this.footstepTimer = (isSprinting && !this.isExhausted) ? 0.22 : 0.35;
 
                 // Locomotive Sway: kick the gun at the exact moment a real
@@ -15391,6 +15490,9 @@ class Player extends Entity {
         for (const t of game.turrets) addNode(t);
         for (const c of game.securityCameras) addNode(c);
         for (const m of game.mines) addNode(m);
+        // EVENTIDE ANCHOR: a first-class spool node (wired anchors split
+        // power with the network's spotted hostiles -- see _eventideProject).
+        if (game.fieldGens) for (const g of game.fieldGens) addNode(g);
 
         // Aim-weighted nearest candidate inside reach
         const nearestInReach = (exclude = null) => {
@@ -15502,7 +15604,8 @@ class Player extends Entity {
         if (this._pingT > 0) return false;
         const range = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.designateRange) || 1200;
         const tgt = (game.playerCrosshairTarget) ? game.playerCrosshairTarget(this, range) : null;
-        if (!tgt || tgt._aiStaggerId === undefined) return false;
+        const tgtKey = tgt ? game.spotKeyFor(tgt) : undefined;
+        if (!tgt || tgtKey === undefined) return false;
         const segWalls = game.map ? game.map.getWallsAlongSegment(this.x, this.y, tgt.x, tgt.y) : [];
         if (segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, tgt.x, tgt.y, w))) return false;
         const cids = (game.playerCompIds) ? game.playerCompIds(this) : [];
@@ -15516,7 +15619,7 @@ class Player extends Entity {
         for (const cid of cids) {
             let m = game.spotCache.get(cid);
             if (!m) { m = new Map(); game.spotCache.set(cid, m); }
-            game.publishSpot(m, tgt._aiStaggerId, { pos: { x: tgt.x, y: tgt.y }, lastSeen: now, source: 'ping', tier: 3, orderedBy: this }, this, now);
+            game.publishSpot(m, tgtKey, { pos: { x: tgt.x, y: tgt.y }, lastSeen: now, source: 'ping', tier: 3, orderedBy: this }, this, now);
         }
         this._pingT = 1.0;
         const ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'TARGET DESIGNATED', '#00e5ff', 1.0);
@@ -15533,7 +15636,7 @@ class Player extends Entity {
         this._weldActive = true;
         if (this.ammo.repairgun <= 0) {
             if (this.emptyClickCooldown <= 0) {
-                audio.playBakedSound('empty_click', audio.sfxGain, 0.6);
+                audio.playBakedSound('empty_click', audio.sfxGain, 0.6, 20000, 0, audio.rateFor(this));
                 let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'BATTERY DEAD', '#ff2a5f', 1.0);
                 if (ft) game.floatingTexts.push(ft);
                 this.emptyClickCooldown = 0.4;
@@ -15557,6 +15660,7 @@ class Player extends Entity {
         };
         const isMine = (o) => o === this || (ally && o === ally);
         for (const t of game.turrets) { if (isMine(t.owner)) consider(t); }
+        if (game.fieldGens) for (const g of game.fieldGens) { if (isMine(g.owner)) consider(g); }
         for (const d of game.dogs) { if (isMine(d.owner)) consider(d); }
         for (const c of game.securityCameras) { if (isMine(c.owner)) consider(c); }
         for (const md of game.miniDrones) { if (!md.fromMine && isMine(md.owner)) consider(md); }
@@ -15579,7 +15683,7 @@ class Player extends Entity {
             this._weldFizzTimer = (this._weldFizzTimer || 0) + dt;
             if (this._weldFizzTimer >= 0.35) {
                 this._weldFizzTimer = 0;
-                if (typeof audio !== 'undefined' && audio && audio.playBakedSound) audio.playBakedSound('repair_fizzle', audio.sfxGain, 0.35);
+                if (typeof audio !== 'undefined' && audio && audio.playBakedSound) audio.playBakedSound('repair_fizzle', audio.sfxGain, 0.35, 20000, 0, audio.rateFor(this));
                 const na = this.angle;
                 game.addParticle(this.x + Math.cos(na) * 18, this.y + Math.sin(na) * 18,
                     Math.cos(na) * 40 + (Math.random() - 0.5) * 30, Math.sin(na) * 40 - 20, '#7fdcff', 0.15, 1.5);
@@ -15600,7 +15704,7 @@ class Player extends Entity {
             this._weldSfxTimer = (this._weldSfxTimer || 0) + dt;
             if (this._weldSfxTimer >= 0.25) {
                 this._weldSfxTimer = 0;
-                audio.playBakedSound('repair_weld', audio.sfxGain, 0.5);
+                audio.playBakedSound('repair_weld', audio.sfxGain, 0.5, 20000, 0, audio.rateFor(this));
             }
             this._spliceFloaterTimer = (this._spliceFloaterTimer || 0) + dt;
             if (this._spliceFloaterTimer >= 0.4) {
@@ -15634,7 +15738,7 @@ class Player extends Entity {
         this._weldSfxTimer = (this._weldSfxTimer || 0) + dt;
         if (this._weldSfxTimer >= 0.25) {
             this._weldSfxTimer = 0;
-            audio.playBakedSound('repair_weld', audio.sfxGain, 0.5);
+            audio.playBakedSound('repair_weld', audio.sfxGain, 0.5, 20000, 0, audio.rateFor(this));
         }
         if (target.hp >= target.maxHp) {
             let ft = game.spawnFloatingText(tc.x, tc.y - 15, 'REPAIRED!', '#39ff14', 1.2);
@@ -15676,7 +15780,7 @@ class Player extends Entity {
             if (cOc) corrupted = cOc.corrupted || null;
         }
 
-        audio.playShoot(this.weapon.name, this.x, this.y);
+        audio.playShoot(this.weapon.name, this.x, this.y, this);
 
         // PHASE 1: gunfire is noise -- feeds the extraction Heat director
         // (inert in every other mode; see Game.registerNoise).
@@ -15996,7 +16100,12 @@ class Player extends Entity {
         let walkPhase = 0;
         let oscillation = 0;
         if (speed > 15) {
-            walkPhase = (game ? game.gameTime : 0) * (speed * 0.08);
+            // EVENTIDE: leg cycle runs on the dilated clock while a field
+            // is up, so a slowed enemy strides in slow motion instead of
+            // gliding on fast-cycling legs (wrong in exactly the way that
+            // breaks the time-stop read).
+            const _tNow = (game && game.fieldGens && game.fieldGens.length && this._dilNow !== undefined) ? this._dilNow : (game ? game.gameTime : 0);
+            walkPhase = _tNow * (speed * 0.08);
             oscillation = Math.sin(walkPhase) * this.r * 0.5;
         }
         ctx.fillStyle = '#010a15';
@@ -16756,6 +16865,12 @@ class Enemy extends Entity {
                             if (c.hp > 0) sapperTargets.push(c);
                         }
                     }
+                    // EVENTIDE ANCHOR: sappers chew the pylon like any node.
+                    if (game.fieldGens) {
+                        for (let g of game.fieldGens) {
+                            if (g.hp > 0) sapperTargets.push(g);
+                        }
+                    }
                     if (game.dataCables) {
                         for (let c of game.dataCables) {
                             if (!c.cut && c.linkLive) sapperTargets.push(c);
@@ -16836,6 +16951,12 @@ class Enemy extends Entity {
                     if (game.securityCameras) {
                         for (let c of game.securityCameras) {
                             if (c.hp > 0) targets.push(c);
+                        }
+                    }
+                    // EVENTIDE ANCHOR: general enemy target pool (chewable).
+                    if (game.fieldGens) {
+                        for (let g of game.fieldGens) {
+                            if (g.hp > 0) targets.push(g);
                         }
                     }
                 }
@@ -17529,7 +17650,7 @@ class Enemy extends Entity {
                 if (this.footstepTimer <= 0) {
                     let volumeScalar = 1.0 - (distToClosestPlayer / hearingThreshold);
                     if (closestPlayerVel > 40) volumeScalar *= 0.3;
-                    audio.playFootstep(volumeScalar);
+                    audio.playFootstep(volumeScalar, this);
                     this.footstepTimer = 0.35;
                 }
             }
@@ -17639,7 +17760,7 @@ class Enemy extends Entity {
                                 game.addParticle(this.x, this.y, Math.cos(a)*spd*0.7, Math.sin(a)*spd*0.7, '#ff3d00', 0.6, 4);
                             }
                         }
-                    } else if (target instanceof AutoTurret || target instanceof SecurityCamera) { // auto turret or security camera
+                    } else if (target instanceof AutoTurret || target instanceof SecurityCamera || target instanceof EventideAnchor) { // auto turret, security camera, or eventide anchor
                         let dist = Math.hypot(target.x - this.x, target.y - this.y);
                         if (dist < this.r + target.r + 5) {
                             target.takeDamage(300, 0, 0);
@@ -18916,7 +19037,9 @@ class Enemy extends Entity {
             let walkPhase = 0;
             let oscillation = 0;
             if (speed > 15) {
-                walkPhase = (game ? game.gameTime : 0) * (speed * 0.08);
+                // EVENTIDE: dilated leg cycle (see Enemy.draw).
+                const _tNow = (game && game.fieldGens && game.fieldGens.length && this._dilNow !== undefined) ? this._dilNow : (game ? game.gameTime : 0);
+                walkPhase = _tNow * (speed * 0.08);
                 oscillation = Math.sin(walkPhase) * this.r * 0.5;
             }
             ctx.fillStyle = '#010a15';
@@ -22638,7 +22761,7 @@ class Bullet {
                             // Stereo Pan calculation relative to player orientation (horizontal screen space relativeX)
                             let pan = (cx - player.x) / maxRadius;
                             
-                            audio.playFlyby(intensity, pan, currentSpeed);
+                            audio.playFlyby(intensity, pan, currentSpeed, this);
 
                             // FELLPASS item 10: a close whiz gets a brief
                             // aberration tick (the "something just missed my
@@ -22762,7 +22885,7 @@ class Bullet {
                 } else if (this.isNeutral) {
                     canHit = true;
                 } else if (this.isPlayerBullet) {
-                    let isTargetAlly = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof SecurityCamera || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage);
+                    let isTargetAlly = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof SecurityCamera || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage || ent instanceof EventideAnchor);
                     // OQ-076: the scavenger dog is hostile-but-not-an-Enemy
                     // instance (own pool). It joins the player-fire target
                     // set here explicitly -- and NOWHERE else: the enemy-
@@ -22793,7 +22916,7 @@ class Bullet {
                 } else {
                     // PHASE 2: hostile fire also threatens the escort --
                     // that risk IS the Asset Recovery mission.
-                    canHit = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof SecurityCamera || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage);
+                    canHit = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof SecurityCamera || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage || ent instanceof EventideAnchor);
                 }
                 
                 if (!canHit) continue;
@@ -24249,7 +24372,9 @@ class AutoTurret extends Entity {
                     const focusOnly = this.owner && this.owner.doctrine === 'focus';
                     for (let cand of hostiles) {
                         if (cand.dead || (cand._jamTimer > 0)) continue;
-                        const entry = m.get(cand._aiStaggerId);
+                        const candKey = game.spotKeyFor(cand);
+                        if (candKey === undefined) continue;
+                        const entry = m.get(candKey);
                         if (!entry || !entry.pos) continue;
                         // PHASE 10 (Focus Fire): thin preferConfirmed flag —
                         // unconfirmed tracks don't compete. Phase 11 owns more.
@@ -24398,7 +24523,7 @@ class AutoTurret extends Entity {
         const isDesignated = (this._targetCeiling || 0) > this.maxRange;
         const desigSpeed = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.designatedSpeed) || 2600;
         const desigDmg = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.designatedDmg) || 20;
-        audio.playShoot(isDesignated ? 'Sniper' : 'Pistol', this.x, this.y);
+        audio.playShoot(isDesignated ? 'Sniper' : 'Pistol', this.x, this.y, this);
         
         let spawnDist = 18;
         let barrelX = this.x + Math.cos(this.angle) * spawnDist;
@@ -24673,7 +24798,9 @@ class SecurityCamera extends Entity {
                 let best = null, bestD = Infinity, bestRung = 1;
                 for (const h of hostiles) {
                     if (!h || h.dead || (h._jamTimer > 0)) continue;
-                    const entry = m.get(h._aiStaggerId);
+                    const hKey = game.spotKeyFor(h);
+                    if (hKey === undefined) continue;
+                    const entry = m.get(hKey);
                     if (!entry || !entry.pos || (now - (entry.lastSeen || 0)) > grace) continue;
                     if (focusOnlyCam && !entry.confirmed) continue;
                     const d = Math.hypot(h.x - this.x, h.y - this.y);
@@ -24699,7 +24826,7 @@ class SecurityCamera extends Entity {
         if (this.isNetworked && this.compId !== undefined && game.spotCache) {
             const m = game.spotCache.get(this.compId);
             if (m && m.size) {
-                const ownGenId = this.target ? this.target._aiStaggerId : undefined;
+                const ownGenId = this.target ? game.spotKeyFor(this.target) : undefined;
                 let bestT = 0, bestConfT = 0;
                 for (let [genId, entry] of m) {
                     if (!entry || !entry.pos) continue;
@@ -25233,7 +25360,7 @@ class RobotDog extends Entity {
             if (closestHostile && this.rfLinked && this.compId !== undefined && game.spotCache) {
                 let m = game.spotCache.get(this.compId);
                 if (!m) { m = new Map(); game.spotCache.set(this.compId, m); }
-                const gid = closestHostile._aiStaggerId || ('dog_spot_' + Math.round(closestHostile.x) + '_' + Math.round(closestHostile.y));
+                const gid = game.spotKeyFor(closestHostile) || ('dog_spot_' + Math.round(closestHostile.x) + '_' + Math.round(closestHostile.y));
                 game.publishSpot(m, gid, {
                     pos: { x: closestHostile.x, y: closestHostile.y },
                     lastSeen: game.gameTime || 0,
@@ -25657,7 +25784,7 @@ class RobotDog extends Entity {
     
     shoot(game) {
         if (this.dead) return;
-        audio.playShoot('Pistol', this.x, this.y); // slow punchy shot
+        audio.playShoot('Pistol', this.x, this.y, this); // slow punchy shot
         
         let spawnDist = 16;
         let barrelX = this.x + Math.cos(this.angle) * spawnDist;
@@ -26950,6 +27077,13 @@ class MiniDrone extends Entity {
             let speed = Math.hypot(this.vx, this.vy);
             if (audio.ctx && this.osc && this.oscGain) {
                 let baseFreq = 400 + speed * 0.45;
+                // EVENTIDE: the swarm drones duck in pitch inside dilated
+                // space (and go quiet-ish) -- same slowdown the world hears.
+                let evRate = 1.0;
+                if (typeof audio !== 'undefined' && audio && audio.eventideRate) {
+                    evRate = audio.eventideRate(this.x, this.y, this);
+                }
+                baseFreq *= evRate;
                 let walls = game.map.walls;
                 let c = 800;
                 let maxAudibleDist = 1200;
@@ -27035,7 +27169,7 @@ class MiniDrone extends Entity {
                 }
                 
                 let sfxVol = (game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-                let targetGain = finalVol * 0.22 * sfxVol;
+                let targetGain = finalVol * 0.22 * sfxVol * (0.35 + 0.65 * evRate);
                 
                 this.oscGain.gain.setValueAtTime(targetGain, audio.ctx.currentTime);
                 this.osc.frequency.setValueAtTime(finalFreq, audio.ctx.currentTime);
@@ -27751,6 +27885,122 @@ class Flashbang {
     }
 }
 
+// EVENTIDE ANCHOR (top-secret temporal ordnance): a static owner-tagged
+// pylon projecting a 500px time-dilation field (see EVENTIDE_TUNING +
+// Game.fieldTimeFactor). Symmetric by design -- the owner's dt slows too.
+// Destructible (400 HP, weldable, sapper/blast/enemy-fire/PvP killable);
+// destroyed = gone (no husk return -- a $20k consumable, harsh but legible).
+// Visuals run off game.gameTime in draw (never the dilated update dt, which
+// is ~0.001 at the epicenter and would freeze the anim).
+class EventideAnchor extends Entity {
+    constructor(x, y, owner) {
+        super(x, y, 14);
+        this.owner = owner || null;
+        const HP = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.HP) || 400;
+        this.hp = HP;
+        this.maxHp = HP;
+        this.empTimer = 0; // network-node shape (recompute/tickEmp read it)
+        this.mode = 'tide'; // TIDE (symmetric) is the default -- projection works out of the box once wired; AEGIS | HORIZON on tap
+        this.t = Math.random() * 10;
+    }
+    update(dt, game) {
+        if (this.dead) return false;
+        this.t += dt;
+        return true;
+    }
+    takeDamage(amt, pushDir, pushForce) {
+        if (this.dead) return;
+        this.hp -= amt;
+        if (this.hp <= 0) {
+            this.hp = 0;
+            this.dead = true;
+            this.onDeath();
+        }
+    }
+    onDeath() {
+        audio.playExplosion(1.0, this.x, this.y);
+        if (game) {
+            game.applyExplosionShake(this.x, this.y, 22, 140);
+            game.spawnShockwave(this.x, this.y, 140, 0.3);
+            game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 20, 'ANCHOR DOWN', '#ff2a5f', 1.4));
+            for (let i = 0; i < 20; i++) {
+                let a = Math.random() * Math.PI * 2;
+                let spd = Math.random() * 300 + 80;
+                game.addParticle(this.x, this.y, Math.cos(a)*spd, Math.sin(a)*spd, '#b388ff', 0.5, 3);
+            }
+        }
+    }
+    draw(ctx, cam) {
+        if (this.dead) return;
+        const R = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.RADIUS) || 500;
+        // Power-bank share: the device disc breathes with the projections
+        // it feeds (full R solo, shrunk while projecting).
+        const DR = (this._evR !== undefined) ? this._evR : R;
+        // Viewport cull on the whole field circle (camera-style margin).
+        // cam.w/h are absent on some viewports -- fall back wide, never NaN.
+        const vw = cam.w || 2400, vh = cam.h || 1600;
+        const cullM = R + 40;
+        if (this.x < cam.x - cullM || this.x > cam.x + vw + cullM ||
+            this.y < cam.y - cullM || this.y > cam.y + vh + cullM) return;
+        const now = (typeof game !== 'undefined' && game) ? (game.gameTime || 0) : 0;
+        const scx = this.x - cam.x, scy = this.y - cam.y;
+        const hurt = 1 - (this.hp / this.maxHp);
+        // Mode flips the field color (violet TIDE / gold AEGIS / red HORIZON).
+        const mode = this.mode || 'tide';
+        ctx.save();
+        // 1) Field disc: faint wash + rim (time falling in).
+        ctx.fillStyle = eventideRgba(mode, 0.05);
+        ctx.beginPath();
+        ctx.arc(scx, scy, DR, 0, Math.PI * 2);
+        ctx.fill();
+        // 2) Crawling rings: outer rim + two inner contours, dash drift
+        // reads as contraction. Flat strokes only (no gradients -- perf).
+        ctx.lineWidth = 2;
+        const rings = [
+            { r: DR, a: 0.55, dash: [14, 10], spd: 26 },
+            { r: DR * 0.66, a: 0.32, dash: [10, 12], spd: 20 },
+            { r: DR * 0.33, a: 0.22, dash: [7, 9], spd: 15 }
+        ];
+        for (const rg of rings) {
+            ctx.strokeStyle = eventideRgba(mode, rg.a);
+            ctx.setLineDash(rg.dash);
+            ctx.lineDashOffset = (now * rg.spd) % 48;
+            ctx.beginPath();
+            ctx.arc(scx, scy, rg.r, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        // 3) Pylon: dark conduit housing + hazard chevrons + live core.
+        // Core shifts violet->red with damage; sub-30% blinks the beacon.
+        ctx.fillStyle = '#1a232a';
+        ctx.beginPath();
+        ctx.arc(scx, scy, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffb700';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 3; i++) {
+            const a0 = (i / 3) * Math.PI * 2 + 0.5;
+            ctx.beginPath();
+            ctx.arc(scx, scy, 14, a0, a0 + 0.5);
+            ctx.stroke();
+        }
+        const pulse = 0.6 + 0.4 * Math.sin(now * 4);
+        // Core reads MODE (field color) shifting to red with damage.
+        const mc = mode === 'aegis' ? [255, 196, 77] : mode === 'horizon' ? [255, 95, 109] : [179, 136, 255];
+        const coreR = Math.round(mc[0] + (255 - mc[0]) * hurt);
+        const coreG = Math.round(mc[1] * (1 - hurt * 0.6));
+        const coreB = Math.round(mc[2] * (1 - hurt * 0.7));
+        ctx.fillStyle = `rgba(${coreR}, ${coreG}, ${coreB}, ${0.55 + 0.45 * pulse})`;
+        ctx.beginPath();
+        ctx.arc(scx, scy, 5 + 2 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        if (hurt > 0.7 && Math.floor(now * 6) % 2 === 0) {
+            ctx.fillStyle = '#ff2a5f';
+            ctx.fillRect(scx - 2, scy - 24, 4, 4);
+        }
+        ctx.restore();
+    }
+}
 class TripMine {
     constructor(x, y, owner) {
         this.x = x; this.y = y;
@@ -27857,7 +28107,9 @@ class TripMine {
                 // old explicit skip falls out for free).
                 for (const h of hostiles) {
                     if (h.dead || (h._jamTimer > 0)) continue;
-                    const entry = m.get(h._aiStaggerId);
+                    const hKey = game.spotKeyFor(h);
+                    if (hKey === undefined) continue;
+                    const entry = m.get(hKey);
                     if (!entry || !entry.pos || (now - (entry.lastSeen || 0)) > grace) continue;
                     const rung = threatRung(h);
                     // Existing MiniDrone anti-stack dedup, shortened for
@@ -27913,7 +28165,7 @@ class TripMine {
         if (this.isNetworked && this.compId !== undefined && game.spotCache) {
             let m = game.spotCache.get(this.compId);
             if (!m) { m = new Map(); game.spotCache.set(this.compId, m); }
-            const genId = target._aiStaggerId || ('target_' + Math.round(target.x));
+            const genId = game.spotKeyFor(target) || ('target_' + Math.round(target.x));
             game.publishSpot(m, genId, { pos: { x: target.x, y: target.y }, lastSeen: game.gameTime || 0, source: 'trip', publisher: this }, this, game.gameTime || 0);
             if (typeof audio !== 'undefined' && audio && audio.playDataLinkSpotAlert) {
                 audio.playDataLinkSpotAlert(this.x, this.y);
@@ -29134,7 +29386,14 @@ const ARMORY_UPGRADES = [
     { key: 'unlockCorrupted', name: 'REQUISITION: CORRUPTED MARKET', maxLevel: 1,
       costPerLevel: [50],
       desc: 'Unlocks the illicit Corrupted Overclocks market in the Shop.',
-      levelDescs: ['Unlocks illicit Corrupted Overclocks in the Shop'] }
+      levelDescs: ['Unlocks illicit Corrupted Overclocks in the Shop'] },
+    // TOP SECRET track (L1): the Eventide Anchor requisition. The armory buy
+    // (500 intel) unlocks the $20,000 shop item under Top Secret Tech.
+    // maxLevel stays 1 -- the L2 device gets its own entry when designed.
+    { key: 'topSecretAnchor', name: 'TOP SECRET: EVENTIDE ANCHOR', maxLevel: 1,
+      costPerLevel: [500],
+      desc: 'Declassifies the EVENTIDE ANCHOR in the Shop (Top Secret Tech): a deployable pylon projecting a 500px time-dilation field, slowing everything inside down to ~1000:1 at the device. Symmetric -- your own time slows too. $20,000 per deployment.',
+      levelDescs: ['Eventide Anchor available in the Shop (Top Secret Tech)'] }
 ];
 
 // GL_ARC: Underbarrel Launcher Lvl2 ARC SIGHTS tuning (replaces the old
@@ -30095,6 +30354,9 @@ class Game {
         this.turrets = [];
         this.securityCameras = [];
         this.dogs = [];
+        this.fieldGens = [];      // EVENTIDE ANCHOR: placed temporal pylons
+        this.echoes = [];         // EVENTIDE deja-vu ghosts (wall-clock, capped)
+        this._evProj = [];        // EVENTIDE projections (rebuilt per frame)
         this.dataCables = [];       // DATA LINK: spooled cables (amplifiers, not lifelines)
         this.spotCache = new Map(); // DATA LINK: compId -> shared SPOT set (sensor fusion)
         this._dataLinkTimer = 0;    // DATA LINK: accumulator for the 1Hz _tickDataLinks pulse
@@ -30177,7 +30439,7 @@ class Game {
         this.shopItemIDs = [
             'hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost', 
             'barrier', 'rubble', 'barrier_upgrade', 'drone', 'drone_upgrade', 'fiber_optic', 'turret', 'turret_mk2',
-            'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'camera', 'repairgun', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
+            'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'camera', 'repairgun', 'field_gen', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
             'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap', 'ammo_shotgun_slug',
             'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC',
             'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel', 'call_evac', 'ready'
@@ -30350,6 +30612,9 @@ class Game {
         if (this.turrets) {
             for (let i = 0; i < this.turrets.length; i++) arr.push(this.turrets[i]);
         }
+        if (this.fieldGens) {
+            for (let i = 0; i < this.fieldGens.length; i++) arr.push(this.fieldGens[i]);
+        }
         if (this.securityCameras) {
             for (let i = 0; i < this.securityCameras.length; i++) arr.push(this.securityCameras[i]);
         }
@@ -30441,6 +30706,9 @@ class Game {
         if (this.dogs) {
             for (let i = 0; i < this.dogs.length; i++) arr.push(this.dogs[i]);
         }
+        if (this.fieldGens) {
+            for (let i = 0; i < this.fieldGens.length; i++) arr.push(this.fieldGens[i]);
+        }
         if (this.hostages) {
             for (let i = 0; i < this.hostages.length; i++) arr.push(this.hostages[i]);
         }
@@ -30460,6 +30728,9 @@ class Game {
         }
         if (this.dogs) {
             for (let i = 0; i < this.dogs.length; i++) arr.push(this.dogs[i]);
+        }
+        if (this.fieldGens) {
+            for (let i = 0; i < this.fieldGens.length; i++) arr.push(this.fieldGens[i]);
         }
         return arr;
     }
@@ -32776,13 +33047,16 @@ class Game {
                 }
                 if (key === 'z') {
                     cancelBarrierChain(this.player);
-                    this.player.rightSelectIdx = (this.player.rightSelectIdx + 1) % 6;
+                    this.player.rightSelectIdx = (this.player.rightSelectIdx + 1) % 7;
                 }
                 if (key === 'c') {
                     if (!tryStartBarrierChain(this.player)) useRightItem(this.player);
                 }
-                if (key === 'f') {
-                    interactPickUpItem(this.player);
+                if (key === 'f' && !e.repeat) {
+                    // EVENTIDE F-hold: tap/hold routing (mode cycle vs
+                    // retrieve). First press only -- repeats just hold the
+                    // drill flag below, no pickup spam.
+                    this._fPress(this.player);
                 }
                 if (key === 'p' || e.key === 'Escape') {
                     this.togglePause();
@@ -32792,6 +33066,10 @@ class Game {
         window.addEventListener('keyup', e => {
             let key = e.key.toLowerCase();
             this.input.keys[key] = false;
+            // EVENTIDE F-hold: release resolves the tap (cycle mode).
+            if (key === 'f' && this.state === 'playing' && this.player && !this.player.dead) {
+                this._fRelease(this.player);
+            }
             if (key === 'e' && this.state === 'playing' && this.player && !this.player.dead) {
                 releaseGLCharge(this.player);
             }
@@ -32930,6 +33208,11 @@ class Game {
     togglePause() {
         this.isPaused = !this.isPaused;
         toggleClass('pause-screen', 'hidden', !this.isPaused);
+        // EVENTIDE: duck the field hum under pause (the per-frame tick
+        // stops with update; unpause re-ramps it).
+        if (this.isPaused && this._evHum) {
+            try { this._evHum.g.gain.value = 0; } catch (e) {}
+        }
         
         // Reset pause menu state when opening/closing
         this.pauseMenuRowIndex = 0;
@@ -33243,10 +33526,10 @@ class Game {
                 // Triangle / Cross -> Scroll Right Selector
                 if (this.dpadCooldown <= 0) {
                     if (gp.buttons[3].pressed) { // Triangle / Y
-                        playerInstance.rightSelectIdx = (playerInstance.rightSelectIdx - 1 + 6) % 6;
+                        playerInstance.rightSelectIdx = (playerInstance.rightSelectIdx - 1 + 7) % 7;
                         this.dpadCooldown = 0.18;
                     } else if (gp.buttons[0].pressed) { // Cross / A
-                        playerInstance.rightSelectIdx = (playerInstance.rightSelectIdx + 1) % 6;
+                        playerInstance.rightSelectIdx = (playerInstance.rightSelectIdx + 1) % 7;
                         this.dpadCooldown = 0.18;
                     }
                 }
@@ -33259,10 +33542,26 @@ class Game {
                         playerInstance.switchWeapon(1);
                         this.gpadButtonCooldown = 0.22;
                     }
-                    if (gp.buttons[2].pressed) { // Square / Xbox X - Pick up placed item / Land Drone
-                        interactPickUpItem(playerInstance);
-                        this.gpadButtonCooldown = 0.3;
+                }
+
+                // Square / Xbox X — USE (tap = mode cycle on mode-bearing
+                // own nodes, hold = retrieve). Edge-tracked OUTSIDE the
+                // cooldown gate (a gate would swallow press/release edges);
+                // the held-bridge into keys['f'] below is untouched (drill).
+                {
+                    this._gpUsePrev = this._gpUsePrev || {};
+                    const _uk = playerInstance.isPlayer2 ? 'p2' : 'p1';
+                    const _down = !!gp.buttons[2].pressed;
+                    if (_down && !this._gpUsePrev[_uk]) {
+                        if (playerInstance.activeDrone && playerInstance.activeDrone.isPiloted && !playerInstance.activeDrone.dead) {
+                            interactPickUpItem(playerInstance);
+                        } else {
+                            this._fPress(playerInstance);
+                        }
+                    } else if (!_down && this._gpUsePrev[_uk]) {
+                        this._fRelease(playerInstance);
                     }
+                    this._gpUsePrev[_uk] = _down;
                 }
 
                 // --- F / USE key controller mapping ---
@@ -33328,6 +33627,7 @@ class Game {
             swarm_drone: 'btn-buy-swarm-drone', swarm_pack: 'btn-buy-swarm-pack',
             camera: 'btn-buy-camera',
             repairgun: 'btn-buy-repairgun',
+            field_gen: 'btn-buy-field-gen',
             ammo_shotgun: 'btn-buy-ammo-shotgun', ammo_smg_std: 'btn-buy-ammo-smg-std', ammo_smg_hp: 'btn-buy-ammo-smg-hp',
             ammo_lmg_std: 'btn-buy-ammo-lmg-std', ammo_lmg_ap: 'btn-buy-ammo-lmg-ap',
             ammo_sniper_std: 'btn-buy-ammo-sniper-std', ammo_sniper_ap: 'btn-buy-ammo-sniper-ap', ammo_pistol_hp: 'btn-buy-ammo-pistol-hp',
@@ -34619,6 +34919,39 @@ class Game {
         return { tier, cellCost, maxIdx };
     }
 
+    // EVENTIDE ANCHOR deploy preview: when the anchor slot (rightSelect 6)
+    // is selected and one is carried, ghost the pylon + the full 500px
+    // field ring at the placement point (52px in front, mirroring place).
+    // The field is symmetric, so the preview radius is the safety readout.
+    drawEventidePreview(player, cam) {
+        if (!player || player.dead || player.rightSelectIdx !== 6) return;
+        if ((player.fieldGenCount || 0) <= 0) return;
+        if (this.state !== 'playing') return;
+        const R = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.RADIUS) || 500;
+        // Preview in the carried mode (what you place is what you preview).
+        const inv = player.fieldGensInventory || [];
+        const pMode = (inv.length && inv[inv.length - 1] && inv[inv.length - 1].mode) || 'tide';
+        const cx = player.x + Math.cos(player.angle) * 52;
+        const cy = player.y + Math.sin(player.angle) * 52;
+        let ctx = this.ctx;
+        ctx.save();
+        ctx.strokeStyle = eventideRgba(pMode, 0.7);
+        ctx.fillStyle = eventideRgba(pMode, 0.06);
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([8, 8]);
+        ctx.lineDashOffset = -((Date.now() / 60) % 32);
+        ctx.beginPath();
+        ctx.arc(cx - cam.x, cy - cam.y, R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.strokeStyle = eventideHex(pMode);
+        ctx.beginPath();
+        ctx.arc(cx - cam.x, cy - cam.y, 14, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
+
     // Built-wall color for a tier: MATTER PAINT SHOP color wins if unlocked+set
     // (shaded darker per tier so tiers stay readable under custom paint);
     // otherwise the tier's default color (see MATTER_MANIPULATOR.TIER_COLORS).
@@ -35156,6 +35489,56 @@ class Game {
         }
     }
 
+    // EVENTIDE ANCHOR placement (deployable-family pattern: count guard ->
+    // point in front -> wall-overlap check -> pop + construct + push).
+    // Carry is 1 and the field is symmetric, so no per-unit variants.
+    placeEventideAnchor(player) {
+        if (!player || player.dead || (player.fieldGenCount || 0) <= 0) return;
+
+        let cx = player.x + Math.cos(player.angle) * 52;
+        let cy = player.y + Math.sin(player.angle) * 52;
+
+        let overlap = false;
+        for (let wall of this.map.walls) {
+            let col = MathUtils.circleIntersectAABB(cx, cy, 14, wall);
+            if (col.hit) {
+                overlap = true;
+                break;
+            }
+        }
+
+        if (!overlap) {
+            let genData = player.fieldGensInventory.pop();
+            let hp = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.HP) || 400;
+            let maxHp = hp;
+            if (typeof genData === 'object' && genData !== null) {
+                hp = genData.hp;
+                maxHp = genData.maxHp || hp;
+            } else if (typeof genData === 'number') {
+                hp = genData;
+            }
+
+            let gen = new EventideAnchor(cx, cy, player);
+            gen.hp = hp;
+            gen.maxHp = maxHp;
+            // Mode round-trips through retrieve (a re-placed anchor keeps
+            // its doctrine); shop-fresh inventory defaults to TIDE (projection-ready).
+            if (genData && typeof genData.mode === 'string' &&
+                (genData.mode === 'aegis' || genData.mode === 'horizon')) {
+                gen.mode = genData.mode;
+            }
+            this.fieldGens.push(gen);
+            audio.playPickup('weapon');
+            for (let i = 0; i < 12; i++) {
+                this.addParticle(cx, cy, MathUtils.rand(-100, 100), MathUtils.rand(-100, 100), '#b388ff', 0.4, 2);
+            }
+            this.spawnDeployRing(cx, cy);
+            game.floatingTexts.push(game.spawnFloatingText(cx, cy - 20, 'EVENTIDE ANCHOR ONLINE', '#b388ff', 1.4));
+        } else {
+            audio.playRicochet();
+        }
+    }
+
     placeRobotDog(player) {
         if (!player || player.dead) return;
         
@@ -35317,6 +35700,8 @@ class Game {
         if (this.turrets) for (let t of this.turrets) nodes.push(t);
         if (this.securityCameras) for (let c of this.securityCameras) nodes.push(c);
         if (this.mines) for (let m of this.mines) nodes.push(m);
+        // EVENTIDE ANCHOR: network node (wired anchors project power).
+        if (this.fieldGens) for (let g of this.fieldGens) nodes.push(g);
         const nodeSet = new Set(nodes);
 
         const adj = new Map();
@@ -35387,15 +35772,18 @@ class Game {
         if (this.securityCameras) for (let cam of this.securityCameras) {
             if (cam.dead || cam.compId === undefined || !cam.spottedEnemies) continue;
             for (let e of cam.spottedEnemies) {
-                if (!e || e.dead || e._aiStaggerId === undefined) continue;
-                put(cam.compId, e._aiStaggerId, { x: e.x, y: e.y }, 'cam', cam, undefined, undefined, cam.tier || 1);
+                if (!e || e.dead) continue;
+                const eKey = this.spotKeyFor(e);
+                if (eKey === undefined) continue;
+                put(cam.compId, eKey, { x: e.x, y: e.y }, 'cam', cam, undefined, undefined, cam.tier || 1);
             }
         }
         if (this.turrets) for (let tur of this.turrets) {
             if (tur.dead || tur.compId === undefined || !tur.target || tur.target.dead) continue;
             let t = tur.target;
-            if (t._aiStaggerId === undefined) continue;
-            put(tur.compId, t._aiStaggerId, { x: t.x, y: t.y }, 'turret', tur, undefined, undefined, 1);
+            const tKey = this.spotKeyFor(t);
+            if (tKey === undefined) continue;
+            put(tur.compId, tKey, { x: t.x, y: t.y }, 'turret', tur, undefined, undefined, 1);
         }
         // A trip's SPOT is a persistent picture (the web turns to face it), so it
         // must survive a split. compIds are fresh, so follow it to the publisher's
@@ -35464,6 +35852,8 @@ class Game {
         if (this.securityCameras) for (let c of this.securityCameras) tickEmp(c);
         if (this.mines) for (let m of this.mines) tickEmp(m);
         if (this.dogs) for (let d of this.dogs) tickEmp(d);
+        // EVENTIDE ANCHOR: EMP timer decays with the rest (else a zap lasts forever).
+        if (this.fieldGens) for (let g of this.fieldGens) tickEmp(g);
         if (empRecovered) this._recomputeComponents();
 
         this._dataLinkTimer += dt;
@@ -35482,9 +35872,11 @@ class Game {
             let m = this.spotCache.get(cam.compId);
             if (!m) { m = new Map(); this.spotCache.set(cam.compId, m); }
             for (let e of cam.spottedEnemies) {
-                if (!e || e.dead || e._aiStaggerId === undefined) continue;
-                const wasSpotted = m.has(e._aiStaggerId);
-                this.publishSpot(m, e._aiStaggerId, { pos: { x: e.x, y: e.y }, lastSeen: now, source: 'cam', tier: cam.tier || 1 }, cam, now);
+                if (!e || e.dead) continue;
+                const eKey = this.spotKeyFor(e);
+                if (eKey === undefined) continue;
+                const wasSpotted = m.has(eKey);
+                this.publishSpot(m, eKey, { pos: { x: e.x, y: e.y }, lastSeen: now, source: 'cam', tier: cam.tier || 1 }, cam, now);
                 if (!wasSpotted && typeof audio !== 'undefined' && audio && audio.playDataLinkSpotAlert) {
                     audio.playDataLinkSpotAlert(cam.x, cam.y);
                 }
@@ -35495,13 +35887,14 @@ class Game {
         if (this.turrets) for (let tur of this.turrets) {
             if (tur.dead || tur.compId === undefined || !tur.target || tur.target.dead) continue;
             let t = tur.target;
-            if (t._aiStaggerId === undefined) continue;
+            const tKey = this.spotKeyFor(t);
+            if (tKey === undefined) continue;
             let m = this.spotCache.get(tur.compId);
             if (!m) { m = new Map(); this.spotCache.set(tur.compId, m); }
-            let existing = m.get(t._aiStaggerId);
+            let existing = m.get(tKey);
             if (!existing || existing.source !== 'cam') {
                 const wasSpotted = !!existing;
-                this.publishSpot(m, t._aiStaggerId, { pos: { x: t.x, y: t.y }, lastSeen: now, source: 'turret', tier: 1 }, tur, now);
+                this.publishSpot(m, tKey, { pos: { x: t.x, y: t.y }, lastSeen: now, source: 'turret', tier: 1 }, tur, now);
                 if (!wasSpotted && typeof audio !== 'undefined' && audio && audio.playDataLinkSpotAlert) {
                     audio.playDataLinkSpotAlert(tur.x, tur.y);
                 }
@@ -35521,7 +35914,9 @@ class Game {
                 if (!compIds.length) continue;
                 const hostiles = this.getHostilesFor(p);
                 for (const h of hostiles) {
-                    if (!h || h.dead || (h._jamTimer > 0) || h._aiStaggerId === undefined) continue;
+                    if (!h || h.dead || (h._jamTimer > 0)) continue;
+                    const hKey = this.spotKeyFor(h);
+                    if (hKey === undefined) continue;
                     const dx = h.x - p.x, dy = h.y - p.y;
                     const d = Math.hypot(dx, dy);
                     if (d > senseRange) continue;
@@ -35531,7 +35926,7 @@ class Game {
                     for (const cid of compIds) {
                         let m = this.spotCache.get(cid);
                         if (!m) { m = new Map(); this.spotCache.set(cid, m); }
-                        this.publishSpot(m, h._aiStaggerId, { pos: { x: h.x, y: h.y }, lastSeen: now, source: 'player' }, p, now);
+                        this.publishSpot(m, hKey, { pos: { x: h.x, y: h.y }, lastSeen: now, source: 'player' }, p, now);
                     }
                 }
             }
@@ -35549,6 +35944,526 @@ class Game {
             }
             if (!m.size) this.spotCache.delete(cid);
         }
+    }
+
+    // DATA LINK PvP: stable spot-cache key for enemy operators. Enemies key
+    // on their pooled _aiStaggerId; Players are never pooled and carry none,
+    // so every publish/lookup site keyed on _aiStaggerId silently skipped the
+    // opposing player — networked mines/turrets/cameras engaged AI but never
+    // a PvP opponent (direct acquisition already saw them; the network never
+    // did). Players key on their seat instead. Returns undefined for keyless
+    // non-players (those callers keep their position fallback). Only ever hit
+    // in PvP: outside PvP no hostile set contains a Player.
+    spotKeyFor(ent) {
+        if (!ent) return undefined;
+        if (ent._aiStaggerId !== undefined) return ent._aiStaggerId;
+        if (ent instanceof Player) return ent.isPlayer2 ? 'player_p2' : 'player_p1';
+        return undefined;
+    }
+
+    // EVENTIDE ANCHOR: local time-dilation factor at a world point. Min over
+    // live TIDE/AEGIS generators of the linear falloff (HORIZON-mode
+    // anchors skip the positional path entirely -- they drive the global
+    // multiplier instead, so nothing ever double-dips). Returns 1 fast
+    // when no anchor is placed. Elevation-gated (a ground-floor field never
+    // reaches the deck) and composes AFTER the global timeScale -- callers
+    // multiply their already-scaled dt, never write timeScale. In AEGIS
+    // mode a generator skips its owner's whole lineage (owner, their
+    // assets, their projectiles -- see _eventideExempt), so THEIR time
+    // holds while the world crawls. Pass null ent for purely positional
+    // queries (audio), which never exempt.
+    fieldTimeFactor(x, y, ent = null) {
+        const gens = this.fieldGens;
+        if (!gens || !gens.length) return 1;
+        let f = 1;
+        const R = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.RADIUS) || 500;
+        const MIN = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.MIN_FACTOR) || 0.001;
+        for (let i = 0; i < gens.length; i++) {
+            const g = gens[i];
+            if (!g || g.dead || g.mode === 'horizon') continue;
+            if (g.mode === 'aegis' && ent && this._eventideExempt(ent, g.owner)) continue;
+            if (this.map && this.map.floorSeparated && this.map.floorSeparated(x, y, g.x, g.y)) continue;
+            // Power-bank share: a wired anchor's device field shrinks as it
+            // feeds projections (eased in _eventideProject; full R solo).
+            const gr = (g._evR !== undefined) ? g._evR : R;
+            const d = Math.hypot(x - g.x, y - g.y);
+            if (d >= gr || gr <= 0) continue;
+            const gf = MIN + (1 - MIN) * (d / gr);
+            if (gf < f) f = gf;
+        }
+        // Projected fields: symmetric tracking rings over spotted hostiles
+        // (always symmetric -- no AEGIS exemption -- one readable rule).
+        const pj = this._evProj;
+        if (pj && pj.length) {
+            for (let i = 0; i < pj.length; i++) {
+                const p = pj[i];
+                if (p.r < 8) continue;
+                if (this.map && this.map.floorSeparated && this.map.floorSeparated(x, y, p.x, p.y)) continue;
+                const d = Math.hypot(x - p.x, y - p.y);
+                if (d >= p.r) continue;
+                const gf = MIN + (1 - MIN) * (d / p.r);
+                if (gf < f) f = gf;
+            }
+        }
+        // AEGIS global-except-owner: while a live player stands inside an
+        // AEGIS anchor, the world OUTSIDE crawls for everyone but the
+        // owner's lineage (the field interior stays fast -- the mirror
+        // image of TIDE). Trigger depths are refreshed in _eventideProject
+        // next to the power shares. Like HORIZON's global, this ignores
+        // floors once triggered (global means global).
+        if (gens) {
+            for (let i = 0; i < gens.length; i++) {
+                const g = gens[i];
+                if (!g || g.dead || g.mode !== 'aegis') continue;
+                const td = g._evTrig;
+                if (td === undefined || td === null) continue;
+                if (ent && this._eventideExempt(ent, g.owner)) continue;
+                if (td < f) f = td;
+            }
+        }
+        return f;
+    }
+
+    // EVENTIDE HORIZON: global multiplier while a live player stands inside
+    // a HORIZON-mode field -- the min positional depth across those players
+    // (same floor). 1 when nobody is inside. Applied in loop() AFTER the
+    // timeScale/hurt-drag derivation (never writes timeScale, so Adrenaline
+    // / Chronos / death slow-mo compose); stashed to _evGlobal for the
+    // readouts, echoes, tick, and audio downstream.
+    _eventideGlobalF() {
+        const gens = this.fieldGens;
+        if (!gens || !gens.length) return 1;
+        const R = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.RADIUS) || 500;
+        const MIN = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.MIN_FACTOR) || 0.001;
+        let f = 1;
+        const players = [];
+        if (this.player && !this.player.dead) players.push(this.player);
+        if (this.isTwoPlayer && this.player2 && !this.player2.dead) players.push(this.player2);
+        if (!players.length) return 1;
+        for (let i = 0; i < gens.length; i++) {
+            const g = gens[i];
+            if (!g || g.dead || g.mode !== 'horizon') continue;
+            for (const p of players) {
+                if (this.map && this.map.floorSeparated && this.map.floorSeparated(p.x, p.y, g.x, g.y)) continue;
+                const d = Math.hypot(p.x - g.x, p.y - g.y);
+                if (d >= R) continue;
+                const gf = MIN + (1 - MIN) * (d / R);
+                if (gf < f) f = gf;
+            }
+        }
+        return f;
+    }
+
+    // "Your stuff" for AEGIS exemption, mirroring the PvP shooterOwner
+    // resolution: the owner, their direct assets, and projectiles thereof.
+    // Entities without ownership (enemies, hostages) never match.
+    _eventideExempt(ent, owner) {
+        if (!ent || !owner) return false;
+        if (ent === owner) return true;
+        if (ent.owner === owner || ent.shooter === owner) return true;
+        const o = ent.owner;
+        if (o && o.owner === owner) return true;
+        return false;
+    }
+
+    // Dilated per-entity clock for gameTime-param cooldowns (player/enemy
+    // fire cadence, melee/dive tap windows). Decision clocks that read the
+    // global game.gameTime directly (drone anti-stack, SPOT lastSeen, kill
+    // cadence) deliberately stay global -- thinking stays fast, motion slows.
+    // The >5 snap covers pooled entities carrying a stale clock across runs.
+    dilNow(ent, dt) {
+        if (ent._dilNow === undefined || Math.abs(this.gameTime - ent._dilNow) > 5) ent._dilNow = this.gameTime;
+        ent._dilNow += dt;
+        return ent._dilNow;
+    }
+
+    // EVENTIDE field hum: one lazy global voice (never per-anchor --
+    // an anchor's own clock freezes at the epicenter, so per-anchor clocks
+    // can't drive it). A deep detuned fifth that breathes via LFO; gain
+    // follows the nearest live anchor to either player (wall-clock smooth).
+    // Hard-stopped on run end/reset (update stops outside playing).
+    _ensureEventideHum() {
+        if (typeof audio === 'undefined' || !audio || !audio.ctx) return false;
+        if (!this._evHum) {
+            try {
+                const ctx = audio.ctx;
+                const g = ctx.createGain(); g.gain.value = 0;
+                const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 320;
+                const o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = 48;
+                const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 72.5;
+                const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.1;
+                const lg = ctx.createGain(); lg.gain.value = 0.02;
+                lfo.connect(lg); lg.connect(g.gain);
+                o1.connect(f); o2.connect(f); f.connect(g);
+                g.connect(audio.sfxGain || audio.masterGain);
+                o1.start(); o2.start(); lfo.start();
+                this._evHum = { g, o1, o2, lfo };
+            } catch (e) { return false; }
+        }
+        return !!this._evHum;
+    }
+    _tickEventideHum(rawDt) {
+        if (!this.fieldGens || !this.fieldGens.length) {
+            if (this._evHum) { try { this._evHum.g.gain.value = 0; } catch (e) {} }
+            return;
+        }
+        if (!this._ensureEventideHum()) return;
+        let best = Infinity;
+        const ps = [];
+        if (this.player && !this.player.dead) ps.push(this.player);
+        if (this.isTwoPlayer && this.player2 && !this.player2.dead) ps.push(this.player2);
+        for (const g of this.fieldGens) {
+            if (!g || g.dead) continue;
+            for (const p of ps) {
+                const d = Math.hypot(g.x - p.x, g.y - p.y);
+                if (d < best) best = d;
+            }
+        }
+        let sfxVol = 0.5;
+        if (typeof audio !== 'undefined' && audio && audio.ctx) {
+            sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        }
+        const target = (best < 900) ? (0.05 * (1 - best / 900) + 0.015) * (0.2 + 0.8 * sfxVol) : 0;
+        try {
+            const cur = this._evHum.g.gain.value;
+            const k = Math.min(1, (rawDt || 0.016) * 2);
+            this._evHum.g.gain.value = cur + (target - cur) * k;
+        } catch (e) {}
+    }
+    _stopEventideHum() {
+        if (!this._evHum) return;
+        try {
+            this._evHum.o1.stop(); this._evHum.o2.stop(); this._evHum.lfo.stop();
+            this._evHum.g.disconnect();
+        } catch (e) {}
+        this._evHum = null;
+    }
+
+    // EVENTIDE deja-vu echoes: stroke-circle ghosts in the UNIT's own
+    // color that shrink + fade (never the square particle pool -- squares
+    // say "debris", outlines say "this body, a moment ago"). Updated on
+    // wall-clock (recordings, not simulation) and hard-capped.
+    spawnEcho(x, y, vx, vy, r, color, life = 0.45) {
+        if (!this.echoes) this.echoes = [];
+        if (this.echoes.length >= 140) return;
+        this.echoes.push({ x, y, vx: vx || 0, vy: vy || 0, r: r || 10, color: color || '#dfe6ff', life, maxLife: life });
+    }
+    _tickEchoes(rawDt) {
+        if (!this.echoes || !this.echoes.length) return;
+        for (let i = this.echoes.length - 1; i >= 0; i--) {
+            const e = this.echoes[i];
+            e.life -= rawDt;
+            if (e.life <= 0) {
+                this.echoes[i] = this.echoes[this.echoes.length - 1];
+                this.echoes.pop();
+                continue;
+            }
+            e.x += e.vx * rawDt;
+            e.y += e.vy * rawDt;
+        }
+    }
+    drawEchoes(ctx, cam) {
+        if (!this.echoes || !this.echoes.length) return;
+        const vw = cam.w || 2400, vh = cam.h || 1600;
+        ctx.save();
+        ctx.lineWidth = 2;
+        for (const e of this.echoes) {
+            const t = e.life / e.maxLife;
+            const rr = Math.max(1, e.r * t + 2);
+            if (e.x < cam.x - rr - 20 || e.x > cam.x + vw + rr + 20 ||
+                e.y < cam.y - rr - 20 || e.y > cam.y + vh + rr + 20) continue;
+            ctx.globalAlpha = t * 0.7;
+            ctx.strokeStyle = e.color;
+            ctx.beginPath();
+            ctx.arc(e.x - cam.x, e.y - cam.y, rr, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+    // EVENTIDE power-bank projection: wired TIDE/AEGIS anchors split power
+    // with the network's spotted hostiles. Per comp with ≥1 wired anchor:
+    // A = wired tide/aegis anchors, T = distinct fresh-spotted live
+    // hostiles (rung-0 first, then freshest, capped at PROJ_CAP). EVERY
+    // field -- device + projected -- eases toward radius R*A/(A+T) (equal
+    // power shares; depth stays 0.001 at every center). Projected centers
+    // track their hostile live; entries collapse when the SPOT goes stale
+    // (LOS break), the target dies, or the cables are cut. Unwired anchors
+    // stay full-strength solo. HORIZON anchors never project (global-only).
+    // Projected fields are always symmetric (no AEGIS exemption) -- one
+    // rule, readable at a glance.
+    _eventideProject(dt) {
+        const R = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.RADIUS) || 500;
+        const MIN = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.MIN_FACTOR) || 0.001;
+        const CAP = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.PROJ_CAP) || 4;
+        const grace = (typeof LINK_TUNING !== 'undefined' && LINK_TUNING.spotGrace) || 2.0;
+        if (!this._evProj) this._evProj = [];
+        if (!this.fieldGens || !this.fieldGens.length) { this._evProj.length = 0; return; }
+        const now = this.gameTime || 0;
+        const k = Math.min(1, (dt || 0.016) * 2.5);
+        // Candidate hostile pool (both owners' assets in PvP so a spotted
+        // enemy operator stalls too -- publishing stays hostile-only, so a
+        // comp can never project onto its own owner's assets).
+        const pool = [];
+        for (const e of this.enemies) if (e && !e.dead) pool.push(e);
+        if (this.bossDrones) for (const d of this.bossDrones) if (d && !d.dead) pool.push(d);
+        if (this.friendlyFireMode === 'pvp') {
+            if (this.player && !this.player.dead) pool.push(this.player);
+            if (this.isTwoPlayer && this.player2 && !this.player2.dead) pool.push(this.player2);
+            if (this.turrets) for (const t of this.turrets) if (!t.dead) pool.push(t);
+            if (this.dogs) for (const d of this.dogs) if (!d.dead) pool.push(d);
+            if (this.miniDrones) for (const m of this.miniDrones) if (!m.dead) pool.push(m);
+            if (this.securityCameras) for (const c of this.securityCameras) if (!c.dead) pool.push(c);
+        }
+        // Wired tide/aegis anchors grouped by comp; unwired stay full.
+        const byComp = new Map();
+        for (const g of this.fieldGens) {
+            if (!g || g.dead || g.mode === 'horizon') continue;
+            if (!g.isNetworked || g.compId === undefined) {
+                g._evR = (g._evR === undefined) ? R : g._evR + (R - g._evR) * k;
+                continue;
+            }
+            if (!byComp.has(g.compId)) byComp.set(g.compId, []);
+            byComp.get(g.compId).push(g);
+        }
+        const liveKeys = new Set();
+        for (const [cid, gens] of byComp) {
+            const m = this.spotCache ? this.spotCache.get(cid) : null;
+            const cands = [];
+            if (m && m.size) {
+                for (const h of pool) {
+                    const hk = this.spotKeyFor(h);
+                    if (hk === undefined) continue;
+                    const entry = m.get(hk);
+                    if (!entry || !entry.pos || (now - (entry.lastSeen || 0)) > grace) continue;
+                    cands.push({ h, k: cid + ':' + String(hk), lastSeen: entry.lastSeen || 0, rung: threatRung(h) });
+                }
+            }
+            cands.sort((a, b) => (a.rung - b.rung) || (b.lastSeen - a.lastSeen));
+            const Ts = cands.slice(0, CAP);
+            const A = gens.length;
+            const targetR = R * A / (A + Ts.length);
+            for (const g of gens) {
+                g._evR = (g._evR === undefined) ? targetR : g._evR + (targetR - g._evR) * k;
+            }
+            for (const t of Ts) {
+                liveKeys.add(t.k);
+                let pj = null;
+                for (const e of this._evProj) { if (e.key === t.k) { pj = e; break; } }
+                if (!pj) {
+                    pj = { key: t.k, x: t.h.x, y: t.h.y, r: 0 };
+                    this._evProj.push(pj);
+                }
+                pj.x = t.h.x; pj.y = t.h.y;
+                pj.r = pj.r + (targetR - pj.r) * k;
+            }
+        }
+        // Entries no longer fed collapse toward 0, then drop.
+        for (let i = this._evProj.length - 1; i >= 0; i--) {
+            const pj = this._evProj[i];
+            if (!liveKeys.has(pj.key)) {
+                pj.r = pj.r + (0 - pj.r) * k;
+                if (pj.r < 4) {
+                    this._evProj[i] = this._evProj[this._evProj.length - 1];
+                    this._evProj.pop();
+                }
+            }
+        }
+        // AEGIS trigger depths: min depth across live players standing
+        // inside each AEGIS anchor (same floor). Null = untriggered (full
+        // rate for everyone). Runs unwired too -- like HORIZON, the global
+        // term needs no cables.
+        {
+            const pls = [];
+            if (this.player && !this.player.dead) pls.push(this.player);
+            if (this.isTwoPlayer && this.player2 && !this.player2.dead) pls.push(this.player2);
+            for (const g of this.fieldGens) {
+                if (!g || g.dead || g.mode !== 'aegis') { if (g) g._evTrig = null; continue; }
+                let td = null;
+                for (const p of pls) {
+                    if (this.map && this.map.floorSeparated && this.map.floorSeparated(p.x, p.y, g.x, g.y)) continue;
+                    const d = Math.hypot(p.x - g.x, p.y - g.y);
+                    if (d >= R) continue;
+                    const gf = MIN + (1 - MIN) * (d / R);
+                    if (td === null || gf < td) td = gf;
+                }
+                g._evTrig = td;
+            }
+        }
+    }
+
+    // EVENTIDE projected-field draw: smaller violet rings tracking spotted
+    // hostiles (same phenomenon as the device disc, same color language).
+    drawEventideProjected(cam) {
+        if (this.state !== 'playing') return;
+        if (!this._evProj || !this._evProj.length) return;
+        const vw = cam.w || 2400, vh = cam.h || 1600;
+        const now = this.gameTime || 0;
+        let ctx = this.ctx;
+        ctx.save();
+        ctx.lineWidth = 1.5;
+        for (const pj of this._evProj) {
+            if (pj.r < 8) continue;
+            if (pj.x < cam.x - pj.r - 20 || pj.x > cam.x + vw + pj.r + 20 ||
+                pj.y < cam.y - pj.r - 20 || pj.y > cam.y + vh + pj.r + 20) continue;
+            ctx.strokeStyle = 'rgba(179, 136, 255, 0.5)';
+            ctx.fillStyle = 'rgba(179, 136, 255, 0.05)';
+            ctx.setLineDash([8, 8]);
+            ctx.lineDashOffset = -((now * 22) % 32);
+            ctx.beginPath();
+            ctx.arc(pj.x - cam.x, pj.y - cam.y, pj.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        ctx.restore();
+    }
+
+    // EVENTIDE F-hold: tap/hold disambiguation shared by keyboard,
+    // gamepad, and touch. Press arms a pending on mode-bearing own nodes
+    // (anchor any weapon, doctrine hub on RepairGun); release fires the tap
+    // (cycle mode); holding past HOLD_S retrieves instead. Everything else
+    // picks up immediately on press (today's feel, zero latency).
+    _ownAnchorNear(player) {
+        if (!player || !this.fieldGens) return null;
+        let best = null, bestD = 45;
+        for (const g of this.fieldGens) {
+            if (!g || g.dead || g.owner !== player) continue;
+            const d = Math.hypot(g.x - player.x, g.y - player.y);
+            if (d < bestD) { bestD = d; best = g; }
+        }
+        return best;
+    }
+
+    _doctrineHub(player) {
+        if (!player) return null;
+        let hub = null, hubDist = 45;
+        const considerHub = (n) => {
+            if (!n || n.dead || n.owner !== player || !n.isNetworked) return;
+            const d = Math.hypot(n.x - player.x, n.y - player.y);
+            if (d < hubDist) { hubDist = d; hub = n; }
+        };
+        if (this.turrets) for (const t of this.turrets) considerHub(t);
+        if (this.dogs) for (const d of this.dogs) considerHub(d);
+        if (this.securityCameras) for (const c of this.securityCameras) considerHub(c);
+        if (this.mines) for (const m of this.mines) considerHub(m);
+        // EVENTIDE ANCHOR: a wired anchor is a valid doctrine hub (cycle
+        // YOUR doctrine AT the anchor, same as any node).
+        if (this.fieldGens) for (const g of this.fieldGens) considerHub(g);
+        return hub;
+    }
+
+    _cycleDoctrine(player) {
+        const hub = this._doctrineHub(player);
+        if (!hub) return false;
+        const cur = player.doctrine || 'standard';
+        player.doctrine = cur === 'standard' ? 'focus' : (cur === 'focus' ? 'overwatch' : 'standard');
+        const label = player.doctrine === 'focus' ? 'FOCUS FIRE' : (player.doctrine === 'overwatch' ? 'OVERWATCH' : 'STANDARD');
+        const ft = this.spawnFloatingText(player.x, player.y - 15, 'DOCTRINE: ' + label, '#f59e0b', 1.2);
+        if (ft) this.floatingTexts.push(ft);
+        if (typeof audio !== 'undefined' && audio && audio.playDataLinkConnected) audio.playDataLinkConnected(hub.x, hub.y);
+        else audio.playPickup('weapon');
+        return true;
+    }
+
+    // EVENTIDE anchor mode cycle: TIDE (symmetric cordon) -> AEGIS (owner
+    // lineage exempt, duel/breach) -> HORIZON (whole world slows while a
+    // live player stands inside) -> TIDE. Nearest own anchor in reach.
+    cycleEventideMode(player) {
+        const gen = this._ownAnchorNear(player);
+        if (!gen) return false;
+        gen.mode = gen.mode === 'tide' ? 'aegis' : (gen.mode === 'aegis' ? 'horizon' : 'tide');
+        const label = gen.mode === 'tide' ? 'TIDE MODE - THE FIELD DROWNS ALL'
+            : gen.mode === 'aegis' ? 'AEGIS MODE - YOUR TIME HOLDS'
+            : 'HORIZON MODE - ALL TIME SLOWS';
+        const ft = this.spawnFloatingText(gen.x, gen.y - 26, label, eventideHex(gen.mode), 1.2);
+        if (ft) this.floatingTexts.push(ft);
+        if (typeof audio !== 'undefined' && audio && audio.playPickup) audio.playPickup('weapon');
+        return true;
+    }
+
+    _fPress(player) {
+        if (!player || player.dead) return;
+        if (this._ownAnchorNear(player)) {
+            player._fHold = { t: 0, done: false, kind: 'anchor' };
+            return;
+        }
+        if (player.weapon && player.weapon.name === 'RepairGun' && this._doctrineHub(player)) {
+            player._fHold = { t: 0, done: false, kind: 'doctrine' };
+            return;
+        }
+        interactPickUpItem(player);
+    }
+
+    _fRelease(player) {
+        if (!player) return;
+        const h = player._fHold;
+        player._fHold = null;
+        if (!h || h.done || player.dead) return;
+        if (h.kind === 'anchor') this.cycleEventideMode(player);
+        else if (h.kind === 'doctrine') this._cycleDoctrine(player);
+    }
+
+    // Wall-clock hold tick (one place for all input sources). Past HOLD_S
+    // the pending retrieves via the skip-mode path (the tap already fired
+    // or never will) and the release becomes a no-op.
+    _tickFHold(p) {
+        const h = p ? p._fHold : null;
+        if (!h || h.done) return;
+        if (p.dead) { p._fHold = null; return; }
+        h.t += this._rawDt || 0;
+        const HOLD = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.HOLD_S) || 0.38;
+        if (h.t >= HOLD) {
+            h.done = true;
+            p._fHold = null;
+            interactPickUpItem(p, true);
+        }
+    }
+
+    // EVENTIDE personal FX (per player, per frame): echo afterimages while
+    // dilated + the personal clock tick tracking DILATED time (ticks arrive
+    // rarely in wall-clock when deep -- your own clock runs slow, audibly).
+    _eventidePlayerFx(p, eff) {
+        if (!p || p.dead) return;
+        if (eff >= 0.65 || !this.fieldGens || !this.fieldGens.length) { p._evTickAcc = 0; return; }
+        // Echo: unit-colored lagging ghost (deja-vu -- the cat walks by twice).
+        if (Math.random() < (0.65 - eff) * 0.35) {
+            this.spawnEcho(p.x, p.y, (p.vx || 0) * 0.15, (p.vy || 0) * 0.15, (p.r || 12), p.color, 0.4);
+        }
+        // Tick: soft clock blip every 1.0 DILATED second (always normal
+        // pitch -- it is YOUR clock; the SPACING carries the information).
+        const rawDt = this._rawDt || 0;
+        p._evTickAcc = (p._evTickAcc || 0) + rawDt * eff;
+        if (p._evTickAcc >= 1.0) {
+            p._evTickAcc -= 1.0;
+            if (typeof audio !== 'undefined' && audio && audio.playBakedSound && audio.ctx) {
+                audio.playBakedSound('empty_click', audio.sfxGain, 0.10);
+            }
+        }
+    }
+
+    // EVENTIDE rate readout: tiny local-time label over each dilated
+    // player (no guessing how deep you are). Violet->red with depth.
+    drawEventideReadout(cam) {
+        if (this.state !== 'playing') return;
+        if (!this.fieldGens || !this.fieldGens.length) return;
+        const players = [];
+        if (this.player && !this.player.dead) players.push(this.player);
+        if (this.isTwoPlayer && this.player2 && !this.player2.dead) players.push(this.player2);
+        if (!players.length) return;
+        let ctx = this.ctx;
+        ctx.save();
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'center';
+        for (const p of players) {
+            const f = (p._evF !== undefined) ? p._evF : 1;
+            if (f >= 0.95) continue;
+            const depth = Math.min(1, 1 - f);
+            const cr = Math.round(179 + (255 - 179) * depth);
+            const cb = Math.round(255 - (255 - 109) * depth);
+            ctx.fillStyle = `rgba(${cr}, 140, ${cb}, 0.9)`;
+            ctx.fillText(`t\xD7${f.toFixed(2)}`, p.x - cam.x, p.y - cam.y - (p.r || 12) - 14);
+        }
+        ctx.restore();
     }
 
     // DATA LINK Phase 9 (Pillar E): single choke for cache writes. Carries
@@ -35687,6 +36602,9 @@ class Game {
         if (this.securityCameras) for (const c of this.securityCameras) check(c);
         if (this.mines) for (const m of this.mines) check(m);
         if (this.dogs) for (const d of this.dogs) check(d);
+        // EVENTIDE ANCHOR: EMP-disruptable like any node (drops its
+        // projections until the timer decays).
+        if (this.fieldGens) for (const g of this.fieldGens) check(g);
         if (disrupted > 0) {
             this._recomputeComponents();
             if (typeof audio !== 'undefined' && audio && audio.playDataLinkSevered) {
@@ -36545,6 +37463,11 @@ class Game {
         if (this.turrets) {
             for (let t of this.turrets) t.draw(this.ctx, droneCam);
         }
+        if (this.fieldGens) {
+            for (let g of this.fieldGens) g.draw(this.ctx, droneCam);
+        }
+        this.drawEchoes(this.ctx, droneCam);
+        this.drawEventideProjected(droneCam);
         if (this.securityCameras) {
             for (let c of this.securityCameras) {
                 // PERF (BUG-013 / fix P4): same cone-reach viewport cull
@@ -36567,6 +37490,8 @@ class Game {
         if (this.isTwoPlayer && this.player2 && !this.player2.dead) this.player2.draw(this.ctx, droneCam);
         this.drawWallBuildPreview(this.player, droneCam);
         if (this.isTwoPlayer && this.player2) this.drawWallBuildPreview(this.player2, droneCam);
+        this.drawEventidePreview(this.player, droneCam);
+        if (this.isTwoPlayer && this.player2) this.drawEventidePreview(this.player2, droneCam);
         for (let b of this.bullets) b.draw(this.ctx, droneCam);
         
 
@@ -36880,6 +37805,7 @@ class Game {
         this.drawBarriers(baseCam, true);
         this.drawDataCables(baseCam, true);
         if (this.turrets) for (let t of this.turrets) t.draw(this.ctx, baseCam);
+        if (this.fieldGens) for (let g of this.fieldGens) g.draw(this.ctx, baseCam);
         if (this.securityCameras) for (let c of this.securityCameras) c.draw(this.ctx, baseCam);
         if (this.dogs) for (let d of this.dogs) d.draw(this.ctx, baseCam);
         // OQ-076: scavenger dogs, same asset band as the dogs (below
@@ -38224,6 +39150,10 @@ class Game {
         this.turrets = [];
         this.securityCameras = [];
         this.dogs = [];
+        this.fieldGens = [];      // EVENTIDE ANCHOR: fresh run, no placed pylons
+        this.echoes = [];         // EVENTIDE deja-vu ghosts (fresh run, none)
+        this._evProj = [];        // EVENTIDE projections (fresh run, none)
+        this._stopEventideHum();  // EVENTIDE: hard-stop the field hum with the run
         this.dataCables = [];       // DATA LINK: fresh run, no spooled cables
         this.spotCache = new Map(); // DATA LINK: reset the shared SPOT cache with the run
         this._dataLinkTimer = 0;
@@ -40794,6 +41724,10 @@ class Game {
         this.frameCounter = (this.frameCounter || 0) + 1;
         this.gameTime += dt;
 
+        // EVENTIDE power-bank projection (before any entity integrates so
+        // every factor read this frame is current).
+        this._eventideProject(dt);
+
         // PHASE 1: Heat director + objective ticks. Extraction runs
         // endless -- top the spawn budget up every frame so the
         // round-win/shop transition can never fire (its guard requires
@@ -41048,7 +41982,22 @@ class Game {
 
         let p1Walls = this.map.getWallsNear(this.player.x, this.player.y);
         let p1Dt = (this.player.chronosActive && this.timeScale > 0) ? (dt / this.timeScale) : dt;
-        this.player.update(p1Dt, this.input, p1Walls, this.gameTime, gp1);
+        // EVENTIDE: positional dilation (TIDE symmetric; AEGIS exempts the
+        // owner's lineage inside fieldTimeFactor; HORIZON skips positional
+        // and drives the global multiplier from loop()).
+        let p1Now = this.gameTime;
+        let p1FieldF = 1;
+        if (this.fieldGens && this.fieldGens.length) {
+            p1FieldF = this.fieldTimeFactor(this.player.x, this.player.y, this.player);
+            p1Dt *= p1FieldF;
+            p1Now = this.dilNow(this.player, p1Dt);
+        }
+        this.player.update(p1Dt, this.input, p1Walls, p1Now, gp1);
+        // EVENTIDE deja-vu: the slowed shed fading afterimages (you SEE
+        // time stretch) + the personal dilated tick (your own clock runs
+        // slow, and you hear it). Effective rate = positional x global.
+        this.player._evF = p1FieldF * (this._evGlobal || 1);
+        this._eventidePlayerFx(this.player, this.player._evF);
         
         let aimCoords1 = this.getWorldAimCoords(this.player);
         // LOW READY CAMERA (see CAMERA_LOW_READY in the camera section): while
@@ -41069,7 +42018,17 @@ class Game {
             }
             let p2Walls = this.map.getWallsNear(this.player2.x, this.player2.y);
             let p2Dt = (this.player2.chronosActive && this.timeScale > 0) ? (dt / this.timeScale) : dt;
-            this.player2.update(p2Dt, this.input2, p2Walls, this.gameTime, gp2);
+            // EVENTIDE: positional dilation (see P1).
+            let p2Now = this.gameTime;
+            let p2FieldF = 1;
+            if (this.fieldGens && this.fieldGens.length) {
+                p2FieldF = this.fieldTimeFactor(this.player2.x, this.player2.y, this.player2);
+                p2Dt *= p2FieldF;
+                p2Now = this.dilNow(this.player2, p2Dt);
+            }
+            this.player2.update(p2Dt, this.input2, p2Walls, p2Now, gp2);
+            this.player2._evF = p2FieldF * (this._evGlobal || 1);
+            this._eventidePlayerFx(this.player2, this.player2._evF);
             
             let aimCoords2 = this.getWorldAimCoords(this.player2);
             // Same LOW READY CAMERA intent override as P1 (gamepad path only).
@@ -41085,6 +42044,11 @@ class Game {
             activePlayer = this.player2;
         }
         this.updateHeartbeat(dt, activePlayer);
+        // EVENTIDE F-hold tick (wall-clock; shared by keyboard/gamepad/touch).
+        this._tickFHold(this.player);
+        if (this.isTwoPlayer && this.player2) this._tickFHold(this.player2);
+        // EVENTIDE field hum follows the nearest live anchor (wall-clock).
+        this._tickEventideHum(this._rawDt);
         
         if (this.flashMuffleTimer > 0) {
             this.flashMuffleTimer -= dt;
@@ -41116,7 +42080,7 @@ class Game {
         }
         
         if (this.player && this.player.activeDrone && !this.player.activeDrone.dead) {
-            this.player.activeDrone.update(dt, this);
+            this.player.activeDrone.update(dt * this.fieldTimeFactor(this.player.activeDrone.x, this.player.activeDrone.y, this.player.activeDrone), this);
         }
         // PIP LINGER: release expired linger stashes so the dead drone
         // object isn't retained past its 1s feed (two null-checks per
@@ -41125,7 +42089,7 @@ class Game {
         if (this.player && this.player._pipLinger && this.gameTime >= this.player._pipLinger.until) this.player._pipLinger = null;
         if (this.player2 && this.player2._pipLinger && this.gameTime >= this.player2._pipLinger.until) this.player2._pipLinger = null;
         if (this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead) {
-            this.player2.activeDrone.update(dt, this);
+            this.player2.activeDrone.update(dt * this.fieldTimeFactor(this.player2.activeDrone.x, this.player2.activeDrone.y, this.player2.activeDrone), this);
         }
         
         for (let i = 0; i < this._sepTouched.length; i++) {
@@ -41166,6 +42130,9 @@ class Game {
             }
         }
 
+        // EVENTIDE: one branch so the dilated clock costs nothing when no
+        // anchor is placed (the common case is byte-identical to before).
+        const hasField = !!(this.fieldGens && this.fieldGens.length);
         for (let e of this.enemies) {
             let enemyDt = dt;
             if (e.chaosDraftModifier === 'enraged' && e.hp < e.maxHp * 0.5) {
@@ -41175,7 +42142,17 @@ class Game {
             // lever the Enraged trait already uses (tongs zone, but this IS
             // its sanctioned use: whole-entity speedup with no desync).
             if (e.finalKillRole === 'runner') enemyDt *= 1.35;
-            e.update(enemyDt, this.player, this.map.walls, this.gameTime, this.enemies);
+            if (hasField) {
+                enemyDt *= this.fieldTimeFactor(e.x, e.y, e);
+                e.update(enemyDt, this.player, this.map.walls, this.dilNow(e, enemyDt), this.enemies);
+                // EVENTIDE deja-vu: the slowed shed fading afterimages.
+                const _eEff = (dt > 0 ? enemyDt / dt : 1) * (this._evGlobal || 1);
+                if (_eEff < 0.65 && Math.random() < (0.65 - _eEff) * 0.25) {
+                    this.spawnEcho(e.x, e.y, (e.vx || 0) * 0.15, (e.vy || 0) * 0.15, (e.r || 10), e.color, 0.45);
+                }
+            } else {
+                e.update(enemyDt, this.player, this.map.walls, this.gameTime, this.enemies);
+            }
             // FELLPASS-CLEANUP A1: hit-flash decay lives in this shared loop (once
             // per frame, every variant) instead of Enemy.update -- Boss overrides
             // update without super.update, so the old base-class decay never ran
@@ -41187,7 +42164,7 @@ class Game {
         if (this.bossDrones && this.bossDrones.length > 0) {
             for (let i = this.bossDrones.length - 1; i >= 0; i--) {
                 let d = this.bossDrones[i];
-                d.update(dt, this);
+                d.update(dt * this.fieldTimeFactor(d.x, d.y, d), this);
                 if (d.dead) {
                     d.stopAudio();
                     this.bossDrones[i] = this.bossDrones[this.bossDrones.length - 1];
@@ -41354,7 +42331,7 @@ class Game {
 
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             let b = this.bullets[i];
-            b.update(dt, this.map.walls, entities, this);
+            b.update(dt * this.fieldTimeFactor(b.x, b.y, b), this.map.walls, entities, this);
             if (!b.active) {
                 this.inactiveBullets.push(b);
                 this.bullets[i] = this.bullets[this.bullets.length - 1];
@@ -41365,7 +42342,7 @@ class Game {
         for (let i = this.grenades.length - 1; i >= 0; i--) {
             let g = this.grenades[i];
             let gWalls = this.map.getWallsNear(g.x, g.y);
-            let active = g.update(dt, gWalls, this);
+            let active = g.update(dt * this.fieldTimeFactor(g.x, g.y, g), gWalls, this);
             if (!active) {
                 if (g instanceof ShrapnelGrenade) {
                     if (!this.inactiveShrapnelGrenades) this.inactiveShrapnelGrenades = [];
@@ -41404,7 +42381,7 @@ class Game {
         this._tickDataLinks(dt);
 
         for (let i = this.mines.length - 1; i >= 0; i--) {
-            let active = this.mines[i].update(dt, this);
+            let active = this.mines[i].update(dt * this.fieldTimeFactor(this.mines[i].x, this.mines[i].y, this.mines[i]), this);
             if (!active) {
                 this.severDataLinks(this.mines[i]);
                 this.mines[i] = this.mines[this.mines.length - 1];
@@ -41413,7 +42390,7 @@ class Game {
         }
 
         for (let i = this.turrets.length - 1; i >= 0; i--) {
-            this.turrets[i].update(dt, this);
+            this.turrets[i].update(dt * this.fieldTimeFactor(this.turrets[i].x, this.turrets[i].y, this.turrets[i]), this);
             if (this.turrets[i].dead) {
                 this.severDataLinks(this.turrets[i]);
                 this.turrets[i] = this.turrets[this.turrets.length - 1];
@@ -41423,7 +42400,7 @@ class Game {
 
         if (this.securityCameras) {
             for (let i = this.securityCameras.length - 1; i >= 0; i--) {
-                this.securityCameras[i].update(dt, this);
+                this.securityCameras[i].update(dt * this.fieldTimeFactor(this.securityCameras[i].x, this.securityCameras[i].y, this.securityCameras[i]), this);
                 if (this.securityCameras[i].dead) {
                     this.severDataLinks(this.securityCameras[i]);
                     this.securityCameras[i] = this.securityCameras[this.securityCameras.length - 1];
@@ -41434,11 +42411,26 @@ class Game {
 
         if (this.dogs) {
             for (let i = this.dogs.length - 1; i >= 0; i--) {
-                this.dogs[i].update(dt, this);
+                this.dogs[i].update(dt * this.fieldTimeFactor(this.dogs[i].x, this.dogs[i].y, this.dogs[i]), this);
                 if (this.dogs[i].dead) {
                     this.severDataLinks(this.dogs[i]);
                     this.dogs[i] = this.dogs[this.dogs.length - 1];
                     this.dogs.pop();
+                }
+            }
+        }
+
+        // EVENTIDE ANCHOR driver. Static pylons (update advances the pulse
+        // clock); destroyed anchors pop with no husk return (spec).
+        if (this.fieldGens) {
+            for (let i = this.fieldGens.length - 1; i >= 0; i--) {
+                this.fieldGens[i].update(dt, this);
+                if (this.fieldGens[i].dead) {
+                    // Sever cables like every other node (else the stump
+                    // points at a corpse and the comp never splits).
+                    if (this.severDataLinks) this.severDataLinks(this.fieldGens[i]);
+                    this.fieldGens[i] = this.fieldGens[this.fieldGens.length - 1];
+                    this.fieldGens.pop();
                 }
             }
         }
@@ -41450,7 +42442,7 @@ class Game {
             if (!this.inactiveScavDogs) this.inactiveScavDogs = [];
             for (let i = this.scavDogs.length - 1; i >= 0; i--) {
                 let sd = this.scavDogs[i];
-                sd.update(dt, this);
+                sd.update(dt * this.fieldTimeFactor(sd.x, sd.y, sd), this);
                 if (sd.dead || sd.escaped) {
                     this.inactiveScavDogs.push(sd);
                     this.scavDogs[i] = this.scavDogs[this.scavDogs.length - 1];
@@ -41463,12 +42455,12 @@ class Game {
         // ESCORT_TARGET objective reads .dead to fail the run; splicing
         // would hide the body from it) -- they just stop updating/colliding.
         if (this.hostages) {
-            for (let h of this.hostages) h.update(dt, this);
+            for (let h of this.hostages) h.update(dt * this.fieldTimeFactor(h.x, h.y, h), this);
         }
 
         if (this.miniDrones) {
             for (let i = this.miniDrones.length - 1; i >= 0; i--) {
-                this.miniDrones[i].update(dt, this);
+                this.miniDrones[i].update(dt * this.fieldTimeFactor(this.miniDrones[i].x, this.miniDrones[i].y, this.miniDrones[i]), this);
                 if (this.miniDrones[i].dead) {
                     this.miniDrones[i].stopAudio();
                     this.miniDrones[i] = this.miniDrones[this.miniDrones.length - 1];
@@ -41517,6 +42509,8 @@ class Game {
         }
 
         for (let p of this.particles) p.update(dt);
+        // EVENTIDE deja-vu echoes tick on wall-clock (recordings, not sim).
+        this._tickEchoes(this._rawDt);
         this.handlePermanentParticles();
 
         for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
@@ -41548,7 +42542,7 @@ class Game {
                 continue;
             }
 
-            it.update(dt, activePlayers);
+            it.update(dt * this.fieldTimeFactor(it.x, it.y, it), activePlayers);
             
             for (let p of activePlayers) {
                 // SIMULATED SECOND FLOOR: the magnetism guard in
@@ -42597,6 +43591,20 @@ class Game {
                 }
             }
 
+            // EVENTIDE ANCHOR (Top Secret Tech): single-carry, destroyed = gone.
+            let fieldGenBtn = document.getElementById('btn-buy-field-gen-' + suffix);
+            if (fieldGenBtn && !this._armoryGate(fieldGenBtn, 'topSecretAnchor', 1, "Eventide Anchor (UNLOCK IN ARMORY)")) {
+                if ((p.fieldGenCount || 0) >= 1) {
+                    fieldGenBtn.classList.add('maxed');
+                    fieldGenBtn.innerText = "EVENTIDE ANCHOR (MAX 1)";
+                    fieldGenBtn.disabled = true;
+                } else {
+                    fieldGenBtn.classList.remove('maxed');
+                    fieldGenBtn.innerText = "Eventide Anchor ($20000)";
+                    fieldGenBtn.disabled = false;
+                }
+            }
+
             let checkAmmoCap = (id, cur, max, label) => {
                 let el = document.getElementById(id);
                 if (el) {
@@ -42752,7 +43760,8 @@ class Game {
                 swarm_drone: ['unlockSwarm', 1], swarm_pack: ['unlockSwarm', 2],
                 turret_mk2: ['unlockTurretMk2', 1], barrier_upgrade: ['unlockBarrierMk2', 1],
                 camera: ['unlockSecurityCamera', 1],
-                repairgun: ['unlockRepairGun', 1]
+                repairgun: ['unlockRepairGun', 1],
+                field_gen: ['topSecretAnchor', 1]
             };
             const g = GATE[type];
             if (g && (MA[g[0]] || 0) < g[1]) return;
@@ -42889,6 +43898,13 @@ class Game {
         } else if (type === 'camera' && p.cash >= 350 && (p.camerasCount || 0) < 3) {
             p.cash -= 350;
             p.camerasCount = (p.camerasCount || 0) + 1;
+            audio.playPickup('weapon');
+        } else if (type === 'field_gen' && p.cash >= 20000 && (p.fieldGenCount || 0) < 1) {
+            // EVENTIDE ANCHOR: top-secret single-carry deployment (carry 1,
+            // destroyed = gone). Price from EVENTIDE_TUNING, inlined like
+            // every other buyItem literal.
+            p.cash -= 20000;
+            p.fieldGenCount = (p.fieldGenCount || 0) + 1;
             audio.playPickup('weapon');
         } else if (type === 'repairgun' && p.cash >= 1250 && !p.inventory.some(w => w.name === 'RepairGun')) {
             // REPAIR GUN: bought once, kept all run (see shop refresh for the
@@ -43408,6 +44424,12 @@ class Game {
             { to: 16, up: (sd) => {
                 if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
                 if (typeof sd.metaUpgrades.unlockRepairGun !== 'number') sd.metaUpgrades.unlockRepairGun = 0;
+            }},
+            // v17 (TOP SECRET track): Eventide Anchor armory gate. Additive
+            // only, per migration discipline -- never edit an older step.
+            { to: 17, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.topSecretAnchor !== 'number') sd.metaUpgrades.topSecretAnchor = 0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -43458,6 +44480,8 @@ class Game {
         if (MA.manipulatorRampart === undefined) MA.manipulatorRampart = 0;
         // v16: REPAIR GUN armory gate (mirrors the v16 migration).
         if (MA.unlockRepairGun === undefined) MA.unlockRepairGun = 0;
+        // v17: TOP SECRET Eventide Anchor gate (mirrors the v17 migration).
+        if (MA.topSecretAnchor === undefined) MA.topSecretAnchor = 0;
         if (typeof this.saveData.buildTier !== 'string') this.saveData.buildTier = '';
         if (typeof this.saveData.hasSeenArmoryTutorial !== 'boolean') this.saveData.hasSeenArmoryTutorial = false;
         if (typeof this.saveData.touchFireHintDone !== 'boolean') this.saveData.touchFireHintDone = false;
@@ -45335,6 +46359,8 @@ class Game {
     endRun(outcome) {
         if (this.state === 'debrief') return;                 // double-entry guard
         if (!this.runLedger) { this.returnToMainMenu(); return; } // pathological (no run ever started)
+        // EVENTIDE: hard-stop the field hum (update stops in debrief/menu).
+        this._stopEventideHum();
 
         // WI-3: the kill feed + timer are match state -- a match-winning kill
         // must not leave its entry floating over the debrief screen.
@@ -45743,6 +46769,7 @@ class Game {
 
             // Assets targeting assets
             this.turrets.forEach(t => { if (t.owner !== owner && !t.dead) hostiles.push(t); });
+            if (this.fieldGens) this.fieldGens.forEach(g => { if (g.owner !== owner && !g.dead) hostiles.push(g); });
             if (this.securityCameras) {
                 this.securityCameras.forEach(c => { if (c.owner !== owner && !c.dead) hostiles.push(c); });
             }
@@ -46467,6 +47494,14 @@ class Game {
         if (this.turrets) {
             for (let t of this.turrets) t.draw(this.ctx, cam);
         }
+        // EVENTIDE ANCHOR: pylon + field disc, same asset band as turrets.
+        if (this.fieldGens) {
+            for (let g of this.fieldGens) g.draw(this.ctx, cam);
+        }
+        // EVENTIDE deja-vu echoes sit just above the bodies they trail.
+        this.drawEchoes(this.ctx, cam);
+        // EVENTIDE projections: network-fed tracking rings.
+        this.drawEventideProjected(cam);
         if (this.securityCameras) {
             for (let c of this.securityCameras) {
                 // PERF (BUG-013 / fix P4): cameras were the one entity
@@ -46554,6 +47589,9 @@ class Game {
         if (this.isTwoPlayer && this.player2 && !this.player2.dead) this.player2.draw(this.ctx, cam);
         this.drawWallBuildPreview(this.player, cam);
         if (this.isTwoPlayer && this.player2) this.drawWallBuildPreview(this.player2, cam);
+        this.drawEventidePreview(this.player, cam);
+        if (this.isTwoPlayer && this.player2) this.drawEventidePreview(this.player2, cam);
+        this.drawEventideReadout(cam);
         
         for (let b of this.bullets) b.draw(this.ctx, cam);
 
@@ -48152,7 +49190,11 @@ class Game {
         // FELLPASS item 6: the player-hit drag multiplies scaledDt (depth
         // 1.0 = no drag). Multiplicative so it composes with glory-kill /
         // death slow-mo without ever writing timeScale.
-        let scaledDt = dt * this.timeScale * (this.hurtDragTimer > 0 ? this.hurtDragDepth : 1);
+        // EVENTIDE HORIZON: global field multiplier while a live player
+        // stands inside a HORIZON-mode anchor (never writes timeScale --
+        // Adrenaline/Chronos/death slow-mo compose; stashed for downstream).
+        this._evGlobal = this._eventideGlobalF ? this._eventideGlobalF() : 1;
+        let scaledDt = dt * this.timeScale * (this.hurtDragTimer > 0 ? this.hurtDragDepth : 1) * this._evGlobal;
         // Guard against an uncaught exception inside update()/draw() silently
         // killing the requestAnimationFrame chain forever. Without this,
         // a single bad frame (e.g. a null enemy reference, a malformed
@@ -48493,17 +49535,23 @@ class TouchController {
             }));
         });
         
-        // --- Interact FAB Event ---
+        // --- Interact FAB Event (tap = mode cycle on mode-bearing own
+        // nodes, hold = retrieve -- same contract as keyboard F / pad X).
         interactEl.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             if (game && game.input && game.player) {
                 game.input.keys['f'] = true;
-                interactPickUpItem(game.player);
+                if (game.player.activeDrone && game.player.activeDrone.isPiloted && !game.player.activeDrone.dead) {
+                    interactPickUpItem(game.player);
+                } else if (!e.repeat) {
+                    game._fPress(game.player);
+                }
             }
         });
         interactEl.addEventListener('pointerup', (e) => {
             if (game && game.input) {
                 game.input.keys['f'] = false;
+                if (game.player) game._fRelease(game.player);
             }
         });
 
