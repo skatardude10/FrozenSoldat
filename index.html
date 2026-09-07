@@ -1846,6 +1846,7 @@
                 <button id="btn-settings-subtab-controls" class="tab-button active" onclick="game.switchSettingsTab('controls')">Controls</button>
                 <button id="btn-settings-subtab-audio" class="tab-button" onclick="game.switchSettingsTab('audio')">Audio</button>
                 <button id="btn-settings-subtab-performance" class="tab-button" onclick="game.switchSettingsTab('performance')">Performance</button>
+                <button id="btn-settings-subtab-video" class="tab-button" onclick="game.switchSettingsTab('video')">Video</button>
                 <button id="btn-settings-subtab-data" class="tab-button" onclick="game.switchSettingsTab('data')">Data</button>
             </div>
 
@@ -2051,6 +2052,22 @@
                         <option value="66">66%</option>
                     </select>
                     <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 100% &nbsp;|&nbsp; Lower = less GPU load, softer image</div>
+                </div>
+            </div>
+
+            <!-- Settings sub-tab: VIDEO (UI scale for big/TV screens) -->
+            <div id="tab-settings-video" class="settings-subtab-content">
+                <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold;">DISPLAY SCALING</p>
+                <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left;">
+                    <div style="font-size: 10px; color: #a9c2c7; margin-bottom: 14px; line-height: 1.5;">
+                        Zooms the whole game for TVs and handheld screens: the world camera closes in (your character reads larger, like a native zoom) and the menus plus the match HUD (top bars, weapon/item carousels) scale with it. Launches at 4K and dials this in instead of lowering your resolution or zooming the browser — the canvas keeps rendering at full res, so nothing goes blurry. Applies live as you move the slider and saves with the rest of your settings. Lower values show more of the battlefield (at some GPU cost); higher values read better from the couch.
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
+                        <span>UI SCALE:</span>
+                        <span id="lbl-ui-scale">100%</span>
+                    </div>
+                    <input type="range" id="sld-ui-scale" min="0.25" max="2" step="0.05" value="1" style="width: 100%; cursor: pointer;" oninput="game.setUIScale(this.value)">
+                    <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Snaps to 25&thinsp;% · 50&thinsp;% · 75&thinsp;% · 100&thinsp;% · 125&thinsp;% · 150&thinsp;% · 175&thinsp;% · 200&thinsp;% &nbsp;|&nbsp; Gamepad ◀ ▶ steps one stop</div>
                 </div>
             </div>
 
@@ -8149,6 +8166,12 @@ class Camera {
             + CAMERA_FOCUS_LOCK.EXTRA_ZOOM * this.focusLockBlend
             + _breathZoom
             - _dipZoom;
+        // VIDEO sub-tab UI scale: the single world-side choke. Multiplies
+        // the composed target (blends ride along proportionally) so every
+        // cam.zoom consumer — render, aim math, vignette — follows with no
+        // per-site edits. Transients (zoomPunch/recoilZoom) stay absolute,
+        // added after the lerp below, so shake magnitude never scales.
+        if (typeof game !== 'undefined' && game && game.uiScale) targetZoom *= game.uiScale;
         
         if (dt) {
             this.zoom += (targetZoom - this.zoom) * dt * 4;
@@ -33486,6 +33509,10 @@ class Game {
         // saveData.renderScale. Lower = less GPU fill-rate = more headroom on a
         // VRAM-pressured box (the long-session micro-stutter is environmental).
         this.renderScale = 1;
+        // VIDEO sub-tab UI scale (world camera × menu DOM zoom), 0.25–2 in
+        // quarter stops. Restored from saveData.uiScale at load; 1.0 is
+        // byte-for-byte the pre-feature behavior (see setUIScale).
+        this.uiScale = 1;
         // Scale factor of the CSS-px drawing space into the CURRENT render
         // target's pixels. This is renderScale while drawing to the main
         // canvas, but drawViewportWithAberration swaps this.ctx to a
@@ -36544,6 +36571,20 @@ class Game {
         return null;
     }
 
+    // Row-level twin of the resolver above: vertical moves skip rows with
+    // zero visible stops (collapsible bodies hide whole rows; landing on
+    // one used to eat the press — no highlight, dead A button — which
+    // read as "headers don't highlight" and "rows get skipped").
+    _navRowHasStop(rows, rowIdx) {
+        const row = rows && rows[rowIdx];
+        if (!row || !row.length) return false;
+        for (let k = 0; k < row.length; k++) {
+            const el = document.getElementById(row[k]);
+            if (el && this._navElVisible(el)) return true;
+        }
+        return false;
+    }
+
     refreshGamepadAssignmentStatus(gpList, precomputedResolved) {
         let { gp1, gp2 } = precomputedResolved || this.resolveGamepadAssignments(gpList);
         const fmt = (gp) => gp ? ('Gamepad ' + (gp.index + 1) + ((gp.id) ? ' — ' + gp.id.substring(0, 24) : '')) : 'No gamepad (keyboard/mouse or touch)';
@@ -37588,13 +37629,19 @@ class Game {
 
             if (this.dpadCooldown <= 0) {
                 if (dUp) {
-                    this.pauseMenuRowIndex = (this.pauseMenuRowIndex - 1 + rows.length) % rows.length;
+                    for (let s = 1; s <= rows.length; s++) {
+                        const idx = (this.pauseMenuRowIndex - s + rows.length) % rows.length;
+                        if (this._navRowHasStop(rows, idx)) { this.pauseMenuRowIndex = idx; break; }
+                    }
                     this.pauseMenuOptionIndex = 0;
                     this.dpadCooldown = 0.18;
                     this.refreshPauseMenuHighlight();
                     return;
                 } else if (dDown) {
-                    this.pauseMenuRowIndex = (this.pauseMenuRowIndex + 1) % rows.length;
+                    for (let s = 1; s <= rows.length; s++) {
+                        const idx = (this.pauseMenuRowIndex + s) % rows.length;
+                        if (this._navRowHasStop(rows, idx)) { this.pauseMenuRowIndex = idx; break; }
+                    }
                     this.pauseMenuOptionIndex = 0;
                     this.dpadCooldown = 0.18;
                     this.refreshPauseMenuHighlight();
@@ -37906,6 +37953,9 @@ class Game {
                 ['sld-max-marks'],
                 ['opt-render-scale']
             ],
+            video: [
+                ['sld-ui-scale']
+            ],
             // JULY item 3: save export/import moved to its own Data sub-tab.
             data: [
                 ['btn-save-export-file', 'btn-save-import-file'],
@@ -37954,7 +38004,7 @@ class Game {
                 ['sld-start-wave']
             ],
             settings: [
-                ['btn-settings-subtab-controls', 'btn-settings-subtab-audio', 'btn-settings-subtab-performance', 'btn-settings-subtab-data'],
+                ['btn-settings-subtab-controls', 'btn-settings-subtab-audio', 'btn-settings-subtab-performance', 'btn-settings-subtab-video', 'btn-settings-subtab-data'],
                 ...(settingsSubtabRows[this.activeSettingsSubtab || 'controls'])
             ],
             leaderboard: [],
@@ -38116,16 +38166,20 @@ class Game {
 
             if (this.dpadCooldown <= 0) {
                 if (dUp) {
-                    let targetRowIdx = (this.mainMenuRowIndex - 1 + rows.length) % rows.length;
-                    this.mainMenuOptionIndex = Math.min(this.mainMenuOptionIndex, rows[targetRowIdx].length - 1);
-                    this.mainMenuRowIndex = targetRowIdx;
+                    for (let s = 1; s <= rows.length; s++) {
+                        const idx = (this.mainMenuRowIndex - s + rows.length) % rows.length;
+                        if (this._navRowHasStop(rows, idx)) { this.mainMenuRowIndex = idx; break; }
+                    }
+                    this.mainMenuOptionIndex = Math.min(this.mainMenuOptionIndex, rows[this.mainMenuRowIndex].length - 1);
                     this.dpadCooldown = 0.18;
                     this.refreshMainMenuHighlight();
                     return;
                 } else if (dDown) {
-                    let targetRowIdx = (this.mainMenuRowIndex + 1) % rows.length;
-                    this.mainMenuOptionIndex = Math.min(this.mainMenuOptionIndex, rows[targetRowIdx].length - 1);
-                    this.mainMenuRowIndex = targetRowIdx;
+                    for (let s = 1; s <= rows.length; s++) {
+                        const idx = (this.mainMenuRowIndex + s) % rows.length;
+                        if (this._navRowHasStop(rows, idx)) { this.mainMenuRowIndex = idx; break; }
+                    }
+                    this.mainMenuOptionIndex = Math.min(this.mainMenuOptionIndex, rows[this.mainMenuRowIndex].length - 1);
                     this.dpadCooldown = 0.18;
                     this.refreshMainMenuHighlight();
                     return;
@@ -38146,7 +38200,7 @@ class Game {
                             return;
                         }
                     }
-                } else if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol' || currentRow[0] === 'sld-sfx-vol' || currentRow[0] === 'sld-time-scale' || currentRow[0] === 'sld-max-marks' || currentRow[0] === 'sld-start-wave')) {
+                } else if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol' || currentRow[0] === 'sld-sfx-vol' || currentRow[0] === 'sld-time-scale' || currentRow[0] === 'sld-max-marks' || currentRow[0] === 'sld-start-wave' || currentRow[0] === 'sld-ui-scale')) {
                     let slider = document.getElementById(currentRow[0]);
                     if (slider) {
                         if (currentRow[0] === 'sld-time-scale') {
@@ -38185,6 +38239,20 @@ class Game {
                                 let newVal = Math.min(300000, curVal + 5000);
                                 this.setMaxPermanentMarks(newVal);
                                 this.dpadCooldown = 0.08;
+                                return;
+                            }
+                        } else if (currentRow[0] === 'sld-ui-scale') {
+                            // VIDEO sub-tab: pad steps one quarter stop per
+                            // press (mouse drags are continuous, snapped on
+                            // apply inside setUIScale).
+                            let curVal = parseFloat(slider.value) || 1.0;
+                            if (dLeft) {
+                                this.setUIScale(Math.max(0.25, curVal - 0.25));
+                                this.dpadCooldown = 0.18;
+                                return;
+                            } else if (dRight) {
+                                this.setUIScale(Math.min(2, curVal + 0.25));
+                                this.dpadCooldown = 0.18;
                                 return;
                             }
                         } else {
@@ -49568,7 +49636,25 @@ class Game {
         if (typeof this.saveData.debugStartWave !== 'number' || this.saveData.debugStartWave < 0) {
             this.saveData.debugStartWave = 0;
         }
-        
+
+        // BUG-023: renderScale/uiScale restore FIRST, before any setter
+        // below. Every setDifficulty/setTimeScale/... call re-saves the
+        // whole saveData (with persist=true), and saveGameData writes
+        // `saveData.renderScale = this.renderScale` / `saveData.uiScale =
+        // this.uiScale` — so any restore placed after those setters reads
+        // back the constructor defaults the setters just wrote, and the
+        // setting silently never persists across reloads.
+        // PERF #1 (2026-08-23): restore the render scale. persist=false — we're
+        // mid-load; a re-save here would write half-loaded data back.
+        if (this.saveData.renderScale !== undefined) {
+            this.setRenderScale(this.saveData.renderScale, false);
+        }
+        // VIDEO sub-tab: restore the UI scale the same way (guarded read,
+        // no migration; persist=false, we're mid-load).
+        if (this.saveData.uiScale !== undefined) {
+            this.setUIScale(this.saveData.uiScale, false);
+        }
+
         if (this.saveData.difficultyMode) {
             this.setDifficulty(this.saveData.difficultyMode);
         } else {
@@ -49583,11 +49669,6 @@ class Game {
             this.setMaxPermanentMarks(this.saveData.maxPermanentMarks);
         } else {
             this.setMaxPermanentMarks(30000);
-        }
-        // PERF #1 (2026-08-23): restore the render scale. persist=false — we're
-        // mid-load; a re-save here would write half-loaded data back.
-        if (this.saveData.renderScale !== undefined) {
-            this.setRenderScale(this.saveData.renderScale, false);
         }
         // Sync the touch stick-size slider/label (and apply if the touch
         // controller is already up). Boot also re-applies once DOM is ready.
@@ -49652,6 +49733,7 @@ class Game {
             this.saveData.nightMode = this.nightMode;
             this.saveData.maxPermanentMarks = this.maxPermanentMarks;
             this.saveData.renderScale = this.renderScale;
+            this.saveData.uiScale = this.uiScale;
             localStorage.setItem('frozensoldat_save', JSON.stringify(this.saveData));
         } catch(e) {
             console.error("Failed to save data:", e);
@@ -49813,6 +49895,9 @@ class Game {
             // PERF #1: sync the render-scale select from the imported save.
             const rsSel = document.getElementById('opt-render-scale');
             if (rsSel) rsSel.value = String(Math.round((this.renderScale || 1) * 100));
+            // VIDEO sub-tab: route through setUIScale so slider, label,
+            // camera factor, and menu zoom all move together.
+            if (this.setUIScale && this.saveData.uiScale !== undefined) this.setUIScale(this.saveData.uiScale, false);
             const ts = document.getElementById('sld-time-scale');
             if (ts) ts.value = this.timeScale;
             // Audio: route through the same single apply-paths the UI uses so
@@ -49954,6 +50039,12 @@ class Game {
         if (targetContent) targetContent.classList.add('active');
 
         this.activeSettingsSubtab = subtabName;
+        // Park pad focus on the just-activated sub-tab button: the body
+        // rows just got rebuilt under the old indices, which may point
+        // past the new grid (or into a collapsed section) until the next
+        // move re-resolves.
+        this.mainMenuRowIndex = 0;
+        this.mainMenuOptionIndex = Math.max(0, ['controls', 'audio', 'performance', 'video', 'data'].indexOf(subtabName));
 
         if (subtabName === 'audio') {
             this.refreshAudioTabUI();
@@ -49961,6 +50052,12 @@ class Game {
         if (subtabName === 'controls') {
             this.refreshGamepadAssignmentUI();
         }
+        if (subtabName === 'video') {
+            // Re-assert the slider/label from live state (same hidden-DOM
+            // hazard the performance branch below guards against).
+            this.setUIScale(this.uiScale || 1);
+        }
+        this.refreshMainMenuHighlight();
         if (subtabName === 'performance') {
             // Re-assert the slider/label from live state in case this DOM
             // node was hidden (display:none) the last time
@@ -51450,6 +51547,10 @@ class Game {
         const opts = [1, 0.9, 0.75, 0.66];
         let v = parseFloat(value);
         if (!Number.isFinite(v)) v = 1;
+        // BUG-024: the options menu passes whole percents ("75"), not
+        // fractions — without this the snap below always lands on 1 and
+        // the selector can never leave 100%.
+        if (v > 1) v = v / 100;
         let best = opts[0], bd = Infinity;
         for (const o of opts) { const d = Math.abs(o - v); if (d < bd) { bd = d; best = o; } }
         this.renderScale = best;
@@ -51460,6 +51561,41 @@ class Game {
             if (sel) sel.value = String(pct);
             const lbl = document.getElementById('lbl-render-scale' + suf);
             if (lbl) lbl.innerText = pct + '%';
+        }
+        if (persist) this.saveGameData();
+    }
+
+    // VIDEO sub-tab: UI scale for big/TV screens (Steam Deck kiosk at 4K,
+    // etc.). Two levers, one value, applied live: the world camera target
+    // zoom multiplies (character reads larger, like a native zoom — the
+    // canvas keeps its full-res backing store, so nothing blurs), and the
+    // menu DOM scales via CSS `zoom` on the menu roots only (never the
+    // canvas element: zooming it would blur the render AND skew canvas
+    // mouse math). Snaps to quarter stops; pad ◀ ▶ steps one stop.
+    // Follows the renderScale precedent: guarded read, no migration, and
+    // 1.0 is pixel-identical to the pre-feature behavior.
+    setUIScale(value, persist = true) {
+        const stops = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+        let v = parseFloat(value);
+        if (!Number.isFinite(v)) v = 1;
+        v = Math.max(0.25, Math.min(2, v));
+        let best = stops[0], bd = Infinity;
+        for (const o of stops) { const d = Math.abs(o - v); if (d < bd) { bd = d; best = o; } }
+        this.uiScale = best;
+        const pct = Math.round(best * 100);
+        const sld = document.getElementById('sld-ui-scale');
+        if (sld) sld.value = best;
+        const lbl = document.getElementById('lbl-ui-scale');
+        if (lbl) lbl.innerText = pct + '%';
+        // Menus scale live; the world side reads this.uiScale every frame
+        // at the camera target-zoom choke, so no camera poke is needed.
+        // ui-layer (top bars + weapon/item carousels + boss HUD) scales
+        // too: it's pure buttons/bars (no canvas-coord math — crosshair
+        // and touch sticks live OUTSIDE it), and its children anchor to
+        // edges/center so zoom keeps them pinned.
+        for (const id of ['start-screen', 'pause-screen', 'ui-layer']) {
+            const el = document.getElementById(id);
+            if (el) el.style.zoom = best;
         }
         if (persist) this.saveGameData();
     }
