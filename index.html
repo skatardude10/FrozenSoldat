@@ -1445,6 +1445,7 @@
                     </div>
                     <button id="btn-map-random" class="map-btn active-mode" style="--btn-color: #00e5ff; --btn-color-glow: rgba(0,229,255,0.6); --btn-color-bg: rgba(0,229,255,0.12);" onclick="game.setMap(-1)" onmouseenter="game.previewMap(-1)">[?] Random Generation</button>
                     <button id="btn-map-10" class="map-btn" style="--btn-color: #00e5ff; --btn-color-glow: rgba(0,229,255,0.6); --btn-color-bg: rgba(0,229,255,0.12);" onclick="game.setMap(10)" onmouseenter="game.previewMap(10)">[7.5K] Massive Open World</button>
+                    <button id="btn-map-11" class="map-btn" style="--btn-color: #39ff14; --btn-color-glow: rgba(57,255,20,0.6); --btn-color-bg: rgba(57,255,20,0.12);" onclick="game.setMap(11)" onmouseenter="game.previewMap(11)">[CLASSIFIED] The Perimeter (GAUNTLET)</button>
                     <button id="btn-map-0" class="map-btn" style="--btn-color: #00e5ff; --btn-color-glow: rgba(0,229,255,0.6); --btn-color-bg: rgba(0,229,255,0.12);" onclick="game.setMap(0)" onmouseenter="game.previewMap(0)">The Cross (Classic)</button>
                     <button id="btn-map-1" class="map-btn" style="--btn-color: #39ff14; --btn-color-glow: rgba(57,255,20,0.6); --btn-color-bg: rgba(57,255,20,0.12);" onclick="game.setMap(1)" onmouseenter="game.previewMap(1)">Central Hub (Ring)</button>
                     <button id="btn-map-2" class="map-btn" style="--btn-color: #ff5722; --btn-color-glow: rgba(255,87,34,0.6); --btn-color-bg: rgba(255,87,34,0.12);" onclick="game.setMap(2)" onmouseenter="game.previewMap(2)">Four Corners (Bunkers)</button>
@@ -5310,17 +5311,21 @@ class AudioEngine {
 
     playMiniExplosion(x = null, y = null) {
         if (!this.ctx) return;
-        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        // HP-17 (operator call): single-scale — gainVal carries NO sfxVol
+        // because playBakedSound plays into sfxGain, which is already at
+        // sfxVolume. The old `* sfxVol` here played these cues at vol²
+        // (0.25× at a 50% slider). Same fix on the 4 wrappers below; the
+        // newer cues (playHit, scav bark/death) already single-scale.
         let idx = Math.floor(Math.random() * 3);
         let name = 'miniExplosion_' + idx;
 
-        let gainVal = sfxVol;
+        let gainVal = 1.0;
         let cutoff = 20000;
         let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('explosion', d);
-            gainVal = settings.vol * sfxVol;
+            gainVal = settings.vol;
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
@@ -5375,14 +5380,13 @@ class AudioEngine {
 
     playGrenadeThrow(x = null, y = null) {
         if (!this.ctx) return;
-        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-        let gainVal = 0.8 * sfxVol;
+        let gainVal = 0.8;
         let cutoff = 20000;
         let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('hit', d);
-            gainVal = settings.vol * 0.8 * sfxVol;
+            gainVal = settings.vol * 0.8;
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
@@ -5391,14 +5395,13 @@ class AudioEngine {
 
     playMinePlace(x = null, y = null) {
         if (!this.ctx) return;
-        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-        let gainVal = 0.85 * sfxVol;
+        let gainVal = 0.85;
         let cutoff = 20000;
         let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('hit', d);
-            gainVal = settings.vol * 0.85 * sfxVol;
+            gainVal = settings.vol * 0.85;
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
@@ -5407,14 +5410,13 @@ class AudioEngine {
 
     playFpvLaunch(x = null, y = null) {
         if (!this.ctx) return;
-        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-        let gainVal = 0.8 * sfxVol;
+        let gainVal = 0.8;
         let cutoff = 20000;
         let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('hit', d);
-            gainVal = settings.vol * 0.8 * sfxVol;
+            gainVal = settings.vol * 0.8;
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
@@ -5423,14 +5425,13 @@ class AudioEngine {
 
     playWeaponSwitch(x = null, y = null) {
         if (!this.ctx) return;
-        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-        let gainVal = 0.75 * sfxVol;
+        let gainVal = 0.75;
         let cutoff = 20000;
         let delay = 0;
         if (x !== null && y !== null) {
             let d = this.getDistanceToPlayers(x, y);
             let settings = this.getSpatialSettings('hit', d);
-            gainVal = settings.vol * 0.75 * sfxVol;
+            gainVal = settings.vol * 0.75;
             cutoff = settings.cutoff;
             delay = settings.delay;
         }
@@ -5649,11 +5650,11 @@ class AudioEngine {
         }
         source.playbackRate.value = rate * evRate;
 
-        // 2. Gain/Volume (Supersonic cracks are noticeably louder/harsher)
-        let sfxVol = (game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
+        // 2. Gain/Volume (Supersonic cracks are noticeably louder/harsher).
+        // HP-17: single-scale (chain ends at sfxGain, already at sfxVolume).
         const gainNode = this.ctx.createGain();
         let baseVolMultiplier = isSupersonic ? 1.6 : 1.0;
-        gainNode.gain.value = intensity * sfxVol * baseVolMultiplier;
+        gainNode.gain.value = intensity * baseVolMultiplier;
 
         source.connect(gainNode);
         
@@ -5717,8 +5718,7 @@ class AudioEngine {
         source.buffer = this.bakedBuffers['telegraph_tick'];
         source.playbackRate.value = 0.7 + Math.min(1, Math.max(0, prog)) * 0.7;
         const gainNode = this.ctx.createGain();
-        let sfxVol = (typeof game !== 'undefined' && game && game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-        gainNode.gain.value = vol * sfxVol;
+        gainNode.gain.value = vol; // HP-17: single-scale (chain ends at sfxGain)
         source.connect(gainNode);
         let panner = null;
         if (this.ctx.createStereoPanner) {
@@ -13029,8 +13029,8 @@ class MapGen {
     }
 
     // ==== FPV OPERATOR MODE: roof/canopy reveal + foliage rendering ====
-    // No-ops entirely unless templateId === 11 -- never called from any
-    // Normal/Sandbox render path.
+    // No-ops entirely unless templateId === 11. Runs in every mode on
+    // template 11 (players are lookers too), not just operator mode.
 
     // Called once per frame from Game.update (not render) so alpha lerps
     // advance at simulation rate, not render rate.
@@ -13131,12 +13131,55 @@ class MapGen {
                 ctx.arc(sx, sy, f.r, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
+                // Woody heart: faint branch sticks under the leaves, hashed
+                // per-bush from position (draw-only; f.x/f.y/f.r untouched).
+                const _b1 = ((((Math.sin(f.x * 12.9898 + f.y * 78.233) * 43758.5453) % 1) + 1) % 1) * 6.2831853;
+                ctx.globalAlpha = 0.45;
+                ctx.strokeStyle = f.colorTrunk || '#2b1d10';
+                ctx.lineWidth = Math.max(1.5, f.r * 0.07);
+                ctx.beginPath();
+                for (let _bi = 0; _bi < 3; _bi++) {
+                    const _ba = _b1 + _bi * 2.0944;
+                    ctx.moveTo(sx, sy);
+                    ctx.lineTo(sx + Math.cos(_ba) * f.r * 0.55, sy + Math.sin(_ba) * f.r * 0.55);
+                }
+                ctx.stroke();
+                // Top-left rim light (same light source as the wall shadows).
+                ctx.globalAlpha = 0.8;
+                ctx.strokeStyle = f.colorCanopy || '#3a6b3a';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(sx, sy, f.r - 1, Math.PI * 0.8, Math.PI * 1.3);
+                ctx.stroke();
                 ctx.restore();
             } else {
-                // Tree trunk only at ground level -- canopy drawn separately, above entities
+                // Trunk disc + root flare + low branch sticks, all UNDER
+                // the canopy pass (drawn later, above entities).
                 ctx.save();
+                // Soft ground shadow, offset away from the top-left light.
+                ctx.globalAlpha = 0.22;
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.ellipse(sx + f.r * 0.12, sy + f.r * 0.16, f.r * 0.85, f.r * 0.7, 0, 0, Math.PI * 2);
+                ctx.fill();
+                // Trunk disc.
+                ctx.globalAlpha = 1;
                 ctx.fillStyle = f.colorTrunk || '#2b1d10';
-                ctx.fillRect(sx - f.r * 0.12, sy - f.r * 0.12, f.r * 0.24, f.r * 0.24);
+                ctx.beginPath();
+                ctx.arc(sx, sy, Math.max(2.5, f.r * 0.14), 0, Math.PI * 2);
+                ctx.fill();
+                // Roots + low branches, hashed per-tree (one batched path).
+                const _t1 = ((((Math.sin(f.x * 12.9898 + f.y * 78.233 + 4.7) * 43758.5453) % 1) + 1) % 1) * 6.2831853;
+                ctx.globalAlpha = 0.55;
+                ctx.strokeStyle = f.colorTrunk || '#2b1d10';
+                ctx.lineWidth = Math.max(2, f.r * 0.06);
+                ctx.beginPath();
+                for (let _ti = 0; _ti < 4; _ti++) {
+                    const _ta = _t1 + _ti * 1.5708;
+                    ctx.moveTo(sx + Math.cos(_ta) * f.r * 0.1, sy + Math.sin(_ta) * f.r * 0.1);
+                    ctx.lineTo(sx + Math.cos(_ta) * f.r * 0.5, sy + Math.sin(_ta) * f.r * 0.5);
+                }
+                ctx.stroke();
                 ctx.restore();
             }
         }
@@ -13418,6 +13461,13 @@ class MapGen {
             ctx.beginPath();
             ctx.arc(sx, sy, f.r * 0.55, 0, Math.PI * 2);
             ctx.fill();
+            // Leaf-cluster texture: two flat darker puffs at hashed offsets
+            // (no gradients — see the PERF note above).
+            const _c1 = ((((Math.sin(f.x * 12.9898 + f.y * 78.233 + 9.3) * 43758.5453) % 1) + 1) % 1) * 6.2831853;
+            ctx.beginPath();
+            ctx.arc(sx + Math.cos(_c1) * f.r * 0.38, sy + Math.sin(_c1) * f.r * 0.38, f.r * 0.3, 0, Math.PI * 2);
+            ctx.arc(sx - Math.cos(_c1) * f.r * 0.33, sy - Math.sin(_c1) * f.r * 0.33, f.r * 0.24, 0, Math.PI * 2);
+            ctx.fill();
             ctx.restore();
         }
     }
@@ -13431,8 +13481,15 @@ class MapGen {
         for (let roof of this.roofs) {
             if (roof.x + roof.w < cam.x - bufferX || roof.x > cam.x + visibleW + bufferX ||
                 roof.y + roof.h < cam.y - bufferY || roof.y > cam.y + visibleH + bufferY) continue;
-            if (roof.alpha < 0.02) continue;
             let sx = roof.x - cam.x, sy = roof.y - cam.y;
+            // Drop shadow: constant alpha (the mass still stands after the
+            // roof reveals), offset away from the top-left light. One fill.
+            ctx.save();
+            ctx.globalAlpha = 0.3;
+            ctx.fillStyle = '#000';
+            ctx.fillRect(sx + 6, sy + 8, roof.w, roof.h);
+            ctx.restore();
+            if (roof.alpha < 0.02) continue;
             ctx.save();
             ctx.globalAlpha = roof.alpha;
             ctx.fillStyle = roof.fillColor || '#0d1f12';
@@ -18493,7 +18550,7 @@ class Player extends Entity {
         if (typeof game !== 'undefined' && game) {
             const ang = (this.lastHitAngle !== undefined && this.lastHitAngle !== null)
                 ? this.lastHitAngle : Math.random() * Math.PI * 2;
-            game.spawnBlood(this.x, this.y, Math.cos(ang) * 300, Math.sin(ang) * 300);
+            game.spawnBlood(this.x, this.y, Math.cos(ang) * 300, Math.sin(ang) * 300, true);
             game.spawnCorpseDebris(this.x, this.y, ang, this.bodyColor || '#fff', this.r, this.lastOverkill || 0, this.maxHp || 100);
             game.spawnCorpseDebris(this.x, this.y, ang, this.color, this.r * 0.75, this.lastOverkill || 0, this.maxHp || 100);
             game.spawnDeathBurst(this.x, this.y);
@@ -18693,7 +18750,6 @@ class Enemy extends Entity {
         this.wounded = false;
         this._coverTimer = 0;
         this._coverPoint = null;
-        this._coverHold = false;
         // PHASE 2 (tactical AI foundations) -- ALL pool-reset, per the
         // Phase 1 gotcha about fields leaking across Enemy reuse:
         // - reactionDelay: this body's innate sluggishness, rolled once.
@@ -18823,11 +18879,9 @@ class Enemy extends Entity {
             if (!this.wounded && hpRatio <= TACTICAL_TUNING.GRUNT_WOUND_ENTER) {
                 this.wounded = true;
                 this._coverPoint = null;
-                this._coverHold = false;
             } else if (this.wounded && hpRatio >= TACTICAL_TUNING.GRUNT_WOUND_EXIT) {
                 this.wounded = false;
                 this._coverPoint = null;
-                this._coverHold = false;
             }
         }
 
@@ -19298,76 +19352,45 @@ class Enemy extends Entity {
             
             // Player visibility check (for rendering/opacity/name visibility)
             let visibleToPlayers = false;
+            // HP-20: visibility runs the true segment query for EVERY
+            // weapon type now (was: enemy-near walls only for non-snipers,
+            // which rendered enemies "visible" through far cover the player
+            // hid behind). Same per-eye shape + short-circuit guards as the
+            // old sniper path, so the two branches collapsed into one.
+            // (The window-fire gate above keeps its own enemy-near
+            // approximation deliberately — that one is combat behavior
+            // with a stair-routing reason, not a visibility read.)
             if (game) {
-                if (this.weaponType === 'sniper') {
-                    if (!game.player.dead && MathUtils.viewSeesPoint(game.player, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player.x, game.player.y))) {
-                        visibleToPlayers = true;
-                    }
-                    if (!visibleToPlayers && game.isTwoPlayer && game.player2 && !game.player2.dead && MathUtils.viewSeesPoint(game.player2, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player2.x, game.player2.y))) {
-                        visibleToPlayers = true;
-                    }
-                    if (!visibleToPlayers && game.player && game.player.activeDrone && !game.player.activeDrone.dead && MathUtils.viewSeesPoint(game.player.activeDrone, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y))) {
-                        visibleToPlayers = true;
-                    }
-                    if (!visibleToPlayers && game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && MathUtils.viewSeesPoint(game.player2.activeDrone, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y))) {
-                        visibleToPlayers = true;
-                    }
-                    if (!visibleToPlayers && game.dogs) {
-                        for (let dog of game.dogs) {
-                            if (!dog.dead && MathUtils.viewSeesPoint(dog, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, dog.x, dog.y))) {
-                                visibleToPlayers = true;
-                                break;
-                            }
+                if (!game.player.dead && MathUtils.viewSeesPoint(game.player, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player.x, game.player.y))) {
+                    visibleToPlayers = true;
+                }
+                if (!visibleToPlayers && game.isTwoPlayer && game.player2 && !game.player2.dead && MathUtils.viewSeesPoint(game.player2, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player2.x, game.player2.y))) {
+                    visibleToPlayers = true;
+                }
+                if (!visibleToPlayers && game.player && game.player.activeDrone && !game.player.activeDrone.dead && MathUtils.viewSeesPoint(game.player.activeDrone, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player.activeDrone.x, game.player.activeDrone.y))) {
+                    visibleToPlayers = true;
+                }
+                if (!visibleToPlayers && game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && MathUtils.viewSeesPoint(game.player2.activeDrone, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, game.player2.activeDrone.x, game.player2.activeDrone.y))) {
+                    visibleToPlayers = true;
+                }
+                if (!visibleToPlayers && game.dogs) {
+                    for (let dog of game.dogs) {
+                        if (!dog.dead && MathUtils.viewSeesPoint(dog, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, dog.x, dog.y))) {
+                            visibleToPlayers = true;
+                            break;
                         }
                     }
-                    if (!visibleToPlayers && game.securityCameras) {
-                        for (let cam of game.securityCameras) {
-                            if (cam.dead) continue;
-                            let d = Math.hypot(this.x - cam.x, this.y - cam.y);
-                            if (d <= cam.scanRange) {
-                                let toEnemy = Math.atan2(this.y - cam.y, this.x - cam.x);
-                                if (Math.abs(MathUtils.angleDifference(toEnemy, cam.angle)) <= cam.halfFov) {
-                                    if (MathUtils.viewSeesPoint(cam, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, cam.x, cam.y))) {
-                                        visibleToPlayers = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    let checkWalls = nearbyWalls;
-                    if (!game.player.dead && MathUtils.viewSeesPoint(game.player, this.x, this.y, checkWalls)) {
-                        visibleToPlayers = true;
-                    }
-                    if (game.isTwoPlayer && game.player2 && !game.player2.dead && MathUtils.viewSeesPoint(game.player2, this.x, this.y, checkWalls)) {
-                        visibleToPlayers = true;
-                    }
-                    if (game.player && game.player.activeDrone && !game.player.activeDrone.dead && MathUtils.viewSeesPoint(game.player.activeDrone, this.x, this.y, checkWalls)) {
-                        visibleToPlayers = true;
-                    }
-                    if (game.player2 && game.player2.activeDrone && !game.player2.activeDrone.dead && MathUtils.viewSeesPoint(game.player2.activeDrone, this.x, this.y, checkWalls)) {
-                        visibleToPlayers = true;
-                    }
-                    if (game.dogs) {
-                        for (let dog of game.dogs) {
-                            if (!dog.dead && MathUtils.viewSeesPoint(dog, this.x, this.y, checkWalls)) {
-                                visibleToPlayers = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!visibleToPlayers && game.securityCameras) {
-                        for (let cam of game.securityCameras) {
-                            if (cam.dead) continue;
-                            let d = Math.hypot(this.x - cam.x, this.y - cam.y);
-                            if (d <= cam.scanRange) {
-                                let toEnemy = Math.atan2(this.y - cam.y, this.x - cam.x);
-                                if (Math.abs(MathUtils.angleDifference(toEnemy, cam.angle)) <= cam.halfFov) {
-                                    if (MathUtils.viewSeesPoint(cam, this.x, this.y, checkWalls)) {
-                                        visibleToPlayers = true;
-                                        break;
-                                    }
+                }
+                if (!visibleToPlayers && game.securityCameras) {
+                    for (let cam of game.securityCameras) {
+                        if (cam.dead) continue;
+                        let d = Math.hypot(this.x - cam.x, this.y - cam.y);
+                        if (d <= cam.scanRange) {
+                            let toEnemy = Math.atan2(this.y - cam.y, this.x - cam.x);
+                            if (Math.abs(MathUtils.angleDifference(toEnemy, cam.angle)) <= cam.halfFov) {
+                                if (MathUtils.viewSeesPoint(cam, this.x, this.y, game.map.getWallsAlongSegment(this.x, this.y, cam.x, cam.y))) {
+                                    visibleToPlayers = true;
+                                    break;
                                 }
                             }
                         }
@@ -19852,7 +19875,7 @@ class Enemy extends Entity {
                         let cp = MathUtils.closestPointOnSegment(this.x, this.y, target.ax, target.ay, target.bx, target.by);
                         let dist = Math.hypot(this.x - cp.x, this.y - cp.y);
                         if (dist < this.r + target.r + 5) {
-                            target.hp -= 300;
+                            game.damageBarrier(target, 300);
                             this.hp = 0;
                             this.dead = true;
                             this.onDeath();
@@ -19862,9 +19885,6 @@ class Enemy extends Entity {
                             game.camera.punchZoom(0.05);
                             if (game.camera2) game.camera2.punchZoom(0.05);
                             if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, 120, 300);
-                            if (target.hp <= 0) {
-                                game.barriers = game.barriers.filter(b => b !== target);
-                            }
                             // Trigger small particle blast
                             for (let i = 0; i < 20; i++) {
                                 let a = Math.random() * Math.PI*2;
@@ -20367,7 +20387,6 @@ class Enemy extends Entity {
                 if (cdx * cdx + cdy * cdy > 900) return this._coverPoint; // 30px arrival
                 // Arrived: an intentional stand (hold site 4) so the stuck
                 // detector reads it as a deliberate hold, not a wedge.
-                this._coverHold = true;
                 this._intentionalHold = true;
             }
             // No cover found (or already there) -- stand and fight; the
@@ -21774,7 +21793,7 @@ class Enemy extends Entity {
         
         // Death blood burst
         let angle = this.lastHitAngle || 0;
-        game.spawnBlood(this.x, this.y, Math.cos(angle) * 300, Math.sin(angle) * 300);
+        game.spawnBlood(this.x, this.y, Math.cos(angle) * 300, Math.sin(angle) * 300, true);
 
         // Corpse debris in enemy's color -- overkill (see Entity.takeDamage)
         // tightens the spread and boosts speed along the impact angle for a
@@ -22294,7 +22313,6 @@ class Operative extends Enemy {
                 if (cdx * cdx + cdy * cdy > 3600) return this._coverPoint; // 60px arrival
                 // Arrived at the medic (or cover): an intentional stand so the
                 // stuck detector doesn't shove a patient out of channel range.
-                this._coverHold = true;
                 this._intentionalHold = true;
             }
             // No cover found (or already there) -- stand and fight. Still
@@ -23211,7 +23229,7 @@ class ApcBoss extends Boss {
             seatWorldX, seatWorldY - 20, `${seatKey.toUpperCase()} GUNNER DOWN`, '#ffb700', 1.6, 0, -60, 100, false
         ));
         audio.playHit(seatWorldX, seatWorldY);
-        game.spawnBlood(seatWorldX, seatWorldY, seat.fallVX, seat.fallVY);
+        game.spawnBlood(seatWorldX, seatWorldY, seat.fallVX, seat.fallVY, true);
 
         if (!this.seats.left.alive && !this.seats.right.alive && !this.seats.roof.alive && !this.dead) {
             this.hp = 0;
@@ -23645,6 +23663,15 @@ class BossDrone {
         this.life = 12; // despawns on its own well before it could become a permanent nuisance
         this.spinPhase = Math.random() * Math.PI * 2;
     }
+    // Teardown contract: every class parked in game.bossDrones must answer
+    // stopAudio() — the update prune, the wave wipe, the run reset, and
+    // _stopRunAudio all sweep that array blindly. This drone holds no
+    // persistent voices (no hum; explosion one-shots only), so this is a
+    // documented no-op rather than a missing method (a missing method here
+    // threw every frame: the prune's removal lines were skipped, update()
+    // aborted before the particle/decal tail, and abandon-to-menu crashed
+    // uncaught — 2026-09-07).
+    stopAudio() {}
     // Shot down by a player bullet -- a real (small) explosion, not a fizzle:
     // it's a live explosive drone, so getting shot out of the air should
     // feel like a legitimate kill, with a scorch mark and a bit of punch,
@@ -24238,8 +24265,7 @@ class EnemyFPVDrone {
                     fFreq = baseFreq * MathUtils.clamp(1.0 + v_rel / 800, 0.55, 1.7);
                 }
             }
-            let sfxVol = (game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-            this.oscGain.gain.setValueAtTime(vol * 0.25 * sfxVol, audio.ctx.currentTime);
+            this.oscGain.gain.setValueAtTime(vol * 0.25, audio.ctx.currentTime); // HP-17: single-scale (oscGain feeds sfxGain)
             this.osc.frequency.setValueAtTime(fFreq, audio.ctx.currentTime);
             if (this.oscFilter) this.oscFilter.frequency.setValueAtTime(filterFreq, audio.ctx.currentTime);
         }
@@ -26181,8 +26207,7 @@ class FPVDrone {
                         finalFilter = filterFreq2;
                     }
                     
-                    let sfxVol = (game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-                    let targetGain = finalVol * 0.25 * sfxVol;
+                    let targetGain = finalVol * 0.25; // HP-17: single-scale (oscGain feeds sfxGain)
                     
                     this.oscGain.gain.setValueAtTime(targetGain, audio.ctx.currentTime);
                     this.osc.frequency.setValueAtTime(finalFreq, audio.ctx.currentTime);
@@ -29747,8 +29772,7 @@ class MiniDrone extends Entity {
                     finalFilter = filterFreq2;
                 }
                 
-                let sfxVol = (game.saveData && game.saveData.sfxVolume !== undefined) ? game.saveData.sfxVolume : 0.5;
-                let targetGain = finalVol * 0.22 * sfxVol * (0.35 + 0.65 * evRate);
+                let targetGain = finalVol * 0.22 * (0.35 + 0.65 * evRate); // HP-17: single-scale (oscGain feeds sfxGain)
                 
                 this.oscGain.gain.setValueAtTime(targetGain, audio.ctx.currentTime);
                 this.osc.frequency.setValueAtTime(finalFreq, audio.ctx.currentTime);
@@ -31928,6 +31952,7 @@ class Particle {
         this.debrisColor = '#fff';
         this.paintTrail = false;
         this.finalOpacity = 0.5;
+        this.isGib = false;
     }
     update(dt) {
         if (this.stopped) return;
@@ -33401,21 +33426,28 @@ function setCrosshairPos(el, x, y) {
 // TILED DECAL LAYER for permanent ground marks (blood / trail / debris /
 // scorch). Each mark is stamped ONCE into a small offscreen tile canvas the
 // moment it's created; thereafter every live tile is blitted with a single
-// drawImage per frame instead of re-stroking each mark's path. Tiles do NOT
-// fade by time -- they persist for the whole run until their layer's tile
-// budget (derived from the "Max Marks" setting, see _decalCap) is exceeded,
-// then the coldest tile is LRU-evicted. The budget bounds total tiles (memory)
+// drawImage per frame instead of re-stroking each mark's path. Tiles fade by
+// age (FADE_SEC after birth, see drawPermanentMarks) AND shed by count —
+// whichever drops them first — so the map cycles like the old mark pool did
+// instead of baking alpha additively forever on small maps.
 // and the viewport cull bounds per-frame cost to O(visible tiles), not
 // O(all marks). See Game._stampMark / Game.drawPermanentMarks / _decalCap.
 const MARK_TILES = {
     SIZE: 256,       // world units per tile edge
-    // Lifetime is now COUNT-based, not time-based: a tile lives for the whole
-    // run until the layer's tile budget (derived from the "Max Marks" setting,
-    // see _decalCap) is exceeded, then the coldest (least-recently-stamped)
-    // tile is LRU-evicted. No fade -- decals persist until evicted.
+    // Lifetime is count AND time: a tile sheds when its layer's tile budget
+    // (derived from the "Max Marks" setting, see _decalCap) is exceeded
+    // (coldest evicted first) or when it reaches FADE_SEC after birth —
+    // whichever comes first. The fade restores the old mark pool's cycling.
     MIN_TILES: 32,      // floor on the budget when "Max Marks" is ~0
     MAX_TILES: 2048,    // hard memory ceiling per layer (~256 MB; raised from 1024)
-    MARKS_PER_TILE: 20  // "Max Marks" -> tile budget divisor (30000 default -> 1500)
+    MARKS_PER_TILE: 20, // "Max Marks" -> tile budget divisor (30000 default -> 1500)
+    FADE_SEC: 240,      // time fade (game-seconds, see drawPermanentMarks): a tile
+                        // blits from full alpha down to transparent over this
+                        // window after its BIRTH, then drops. Restores the old
+                        // 30,000-mark pool's cycling look — without it, small
+                        // maps (tile count under budget) accumulate baked
+                        // alpha additively forever and fresh blood stops
+                        // reading against the saturated ground.
 };
 
 class Game {
@@ -33608,7 +33640,6 @@ class Game {
         this.embers = [];
         this.chromaticAberrationTimer = 0;
         this.gloryKillTimer = 0;
-        this.gloryKillTarget = null;
         this.baseTimeScale = 1.0;
         
         // Wave Mutator state
@@ -33966,6 +33997,25 @@ class Game {
         return arr;
     }
 
+    // OQ-003 (operator call): the single choke for barrier damage.
+    // Barriers are plain structs, not Entities, so the takeDamage choke
+    // can't own them — this owns the hp-subtract + removal instead, so a
+    // future armor/credit/ledger concept has one place to land. Returns
+    // true when the hit broke the barrier. FX stays at the call sites
+    // (each damage source has its own tell). First routed caller: the
+    // sapper's capsule-barrier branch (was raw `target.hp -= 300`); the
+    // bullet/blast raw-hp sites are the same shape and can follow.
+    damageBarrier(bar, amt) {
+        if (!bar || !(amt > 0)) return false;
+        bar.hp -= amt;
+        if (bar.hp <= 0) {
+            const i = this.barriers.indexOf(bar);
+            if (i !== -1) this.barriers.splice(i, 1);
+            return true;
+        }
+        return false;
+    }
+
     getEnemyBulletBlastEntities() {
         let arr = this._nextBlastScratch();
         
@@ -33985,6 +34035,11 @@ class Game {
         }
         if (this.riftStations) {
             for (let i = 0; i < this.riftStations.length; i++) arr.push(this.riftStations[i]);
+        }
+        // BUG-011 (operator call): boss HE hits hostages, same as enemy
+        // frags — escort risk is consistent across blast sources.
+        if (this.hostages) {
+            for (let i = 0; i < this.hostages.length; i++) arr.push(this.hostages[i]);
         }
         return arr;
     }
@@ -34482,7 +34537,6 @@ class Game {
         this.prepTimer = EXTRACTION_TUNING.INSERTION_PREP;
         this.enemiesToSpawn = 9999;
         this.activeMutator = null;
-        this.allEnemiesAreElite = false;
         this.isBossWave = false;
         this.pendingBossKey = null;
         this.spawnTimer = 0;
@@ -35657,8 +35711,6 @@ class Game {
         this.timeScale = 0.08;
         this.gloryKillTimer = 1.2;
         if (this.runLedger) this.runLedger.recordGloryKill(); // PHASE 0
-        // Store target position for UI/effects but do NOT pan camera to it
-        this.gloryKillTarget = { x: enemy.x, y: enemy.y };
         // Strong zoom punch to signal the kill, stays player-centered
         if (this.camera) this.camera.punchZoom(0.14);
         if (this.camera2) this.camera2.punchZoom(0.14);
@@ -35891,7 +35943,7 @@ class Game {
             // Spawn from across the body's disc, not a single point.
             let ox = (Math.random() - 0.5) * 2 * (enemyRadius || 12) * 0.7;
             let oy = (Math.random() - 0.5) * 2 * (enemyRadius || 12) * 0.7;
-            let p = this.spawnParticle(x + ox, y + oy, vx, vy, enemyColor, life, size);
+            let p = this.spawnParticle(x + ox, y + oy, vx, vy, enemyColor, life, size, true);
             if (p) {
                 p.isCorpseDebris = true;
                 p.debrisColor = enemyColor;
@@ -35956,15 +36008,13 @@ class Game {
         // the player's chosen map and only falls back to Random (-1) when
         // nothing specific is selected -- picking a map and then hitting
         // the big green button should deploy INTO that map, not stomp the
-        // choice. Template 11 can't leak in here: it's Operator-only, and
-        // setGameMode('normal') above already snapped selectedMapId 11
-        // back to -1 (see its "reset off the forced operator map" branch);
-        // the !== 11 guard below is belt-and-suspenders for that invariant.
+        // choice. Template 11 is a legitimate pick now (CLASSIFIED button):
+        // setGameMode('normal') above only snaps it away when it was
+        // operator-forced, so a chosen 11 survives to here honestly.
         // setMap() is still called either way so the button highlight +
         // preview pane stay in sync with what actually deploys.
         const keepMap = Number.isFinite(this.selectedMapId)
-            && this.selectedMapId !== -1
-            && this.selectedMapId !== 11;
+            && this.selectedMapId !== -1;
         this.setMap(keepMap ? this.selectedMapId : -1);
         let originalText = '';
         if (btn) {
@@ -36040,9 +36090,11 @@ class Game {
             if (this.renderCustomMapsList) this.renderCustomMapsList();
         }
         this.selectedMapId = mapId;
-        // HP-10: '17' (Terraces) is a real selectable template (btn-map-17)
-        // -- '11' stays omitted (operator-forced, not a menu pick).
-        const ids = ['random', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '12', '13', '14', '15', '16', '17'];
+        // HP-10: '17' (Terraces) is a real selectable template (btn-map-17).
+        // OQ-006 (operator call): '11' (Perimeter gauntlet) surfaced as a
+        // CLASSIFIED pick (btn-map-11) — normal-mode play on the tall map
+        // is untested by design, not by accident.
+        const ids = ['random', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17'];
         ids.forEach(id => {
             const btn = document.getElementById('btn-map-' + id);
             if (btn) {
@@ -37877,6 +37929,7 @@ class Game {
                 ...customMapRows,
                 ['btn-map-random'],
                 ['btn-map-10'],
+                ['btn-map-11'],
                 ['btn-map-0'],
                 ['btn-map-1'],
                 ['btn-map-2'],
@@ -42547,7 +42600,12 @@ class Game {
         this.isInitializingParticles = true;
         this.particles = [];
         this.inactiveParticles = [];
-        this.particlePoolSize = 800;
+        this.particlePoolSize = 1600;
+        // GIB RESERVE (2026-09-07): death bursts are steal-protected (see
+        // spawnParticle). Ordinary FX skips gib-flagged particles when
+        // stealing, scanning at most this many oldest actives before
+        // falling back to oldest-anything.
+        this.gibStealScan = 128;
         
         for (let i = 0; i < this.particlePoolSize; i++) {
             let p = new Particle(0, 0, 0, 0, '#000', 0, 0);
@@ -42576,12 +42634,26 @@ class Game {
         this._glowCount++;
     }
 
-    spawnParticle(x, y, vx, vy, color, life, size) {
+    spawnParticle(x, y, vx, vy, color, life, size, isGib) {
         let p = null;
         if (this.inactiveParticles.length > 0) {
             p = this.inactiveParticles.pop();
         } else if (this.particles.length > 0) {
-            p = this.particles.shift();
+            if (isGib) {
+                p = this.particles.shift();
+            } else {
+                // Gib reserve: ordinary FX (per-hit blood, casings, muzzle)
+                // steals the oldest NON-GIB particle, so a bullet-hose can
+                // never eat a fresh death burst. Capped scan keeps this
+                // bounded; falls back to oldest-anything when the pool is
+                // legitimately all fresh gibs (same-frame mass kill).
+                p = null;
+                let scan = Math.min(this.particles.length, this.gibStealScan || 128);
+                for (let i = 0; i < scan; i++) {
+                    if (!this.particles[i].isGib) { p = this.particles[i]; this.particles.splice(i, 1); break; }
+                }
+                if (!p) p = this.particles.shift();
+            }
         }
         
         if (p) {
@@ -42601,6 +42673,7 @@ class Game {
             p.debrisColor = '#fff';
             p.paintTrail = false;
             p.finalOpacity = 0.5;
+            p.isGib = !!isGib;
         }
         return p;
     }
@@ -42844,7 +42917,7 @@ class Game {
                 // Operator forces map 11 inside setGameMode; don't fight it.
                 // HP-10: 17 (Terraces) is legal -- 11 stays excluded (operator-only).
                 if (c.mode !== 'operator' && Number.isFinite(c.mapId)) {
-                    const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17];
+                    const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
                     if (legalMaps.includes(c.mapId)) this.setMap(c.mapId);
                 }
                 if (typeof DIFFICULTY_TUNING !== 'undefined' && DIFFICULTY_TUNING[c.diff]) this.setDifficulty(c.diff);
@@ -42901,7 +42974,7 @@ class Game {
         const validModes = ['normal', 'sandbox', 'operator', 'now', 'extraction', 'chaos_draft', 'peaceful'];
         if (validModes.includes(c.mode)) this.setGameMode(c.mode);
         if (c.mode !== 'operator' && Number.isFinite(c.mapId)) {
-            const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17];
+            const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
             if (legalMaps.includes(c.mapId)) this.setMap(c.mapId);
         }
         if (typeof DIFFICULTY_TUNING !== 'undefined' && DIFFICULTY_TUNING[c.diff]) this.setDifficulty(c.diff);
@@ -43067,7 +43140,7 @@ class Game {
         // Point the base template selector at the saved map (updates preview +
         // highlight). Do this FIRST: setMap clears any *prior* custom staging,
         // then we install this one on top. HP-10: 17 (Terraces) is legal.
-        const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17];
+        const legalMaps = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
         if (legalMaps.includes(entry.mapId)) this.setMap(entry.mapId);
         this._pendingCustomMap = entry;                    // stage the wall payload
         this.pendingMapSeed = entry.mapSeed >>> 0;          // force the exact base (buildRunConfig lever)
@@ -43648,6 +43721,7 @@ class Game {
             this.boundAllies = [];
             this._oracleActive = false;
             this._oracleSampleDebt = 0;
+            this._oracleShopWave = null; // BUG-021: wave-1 shop must re-roll the dealer, not inherit the dead run's wave-1 roll
             // A trip's canvas wobble/hum/HUD must never leak into run+1.
             try {
                 if (this.canvas) this.canvas.style.filter = '';
@@ -43728,6 +43802,7 @@ class Game {
         this.isDevShopActive = false;
         this._manualShopActive = false;
         this._shopIntelPaidWave = null;
+        this._elitesKilledThisWave = 0; // BUG-020: elite credit is wave-scoped; a mid-wave death/abandon must not pay it into the next run
         this.winFlashIntensity = 0;
         this.roundWinDelay = 0;
         toggleClass('start-screen', 'hidden', true);
@@ -43935,7 +44010,7 @@ class Game {
         if (!this.hostages) this.hostages = []; // (reset properly in startNewGame; guard for legacy paths)
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
-                md.stopAudio();
+                if (md.stopAudio) md.stopAudio();
             }
         }
         this.miniDrones = [];
@@ -43952,7 +44027,6 @@ class Game {
         this.hurtDragRefractoryTimer = 0;
         this.blastMuffleTimer = 0;
         this.gloryKillTimer = 0;
-        this.gloryKillTarget = null;
         this.heartbeatTimer = 0;
         this.heartbeatPhase = 0;
         this.heartbeatIntensity = 0;
@@ -44039,7 +44113,7 @@ class Game {
 
         // ---- Boss run-state reset ----
         if (this.bossDrones) {
-            for (let d of this.bossDrones) d.stopAudio();
+            for (let d of this.bossDrones) if (d.stopAudio) d.stopAudio();
         }
         this.bossDrones = [];       // hostile drones launched by SpotBoss instances
         this.activeBoss = null;     // the currently-alive boss this run, if any (drives the boss HUD bar)
@@ -44214,7 +44288,6 @@ class Game {
             this.pendingBoss = null;
             this.pendingBossKey = null;
             this.activeMutator = null;
-            this.allEnemiesAreElite = false;
             this.prepTimer = 0;
             this.spawnTimer = 0;
             this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: 0.5 };
@@ -44299,7 +44372,6 @@ class Game {
         if (this.operatorMode) {
             this.enemiesToSpawn = OP_TUNING.WAVE_BASE_COUNT + this.wave * OP_TUNING.WAVE_PER_WAVE_COUNT;
             this.activeMutator = null;
-            this.allEnemiesAreElite = false;
             this.isBossWave = false;
             this.pendingBossKey = null;
             this.waveElapsedSeconds = 0;             // anti-turtle valve clock, see Enemy._updateOperatorAI
@@ -44317,7 +44389,6 @@ class Game {
             // Blackout/Swarm would undercut a boss's own telegraphs. The
             // boss itself is the wave's "special" already.
             this.activeMutator = null;
-            this.allEnemiesAreElite = false;
         }
         this.spawnTimer = 0;
         // TACTICAL WAVES: fresh squad-release state each wave. Short initial
@@ -44560,7 +44631,6 @@ class Game {
     rollWaveMutator() {
         // 1. Reset previous mutators
         this.activeMutator = null;
-        this.allEnemiesAreElite = false;
         
         // Restore nightMode to its pre-mutator value
         if (this.mutatorBaseNightMode !== undefined) {
@@ -44613,7 +44683,6 @@ class Game {
                 this.timeScale = 1.4 * (chronosOn ? 0.70 : 1.0);
             } else if (this.activeMutator === 'juggernaut') {
                 this.enemiesToSpawn = Math.max(1, Math.round((5 + this.wave * 4) * 0.25));
-                this.allEnemiesAreElite = true;
             }
             
             // Spawn large warning banner
@@ -44654,11 +44723,11 @@ class Game {
     // blood color cannot silently lose its decal.
     _isBloodDecal(c) { return c === '#800a0a' || c === '#e60000'; }
     _pickBlood() { return Math.random() > 0.2 ? '#800a0a' : '#e60000'; }
-    spawnBlood(x, y, hitVx, hitVy) {
+    spawnBlood(x, y, hitVx, hitVy, isDeathBurst) {
         for(let i=0; i<18; i++) {
             let angle = Math.atan2(hitVy, hitVx) + (Math.random()-0.5)*1.6;
             let spd = Math.random() * 500 + 80;
-            let p = this.spawnParticle(x, y, Math.cos(angle)*spd, Math.sin(angle)*spd, this._pickBlood(), 1.2, MathUtils.rand(2.5,5.5));
+            let p = this.spawnParticle(x, y, Math.cos(angle)*spd, Math.sin(angle)*spd, this._pickBlood(), 1.2, MathUtils.rand(2.5,5.5), isDeathBurst);
             if (p) this.particles.push(p);
         }
     }
@@ -46549,7 +46618,7 @@ class Game {
             if (this.state !== 'playing') return;
         }
 
-        if (this.operatorMode && this.map && this.map.updateOperatorRoofAlpha) {
+        if (this.map && this.map.templateId === 11 && this.map.updateOperatorRoofAlpha) {
             this.map.updateOperatorRoofAlpha(dt);
         }
         if (this.operatorMode) {
@@ -46985,7 +47054,7 @@ class Game {
                 let d = this.bossDrones[i];
                 d.update(dt * this.fieldTimeFactor(d.x, d.y, d), this);
                 if (d.dead) {
-                    d.stopAudio();
+                    if (d.stopAudio) d.stopAudio();
                     this.bossDrones[i] = this.bossDrones[this.bossDrones.length - 1];
                     this.bossDrones.pop();
                 }
@@ -47297,7 +47366,7 @@ class Game {
             for (let i = this.miniDrones.length - 1; i >= 0; i--) {
                 this.miniDrones[i].update(dt * this.fieldTimeFactor(this.miniDrones[i].x, this.miniDrones[i].y, this.miniDrones[i]), this);
                 if (this.miniDrones[i].dead) {
-                    this.miniDrones[i].stopAudio();
+                    if (this.miniDrones[i].stopAudio) this.miniDrones[i].stopAudio();
                     this.miniDrones[i] = this.miniDrones[this.miniDrones.length - 1];
                     this.miniDrones.pop();
                 }
@@ -47574,7 +47643,6 @@ class Game {
                 // base as the true pre-slow-mo value.
                 if (this.gloryKillTimer > 0) {
                     this.gloryKillTimer = 0;
-                    this.gloryKillTarget = null;
                     this.timeScale = this.baseTimeScale;
                 }
                 this._preDeathTimeScale = this.timeScale;
@@ -47901,7 +47969,7 @@ class Game {
         this.bullets = [];
         this.grenades = [];
         if (this.bossDrones && this.bossDrones.length > 0) {
-            for (let d of this.bossDrones) d.stopAudio();
+            for (let d of this.bossDrones) if (d.stopAudio) d.stopAudio();
             this.bossDrones = [];
         }
         if (this.isBossWave) {
@@ -50255,6 +50323,11 @@ class Game {
         this.saveData.playerColorP2 = '';
         this.saveData.laserColorP1 = '';
         this.saveData.laserColorP2 = '';
+        // BUG-008: defense in depth — paint/tier selections reset explicitly
+        // instead of relying on the manipulatorPaint-ownership gate + the
+        // manipBuildTierInfo read-time clamp to hide them.
+        this.saveData.wallColor = '';
+        this.saveData.buildTier = '';
         this.saveGameData();
 
         // Refresh all dependent menus.
@@ -51120,6 +51193,10 @@ class Game {
 
     setGameMode(mode) {
         // mode: 'normal' | 'sandbox' | 'operator' | 'now' | 'extraction' | 'chaos_draft' | 'peaceful'
+        // OQ-006 follow-up: template 11 is a legitimate menu pick now, so
+        // leaving operator mode must only snap off 11 when 11 was FORCED
+        // by operator mode — never when the player chose it themselves.
+        const prevMode = this.gameMode;
         this.gameMode = mode;
         this.isTestingMode = (mode === 'sandbox');
         this.operatorMode = (mode === 'operator');
@@ -51170,8 +51247,10 @@ class Game {
             if (mapListEl) mapListEl.style.pointerEvents = 'auto';
             ffButtons.forEach(b => { if (b) { b.disabled = false; b.style.opacity = '1'; } });
             if (coopBtn) { coopBtn.disabled = false; coopBtn.style.opacity = '1'; }
-            // Only reset off the forced operator map if we were actually on it
-            if (this.selectedMapId === 11) this.setMap(-1);
+            // Only reset off the forced operator map: leaving operator mode
+            // snaps a forced 11 back to Random, but a player-CHOSEN 11
+            // survives mode switches (Instant Deploy + Action Now included).
+            if (this.selectedMapId === 11 && prevMode === 'operator') this.setMap(-1);
         }
 
         // ACTION NOW replaces the Starting Funds slider outright with a
@@ -51409,7 +51488,7 @@ class Game {
         // paths -- debrief and straight-to-menu -- share the same cleanup.)
         if (this.miniDrones) {
             for (let md of this.miniDrones) {
-                md.stopAudio();
+                if (md.stopAudio) md.stopAudio();
             }
         }
         // Same oscillator-leak class as MiniDrone above: SpotBoss/FPV-pilot
@@ -51417,7 +51496,7 @@ class Game {
         // once the run ends.
         if (this.bossDrones) {
             for (let d of this.bossDrones) {
-                d.stopAudio();
+                if (d.stopAudio) d.stopAudio();
             }
         }
     }
@@ -52045,7 +52124,10 @@ class Game {
     _makeTile(tx, ty) {
         const cv = document.createElement('canvas');
         cv.width = MARK_TILES.SIZE; cv.height = MARK_TILES.SIZE;
-        return { cv, tctx: cv.getContext('2d'), x: tx * MARK_TILES.SIZE, y: ty * MARK_TILES.SIZE, lastTouched: performance.now() };
+        // born: game-time birth for the FADE_SEC age fade in
+        // drawPermanentMarks. Missing (pre-fade saves can't exist — tiles
+        // are per-run memory) reads as newborn at blit, never stillborn.
+        return { cv, tctx: cv.getContext('2d'), x: tx * MARK_TILES.SIZE, y: ty * MARK_TILES.SIZE, lastTouched: performance.now(), born: (typeof this.gameTime === 'number' ? this.gameTime : 0) };
     }
     _stampMarkIntoTile(tile, mark) {
         const c = tile.tctx, lx = mark.x - tile.x, ly = mark.y - tile.y;
@@ -52185,21 +52267,30 @@ class Game {
             flushRun();
         }
         // TILED DECAL LAYER: blit each visible live tile with a single
-        // drawImage at full alpha -- no time fade. Lifetime is count/LRU: a
-        // tile lives until its layer's budget (from the "Max Marks" setting,
-        // see _decalCap) is exceeded, then _stampMark LRU-evicts the coldest
-        // tile. Replaces the old O(all marks) cull-scan + per-mark path
-        // re-stroke; frame cost stays O(visible tiles) via the cull below.
-        // globalAlpha is pinned to 1 here so leftover state from the casing
-        // pass above can't leak into the blits.
+        // drawImage — no per-mark path re-stroke, no O(all marks) cull-scan.
+        // Lifetime is count/LRU (see MARK_TILES / _decalCap) PLUS age fade:
+        // a tile blits from full alpha to transparent over FADE_SEC after
+        // its birth, then drops. The fade is what keeps small maps (whose
+        // tile count never reaches the budget) cycling instead of baking
+        // alpha additively until fresh blood stops reading — and it frees
+        // the canvas as it goes. Deleting during Map iteration is safe.
+        // globalAlpha is pinned per-tile below so leftover state from the
+        // casing pass above can't leak into the blits.
         const tiles = deckOnly ? this.deckTiles : this.groundTiles;
         if (tiles && tiles.size) {
             const size = MARK_TILES.SIZE;
             const minWX = cam.x - size, maxWX = cam.x + viewW + size;
             const minWY = cam.y - size, maxWY = cam.y + viewH + size;
-            ctx.globalAlpha = 1; // full alpha: no time fade (lifetime is count/LRU -- see MARK_TILES / _decalCap)
-            for (const [, tile] of tiles) {
+            const nowT = (typeof this.gameTime === 'number' ? this.gameTime : 0);
+            const fadeS = (MARK_TILES.FADE_SEC || 0);
+            ctx.globalAlpha = 1;
+            for (const [tkey, tile] of tiles) {
                 if (tile.x + size < minWX || tile.x > maxWX || tile.y + size < minWY || tile.y > maxWY) continue;
+                if (fadeS > 0) {
+                    const a = 1 - (nowT - (tile.born === undefined ? nowT : tile.born)) / fadeS;
+                    if (a <= 0) { tiles.delete(tkey); continue; }
+                    ctx.globalAlpha = a < 1 ? a : 1;
+                }
                 ctx.drawImage(tile.cv, tile.x - cam.x, tile.y - cam.y, size, size);
             }
         }
@@ -54581,7 +54672,6 @@ class Game {
             this.gloryKillTimer -= dt;
             if (this.gloryKillTimer <= 0) {
                 this.gloryKillTimer = 0;
-                this.gloryKillTarget = null;
                 this.timeScale = this.baseTimeScale;
             }
         }
