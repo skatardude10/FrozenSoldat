@@ -447,6 +447,12 @@
         100% { transform: translateY(900px); }
     }
     .menu-box > * { position: relative; z-index: 1; }
+    /* Collapsible menu sections: full-width header row (arrow + label) over
+       a plain body div. Bodies hide with display:none so tall menus (settings
+       controls) fit short screens; the gamepad nav resolver skips hidden ids
+       so focus can never land inside a collapsed body. */
+    .sec-head { display: block; width: 100%; text-align: left; margin: 6px 0 4px; }
+    .sec-head .sec-arrow { display: inline-block; width: 1.2em; color: var(--neon-blue); }
     h1 { margin-top: 0; color: var(--neon-blue); text-shadow: 0 0 15px var(--neon-blue); text-transform: uppercase; letter-spacing: 2px; }
     p { line-height: 1.6; margin-bottom: 20px; font-size: 13px; color: #a9c2c7; }
     
@@ -1844,6 +1850,8 @@
 
             <!-- Settings sub-tab: CONTROLS -->
             <div id="tab-settings-controls" class="settings-subtab-content active">
+                <button id="btn-sec-move" class="sec-head" onclick="game.toggleMenuSection('sec-move')"><span class="sec-arrow">▾</span> MOVEMENT</button>
+                <div class="sec-body" id="sec-move">
                 <div style="margin-bottom: 15px;">
                     <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">WASD MOVEMENT MODE:</label><br>
                     <div style="display: flex; justify-content: center; gap: 15px; margin-top: 10px;">
@@ -1851,7 +1859,10 @@
                         <button id="btn-scheme-player" onclick="game.setScheme('player')">Player-Relative (Classic)</button>
                     </div>
                 </div>
+                </div>
 
+                <button id="btn-sec-touch" class="sec-head" onclick="game.toggleMenuSection('sec-touch')"><span class="sec-arrow">▾</span> TOUCH</button>
+                <div class="sec-body" id="sec-touch">
                 <!-- TOUCH INTERFACE (moved here from Game Options -- it's a
                      controls preference). Force On/Off/Auto-detect + virtual
                      stick size for phones/tablets. -->
@@ -1869,7 +1880,10 @@
                     </div>
                     <div style="font-size: 9px; color: #b0bec5; margin: 6px auto 0; max-width: 360px; text-align: center;">Resizes the on-screen virtual thumbsticks. Takes effect immediately on touch devices.</div>
                 </div>
-                
+                </div>
+
+                <button id="btn-sec-ref" class="sec-head" onclick="game.toggleMenuSection('sec-ref')"><span class="sec-arrow">▸</span> CONTROLS REFERENCE</button>
+                <div class="sec-body" id="sec-ref">
                 <div style="display: flex; gap: 15px; text-align: left; background: rgba(0, 10, 25, 0.6); padding: 12px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); max-height: 240px; overflow-y: auto;">
                     <div style="flex: 1;">
                         <div style="color: var(--neon-blue); font-weight: bold; border-bottom: 1px solid rgba(0,229,255,0.2); padding-bottom: 3px; margin-bottom: 8px; font-size: 11px;">KEYBOARD & MOUSE CONTROLS (P1)</div>
@@ -1905,9 +1919,12 @@
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.15);">
-                    <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px;">GAMEPAD ASSIGNMENT:</label>
+            <button id="btn-sec-pad" class="sec-head" onclick="game.toggleMenuSection('sec-pad')"><span class="sec-arrow">▾</span> GAMEPADS</button>
+            <div class="sec-body" id="sec-pad">
+            <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.15);">
+                <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px;">GAMEPAD ASSIGNMENT:</label>
                     <div style="font-size: 9px; color: #b0bec5; margin: 4px 0 10px;">Pin a specific controller to a player instead of relying on auto-detect. "None" keeps that player off gamepad entirely (e.g. for touch/KB+M only).</div>
 
                     <div style="margin-bottom: 10px;">
@@ -1936,7 +1953,10 @@
                         <div id="lbl-p2-gp-status" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
                     </div>
                 </div>
+                </div>
 
+                <button id="btn-sec-wife" class="sec-head" onclick="game.toggleMenuSection('sec-wife')"><span class="sec-arrow">▾</span> 🌸 WIFE MODE</button>
+                <div class="sec-body" id="sec-wife">
                 <!-- WIFE MODE: per-player accessibility assist (gentle aim
                      magnet + occasional auto-fire + half damage + comfort
                      picks). Fully legit runs. Persists in save, applies live
@@ -1958,6 +1978,7 @@
                             <button id="btn-p2-wife-on" onclick="game.setWifeMode(2, true)" style="font-size: 10px; padding: 4px 12px; margin: 0;">🌸 ON</button>
                         </div>
                     </div>
+                </div>
                 </div>
             </div>
 
@@ -2576,6 +2597,8 @@
         
         <!-- Tab content: CONTROLS -->
         <div id="tab-controls-pause" class="tab-content">
+            <button id="btn-sec-move-pause" class="sec-head" onclick="game.toggleMenuSection('sec-move-pause')"><span class="sec-arrow">▾</span> MOVEMENT</button>
+            <div class="sec-body" id="sec-move-pause">
             <div style="margin-bottom: 15px;">
                 <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">WASD MOVEMENT MODE:</label><br>
                 <div style="display: flex; justify-content: center; gap: 15px; margin-top: 10px;">
@@ -2583,7 +2606,10 @@
                     <button id="btn-scheme-player-pause" onclick="game.setScheme('player')">Player-Relative (Classic)</button>
                 </div>
             </div>
-            
+            </div>
+
+            <button id="btn-sec-ref-pause" class="sec-head" onclick="game.toggleMenuSection('sec-ref-pause')"><span class="sec-arrow">▸</span> CONTROLS REFERENCE</button>
+            <div class="sec-body" id="sec-ref-pause">
             <div style="display: flex; gap: 15px; text-align: left; background: rgba(0, 10, 25, 0.6); padding: 12px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); max-height: 240px; overflow-y: auto;">
                 <div style="flex: 1;">
                     <div style="color: var(--neon-blue); font-weight: bold; border-bottom: 1px solid rgba(0,229,255,0.2); padding-bottom: 3px; margin-bottom: 8px; font-size: 11px;">KEYBOARD & MOUSE CONTROLS (P1)</div>
@@ -2620,6 +2646,8 @@
                 </div>
             </div>
 
+            <button id="btn-sec-pad-pause" class="sec-head" onclick="game.toggleMenuSection('sec-pad-pause')"><span class="sec-arrow">▾</span> GAMEPADS</button>
+            <div class="sec-body" id="sec-pad-pause">
             <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.15);">
                 <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px;">GAMEPAD ASSIGNMENT:</label>
                 <div style="font-size: 9px; color: #b0bec5; margin: 4px 0 10px;">Pin a specific controller to a player instead of relying on auto-detect. "None" keeps that player off gamepad entirely (e.g. for touch/KB+M only).</div>
@@ -2650,6 +2678,10 @@
                     <div id="lbl-p2-gp-status-pause" style="font-size: 9px; color: #39ff14; margin-top: 4px;">Currently: —</div>
                 </div>
             </div>
+            </div>
+
+            <button id="btn-sec-wife-pause" class="sec-head" onclick="game.toggleMenuSection('sec-wife-pause')"><span class="sec-arrow">▾</span> 🌸 WIFE MODE</button>
+            <div class="sec-body" id="sec-wife-pause">
 
             <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(255, 159, 243, 0.25);">
                 <label style="font-weight: bold; color: #ff9ff3; letter-spacing: 1px; font-size: 11px;">🌸 WIFE MODE (COZY ASSIST):</label>
@@ -2666,8 +2698,10 @@
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
                         <button id="btn-p2-wife-off-pause" onclick="game.setWifeMode(2, false)" style="font-size: 10px; padding: 4px 12px; margin: 0;">OFF</button>
                         <button id="btn-p2-wife-on-pause" onclick="game.setWifeMode(2, true)" style="font-size: 10px; padding: 4px 12px; margin: 0;">🌸 ON</button>
+                        </div>
                     </div>
                 </div>
+            </div>
             </div>
         </div>
         
@@ -36376,6 +36410,81 @@ class Game {
         }
     }
 
+    // Collapsible menu sections (tall menus fit short screens). Header button
+    // toggles its body div; state persists in saveData.menuSections following
+    // the renderScale precedent (guarded read, no migration). The controls
+    // reference lists default collapsed (tallest, rarely read); the gamepad
+    // nav resolver skips hidden ids so focus can never land in a closed body.
+    toggleMenuSection(bodyId) {
+        const body = document.getElementById(bodyId);
+        if (!body) return;
+        const open = body.style.display === 'none';
+        body.style.display = open ? '' : 'none';
+        if (!this.saveData.menuSections || typeof this.saveData.menuSections !== 'object') this.saveData.menuSections = {};
+        this.saveData.menuSections[bodyId] = open;
+        this.saveGameData();
+        this.refreshMenuSectionHeads();
+        this.refreshMainMenuHighlight();
+        this.refreshPauseMenuHighlight();
+    }
+
+    menuSectionOpen(bodyId, defOpen = true) {
+        try {
+            const s = this.saveData && this.saveData.menuSections;
+            if (s && typeof s[bodyId] === 'boolean') return s[bodyId];
+        } catch (e) {}
+        return defOpen;
+    }
+
+    refreshMenuSectionHeads() {
+        for (const id of ['sec-move', 'sec-touch', 'sec-ref', 'sec-pad', 'sec-wife',
+                          'sec-move-pause', 'sec-ref-pause', 'sec-pad-pause', 'sec-wife-pause']) {
+            const body = document.getElementById(id);
+            const head = document.getElementById('btn-' + id);
+            const open = body ? body.style.display !== 'none' : true;
+            if (head) {
+                const arrow = head.querySelector('.sec-arrow');
+                if (arrow) arrow.textContent = open ? '▾' : '▸';
+                head.classList.toggle('active-mode', open);
+            }
+        }
+    }
+
+    applyMenuSections() {
+        // Reference lists start collapsed (tallest, rarely read); the rest
+        // remember the player's last choice (default open).
+        for (const id of ['sec-move', 'sec-touch', 'sec-ref', 'sec-pad', 'sec-wife',
+                          'sec-move-pause', 'sec-ref-pause', 'sec-pad-pause', 'sec-wife-pause']) {
+            const body = document.getElementById(id);
+            if (body) body.style.display = this.menuSectionOpen(id, id !== 'sec-ref' && id !== 'sec-ref-pause') ? '' : 'none';
+        }
+        this.refreshMenuSectionHeads();
+    }
+
+    // Collapsible-section gamepad guard: an element inside a display:none
+    // body must never take focus. offsetParent is null for display:none
+    // subtrees (these menus use no fixed positioning, so no false positives).
+    _navElVisible(el) {
+        try { return !!el && el.offsetParent !== null; }
+        catch (e) { return false; }
+    }
+
+    // Resolve a nav stop to the first VISIBLE id in its row (scan forward,
+    // wrap). Returns null when the whole row hides. Highlight + activation
+    // both resolve through here so the pad can never focus-or-click a button
+    // inside a collapsed body.
+    _resolveNavTarget(rows, rowIdx, optIdx) {
+        if (!rows || rowIdx === undefined || rowIdx >= rows.length) return null;
+        const row = rows[rowIdx];
+        if (!row || !row.length) return null;
+        for (let k = 0; k < row.length; k++) {
+            const idx = (optIdx + k) % row.length;
+            const el = document.getElementById(row[idx]);
+            if (el && this._navElVisible(el)) return { id: row[idx], index: idx };
+        }
+        return null;
+    }
+
     refreshGamepadAssignmentStatus(gpList, precomputedResolved) {
         let { gp1, gp2 } = precomputedResolved || this.resolveGamepadAssignments(gpList);
         const fmt = (gp) => gp ? ('Gamepad ' + (gp.index + 1) + ((gp.id) ? ' — ' + gp.id.substring(0, 24) : '')) : 'No gamepad (keyboard/mouse or touch)';
@@ -37498,6 +37607,14 @@ class Game {
 
             if (btnA && this.gpadButtonCooldown <= 0) {
                 let targetId = currentRow[this.pauseMenuOptionIndex];
+                // Collapsed-section guard: click the resolved visible stop.
+                const actRes = this._resolveNavTarget(rows, this.pauseMenuRowIndex, this.pauseMenuOptionIndex);
+                if (actRes) {
+                    this.pauseMenuOptionIndex = actRes.index;
+                    targetId = actRes.id;
+                } else {
+                    return;
+                }
                 let targetElement = document.getElementById(targetId);
                 if (targetElement) {
                     targetElement.click();
@@ -37695,6 +37812,7 @@ class Game {
                 ['sld-sfx-vol-pause']
             ],
             controls: [
+                ['btn-sec-move-pause', 'btn-sec-ref-pause', 'btn-sec-pad-pause', 'btn-sec-wife-pause'],
                 ['btn-scheme-screen-pause', 'btn-scheme-player-pause'],
                 ['btn-p1-gp-auto-pause', 'btn-p1-gp-none-pause', 'btn-p1-gp-0-pause', 'btn-p1-gp-1-pause', 'btn-p1-gp-2-pause', 'btn-p1-gp-3-pause'],
                 ['btn-p2-gp-auto-pause', 'btn-p2-gp-none-pause', 'btn-p2-gp-0-pause', 'btn-p2-gp-1-pause', 'btn-p2-gp-2-pause', 'btn-p2-gp-3-pause'],
@@ -37710,6 +37828,7 @@ class Game {
     getMainMenuTabRows() {
         let settingsSubtabRows = {
             controls: [
+                ['btn-sec-move', 'btn-sec-touch', 'btn-sec-ref', 'btn-sec-pad', 'btn-sec-wife'],
                 ['btn-scheme-screen', 'btn-scheme-player'],
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
                 ['sld-touch-stick-size'],
@@ -37817,6 +37936,15 @@ class Game {
         let currentRow = rows[this.pauseMenuRowIndex];
         let targetId = currentRow[this.pauseMenuOptionIndex];
         let targetElement = document.getElementById(targetId);
+        // Collapsed-section guard: resolve to a visible stop in the row.
+        const pauseRes = this._resolveNavTarget(rows, this.pauseMenuRowIndex, this.pauseMenuOptionIndex);
+        if (pauseRes) {
+            this.pauseMenuOptionIndex = pauseRes.index;
+            targetId = pauseRes.id;
+            targetElement = document.getElementById(targetId);
+        } else {
+            targetElement = null;
+        }
         if (targetElement) {
             targetElement.classList.add('focused-btn');
             targetElement.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -38032,6 +38160,14 @@ class Game {
 
             if (btnA && this.gpadButtonCooldown <= 0) {
                 let targetId = currentRow[this.mainMenuOptionIndex];
+                // Collapsed-section guard: click the resolved visible stop.
+                const actRes = this._resolveNavTarget(rows, this.mainMenuRowIndex, this.mainMenuOptionIndex);
+                if (actRes) {
+                    this.mainMenuOptionIndex = actRes.index;
+                    targetId = actRes.id;
+                } else {
+                    return;
+                }
                 let targetElement = document.getElementById(targetId);
                 if (targetElement) {
                     targetElement.click();
@@ -38070,6 +38206,15 @@ class Game {
         let currentRow = rows[this.mainMenuRowIndex];
         let targetId = currentRow[this.mainMenuOptionIndex];
         let targetElement = document.getElementById(targetId);
+        // Collapsed-section guard: resolve to a visible stop in the row.
+        const mainRes = this._resolveNavTarget(rows, this.mainMenuRowIndex, this.mainMenuOptionIndex);
+        if (mainRes) {
+            this.mainMenuOptionIndex = mainRes.index;
+            targetId = mainRes.id;
+            targetElement = document.getElementById(targetId);
+        } else {
+            targetElement = null;
+        }
         if (targetElement) {
             targetElement.classList.add('focused-btn');
             // Bring the focused control into view within whatever scrollable
@@ -49403,6 +49548,7 @@ class Game {
         if (typeof this.saveData.wifeModeP2 !== 'boolean') this.saveData.wifeModeP2 = false;
         this.refreshGamepadAssignmentUI();
         this.refreshWifeModeUI();
+        this.applyMenuSections();
         this.renderKitSelector(); // PHASE 4: kit chips reflect the loaded save
         this.applyPrestigeCosmetics(); // PHASE D: theme + rank badge from prestigeLevel
         // JULY item 10: pulse the Armory tab until the one-time orientation
