@@ -33682,6 +33682,13 @@ class Game {
         this.shopSelectedIndex = 0;
         this.dpadCooldown = 0;
         this.gpadButtonCooldown = 0;
+        // Shop 2P: per-player nav/button cooldowns, so one player's
+        // scrolling or buying never blocks the other's panel (the shared
+        // dpad/button timers did exactly that).
+        this.shopDpadP1 = 0;
+        this.shopDpadP2 = 0;
+        this.shopBtnP1 = 0;
+        this.shopBtnP2 = 0;
         this.gpadPauseCooldown = 0;
         
         this.initDOM();
@@ -36798,6 +36805,10 @@ class Game {
 
         if (this.gpadButtonCooldown > 0) this.gpadButtonCooldown -= dt;
         if (this.dpadCooldown > 0) this.dpadCooldown -= dt;
+        if (this.shopDpadP1 > 0) this.shopDpadP1 -= dt;
+        if (this.shopDpadP2 > 0) this.shopDpadP2 -= dt;
+        if (this.shopBtnP1 > 0) this.shopBtnP1 -= dt;
+        if (this.shopBtnP2 > 0) this.shopBtnP2 -= dt;
         if (this.gpadPauseCooldown > 0) this.gpadPauseCooldown -= dt;
 
         let { gp1, gp2 } = frame.resolved;
@@ -36918,22 +36929,21 @@ class Game {
                 let isP2 = (gp === gp2);
                 let buyer = isP2 ? this.player2 : this.player;
                 let curIdx = isP2 ? this.shopSelectedIndexP2 : this.shopSelectedIndexP1;
+                // Per-player cooldown keys: each panel repeats at its own
+                // pace; P1 holding a direction never starves P2 (or vice
+                // versa). Serviced pads `continue` (one action per pad per
+                // frame) so BOTH pads are handled every frame.
+                let navKey = isP2 ? 'shopDpadP2' : 'shopDpadP1';
+                let btnKey = isP2 ? 'shopBtnP2' : 'shopBtnP1';
 
-                // Start button readies up
-                if (btnStart && this.gpadButtonCooldown <= 0) {
+                // Start / B readies up
+                if ((btnStart || btnB) && this[btnKey] <= 0) {
                     this.setReady(isP2 ? 2 : 1);
-                    this.gpadButtonCooldown = 0.3;
-                    break;
+                    this[btnKey] = 0.3;
+                    continue;
                 }
 
-                // B button readies up
-                if (btnB && this.gpadButtonCooldown <= 0) {
-                    this.setReady(isP2 ? 2 : 1);
-                    this.gpadButtonCooldown = 0.3;
-                    break;
-                }
-
-                if (this.dpadCooldown <= 0) {
+                if (this[navKey] <= 0) {
                     // Section-aware move on the DOM-derived nav model (see
                     // buildShopNavModel / _shopNavMove). The cursor index now
                     // addresses model cells, whose (sec, row, col) geometry
@@ -36946,14 +36956,14 @@ class Game {
                         if (nextIdx >= 0 && nextIdx !== curIdx) {
                             if (isP2) this.shopSelectedIndexP2 = nextIdx;
                             else this.shopSelectedIndexP1 = nextIdx;
-                            this.dpadCooldown = 0.18;
+                            this[navKey] = 0.18;
                             this.refreshGamepadShopHighlight();
-                            break;
+                            continue;
                         }
                     }
                 }
 
-                if (btnA && this.gpadButtonCooldown <= 0) {
+                if (btnA && this[btnKey] <= 0) {
                     let confirmCells = this._shopNavModel ? (isP2 ? this._shopNavModel.p2 : this._shopNavModel.p1) : null;
                     let chosenID = (confirmCells && curIdx >= 0 && curIdx < confirmCells.length)
                         ? confirmCells[curIdx].id
@@ -36966,8 +36976,7 @@ class Game {
                         this.buyItem(chosenID, buyer);
                     }
                     if (document.activeElement) document.activeElement.blur();
-                    this.gpadButtonCooldown = 0.25;
-                    break;
+                    this[btnKey] = 0.25;
                 }
             }
             return true;
