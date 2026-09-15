@@ -2222,22 +2222,23 @@
                         <li><b>ELITES</b> (2.2× HP) drop cash, ammo, health — and blue <b>Perk Cases</b>: pause, pick 1 run-defining perk (Vampiric, Explosive, Smart Munitions…).</li>
                         <li><b>MUTATORS</b> roll each wave (never on boss waves): BLACKOUT dark-and-deadly, SWARM flood, JUGGERNAUT elites, ADRENALINE fast clock.</li>
                         <li><b>BOSSES</b> — <b style="color:#39ff14;">INFILTRATOR</b> (cloak), <b style="color:#ffb700;">HAMMERHEAD APC</b> (3 gunner seats), <b style="color:#ff2a5f;">JUGGERNAUT GUNNER</b> (armor), <b style="color:#00e5ff;">HOUND-9 SENTRY</b> (drone swarm), <b style="color:#d500f9;">WIDOWMAKER WALKER</b> (mortars). Watch the telegraphs.</li>
-                        <li><b>DRILL &amp; BUILD</b> — hold F on a wall to grind it into banked rubble; hold F in open ground to spend rubble raising fresh walls. Forts, breaches, mayhem.</li>
+                        <li><b>DRILL &amp; BUILD</b> — hold F on a wall to grind it into banked rubble; hold F in open ground to spend rubble raising fresh walls. Forts, breaches, mayhem. <b>WALL READ:</b> <span style="color:#ff2a5f;">■</span> red = chewable cover · <span style="color:#00e5ff;">▬</span> cyan glass band + sill = low window, shoot OVER it · <span style="color:#ffb700;">■</span> amber ticks = your built walls · grey mass = solid, don't bother.</li>
                         <li><b>DATA LINK</b> — spool fiber between deployables with the Repair Gun. The linked net shares vision and focuses fire. Set doctrines; mind the heat.</li>
                         <li><b style="color:#ff2a5f;">SCAVENGER DOG</b> — hostile thief bot. It steals ground loot and bolts at wave-clear. Drop it on sight.</li>
+                        <li><b style="color:#b0bec5;">ABAKAN</b> — hyperburst rifle: every pull fires two rounds at ~1100rpm with one shove after. Tap rhythm, not spray. <b style="color:#c0ca33;">THUMPER</b> — hold-to-range arc-launcher: press shows the marker at max range, holding walks it in, release lobs the fused shell over cover. Tap = instant far lob. Your own splash is halved, not gone. <b style="color:#ff9100;">MAULER</b> — full-auto shotgun: hold the trigger, 7-pellet cone, hungry and loud. <b style="color:#ff8a80;">JUDGE</b> — .50 hand cannon: absurd alpha between M1A and Sniper, semi latch, shoulder-mounted regret.</li>
                         <li><b>KITS, OVERCLOCKS, ESCALATIONS</b> — 8 Armory-unlocked kits (Breacher, Ghost, Technician…) for loadout + passive + shop rebate. Clean overclocks upgrade; Corrupted ones (Overpressure, Glass Nerves, Cold Barrel) charge a price. Escalations (Bloodhound, Ironclad, Exposed) crank extraction risk for bonus Intel.</li>
                     </ul>
                 </div>
 
                 <div id="guide-sec-armory" class="guide-card" style="border-color: rgba(57, 255, 20, 0.35);">
-                    <h3 style="color: #39ff14; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">ARMORY: 17,685 REASONS TO FIGHT</h3>
+                    <h3 style="color: #39ff14; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">ARMORY: 20,285 REASONS TO FIGHT</h3>
                     <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.6;">
-                        <li><b>FIELD STATS (10,945)</b> — Kevlar, First Aid, Cardio, 3 mag feeds, Laser array, Magnetic Gear + Greedy Hands capstone (auto-loots the field on wave-clear), Offshore Account. The quiet power that stacks every run.</li>
+                        <li><b>FIELD STATS (13,545)</b> — Kevlar, First Aid, Cardio, 7 mag feeds, Laser array, Magnetic Gear + Greedy Hands capstone (auto-loots the field on wave-clear), Offshore Account. The quiet power that stacks every run.</li>
                         <li><b>OPERATOR KITS (2,900)</b> — Breacher, Ghost, Technician, Medic, Pathfinder, Vanguard, Heavy (350–450 each). One per player: starting loadout + passive + cash-back on a shop category.</li>
                         <li><b>GEAR UNLOCKS (2,195)</b> — FPV / Spot / Swarm requisitions, Turret + Barrier MK.II, Combat Engineer (barrier chains), Sentinel Cam, Field Welder (Repair Gun), Overclock + Corrupted markets, Underbarrel Launcher, Mine Protocol. Locked shop gear reads UNLOCK IN ARMORY until you own it.</li>
                         <li><b>MANIPULATOR (610)</b> — paint, Dense Matter, Mining Rig, Rampart Fabricator. Drill deeper, build meaner.</li>
-                        <li><b>TOP SECRET (1,000)</b> — Eventide Anchor 500, Oracle Spice 500. The weird stuff. Worth it.</li>
-                        <li><b>PRESTIGE</b> — max all 36 and the button unlocks: wipe to zero, +1 level, a fresh menu theme and rank badge.</li>
+                        <li><b>TOP SECRET (800)</b> — Eventide Anchor 500, Oracle Spice 50, Rift Network 250. The weird stuff. Worth it.</li>
+                        <li><b>PRESTIGE</b> — max all 41 and the button unlocks: wipe to zero, +1 level, a fresh menu theme and rank badge.</li>
                     </ul>
                 </div>
 
@@ -2356,8 +2357,12 @@
                         <button id="btn-buy-ammo-lmg-std-p1" onclick="game.buyItem('ammo_lmg_std', game.player)">LMG Standard x100 ($40)</button>
                         <button id="btn-buy-ammo-sniper-std-p1" onclick="game.buyItem('ammo_sniper_std', game.player)">Sniper Standard x5 ($40)</button>
                         <button id="btn-buy-ammo-m1a-std-p1" onclick="game.buyItem('ammo_m1a_std', game.player)">M1A Standard x20 ($35)</button>
+                        <button id="btn-buy-ammo-abakan-std-p1" onclick="game.buyItem('ammo_abakan_std', game.player)">Abakan Standard x48 ($40)</button>
+                        <button id="btn-buy-ammo-thumper-he-p1" onclick="game.buyItem('ammo_thumper_he', game.player)">Thumper HE x6 ($60)</button>
+                        <button id="btn-buy-ammo-mauler-std-p1" onclick="game.buyItem('ammo_mauler_std', game.player)">Mauler Buck x10 ($45)</button>
+                        <button id="btn-buy-ammo-judge-std-p1" onclick="game.buyItem('ammo_judge_std', game.player)">Judge Standard x6 ($50)</button>
                     </div>
- 
+  
                     <div class="shop-section-title">Specialty Ammunition</div>
                     <div class="shop-grid">
                         <button id="btn-buy-ammo-smg-hp-p1" onclick="game.buyItem('ammo_smg_hp', game.player)">SMG Hollow Point x60 ($75)</button>
@@ -2366,6 +2371,10 @@
                         <button id="btn-buy-ammo-pistol-hp-p1" onclick="game.buyItem('ammo_pistol_hp', game.player)">Pistol Hollow-Point ($80)</button>
                         <button id="btn-buy-ammo-m1a-ap-p1" onclick="game.buyItem('ammo_m1a_ap', game.player)">M1A AP x20 ($85)</button>
                         <button id="btn-buy-ammo-shotgun-slug-p1" onclick="game.buyItem('ammo_shotgun_slug', game.player)">Shotgun Slugs x8 ($60)</button>
+                        <button id="btn-buy-ammo-abakan-ap-p1" onclick="game.buyItem('ammo_abakan_ap', game.player)">Abakan AP x48 ($95)</button>
+                        <button id="btn-buy-ammo-thumper-hedp-p1" onclick="game.buyItem('ammo_thumper_hedp', game.player)">Thumper HEDP x6 ($95)</button>
+                        <button id="btn-buy-ammo-mauler-ap-p1" onclick="game.buyItem('ammo_mauler_ap', game.player)">Mauler Flechette x10 ($95)</button>
+                        <button id="btn-buy-ammo-judge-ap-p1" onclick="game.buyItem('ammo_judge_ap', game.player)">Judge Magnum x6 ($95)</button>
                     </div>
  
                     <div class="shop-section-title">Weapon Overclocks</div>
@@ -2475,8 +2484,12 @@
                         <button id="btn-buy-ammo-lmg-std-p2" onclick="game.buyItem('ammo_lmg_std', game.player2)">LMG Standard x100 ($40)</button>
                         <button id="btn-buy-ammo-sniper-std-p2" onclick="game.buyItem('ammo_sniper_std', game.player2)">Sniper Standard x5 ($40)</button>
                         <button id="btn-buy-ammo-m1a-std-p2" onclick="game.buyItem('ammo_m1a_std', game.player2)">M1A Standard x20 ($35)</button>
+                        <button id="btn-buy-ammo-abakan-std-p2" onclick="game.buyItem('ammo_abakan_std', game.player2)">Abakan Standard x48 ($40)</button>
+                        <button id="btn-buy-ammo-thumper-he-p2" onclick="game.buyItem('ammo_thumper_he', game.player2)">Thumper HE x6 ($60)</button>
+                        <button id="btn-buy-ammo-mauler-std-p2" onclick="game.buyItem('ammo_mauler_std', game.player2)">Mauler Buck x10 ($45)</button>
+                        <button id="btn-buy-ammo-judge-std-p2" onclick="game.buyItem('ammo_judge_std', game.player2)">Judge Standard x6 ($50)</button>
                     </div>
- 
+  
                     <div class="shop-section-title">Specialty Ammunition</div>
                     <div class="shop-grid">
                         <button id="btn-buy-ammo-smg-hp-p2" onclick="game.buyItem('ammo_smg_hp', game.player2)">SMG Hollow Point x60 ($75)</button>
@@ -2485,6 +2498,10 @@
                         <button id="btn-buy-ammo-pistol-hp-p2" onclick="game.buyItem('ammo_pistol_hp', game.player2)">Pistol Hollow-Point ($80)</button>
                         <button id="btn-buy-ammo-m1a-ap-p2" onclick="game.buyItem('ammo_m1a_ap', game.player2)">M1A AP x20 ($85)</button>
                         <button id="btn-buy-ammo-shotgun-slug-p2" onclick="game.buyItem('ammo_shotgun_slug', game.player2)">Shotgun Slugs x8 ($60)</button>
+                        <button id="btn-buy-ammo-abakan-ap-p2" onclick="game.buyItem('ammo_abakan_ap', game.player2)">Abakan AP x48 ($95)</button>
+                        <button id="btn-buy-ammo-thumper-hedp-p2" onclick="game.buyItem('ammo_thumper_hedp', game.player2)">Thumper HEDP x6 ($95)</button>
+                        <button id="btn-buy-ammo-mauler-ap-p2" onclick="game.buyItem('ammo_mauler_ap', game.player2)">Mauler Flechette x10 ($95)</button>
+                        <button id="btn-buy-ammo-judge-ap-p2" onclick="game.buyItem('ammo_judge_ap', game.player2)">Judge Magnum x6 ($95)</button>
                     </div>
  
                     <div class="shop-section-title">Weapon Overclocks</div>
@@ -2911,6 +2928,12 @@
                         <button class="neon-btn" onclick="game.devSpawnWeapon('lmg')" style="margin: 0; font-size: 9px; padding: 3px 6px;">LMG</button>
                         <button class="neon-btn" onclick="game.devSpawnWeapon('sniper')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Sniper</button>
                         <button class="neon-btn" onclick="game.devSpawnWeapon('m1a')" style="margin: 0; font-size: 9px; padding: 3px 6px;">M1A</button>
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('abakan')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Abakan</button>
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('thumper')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Thumper</button>
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('mauler')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Mauler</button>
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('judge')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Judge</button>
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('repairgun')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Repair</button>
+                        <button class="neon-btn" onclick="game.devSpawnWeapon('riftlance')" style="margin: 0; font-size: 9px; padding: 3px 6px;">Riftlance</button>
                     </div>
                 </div>
                 <div>
@@ -3145,6 +3168,10 @@ const SVGIcons = {
     riftseed: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>`,
     riftstation: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1"/><circle cx="12" cy="12" r="1" fill="currentColor"/><path d="M12 3v3M12 18v3"/></svg>`,
     riftlance: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 14h9l3-3h8v3h-8l-2 2H2v-2z"/><circle cx="18" cy="9" r="2"/><path d="M18 11v3M20 4l-2 3M16 4l2 3"/></svg>`,
+    abakan: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13h9l2-2h9v2.5h-9l-1 1.5H2v-2z"/><path d="M13 11l1.5-2M15 13l2 3"/><circle cx="10" cy="12" r="1.6"/><path d="M18 11v3"/></svg>`,
+    thumper: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h11v5H7l-1 3H4l1-3H2v-5z"/><circle cx="9" cy="14.5" r="2.2"/><path d="M13 12h8v3h-8z"/><path d="M19 9v3"/></svg>`,
+    mauler: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h5l2-2h11v4H9l-2 2H2v-4z"/><path d="M12 10v5"/><circle cx="16" cy="14" r="1.6"/><path d="M6 12h8"/></svg>`,
+    judge: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13h11v3H7l-1 4H4l1-4H2v-3z"/><circle cx="9" cy="14.5" r="2.4"/><path d="M13 13h6"/><path d="M19 11v4"/></svg>`,
     shield: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 7.6-7 9-4-1.4-7-4.4-7-9V6l7-3z"/></svg>`,
     armor: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10l2 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7l2-3z"/><path d="M12 8v11"/></svg>`,
     fiber: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3.5"/><path d="M5 5l2.5 2.5M19 19l-2.5-2.5"/></svg>`,
@@ -3181,6 +3208,10 @@ const ITEM_ICON_COLORS = {
     riftseed:     '#9d4edd',
     riftstation:  '#00f5d4',
     riftlance:    '#9d4edd',
+    abakan:       '#b0bec5',
+    thumper:      '#c0ca33',
+    mauler:       '#ff9100',
+    judge:        '#ff8a80',
     fiber:        '#64ffda',
     rubble:       '#bcaaa4',
     ammo:         '#ffe082',
@@ -3392,6 +3423,60 @@ function cancelGLCharge(player) {
         player.glCharging = false;
         player.glChargeDist = 0;
         player.glHoldTime = 0;
+    }
+}
+
+// Thumper hold-to-range trio (mirrors the GL charge shape: press/hold/
+// release shared by mouse, gamepad RT, and touch so all input paths behave
+// identically). Press shows the marker at MAX_DIST; holding walks it IN;
+// release lobs. A tap (< 0.15s, the GL muscle-memory window) fires the far
+// default instantly. Ammo is spent only on release (cancel is free); a dry
+// press never starts a charge so the normal trigger dry-fire path (empty
+// click) still owns that case.
+function tryStartThumperCharge(player) {
+    if (!player || player.dead) return false;
+    if (!player.weapon || player.weapon.name !== 'Thumper') return false;
+    if ((player.ammo && player.ammo.thumper || 0) <= 0) return false;
+    if (!player.thumperCharging) {
+        player.thumperCharging = true;
+        player.thumperChargeDist = (typeof THUMPER_TUNING !== 'undefined' ? THUMPER_TUNING.MAX_DIST : 1400);
+        player.thumperHoldTime = 0;
+    }
+    return true; // already-charging repeats (e.g. key auto-repeat) are a no-op
+}
+
+function releaseThumperCharge(player) {
+    if (!player || !player.thumperCharging) return;
+    const T = (typeof THUMPER_TUNING !== 'undefined') ? THUMPER_TUNING : { MAX_DIST: 1400 };
+    const tapped = player.thumperHoldTime < 0.15;
+    const dist = tapped ? T.MAX_DIST : player.thumperChargeDist;
+    player.thumperCharging = false;
+    player.thumperChargeDist = 0;
+    player.thumperHoldTime = 0;
+    if ((player.ammo && player.ammo.thumper || 0) <= 0) {
+        if (typeof audio !== 'undefined' && audio && audio.playBakedSound && game) {
+            audio.playBakedSound('empty_click', audio.sfxGain, 0.6, 20000, 0, audio.rateFor(player));
+        }
+        return;
+    }
+    // Release always fires (reserve + shell flight are the cadence limiters,
+    // not a rate gate — tap-tap pounds at pump rhythm, holds dial precise).
+    player._thumperFireDist = dist;
+    player.semiAutoTriggerReleased = false;
+    if (game) player.lastFireTime = game.gameTime;
+    player.fire(game);
+    player._thumperFireDist = 0;
+}
+
+// Cancel with no launch and no spend (the shell isn't spent until release)
+// -- death, pause, focus loss, and weapon/selector swaps. Mirrors
+// cancelGLCharge's no-refund discipline (there's nothing TO refund).
+function cancelThumperCharge(player) {
+    if (player && player.thumperCharging) {
+        player.thumperCharging = false;
+        player.thumperChargeDist = 0;
+        player.thumperHoldTime = 0;
+        player._thumperFireDist = 0;
     }
 }
 
@@ -3960,7 +4045,7 @@ class AudioEngine {
         this.echoGain2 = null;
         this.ECHO_SOUNDS = new Set([
             'shoot_Pistol', 'shoot_Shotgun', 'shoot_SMG', 
-            'shoot_LMG', 'shoot_Sniper', 'shoot_M1A', 'explosion'
+            'shoot_LMG', 'shoot_Sniper', 'shoot_M1A', 'shoot_Abakan', 'shoot_Thumper', 'shoot_Mauler', 'shoot_Judge', 'explosion'
         ]);
     }
     
@@ -6883,7 +6968,31 @@ const Weapons = {
      // 'ammo' is the recharge battery; it drains on collapse and trickles
      // back while holstered/idle. Name stays single-token so
      // name.toLowerCase() === 'riftlance' matches the ammo/SVGIcons key.
-     riftlance: { name: 'Riftlance', dmg: 0, fireRate: 0.5, speed: 0, drag: 0, spread: 0, mag: 0, weight: 12, color: '#9d4edd', type: 'semi', maxZoom: 0.25, gamepadAimDist: 320, openBoltDelay: 0 }
+     riftlance: { name: 'Riftlance', dmg: 0, fireRate: 0.5, speed: 0, drag: 0, spread: 0, mag: 0, weight: 12, color: '#9d4edd', type: 'semi', maxZoom: 0.25, gamepadAimDist: 320, openBoltDelay: 0 },
+     // ABAKAN: stock hyperburst rifle (AN-94 fantasy). One trigger pull =
+     // two rounds at ~1100rpm (burstInterval 0.055 — opened up from the real
+     // steel's 1800rpm so the pair reads as two cracks and you can just
+     // begin to feel shot 1 leave clean before the single combined impulse
+     // lands with shot 2), single recoil impulse after both leave (see
+     // p.burstRemaining + fire() suppress flag).
+     // Type 'burst' latches per-burst like semi: holding after a burst stays
+     // dead until release. Standard random-drop pool (see WEAPON_ITEM_FORMS).
+     abakan: { name: 'Abakan', dmg: 24, fireRate: 0.16, speed: 4400, drag: 0.03, spread: 0.02, mag: 0, weight: 14, color: '#b0bec5', type: 'burst', maxZoom: 0.35, gamepadAimDist: 300, openBoltDelay: 0, burstCount: 2, burstInterval: 0.055 },
+     // THUMPER: stock hold-to-range arc-launcher (see THUMPER_TUNING).
+     // Press shows the marker at MAX (far default); holding walks it in,
+     // release lobs the shell onto it. Tap = instant far lob at pump
+     // cadence. Fires via releaseThumperCharge (never bullets — BUG-010
+     // class); the trigger path only fires it fallback-instant when no
+     // charge is in progress. Standard random-drop pool.
+     thumper: { name: 'Thumper', dmg: 0, fireRate: 0.5, speed: 0, drag: 0, spread: 0, mag: 0, weight: 22, color: '#c0ca33', type: 'pump', maxZoom: 0.12, gamepadAimDist: 200, openBoltDelay: 0 },
+     // MAULER: stock auto-shotgun (close sustain vs pump alpha). Hold-trigger
+      // room broom: 7-pellet cone, fast falloff, heavy per-second kick and
+     // ammo hunger. Standard random-drop pool (see WEAPON_ITEM_FORMS).
+     mauler: { name: 'Mauler', dmg: 8, fireRate: 0.25, speed: 2000, drag: 0.24, spread: 0.23, mag: 0, weight: 20, color: '#ff9100', type: 'auto', pellets: 7, maxZoom: 0.10, gamepadAimDist: 140, openBoltDelay: 0 },
+     // JUDGE: stock heavy revolver (.50 hand cannon). Absurd per-click alpha
+     // between M1A and Sniper, gated by semi latch + insane kick + tiny
+     // reserve + heat. Standard random-drop pool (see WEAPON_ITEM_FORMS).
+     judge: { name: 'Judge', dmg: 90, fireRate: 0.90, speed: 4600, drag: 0.03, spread: 0.012, mag: 0, weight: 14, color: '#ff8a80', type: 'semi', pellets: 1, maxZoom: 0.30, gamepadAimDist: 280, openBoltDelay: 0 }
   };
 
   // REPAIR GUN welding tuning (battery doubles as the ammo pool).
@@ -7224,7 +7333,7 @@ const NOW_MODE = {
     STARTING_CASH: 10000, // fixed budget, replaces (not added to) the normal startingCash slider
     PREP_TIME: 1.5,       // seconds between clicking READY and the first enemy spawning, vs. the stock 15.0
     SPAWN_INTERVAL: 0.05, // ~20 enemies/sec, vs. the stock Math.max(0.2, 1.6 - wave*0.12) trickle
-    LOADOUT_WEAPONS: ['shotgun', 'lmg', 'm1a'], // granted directly to inventory, full reserve ammo, on top of the default pistol -- see Player.addWeapon()
+    LOADOUT_WEAPONS: ['shotgun', 'lmg', 'm1a', 'mauler', 'judge'], // granted directly to inventory, full reserve ammo, on top of the default pistol -- see Player.addWeapon()
     FREE_PERK_COUNT: 2    // random perk choice screens queued per player at start (see Game._advanceNowModePerkQueue())
 };
 
@@ -12479,6 +12588,30 @@ class MapGen {
                 ctx.fill();
             }
         }
+        // VISUAL OVERHAUL Batch 1A: material grammar, batched overlays only.
+        // 3) window glass band — one path for every on-screen seeThrough wall
+        // (ground windows; parapet windows own their pass). Horizontal stripe
+        // at 40-60% height reads as "glass, shoot over the sill".
+        ctx.beginPath();
+        let glassHit = false;
+        for (const wall of this.walls) {
+            if (wall._parapet || !wall.seeThrough || !vis(wall)) continue;
+            const gx = wall.x - cam.x, gy = wall.y - cam.y;
+            ctx.rect(gx + 2, gy + wall.h * 0.40, wall.w - 4, wall.h * 0.20);
+            glassHit = true;
+        }
+        if (glassHit) { ctx.fillStyle = 'rgba(0, 229, 255, 0.20)'; ctx.fill(); }
+        // 4) player-built amber wash — one path, fixed color, no grouping.
+        // _playerBuilt is set once in placePlayerWall; carved fragments copy
+        // parent flags so they stay correct for free.
+        ctx.beginPath();
+        let builtHit = false;
+        for (const wall of this.walls) {
+            if (wall._parapet || !wall._playerBuilt || !vis(wall)) continue;
+            ctx.rect(wall.x - cam.x, wall.y - cam.y, wall.w, wall.h);
+            builtHit = true;
+        }
+        if (builtHit) { ctx.fillStyle = 'rgba(255, 183, 7, 0.20)'; ctx.fill(); }
         ctx.restore();
     }
 
@@ -12508,18 +12641,57 @@ class MapGen {
             ctx.strokeStyle = 'rgba(216, 234, 255, ' + _rimA.toFixed(3) + ')';
             ctx.stroke();
         }
+        // VISUAL OVERHAUL Batch 1A: material rims, same one-path discipline.
+        // Window sills get a bottom-edge catch-light (reads as low sill you
+        // shoot OVER, not a tall wall you hide BEHIND). Player-built walls
+        // get 3 honeycomb ticks along the top edge (amber, batched).
+        const _vis2 = (w) => !(w.x + w.w < cam.x - bufferX || w.x > cam.x + visibleW + bufferX ||
+                               w.y + w.h < cam.y - bufferY || w.y > cam.y + visibleH + bufferY);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        let sillHit = false;
+        for (const wall of this.walls) {
+            if (wall._parapet || !wall.seeThrough || !_vis2(wall)) continue;
+            const sx = wall.x - cam.x, sy = wall.y - cam.y;
+            ctx.moveTo(sx, sy + wall.h);
+            ctx.lineTo(sx + wall.w, sy + wall.h);
+            sillHit = true;
+        }
+        if (sillHit) { ctx.strokeStyle = 'rgba(0, 229, 255, 0.65)'; ctx.stroke(); }
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let tickHit = false;
+        for (const wall of this.walls) {
+            if (wall._parapet || !wall._playerBuilt || !_vis2(wall)) continue;
+            const sx = wall.x - cam.x, sy = wall.y - cam.y;
+            for (let k = 1; k <= 3; k++) {
+                const tx = sx + (wall.w * k) / 4;
+                ctx.moveTo(tx, sy + 2);
+                ctx.lineTo(tx, sy + 10);
+            }
+            tickHit = true;
+        }
+        if (tickHit) { ctx.strokeStyle = 'rgba(255, 183, 7, 0.55)'; ctx.stroke(); }
         ctx.restore();
     }
 
     _drawWallDamage(ctx, cam, wall) {
         let dmg = wall._dmg;
+        // VISUAL OVERHAUL Batch 1B: glass doesn't dent. seeThrough walls keep
+        // the Batch 1A glass band (40-60% height) pristine — only sill cells
+        // erode. Quantized to 3 steps so drill grind doesn't shimmer.
+        const isGlassWall = !!wall.seeThrough;
         ctx.fillStyle = '#05070a';
         for (let r = 0; r < dmg.rows; r++) {
+            // glass-band test once per row, not per cell
+            const rowMid = (r + 0.5) / dmg.rows;
+            if (isGlassWall && rowMid > 0.36 && rowMid < 0.64) continue;
             for (let c = 0; c < dmg.cols; c++) {
                 let i = r * dmg.cols + c;
                 let frac = dmg.cells[i] / dmg.cellMax;
                 if (frac >= 0.999) continue;
                 let bite = 1 - frac; // 0..1: how much of this cell has been eaten away
+                bite = bite < 0.34 ? 0.3 : bite < 0.67 ? 0.65 : 1.0;
                 let cw = dmg.cellW * bite, ch = dmg.cellH * bite;
                 let cx0 = wall.x + c * dmg.cellW + (dmg.cellW - cw) / 2;
                 let cy0 = wall.y + r * dmg.cellH + (dmg.cellH - ch) / 2;
@@ -13838,6 +14010,10 @@ const AIM_WEIGHT = {
         'SMG': 35,
         'Shotgun': 30,
         'M1A': 25,
+        'Abakan': 25,
+        'Thumper': 20,
+        'Mauler': 30,
+        'Judge': 35,
         'LMG': 15,
         'Sniper': 10
     },
@@ -13868,6 +14044,10 @@ const AIM_WEIGHT = {
         'SMG': 480,
         'Shotgun': 360,
         'M1A': 300,
+        'Abakan': 300,
+        'Thumper': 240,
+        'Mauler': 260,
+        'Judge': 320,
         'LMG': 220,
         'Sniper': 170
     },
@@ -13953,7 +14133,9 @@ const AIM_WEIGHT = {
     // change) -- Pistol/SMG/Shotgun/M1A were already "pretty solid."
     WEAPON_MOVE_SPEED_MULT: {
         'Sniper': 1.25,
-        'LMG': 1.12
+        'LMG': 1.12,
+        'Thumper': 1.12,
+        'Mauler': 1.12
     },
 
     // --- Perturbation channels (recoil / hit-flinch / explosion-flinch) now
@@ -14035,7 +14217,8 @@ const AIM_WEIGHT = {
     // weapons, just softer overall.
     RECOIL_KICK_DEG: {
         'Pistol': 1.1, 'SMG': 1.45, 'Shotgun': 3.2,
-        'Sniper': 5.5, 'M1A': 2.2, 'LMG': 2.0
+        'Sniper': 5.5, 'M1A': 2.2, 'LMG': 2.0, 'Abakan': 2.2, 'Thumper': 3.4,
+        'Mauler': 4.0, 'Judge': 6.8
     },
     RECOIL_KICK_DEG_DEFAULT: 1.2,
     RECOIL_BIAS_RESET_GAP: 0.25,   // seconds since last shot before re-rolling the bias direction / resetting climb
@@ -14493,7 +14676,7 @@ function _audioEchoLive() {
 function buildTweakRegistry() {
     if (TWEAK_BUILT) return;
     TWEAK_BUILT = true;
-    const W = ['Pistol', 'SMG', 'Shotgun', 'Sniper', 'M1A', 'LMG'];
+    const W = ['Pistol', 'SMG', 'Shotgun', 'Sniper', 'M1A', 'LMG', 'Abakan', 'Thumper', 'Mauler', 'Judge'];
     // --- Body feel ---
     TW('Body Feel', 'BODY_MOTION.LEAN_MAX', BODY_MOTION, 'LEAN_MAX', 0, 8, 0.1);
     TW('Body Feel', 'BODY_MOTION.TURN_MAX', BODY_MOTION, 'TURN_MAX', 0, 0.2, 0.005);
@@ -14738,6 +14921,10 @@ const PLAYER_GUN_GEOM = {
     M1A:     { barrelLen: 31, barrelH: 3, recX: 6, recLen: 9,  recH: 6, stock: 5, grip: 6, fore: 22, foreY: 7 },
     Sniper:  { barrelLen: 30, barrelH: 4, recX: 7, recLen: 13, recH: 6, stock: 4, grip: 6, fore: 24 },
     LMG:     { barrelLen: 23, barrelH: 5, recX: 5, recLen: 14, recH: 8, stock: 3, grip: 6, fore: 17, mag: { x: 4, w: 9, h: 8 } },
+    Abakan:  { barrelLen: 30, barrelH: 3, recX: 6, recLen: 10, recH: 6, stock: 5, grip: 6, fore: 22 },
+    Thumper: { barrelLen: 16, barrelH: 7, recX: 5, recLen: 12, recH: 8, stock: 4, grip: 6, fore: 14 },
+    Mauler:  { barrelLen: 26, barrelH: 5, recX: 7, recLen: 12, recH: 7, stock: 0, grip: 6, fore: 20 },
+    Judge:   { barrelLen: 16, barrelH: 5, recX: 5, recLen: 10, recH: 7, stock: 0, grip: 5, fore: 12 },
     // Repair Gun: short stubby tool, fat barrel (the weld nozzle), no stock.
     RepairGun: { barrelLen: 13, barrelH: 6, recX: 5, recLen: 10, recH: 7, stock: 0, grip: 5, fore: 12 }
 };
@@ -14751,19 +14938,22 @@ const PLAYER_GUN_GEOM = {
 // Tweak Lab can tune them live; values byte-identical to the fire()-local
 // originals. fire() reads these same objects — same behavior, new address.)
 const FIRE_TUNING = {
-    KICKBACK_FORCES: { 'Pistol': 45, 'SMG': 65, 'Shotgun': 280, 'Sniper': 420, 'M1A': 190, 'LMG': 130 },
-    RECOIL_SPRITE_KICKS: { 'Pistol': 7.0, 'SMG': 6.0, 'M1A': 10.0, 'LMG': 11.0, 'Shotgun': 15.0, 'Sniper': 20.0 },
-    ZOOM_PUNCHES: { 'Pistol': 0.006, 'SMG': 0.008, 'M1A': 0.016, 'LMG': 0.018, 'Shotgun': 0.028, 'Sniper': 0.042 },
-    RECOIL_ZOOM_OUT: { 'Pistol': 0.010, 'SMG': 0.014, 'M1A': 0.030, 'LMG': 0.032, 'Shotgun': 0.055, 'Sniper': 0.080 },
-    GUNKICK_PX: { 'Pistol': 1.0, 'SMG': 1.2, 'M1A': 2.0, 'LMG': 2.0, 'Shotgun': 3.0, 'Sniper': 3.5 }
+    KICKBACK_FORCES: { 'Pistol': 45, 'SMG': 65, 'Shotgun': 280, 'Sniper': 420, 'M1A': 190, 'LMG': 130, 'Abakan': 90, 'Thumper': 320, 'Mauler': 360, 'Judge': 520 },
+    RECOIL_SPRITE_KICKS: { 'Pistol': 7.0, 'SMG': 6.0, 'M1A': 10.0, 'LMG': 11.0, 'Shotgun': 15.0, 'Sniper': 20.0, 'Abakan': 8.0, 'Thumper': 16.0, 'Mauler': 17.0, 'Judge': 24.0 },
+    ZOOM_PUNCHES: { 'Pistol': 0.006, 'SMG': 0.008, 'M1A': 0.016, 'LMG': 0.018, 'Shotgun': 0.028, 'Sniper': 0.042, 'Abakan': 0.014, 'Thumper': 0.030, 'Mauler': 0.034, 'Judge': 0.055 },
+    RECOIL_ZOOM_OUT: { 'Pistol': 0.010, 'SMG': 0.014, 'M1A': 0.030, 'LMG': 0.032, 'Shotgun': 0.055, 'Sniper': 0.080, 'Abakan': 0.026, 'Thumper': 0.058, 'Mauler': 0.062, 'Judge': 0.095 },
+    GUNKICK_PX: { 'Pistol': 1.0, 'SMG': 1.2, 'M1A': 2.0, 'LMG': 2.0, 'Shotgun': 3.0, 'Sniper': 3.5, 'Abakan': 1.6, 'Thumper': 3.2, 'Mauler': 3.4, 'Judge': 4.2 }
 };
 const TRACER_STYLE = {
     Sniper:  { lenMult: 1.35, width: 2.4, alpha: 0.95, wobble: 0.0 },
     Shotgun: { lenMult: 0.55, width: 2.2, alpha: 0.95, wobble: 0.0 },
     M1A:     { lenMult: 1.15, width: 1.8, alpha: 0.90, wobble: 0.4 },
+    Abakan:  { lenMult: 1.20, width: 1.7, alpha: 0.92, wobble: 0.2 },
     LMG:     { lenMult: 1.00, width: 2.0, alpha: 0.90, wobble: 0.6 },
     SMG:     { lenMult: 0.85, width: 1.5, alpha: 0.85, wobble: 0.3 },
-    Pistol:  { lenMult: 0.75, width: 1.5, alpha: 0.85, wobble: 0.0 }
+    Pistol:  { lenMult: 0.75, width: 1.5, alpha: 0.85, wobble: 0.0 },
+    Mauler:  { lenMult: 0.55, width: 2.6, alpha: 0.95, wobble: 0.0 },
+    Judge:   { lenMult: 1.30, width: 2.8, alpha: 0.95, wobble: 0.0 }
 };
 
 // SOUNDSCAPE Phase 4 — GUNFIRE_AUDIO: per-caliber bake specs, the sonic twin
@@ -14807,6 +14997,30 @@ const GUNFIRE_AUDIO = {
         thumpFreq: 90, thumpDecay: 0.09, thumpGain: 0.5,
         snapFreq: 2200, snapDecay: 0.025, snapGain: 0.4,
         duration: 0.45, saturation: 1.6
+    },
+    'Abakan': {
+        noiseFreq: 2800, noiseDecay: 0.16, noiseGain: 0.55,
+        thumpFreq: 120, thumpDecay: 0.05, thumpGain: 0.35,
+        snapFreq: 5200, snapDecay: 0.012, snapGain: 0.25,
+        duration: 0.22, saturation: 1.6
+    },
+    'Thumper': {
+        noiseFreq: 300, noiseDecay: 0.35, noiseGain: 1.3,
+        thumpFreq: 55, thumpDecay: 0.18, thumpGain: 1.0,
+        snapFreq: 900, snapDecay: 0.04, snapGain: 0.4,
+        duration: 0.6, saturation: 2.5
+    },
+    'Mauler': {
+        noiseFreq: 700, noiseDecay: 0.24, noiseGain: 1.3,
+        thumpFreq: 60, thumpDecay: 0.11, thumpGain: 1.0,
+        snapFreq: 1600, snapDecay: 0.03, snapGain: 0.55,
+        duration: 0.5, saturation: 3.0
+    },
+    'Judge': {
+        noiseFreq: 500, noiseDecay: 0.50, noiseGain: 1.6,
+        thumpFreq: 45, thumpDecay: 0.24, thumpGain: 1.4,
+        snapFreq: 5200, snapDecay: 0.05, snapGain: 1.0,
+        duration: 0.9, saturation: 3.2
     }
 };
 // First-shot bite amounts (playShoot bite flag): rate 1.07 ~= +1.2 semitones.
@@ -15063,6 +15277,16 @@ class Player extends Entity {
         this.pendingFireTimer = 0;
         this.pendingFireWeaponKey = null;
         this.boltCycled = false;
+        // ABAKAN hyperburst: second round of a 2-rd pull, scheduled at
+        // burstInterval (~55ms — just separable as two cracks). burstRemaining counts down 1→0; the weapon
+        // key guards a mid-burst switch. _suppressRecoilNext skips all
+        // aim/spring/camera writes on shot 1 so both rounds leave before the
+        // single combined impulse lands on shot 2.
+        this.burstRemaining = 0;
+        this.burstTimer = 0;
+        this.burstWeaponKey = null;
+        this._suppressRecoilNext = false;
+        this._burstFinisher = false;
         // PHASE 1: carried extraction intel (banked only on evac; dropped
         // as a recoverable cache on death -- see Game.dropIntelCache).
         this.carriedIntel = 0;
@@ -15109,6 +15333,16 @@ class Player extends Entity {
         this.glCharging = false;
         this.glChargeDist = 0;
         this.glHoldTime = 0;
+        // THUMPER (stock hold-to-range launcher): press/hold/release state,
+        // mirroring the GL charge trio. thumperChargeDist starts at
+        // THUMPER_TUNING.MAX_DIST (far default) and walks IN toward MIN_DIST
+        // while held; release lobs onto it. _thumperFireDist carries the
+        // release distance into fire() (trigger-fallback path leaves it
+        // unset and fire() falls back to the aim-clamped point).
+        this.thumperCharging = false;
+        this.thumperChargeDist = 0;
+        this.thumperHoldTime = 0;
+        this._thumperFireDist = 0;
         // COMBAT ENGINEER Lvl2 (RAPID EMPLACEMENT): hold the deploy button and
         // strafe to chain-lay barriers end-to-end. Mirrors the GL charge state.
         this.chainPlacing = false;
@@ -15141,7 +15375,11 @@ class Player extends Entity {
             sniper: 0,
             m1a: 0,
             repairgun: 0,
-            riftlance: 0
+            riftlance: 0,
+            abakan: 0,
+            thumper: 0,
+            mauler: 0,
+            judge: 0
         };
         this.maxAmmo = {
             shotgun: 48,
@@ -15150,14 +15388,22 @@ class Player extends Entity {
             sniper: 15,
             m1a: 60,
             repairgun: 250,
-            riftlance: 100
+            riftlance: 100,
+            abakan: 180,
+            thumper: 24,
+            mauler: 36,
+            judge: 24
         };
         this.ammoTypes = {
             shotgun: 'buck',   // PHASE 3: 'buck' | 'slug' (mutually exclusive)
             smg: 'standard', 
             lmg: 'standard', 
             sniper: 'standard',
-            m1a: 'standard'
+            m1a: 'standard',
+            abakan: 'standard',  // 'standard' | 'ap' (wholesale flip, smg-hp pattern)
+            thumper: 'he',        // 'he' | 'hedp' (blast shape, not AP flag)
+            mauler: 'standard',  // 'standard' (buck) | 'ap' (flechette — shield punch)
+            judge: 'standard'   // 'standard' | 'ap' (magnum — .50 shield punch)
         };
         this.pistolHP = false; 
         this.barrierUpgraded = false;
@@ -15729,6 +15975,13 @@ class Player extends Entity {
             this.glHoldTime += dt;
             this.glChargeDist = Math.min(GL_ARC.MAX_DIST, this.glChargeDist + GL_ARC.SLIDE_SPEED * dt);
         }
+        // THUMPER: while held, the marker walks IN from MAX_DIST toward
+        // MIN_DIST (far default on press; holds dial precise mid/near).
+        if (this.thumperCharging) {
+            const _TT = (typeof THUMPER_TUNING !== 'undefined') ? THUMPER_TUNING : { MIN_DIST: 250, SLIDE_SPEED: 1600 };
+            this.thumperHoldTime += dt;
+            this.thumperChargeDist = Math.max(_TT.MIN_DIST, this.thumperChargeDist - _TT.SLIDE_SPEED * dt);
+        }
         // RAPID EMPLACEMENT: while the deploy button is held on the barrier slot,
         // drop a barrier each time we've strafed roughly one barrier-width from
         // the last drop, so they abut end-to-end. The 0.15s gate keeps a quick
@@ -15781,7 +16034,7 @@ class Player extends Entity {
             isFiring = false;
         }
 
-        let isSemi = this.weapon.type === 'semi' || this.weapon.type === 'pump' || this.weapon.type === 'bolt';
+        let isSemi = this.weapon.type === 'semi' || this.weapon.type === 'pump' || this.weapon.type === 'bolt' || this.weapon.type === 'burst';
         if (!isFiring) {
             this.semiAutoTriggerReleased = true;
             // Open Bolt Delay: re-arm for the next trigger pull. Only
@@ -15858,7 +16111,7 @@ class Player extends Entity {
                 }
             }
         }
-        if (isFiring && this.weapon.name !== 'RepairGun' && this.weapon.name !== 'Riftlance') {
+        if (isFiring && this.weapon.name !== 'RepairGun' && this.weapon.name !== 'Riftlance' && !(this.weapon.name === 'Thumper' && this.thumperCharging)) {
             let weaponKey = this.weapon.name.toLowerCase();
             let hasAmmo = weaponKey === 'pistol' || this.ammo[weaponKey] > 0;
             let canFireSemi = !isSemi || this.semiAutoTriggerReleased;
@@ -15890,9 +16143,29 @@ class Player extends Entity {
             // so the first trigger pull banged twice ~30ms apart. boltCycled
             // now strictly gates the initial shot: nothing fires until the
             // scheduled round has actually left the barrel.
-            if (hasAmmo && canFireSemi && this.pendingFireTimer <= 0 && (gameTime - this.lastFireTime >= actualFireRate)) {
+            if (hasAmmo && canFireSemi && this.pendingFireTimer <= 0 && this.burstRemaining <= 0 && (gameTime - this.lastFireTime >= actualFireRate)) {
                 let openBoltDelay = this.weapon.openBoltDelay || 0;
-                if (openBoltDelay > 0 && !this.boltCycled) {
+                if (this.weapon.type === 'burst') {
+                    // ABAKAN hyperburst: shot 1 leaves NOW with zero felt
+                    // recoil (suppressed in fire()); shot 2 lands via the
+                    // burst resolver below at burstInterval, carrying the
+                    // single combined impulse. Fire-rate clock + semi latch
+                    // stamp at the pull (open-bolt precedent) so cadence is
+                    // unaffected; a held trigger stays dead until release.
+                    let _bc = this.weapon.burstCount || 2;
+                    this._suppressRecoilNext = true;
+                    this.fire(game);
+                    this._suppressRecoilNext = false;
+                    if (_bc > 1 && (this.ammo[weaponKey] || 0) > 0) {
+                        this.burstRemaining = _bc - 1;
+                        this.burstTimer = this.weapon.burstInterval || 0.055;
+                        this.burstWeaponKey = weaponKey;
+                    } else {
+                        this.burstRemaining = 0;
+                        this.burstTimer = 0;
+                        this.burstWeaponKey = null;
+                    }
+                } else if (openBoltDelay > 0 && !this.boltCycled) {
                     // First round of a fresh trigger pull on an open-bolt
                     // weapon: the bang is deferred, but the fire-rate clock
                     // and semi-auto latch still stamp NOW (at the click),
@@ -16201,6 +16474,27 @@ class Player extends Entity {
                     this.lastFireTime = gameTime;
                 }
                 this.pendingFireWeaponKey = null;
+            }
+        }
+
+        // ABAKAN hyperburst: countdown to the second round of a 2-rd pull.
+        // Same weapon-tag discipline as the open-bolt resolver above: a
+        // mid-burst switch kills the scheduled round (plus switchWeapon
+        // clears it outright, so switch-away-and-back can't resurrect it).
+        // The fire-rate clock is NOT restamped here (it stamped at the pull),
+        // so sustained tap cadence is unaffected — only the 55ms pair gaps it.
+        if (this.burstRemaining > 0) {
+            this.burstTimer -= dt;
+            if (this.burstTimer <= 0) {
+                let _bw = this.burstWeaponKey;
+                this.burstRemaining = 0;
+                this.burstTimer = 0;
+                this.burstWeaponKey = null;
+                if (!this.dead && game && this.weapon && this.weapon.name.toLowerCase() === _bw && (this.ammo[_bw] || 0) > 0) {
+                    this._burstFinisher = true;
+                    this.fire(game);
+                    this._burstFinisher = false;
+                }
             }
         }
 
@@ -17663,6 +17957,20 @@ class Player extends Entity {
             if (cOc) corrupted = cOc.corrupted || null;
         }
 
+        // ABAKAN hyperburst recoil discipline: shot 1 of a 2-rd pull leaves
+        // with zero felt recoil (both rounds out before the shooter feels
+        // it); the finisher carries both shots' worth in one combined 1.35x
+        // impulse — high recoil in the end, but both rounds already left
+        // clean, so the pair stays perfectly on target. Sound, heat
+        // noise, casing, muzzle flash and bullets still happen per round —
+        // only aim/spring/camera/body writes are deferred. Flags are
+        // consume-once (cleared here even if a future return is added).
+        const _supp = !!this._suppressRecoilNext;
+        const _fin = !!this._burstFinisher;
+        this._suppressRecoilNext = false;
+        this._burstFinisher = false;
+        const _recoilMult = _fin ? 1.35 : 1;
+
         // SOUNDSCAPE Phase 4: same first-shot-of-pull read the recoil spring
         // below uses (evaluated here, before aimLastFireForBiasTime updates
         // -- nothing between mutates either field, so the value is identical).
@@ -17708,13 +18016,16 @@ class Player extends Entity {
         // cumulative kickback per second was actually worse than LMG's,
         // which felt backwards for a light, fast weapon. Halved from that
         // default.
-        let recoilForce = this.weapon.name === 'Shotgun' ? 280 : this.weapon.name === 'LMG' ? 120 : this.weapon.name === 'Sniper' ? 800 : this.weapon.name === 'M1A' ? 200 : this.weapon.name === 'SMG' ? 40 : 80;
+        let recoilForce = this.weapon.name === 'Shotgun' ? 280 : this.weapon.name === 'LMG' ? 120 : this.weapon.name === 'Sniper' ? 800 : this.weapon.name === 'M1A' ? 200 : this.weapon.name === 'SMG' ? 40 : this.weapon.name === 'Abakan' ? 100 : this.weapon.name === 'Thumper' ? 340 : this.weapon.name === 'Mauler' ? 380 : this.weapon.name === 'Judge' ? 950 : 80;
         recoilForce *= (1 - 0.06 * handlingLvl); // Phase 4 handling ranks
         if (corrupted && corrupted.overpressure) recoilForce *= 1.40; // PHASE 3: the cost of +25% dmg
+        recoilForce *= _recoilMult; // ABAKAN finisher: one combined impulse
+        if (!_supp) {
         this.vx -= Math.cos(this.angle) * recoilForce;
         this.vy -= Math.sin(this.angle) * recoilForce;
         if (this.camera) {
-            this.camera.screenShake = Math.max(this.camera.screenShake, this.weapon.name === 'Sniper' ? 18 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : 5);
+            this.camera.screenShake = Math.max(this.camera.screenShake, this.weapon.name === 'Sniper' ? 18 : this.weapon.name === 'Judge' ? 20 : this.weapon.name === 'Thumper' ? 14 : this.weapon.name === 'Mauler' ? 14 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : this.weapon.name === 'Abakan' ? 8 : 5);
+        }
         }
         // Aim Weight: every shot nudges the reticle two ways. A spring
         // impulse gives each shot its own snappy kick-and-rebound texture.
@@ -17723,20 +18034,24 @@ class Player extends Entity {
         // spring alone can't guarantee that -- see the RECOIL_CLIMB config
         // comment). Both follow the same per-burst bias direction, re-rolled
         // whenever there's been a gap since the last shot.
-        let firstShotOfPull = game.gameTime - this.aimLastFireForBiasTime > AIM_WEIGHT.RECOIL_BIAS_RESET_GAP;
+        // ABAKAN: the finisher counts as the pull's fresh shot for FX bite
+        // (shot 1 was suppressed, so without this the pull would never bite).
+        let firstShotOfPull = _fin ? true : (game.gameTime - this.aimLastFireForBiasTime > AIM_WEIGHT.RECOIL_BIAS_RESET_GAP);
         if (firstShotOfPull) {
             this.aimRecoilBiasDir = Math.random() < 0.5 ? -1 : 1;
         }
         this.aimLastFireForBiasTime = game.gameTime;
+        if (!_supp) {
         this.kickAim('aimRecoilOffset',
             (AIM_WEIGHT.RECOIL_KICK_DEG[this.weapon.name] || AIM_WEIGHT.RECOIL_KICK_DEG_DEFAULT) *
-            (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1),
+            (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult,
             this.aimRecoilBiasDir);
         let climbCapRad = AIM_WEIGHT.RECOIL_CLIMB_MAX_DEG * Math.PI / 180;
         this.aimRecoilClimb = MathUtils.clamp(
             this.aimRecoilClimb + this.aimRecoilBiasDir * AIM_WEIGHT.RECOIL_CLIMB_DEG_PER_SHOT * Math.PI / 180,
             -climbCapRad, climbCapRad
         );
+        }
 
         let aimCoords = game.getWorldAimCoords(this);
         const G = (this.weapon && PLAYER_GUN_GEOM[this.weapon.name]) ? PLAYER_GUN_GEOM[this.weapon.name] : PLAYER_GUN_GEOM.SMG;
@@ -17754,8 +18069,11 @@ class Player extends Entity {
         // toward, on purpose: the "just fired" unfocused look should be
         // instant, and now actually visible as its own moment (the hold)
         // rather than starting to recover the very next frame.
+        // ABAKAN: suppressed on shot 1, snaps once on the finisher.
+        if (!_supp) {
         this.beamCollimation = AIM_WEIGHT.COLLIMATION_MIN;
         this.beamCollimationHoldTimer = AIM_WEIGHT.COLLIMATION_HOLD_TIME;
+        }
         // Aim Weight: bullets fire along the character's actual (weighted)
         // angle, not the raw input position — this.angle is what everything
         // downstream should key off, per the design brief. We still project
@@ -17776,35 +18094,55 @@ class Player extends Entity {
         let focusSpread = effWeapon.spread * (1 - AIM_WEIGHT.FOCUS_SPREAD_MULT * this.focusLevel);
         focusSpread *= (1 - 0.07 * handlingLvl); // Phase 4 handling ranks
         if (corrupted && corrupted.overpressure) focusSpread *= 1.25; // PHASE 3: hot loads pattern wide
+        // THUMPER: no bullets — lob one fused shell as a pooled grenade
+        // rider (BUG-010 class: game.grenades, never game.bullets). All the
+        // recoil/sound/noise/muzzle FX above already fired with Thumper table
+        // values; only the payload differs. Ammo already decremented at the
+        // top; dry-fire auto-switch below still applies.
+        if (weaponKey === 'thumper') {
+            // Charged release passes its distance in _thumperFireDist (tap =
+            // far default, hold = walked marker); the trigger-fallback path
+            // leaves it unset and the shell falls back to the aim clamp.
+            const _td = this._thumperFireDist || 0;
+            this._thumperFireDist = 0;
+            this._lobThumperShell(game, barrelX, barrelY, _td);
+        } else {
         for(let i=0; i<pellets; i++) {
             let spreadAngle = baseFireAngle + (Math.random() - 0.5) * focusSpread;
             
             game.bullets.push(game.spawnBullet(barrelX, barrelY, spreadAngle, effWeapon, this, isAP, isHP, false));
             game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*600, Math.sin(spreadAngle)*600, '#fff', 0.04, 3);
         }
+        }
 
         const KICKBACK_FORCES = FIRE_TUNING.KICKBACK_FORCES;
-        let kickForce = KICKBACK_FORCES[this.weapon.name] || 50;
+        let kickForce = (KICKBACK_FORCES[this.weapon.name] || 50) * _recoilMult;
+        if (!_supp) {
         if (kickForce && game.camera) {
             game.camera.applyKickback(this.angle, kickForce);
         }
         if (kickForce && game.isTwoPlayer && game.camera2 && this.isPlayer2) {
             game.camera2.applyKickback(this.angle, kickForce);
         }
+        }
 
         // Mechanical sprite recoil kick (arms/gun slam back into chest)
         const RECOIL_SPRITE_KICKS = FIRE_TUNING.RECOIL_SPRITE_KICKS;
-        this.gunRecoilKickPx = RECOIL_SPRITE_KICKS[this.weapon.name] || 7.0;
+        if (!_supp) {
+        this.gunRecoilKickPx = (RECOIL_SPRITE_KICKS[this.weapon.name] || 7.0) * _recoilMult;
         // WO-001 Phase 3: render-only personality kick — small additive slam,
         // draw translate only (never angle/barrel math in fire()).
-        this.gunKickPx = FIRE_TUNING.GUNKICK_PX[this.weapon.name] || 1.2;
+        this.gunKickPx = (FIRE_TUNING.GUNKICK_PX[this.weapon.name] || 1.2) * _recoilMult;
+        }
 
         // Camera optic zoom punch (concussive pressure wave)
         const ZOOM_PUNCHES = FIRE_TUNING.ZOOM_PUNCHES;
         // FELLPASS item 8: fresh trigger pull bites harder (FX only).
-        let zp = (ZOOM_PUNCHES[this.weapon.name] || 0.008) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1);
+        let zp = (ZOOM_PUNCHES[this.weapon.name] || 0.008) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult;
+        if (!_supp) {
         if (this.camera) this.camera.punchZoom(zp);
         if (this.isTwoPlayer && game.camera2 && this.isPlayer2) game.camera2.punchZoom(zp);
+        }
 
         // Recoil zoom-out breath ("the gun gave way"): a slower, layered
         // OUT-zoom on top of the fast in-punch above. Magnitudes are ~1.5-2x
@@ -17813,9 +18151,11 @@ class Player extends Entity {
         // settle in the same breath. Full-auto saturates the channel, so a
         // spray holds a sustained ~2-3% wider framing.
         const RECOIL_ZOOM_OUT = FIRE_TUNING.RECOIL_ZOOM_OUT;
-        let rzo = (RECOIL_ZOOM_OUT[this.weapon.name] || 0.010) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1);
+        let rzo = (RECOIL_ZOOM_OUT[this.weapon.name] || 0.010) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult;
+        if (!_supp) {
         if (this.camera) this.camera.punchRecoilZoom(rzo);
         if (this.isTwoPlayer && game.camera2 && this.isPlayer2) game.camera2.punchRecoilZoom(rzo);
+        }
 
         game.spawnBarrelFX(barrelX, barrelY, this.angle, this.z || 0);
 
@@ -17837,14 +18177,50 @@ class Player extends Entity {
                 this.pendingFireTimer = 0;
                 this.pendingFireWeaponKey = null;
                 this.boltCycled = false;
+                this.burstRemaining = 0;
+                this.burstTimer = 0;
+                this.burstWeaponKey = null;
+                this._suppressRecoilNext = false;
+                this._burstFinisher = false;
+                cancelThumperCharge(this);
                 this.semiAutoTriggerReleased = false;
                 if (audio && audio.playWeaponSwitch) audio.playWeaponSwitch(this.x, this.y);
                 if (game && game.spawnFloatingText) {
-                    let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'DRY \u2014 SIDEARM!', '#ffb700', 1.2);
+                    let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'DRY — SIDEARM!', '#ffb700', 1.2);
                     if (ft) game.floatingTexts.push(ft);
                 }
             }
         }
+    }
+
+    // THUMPER shell lob: hold-to-range arc (see THUMPER_TUNING). forcedDist
+    // > 0 comes from a charge release (tap = MAX far default, hold = walked
+    // marker); 0/omitted falls back to the aim-clamped point (trigger path).
+    _lobThumperShell(game, bx, by, forcedDist) {
+        const T = (typeof THUMPER_TUNING !== 'undefined') ? THUMPER_TUNING
+            : { FLIGHT_TIME: 0.55, ARC_VZ: 187, MIN_DIST: 250, MAX_DIST: 1400, BLAST_R: 150, PEAK: 120, SELF_MULT: 0.5 };
+        let aimD = 650;
+        if (forcedDist > 0) {
+            aimD = forcedDist;
+        } else {
+            try {
+                const ac = game.getWorldAimCoords(this);
+                aimD = Math.hypot(ac.x - this.x, ac.y - this.y) || 650;
+            } catch (e) {}
+            aimD = Math.max(T.MIN_DIST, Math.min(T.MAX_DIST, aimD));
+        }
+        const tx = this.x + Math.cos(this.angle) * aimD;
+        const ty = this.y + Math.sin(this.angle) * aimD;
+        const hedp = (this.ammoTypes && this.ammoTypes.thumper === 'hedp');
+        let opts = { fuse: T.FLIGHT_TIME, vz: T.ARC_VZ, isArcShot: true,
+            radiusMult: hedp ? 0.65 : 1.0, dmgMult: hedp ? 1.25 : 1.0,
+            selfDmgMult: T.SELF_MULT, blastR: T.BLAST_R, blastPeak: T.PEAK };
+        // PHASE 4 (BREACHER kit): +15% blast radius rides opts, same
+        // passthrough as the flat tube and arc shots.
+        if (this.kitBlastMult && this.kitBlastMult !== 1) opts.radiusMult *= this.kitBlastMult;
+        const g = game.spawnShrapnelGrenade(bx, by, (tx - bx) / T.FLIGHT_TIME, (ty - by) / T.FLIGHT_TIME, opts);
+        g.owner = this; // WI-0: kill credit for splash/fragments
+        game.grenades.push(g);
     }
 
     takeDamage(amt, pushDir, pushForce) {
@@ -18483,6 +18859,7 @@ class Player extends Entity {
     switchWeapon(dir) {
         this.weaponIdx = (this.weaponIdx + dir + this.inventory.length) % this.inventory.length;
         cancelGLCharge(this);
+        cancelThumperCharge(this);
         // Data Link: a spool is a RepairGun-only verb; dropping the latch on a
         // weapon swap means it can't surprise-resume from another gun in hand.
         this.wiring = null;
@@ -18502,6 +18879,14 @@ class Player extends Entity {
         this.pendingFireTimer = 0;
         this.pendingFireWeaponKey = null;
         this.boltCycled = false;
+        // ABAKAN: a round scheduled by the previous weapon never fires from
+        // the new one (the resolver's key check already guards, this keeps a
+        // switch-away-and-back inside 55ms from resurrecting it).
+        this.burstRemaining = 0;
+        this.burstTimer = 0;
+        this.burstWeaponKey = null;
+        this._suppressRecoilNext = false;
+        this._burstFinisher = false;
     }
     
     addWeapon(typeKey) {
@@ -18518,6 +18903,12 @@ class Player extends Entity {
             else if (typeKey === 'lmg') this.ammo.lmg = Math.min(this.maxAmmo.lmg, this.ammo.lmg + 60);
             else if (typeKey === 'sniper') this.ammo.sniper = Math.min(this.maxAmmo.sniper, this.ammo.sniper + 4);
             else if (typeKey === 'm1a') this.ammo.m1a = Math.min(this.maxAmmo.m1a, this.ammo.m1a + 20);
+            else if (typeKey === 'abakan') this.ammo.abakan = Math.min(this.maxAmmo.abakan, this.ammo.abakan + 36);
+            else if (typeKey === 'thumper') this.ammo.thumper = Math.min(this.maxAmmo.thumper, this.ammo.thumper + 6);
+            else if (typeKey === 'mauler') this.ammo.mauler = Math.min(this.maxAmmo.mauler, this.ammo.mauler + 8);
+            else if (typeKey === 'judge') this.ammo.judge = Math.min(this.maxAmmo.judge, this.ammo.judge + 6);
+            else if (typeKey === 'repairgun') this.ammo.repairgun = Math.min(this.maxAmmo.repairgun, this.ammo.repairgun + this.maxAmmo.repairgun);
+            else if (typeKey === 'riftlance') this.ammo.riftlance = Math.min(this.maxAmmo.riftlance, this.ammo.riftlance + this.maxAmmo.riftlance);
         } else {
             // Duplicate pickup - give reserve ammo replenishment
             if (typeKey === 'shotgun') this.ammo.shotgun = Math.min(this.maxAmmo.shotgun, this.ammo.shotgun + 12);
@@ -18525,6 +18916,10 @@ class Player extends Entity {
             else if (typeKey === 'lmg') this.ammo.lmg = Math.min(this.maxAmmo.lmg, this.ammo.lmg + 30);
             else if (typeKey === 'sniper') this.ammo.sniper = Math.min(this.maxAmmo.sniper, this.ammo.sniper + 5);
             else if (typeKey === 'm1a') this.ammo.m1a = Math.min(this.maxAmmo.m1a, this.ammo.m1a + 20);
+            else if (typeKey === 'abakan') this.ammo.abakan = Math.min(this.maxAmmo.abakan, this.ammo.abakan + 48);
+            else if (typeKey === 'thumper') this.ammo.thumper = Math.min(this.maxAmmo.thumper, this.ammo.thumper + 8);
+            else if (typeKey === 'mauler') this.ammo.mauler = Math.min(this.maxAmmo.mauler, this.ammo.mauler + 10);
+            else if (typeKey === 'judge') this.ammo.judge = Math.min(this.maxAmmo.judge, this.ammo.judge + 8);
         }
     }
 
@@ -18542,8 +18937,11 @@ class Player extends Entity {
     // this must not interfere with).
     onDeath() {
         cancelGLCharge(this);
+        cancelThumperCharge(this);
         this.wiring = null; // Data Link: a dead player drops the spool latch
         this._riftMarkTarget = null; this._riftMarkT = 0; this._riftBeamTarget = null;
+        this.burstRemaining = 0; this.burstTimer = 0; this.burstWeaponKey = null;
+        this._suppressRecoilNext = false; this._burstFinisher = false;
         // ORACLE SPICE: death ends the trip; the host is released (not bound).
         // Explicit FX teardown (not tick-dependent — the hum/filter must die
         // on this frame even if update stalls behind the death linger).
@@ -18604,7 +19002,7 @@ class Player extends Entity {
                 }
                 const curKey = (this.inventory && this.inventory[this.weaponIdx])
                     ? this.inventory[this.weaponIdx].name.toLowerCase() : null;
-                const WEAPON_ITEM_FORMS = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a'];
+                const WEAPON_ITEM_FORMS = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a', 'abakan', 'thumper', 'mauler', 'judge'];
                 const gearType = WEAPON_ITEM_FORMS.indexOf(curKey) !== -1
                     ? curKey
                     : ['medpack', 'grenade', 'redbull'][Math.floor(Math.random() * 3)];
@@ -29987,6 +30385,14 @@ class ShrapnelGrenade {
         // retention (thrown-grenade default; launcher rounds use the same).
         this.radiusMult  = (opts && opts.radiusMult)  || 1.0;
         this.restitution = (opts && opts.restitution !== undefined) ? opts.restitution : 0.5;
+        // THUMPER plumb (defaults preserve hand-grenade behavior exactly):
+        // blastR/blastPeak override the 180/140 constants, dmgMult scales the
+        // center (HEDP shaped charge), selfDmgMult forgives the owner's own
+        // splash (Thumper 0.5 — close lobs sting instead of suicide).
+        this.blastR = (opts && opts.blastR) || 0;
+        this.blastPeak = (opts && opts.blastPeak) || 0;
+        this.dmgMult = (opts && opts.dmgMult) || 1.0;
+        this.selfDmgMult = (opts && opts.selfDmgMult) || 1.0;
         // WI-0: the throwing Player (set at every spawn site; null-safe for
         // pool reuse). Feeds kill credit for splash + fragments. Deliberately
         // NOT named to collide with Bullet.owner's turret/dog/drone meaning.
@@ -30049,7 +30455,7 @@ class ShrapnelGrenade {
         // PHASE 4 (BREACHER kit): radiusMult scales the whole blast --
         // damage falloff, shockwave, wall damage and barrel triggering all
         // read blastRadius below, so one multiply covers everything.
-        let blastRadius = 180 * this.radiusMult;
+        let blastRadius = (this.blastR || 180) * this.radiusMult;
         game.spawnShockwave(this.x, this.y, blastRadius * 1.2, 0.3);
         game.camera.punchZoom(0.08);
         if (game.camera2) game.camera2.punchZoom(0.08);
@@ -30058,10 +30464,12 @@ class ShrapnelGrenade {
         // gated on surviving cover (see Game.blastOccluded). The 16 real
         // bullet fragments below were ALWAYS wall-blocked, so a grenade's
         // through-wall punch was only ever this invisible splash.
-        game.map.damageWallsNear(this.x, this.y, blastRadius, 180);
+        // HEDP hotter-center: dmgMult scales walls/cables too (hand grenades
+        // pass 1 — unchanged; Thumper HEDP passes 1.25, matching the shop text).
+        game.map.damageWallsNear(this.x, this.y, blastRadius, (this.blastPeak || 180) * (this.dmgMult || 1));
 
         let entities = game.getBlastEntities();
-        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, blastRadius, 140);
+        if (game._blastDamageCables) game._blastDamageCables(this.x, this.y, blastRadius, (this.blastPeak || 140) * (this.dmgMult || 1));
 
         let preDead = 0;
         let preDeadPlayers = null;
@@ -30078,7 +30486,10 @@ class ShrapnelGrenade {
             let dist = Math.hypot(ent.x - this.x, ent.y - this.y);
             if (dist < blastRadius) {
                 if (game.blastOccluded(this.x, this.y, ent)) continue;
-                let damage = 140 * (1.0 - dist / blastRadius);
+                let damage = (this.blastPeak || 140) * (this.dmgMult || 1) * (1.0 - dist / blastRadius);
+                // THUMPER forgiveness: the owner's own splash is scaled
+                // (hand grenades pass selfDmgMult 1 — unchanged).
+                if (ent === this.owner && this.selfDmgMult !== 1) damage *= this.selfDmgMult;
                 if (ent instanceof Enemy) ent._hitFlash = 0.06; // FELLPASS item 4: blast hit flash
                 ent.takeDamage(damage, Math.atan2(ent.y - this.y, ent.x - this.x), 500);
                 if (ent instanceof Enemy) game.spawnBlood(ent.x, ent.y, ent.vx, ent.vy);
@@ -32043,9 +32454,15 @@ class FloatingText {
     draw(ctx, cam) {
         ctx.save();
         ctx.font = 'bold 12px "Courier New", Courier, monospace';
+        // VISUAL OVERHAUL Batch 3: dark outline so numbers read on bright
+        // walls/tan biomes as well as dark ground. Pooled texts, few alive
+        // per frame — one extra strokeText is negligible.
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
         ctx.fillStyle = this.color;
         ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
         ctx.textAlign = 'center';
+        ctx.strokeText(this.text, this.x - cam.x, this.y - cam.y);
         ctx.fillText(this.text, this.x - cam.x, this.y - cam.y);
         ctx.restore();
     }
@@ -32116,7 +32533,7 @@ const EXTRACTION_TUNING = {
 
     // Noise magnitudes fed to Game.registerNoise (heat points per event)
     NOISE: {
-        pistol: 1.2, shotgun: 4.0, smg: 1.6, lmg: 2.4, sniper: 5.0, m1a: 3.0, riftlance: 2.0,
+        pistol: 1.2, shotgun: 4.0, smg: 1.6, lmg: 2.4, sniper: 5.0, m1a: 3.0, riftlance: 2.0, abakan: 3.0, thumper: 2.5, mauler: 4.5, judge: 5.5,
         explosion: 12, breach: 9, aggro: 6,
         // PHASE 2 (detection & communication): an enemy that VISUALLY
         // acquires a player radios it in -- being seen is itself noise.
@@ -32222,14 +32639,18 @@ const MISSION_ORDER = ['op_first_contact', 'op_deep_incursion', 'op_overrun_prot
 // old copies inside _applyExtMags were folded into recalcPlayerMaxAmmo()
 // so meta magazine upgrades and in-run Extended Mags compose instead of
 // clobbering each other.
-const BASE_MAX_AMMO = { shotgun: 48, smg: 360, lmg: 300, sniper: 15, m1a: 60, repairgun: 250, riftlance: 100 };
+const BASE_MAX_AMMO = { shotgun: 48, smg: 360, lmg: 300, sniper: 15, m1a: 60, repairgun: 250, riftlance: 100, abakan: 180, thumper: 24, mauler: 36, judge: 24 };
 
 // Meta magazine upgrades: flat reserve added to the base BEFORE the
 // in-run Extended Mags percentage applies (so both purchases keep paying).
 const MAG_META_UPGRADES = {
     magSmg:     { ammoKey: 'smg',     perLevel: 60 },
     magM1a:     { ammoKey: 'm1a',     perLevel: 20 },
-    magShotgun: { ammoKey: 'shotgun', perLevel: 12 }
+    magShotgun: { ammoKey: 'shotgun', perLevel: 12 },
+    magAbakan:  { ammoKey: 'abakan',  perLevel: 40 },
+    magThumper: { ammoKey: 'thumper', perLevel: 8 },
+    magMauler:  { ammoKey: 'mauler',  perLevel: 10 },
+    magJudge:   { ammoKey: 'judge',   perLevel: 8 }
 };
 
 // The Armory store, fully data-driven -- renderArmoryTab, buyArmoryUpgrade
@@ -32266,6 +32687,18 @@ const ARMORY_UPGRADES = [
     { key: 'magShotgun', name: 'SHELL CARRIER', maxLevel: 3,
       costPerLevel: [100, 200, 350],
       desc: 'Shotgun reserve +12 shells per level. (Base: 48)' },
+    { key: 'magAbakan', name: 'ABAKAN SPOOL', maxLevel: 3,
+      costPerLevel: [100, 200, 350],
+      desc: 'Abakan reserve +40 rounds per level. (Base: 180)' },
+    { key: 'magThumper', name: 'THUMPER RACK', maxLevel: 3,
+      costPerLevel: [100, 200, 350],
+      desc: 'Thumper reserve +8 shells per level. (Base: 24)' },
+    { key: 'magMauler', name: 'MAULER DRUM', maxLevel: 3,
+      costPerLevel: [100, 200, 350],
+      desc: 'Mauler reserve +10 shells per level. (Base: 36)' },
+    { key: 'magJudge', name: 'JUDGE SPEEDLOADER', maxLevel: 3,
+      costPerLevel: [100, 200, 350],
+      desc: 'Judge reserve +8 rounds per level. (Base: 24)' },
     // ---- PHASE 3: attachments ----
     { key: 'laserSight', name: 'LASER SIGHT ARRAY', maxLevel: 3,
       costPerLevel: [150, 300, 500],
@@ -32433,6 +32866,13 @@ const ARMORY_UPGRADES = [
 // land on the marker via a high z-arc that clears cover. MAX_DIST is 2x
 // the L1 flat-shot's measured landing distance (power 2600, fuse 0.75;
 // update()'s Math.pow(0.01, dt) drag integrates to ~547u over 0.75s).
+// THUMPER tuning: hold-to-range explosive primary. Press shows the marker
+// at MAX_DIST (the far default); holding walks it IN toward MIN_DIST and
+// release lobs the shell onto the marker (isArcShot, over walls). A tap
+// (<0.15s, the GL muscle-memory window) fires the far default instantly,
+// so tap-tap pounds distant crowds at pump cadence while holds dial precise
+// mid/near shots. Own table so GL_ARC retunes can't drift it.
+const THUMPER_TUNING = { FLIGHT_TIME: 0.55, ARC_VZ: 187, MIN_DIST: 250, MAX_DIST: 1400, SLIDE_SPEED: 1600, BLAST_R: 150, PEAK: 120, SELF_MULT: 0.5 };
 const GL_ARC = { MIN_DIST: 220, MAX_DIST: 1100, SLIDE_SPEED: 800, FLIGHT_TIME: 0.55, ARC_VZ: 187 };
 
 // SENTINEL MINE PROTOCOL ('mineTech' armory track) tuning. One table drives
@@ -32708,6 +33148,38 @@ const SHOP_ITEMS = {
         flavor: 'Grandpa means business.',
         mech: '20 AP rounds. Plates optional. Shares the pool — type flips wholesale.',
         owned: (p) => ({ have: (p.ammo && p.ammo.m1a) || 0, max: (p.maxAmmo && p.maxAmmo.m1a) || 0, note: 'AP' }) },
+    ammo_abakan_std: { name: 'ABAKAN ROUNDS', icon: 'ammo', color: '#ffe082', strip: true,
+        flavor: 'Two taps, one heartbeat.',
+        mech: '48 standard rounds for the hyperburst. Two leave per pull — budget double. Shares the pool with AP — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.abakan) || 0, max: (p.maxAmmo && p.maxAmmo.abakan) || 0, note: ((p.ammoTypes && p.ammoTypes.abakan) || 'std').toUpperCase() }) },
+    ammo_abakan_ap: { name: 'ABAKAN AP', icon: 'ammo', color: '#ffe082', strip: false,
+        flavor: 'Through the vest, twice.',
+        mech: '48 armor-piercing rounds — punches riot shields and bad cover, both barrels. Shares the pool — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.abakan) || 0, max: (p.maxAmmo && p.maxAmmo.abakan) || 0, note: 'AP' }) },
+    ammo_thumper_he: { name: 'THUMPER HE', icon: 'ammo', color: '#ffe082', strip: true,
+        flavor: 'Pocket artillery.',
+        mech: '6 HE shells — arcing crowd-erasers that fly over cover. Your own splash is halved, not gone. Shares the pool with HEDP — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.thumper) || 0, max: (p.maxAmmo && p.maxAmmo.thumper) || 0, note: ((p.ammoTypes && p.ammoTypes.thumper) || 'he').toUpperCase() }) },
+    ammo_thumper_hedp: { name: 'THUMPER HEDP', icon: 'ammo', color: '#ffe082', strip: false,
+        flavor: 'Small ring, big argument.',
+        mech: '6 dual-purpose shells — tighter blast, hotter center, hungrier vs shields and walls. Shares the pool — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.thumper) || 0, max: (p.maxAmmo && p.maxAmmo.thumper) || 0, note: 'HEDP' }) },
+    ammo_mauler_std: { name: 'MAULER BUCK', icon: 'ammo', color: '#ffe082', strip: true,
+        flavor: 'Hold the trigger, clear the room.',
+        mech: '10 buckshot shells for the full-auto cone. Shares the pool with flechette — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.mauler) || 0, max: (p.maxAmmo && p.maxAmmo.mauler) || 0, note: ((p.ammoTypes && p.ammoTypes.mauler) || 'std').toUpperCase() }) },
+    ammo_mauler_ap: { name: 'MAULER FLECHETTE', icon: 'ammo', color: '#ffe082', strip: false,
+        flavor: 'Darts through vests.',
+        mech: '10 flechette shells — armor-piercing darts for shields and bad cover. Shares the pool — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.mauler) || 0, max: (p.maxAmmo && p.maxAmmo.mauler) || 0, note: 'AP' }) },
+    ammo_judge_std: { name: 'JUDGE ROUNDS', icon: 'ammo', color: '#ffe082', strip: true,
+        flavor: 'Big iron, bigger manners.',
+        mech: '6 heavy rounds. Absurd alpha, semi latch, shoulder-mounted regret. Shares the pool with magnum — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.judge) || 0, max: (p.maxAmmo && p.maxAmmo.judge) || 0, note: ((p.ammoTypes && p.ammoTypes.judge) || 'std').toUpperCase() }) },
+    ammo_judge_ap: { name: 'JUDGE MAGNUM', icon: 'ammo', color: '#ffe082', strip: false,
+        flavor: '.50 percussive diplomacy.',
+        mech: '6 magnum rounds — hotter center, punches shields and bad cover, louder heat. Shares the pool — type flips wholesale.',
+        owned: (p) => ({ have: (p.ammo && p.ammo.judge) || 0, max: (p.maxAmmo && p.maxAmmo.judge) || 0, note: 'AP' }) },
     oc_hollowPoint: { name: 'HOLLOW POINT', icon: 'oc', color: '#80d8ff', strip: true,
         flavor: 'Angry geometry.',
         mech: '+10% bullet damage per rank, every gun, all run. Price climbs 1.5× per rank.',
@@ -32754,7 +33226,7 @@ const SHOP_ITEMS = {
         owned: null }
 };
 // Loadout-strip order: gear first, ammo pools second, overclocks last.
-const SHOP_STRIP_ORDER = ['grenade', 'mine', 'barrier', 'medpack', 'boost', 'drone', 'turret', 'dog', 'swarm_drone', 'camera', 'fiber_optic', 'repairgun', 'field_gen', 'oracle', 'rift_seed', 'rift_station', 'riftlance', 'rubble', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std', 'ammo_pistol_hp', 'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC', 'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel'];
+const SHOP_STRIP_ORDER = ['grenade', 'mine', 'barrier', 'medpack', 'boost', 'drone', 'turret', 'dog', 'swarm_drone', 'camera', 'fiber_optic', 'repairgun', 'field_gen', 'oracle', 'rift_seed', 'rift_station', 'riftlance', 'rubble', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std', 'ammo_abakan_std', 'ammo_thumper_he', 'ammo_mauler_std', 'ammo_judge_std', 'ammo_pistol_hp', 'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC', 'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel'];
 
 // Escalation Protocols: opt-in pre-mission risk toggles (extraction only).
 // Each raises real danger and pays a flat bonus multiplier on ALL mission
@@ -32825,12 +33297,12 @@ const OPERATOR_KITS = {
 const KIT_ORDER = ['standard', 'breacher', 'ghost', 'technician', 'medic', 'pathfinder', 'vanguard', 'heavy'];
 // Shop-bias categories, matched against buyItem's type string.
 const KIT_SHOP_REBATE = {
-    breacher:   { pct: 0.20, match: (t) => t === 'grenade' || t === 'mine' },
+    breacher:   { pct: 0.20, match: (t) => t === 'grenade' || t === 'mine' || (typeof t === 'string' && t.indexOf('ammo_thumper_') === 0) },
     ghost:      { pct: 0.20, match: (t) => typeof t === 'string' && t.indexOf('ammo_') === 0 },
     technician: { pct: 0.20, match: (t) => ['barrier', 'barrier_upgrade', 'rubble', 'turret', 'turret_mk2', 'drone', 'drone_upgrade', 'fiber_optic', 'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack'].indexOf(t) >= 0 },
     medic:      { pct: 0.20, match: (t) => t === 'medpack' || t === 'armor' },
     pathfinder: { pct: 0.20, match: (t) => typeof t === 'string' && t.indexOf('ammo_') === 0 },
-    vanguard:   { pct: 0.20, match: (t) => t === 'grenade' || t === 'mine' },
+    vanguard:   { pct: 0.20, match: (t) => t === 'grenade' || t === 'mine' || (typeof t === 'string' && t.indexOf('ammo_thumper_') === 0) },
     heavy:      { pct: 0.20, match: (t) => typeof t === 'string' && (t.indexOf('ammo_lmg_') === 0 || t === 'armor') }
 };
 
@@ -33473,6 +33945,14 @@ const MARK_TILES = {
                         // reading against the saturated ground.
 };
 
+// VIDEO sub-tab UI scale: every DOM root the menu zoom applies to, in one
+// place so a new overlay can't silently stay at 100% again (the buy menu
+// did: setUIScale zoomed start/pause/ui-layer only, shop-screen stayed
+// native in every mode). Splash stays out (transient fullscreen dismiss)
+// and dev-dashboard stays out (dev-tool grid); everything player-facing
+// scales together. Consumed by setUIScale.
+const UI_SCALE_ROOTS = ['start-screen', 'shop-screen', 'pause-screen', 'debrief-screen', 'chaos-draft-screen', 'perk-screen', 'extmags-screen', 'ui-layer'];
+
 class Game {
     constructor() {
         if (!Game._vignetteCache) {
@@ -33732,8 +34212,8 @@ class Game {
         this.shopItemIDs = [
             'hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost', 
             'barrier', 'rubble', 'barrier_upgrade', 'drone', 'drone_upgrade', 'fiber_optic', 'turret', 'turret_mk2',
-            'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'camera', 'repairgun', 'field_gen', 'oracle', 'rift_seed', 'rift_station', 'riftlance', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std',
-            'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap', 'ammo_shotgun_slug',
+            'dog', 'dog_upgrade', 'swarm_drone', 'swarm_pack', 'camera', 'repairgun', 'field_gen', 'oracle', 'rift_seed', 'rift_station', 'riftlance', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std', 'ammo_abakan_std', 'ammo_thumper_he', 'ammo_mauler_std', 'ammo_judge_std',
+            'ammo_smg_hp', 'ammo_lmg_ap', 'ammo_sniper_ap', 'ammo_pistol_hp', 'ammo_m1a_ap', 'ammo_shotgun_slug', 'ammo_abakan_ap', 'ammo_thumper_hedp', 'ammo_mauler_ap', 'ammo_judge_ap',
             'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC',
             'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel', 'call_evac', 'ready'
         ];
@@ -36721,6 +37201,16 @@ class Game {
                 if (isTouchPlaying) {
                     return;
                 }
+                // THUMPER hold-to-range: a press with the launcher in hand
+                // and ammo starts the charge INSTEAD of setting mouseDown
+                // (the trigger guard skips Thumper while charging; the shell
+                // fires on mouseup). A dry press falls through so the normal
+                // trigger dry-fire path (empty click) still owns that case.
+                if (this.state === 'playing' && !this.isPaused && this.player && !this.player.dead
+                    && !(this.player.activeDrone && this.player.activeDrone.isPiloted && !this.player.activeDrone.dead)
+                    && tryStartThumperCharge(this.player)) {
+                    return;
+                }
                 this.input.mouseDown = true; 
                 if (this.state === 'playing' && this.player.activeDrone && this.player.activeDrone.isPiloted && !this.player.activeDrone.dead) {
                     if (this.player.droneUpgraded && (this.player.activeDrone.bombsDropped || 0) < 3) {
@@ -36737,6 +37227,9 @@ class Game {
                 if (isTouchPlaying) {
                     return;
                 }
+                // THUMPER release: fires the ranged shell (tap = far default).
+                // Null-safe no-op unless a charge is actually in progress.
+                try { releaseThumperCharge(this.player); } catch (err) {}
                 this.input.mouseDown = false; 
             }
         });
@@ -36780,6 +37273,8 @@ class Game {
         // alt-tab. Both are null-safe, matching togglePause()'s cancel block.
         cancelGLCharge(this.player);
         cancelGLCharge(this.player2);
+        cancelThumperCharge(this.player);
+        cancelThumperCharge(this.player2);
         cancelBarrierChain(this.player);
         cancelBarrierChain(this.player2);
         // Data Link: a focus loss mid-spool cancels it (a stuck latch would keep
@@ -36818,6 +37313,8 @@ class Game {
         if (this.isPaused) {
             cancelGLCharge(this.player);
             cancelGLCharge(this.player2);
+            cancelThumperCharge(this.player);
+            cancelThumperCharge(this.player2);
             cancelBarrierChain(this.player);
             cancelBarrierChain(this.player2);
             // PEACEFUL: expose the manual OPEN SHOP action in the pause menu.
@@ -37203,6 +37700,19 @@ class Game {
                     releaseBarrierChain(playerInstance);
                 }
                 playerInstance._chainR3WasDown = r3Down;
+
+                // Right Trigger (RT) - Thumper hold-to-range. Edge-tracked
+                // like L3/R3 above: press starts the far-default charge,
+                // release lobs. A dry press never starts one, so the normal
+                // level-fire dry path still owns the empty click. Other guns
+                // ignore this entirely (tryStart guards on Thumper + ammo).
+                let rtDown = gp.buttons[7].pressed || gp.buttons[7].value > 0.3;
+                if (rtDown && !playerInstance._thumperRTWasDown) {
+                    tryStartThumperCharge(playerInstance);
+                } else if (!rtDown && playerInstance._thumperRTWasDown) {
+                    releaseThumperCharge(playerInstance);
+                }
+                playerInstance._thumperRTWasDown = rtDown;
             };
 
             pollPlayer(gp1, this.player);
@@ -37236,6 +37746,10 @@ class Game {
             ammo_sniper_std: 'btn-buy-ammo-sniper-std', ammo_sniper_ap: 'btn-buy-ammo-sniper-ap', ammo_pistol_hp: 'btn-buy-ammo-pistol-hp',
             ammo_m1a_std: 'btn-buy-ammo-m1a-std', ammo_m1a_ap: 'btn-buy-ammo-m1a-ap',
             ammo_shotgun_slug: 'btn-buy-ammo-shotgun-slug',
+            ammo_abakan_std: 'btn-buy-ammo-abakan-std', ammo_abakan_ap: 'btn-buy-ammo-abakan-ap',
+            ammo_thumper_he: 'btn-buy-ammo-thumper-he', ammo_thumper_hedp: 'btn-buy-ammo-thumper-hedp',
+            ammo_mauler_std: 'btn-buy-ammo-mauler-std', ammo_mauler_ap: 'btn-buy-ammo-mauler-ap',
+            ammo_judge_std: 'btn-buy-ammo-judge-std', ammo_judge_ap: 'btn-buy-ammo-judge-ap',
             oc_hollowPoint: 'btn-buy-oc-hollow',
             oc_exoServos: 'btn-buy-oc-servos',
             oc_extMags: 'btn-buy-oc-mags',
@@ -44196,7 +44710,7 @@ class Game {
             this.player.cash = 999999;
             if (this.player2) this.player2.cash = 999999;
             
-            let itemsToSpawn = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a', 'grenade', 'medpack', 'redbull'];
+            let itemsToSpawn = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a', 'abakan', 'thumper', 'mauler', 'judge', 'repairgun', 'riftlance', 'grenade', 'medpack', 'redbull'];
             let startX = this.mapW / 2 - (itemsToSpawn.length - 1) * 35;
             itemsToSpawn.forEach((type, idx) => {
                 let it = this.spawnItem(startX + idx * 70, this.mapH / 2 - 80, type);
@@ -44978,7 +45492,7 @@ class Game {
                 p.addWeapon(wKey);
                 audio.playPickup('weapon');
                 if (hasWeapon) {
-                    let refill = wKey === 'shotgun' ? 12 : wKey === 'sniper' ? 5 : wKey === 'm1a' ? 20 : 30;
+                    let refill = wKey === 'shotgun' ? 12 : wKey === 'sniper' ? 5 : wKey === 'm1a' ? 20 : wKey === 'abakan' ? 48 : wKey === 'thumper' ? 8 : wKey === 'mauler' ? 10 : wKey === 'judge' ? 8 : 30;
                     this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 15, "+" + refill + " AMMO", Weapons[wKey].color, 1.2));
                 } else {
                     this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 15, wKey.toUpperCase() + " ACQUIRED!", Weapons[wKey].color, 1.5));
@@ -45963,13 +46477,13 @@ class Game {
         generators.push({
             type: 'SUPPLY DROP',
             title: 'SPECIALTY AMMO CACHE',
-            desc: 'Converts carried weapons to specialty rounds — AP (LMG/Sniper/M1A), Hollow-Point (SMG), Slugs (Shotgun) — and tops reserves up +50%.',
+            desc: 'Converts carried weapons to specialty rounds — AP (LMG/Sniper/M1A/Abakan/Mauler/Magnum-Judge), Hollow-Point (SMG), Slugs (Shotgun), HEDP (Thumper) — and tops reserves up +50%.',
             color: '#ffb700',
             apply: (player) => {
                 // Reuses the existing shop ammoTypes mechanism (buck/slug/ap/hp)
                 // consumed in Bullet ballistics; Chaos Draft skips the shop so
                 // this is the only way to reach specialty ammo in this mode.
-                const specialty = { lmg: 'ap', sniper: 'ap', m1a: 'ap', smg: 'hp', shotgun: 'slug' };
+                const specialty = { lmg: 'ap', sniper: 'ap', m1a: 'ap', abakan: 'ap', mauler: 'ap', judge: 'ap', smg: 'hp', shotgun: 'slug', thumper: 'hedp' };
                 if (player.inventory && player.ammoTypes) {
                     player.inventory.forEach(w => {
                         let wKey = w.name.toLowerCase();
@@ -46416,7 +46930,13 @@ class Game {
                 smg: 360,
                 lmg: 300,
                 sniper: 15,
-                m1a: 60
+                m1a: 60,
+                abakan: 180,
+                thumper: 24,
+                mauler: 36,
+                judge: 24,
+                repairgun: 250,
+                riftlance: 100
             };
             if (baseMax[weaponKey]) {
                 this.player.ammo[weaponKey] = this.player.maxAmmo[weaponKey];
@@ -47605,8 +48125,11 @@ class Game {
                 if (!this.operatorMode) {
                     let dropRoll = Math.random();
                     if (dropRoll < 0.08) {
-                        let weapons = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a'];
-                        let weaponToDrop = weapons[Math.floor(Math.random() * weapons.length)];
+                        // Weighted stock drops: the five originals at full
+                        // weight, Abakan/Thumper/Mauler/Judge at half (rare but findable).
+                        // Uniform rand over the bag keeps the 8% band total.
+                        let _bag = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a', 'shotgun', 'smg', 'lmg', 'sniper', 'm1a', 'abakan', 'thumper', 'mauler', 'judge'];
+                        let weaponToDrop = _bag[Math.floor(Math.random() * _bag.length)];
                         this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), weaponToDrop));
                     } else if (dropRoll < 0.13) {
                         this.items.push(this.spawnItem(e.x + MathUtils.rand(-15, 15), e.y + MathUtils.rand(-15, 15), 'grenade'));
@@ -49056,6 +49579,22 @@ class Game {
             p.cash -= 35; p.ammo.m1a = Math.min(p.maxAmmo.m1a, p.ammo.m1a + 20); p.ammoTypes.m1a = 'standard';
         } else if (type === 'ammo_m1a_ap' && p.cash >= 85 && p.ammo.m1a < p.maxAmmo.m1a) {
             p.cash -= 85; p.ammo.m1a = Math.min(p.maxAmmo.m1a, p.ammo.m1a + 20); p.ammoTypes.m1a = 'ap';
+        } else if (type === 'ammo_abakan_std' && p.cash >= 40 && p.ammo.abakan < p.maxAmmo.abakan) {
+            p.cash -= 40; p.ammo.abakan = Math.min(p.maxAmmo.abakan, p.ammo.abakan + 48); p.ammoTypes.abakan = 'standard';
+        } else if (type === 'ammo_abakan_ap' && p.cash >= 95 && p.ammo.abakan < p.maxAmmo.abakan) {
+            p.cash -= 95; p.ammo.abakan = Math.min(p.maxAmmo.abakan, p.ammo.abakan + 48); p.ammoTypes.abakan = 'ap';
+        } else if (type === 'ammo_thumper_he' && p.cash >= 60 && p.ammo.thumper < p.maxAmmo.thumper) {
+            p.cash -= 60; p.ammo.thumper = Math.min(p.maxAmmo.thumper, p.ammo.thumper + 6); p.ammoTypes.thumper = 'he';
+        } else if (type === 'ammo_thumper_hedp' && p.cash >= 95 && p.ammo.thumper < p.maxAmmo.thumper) {
+            p.cash -= 95; p.ammo.thumper = Math.min(p.maxAmmo.thumper, p.ammo.thumper + 6); p.ammoTypes.thumper = 'hedp';
+        } else if (type === 'ammo_mauler_std' && p.cash >= 45 && p.ammo.mauler < p.maxAmmo.mauler) {
+            p.cash -= 45; p.ammo.mauler = Math.min(p.maxAmmo.mauler, p.ammo.mauler + 10); p.ammoTypes.mauler = 'standard';
+        } else if (type === 'ammo_mauler_ap' && p.cash >= 95 && p.ammo.mauler < p.maxAmmo.mauler) {
+            p.cash -= 95; p.ammo.mauler = Math.min(p.maxAmmo.mauler, p.ammo.mauler + 10); p.ammoTypes.mauler = 'ap';
+        } else if (type === 'ammo_judge_std' && p.cash >= 50 && p.ammo.judge < p.maxAmmo.judge) {
+            p.cash -= 50; p.ammo.judge = Math.min(p.maxAmmo.judge, p.ammo.judge + 6); p.ammoTypes.judge = 'standard';
+        } else if (type === 'ammo_judge_ap' && p.cash >= 95 && p.ammo.judge < p.maxAmmo.judge) {
+            p.cash -= 95; p.ammo.judge = Math.min(p.maxAmmo.judge, p.ammo.judge + 6); p.ammoTypes.judge = 'ap';
         }
 
         // PHASE 4 (kit shop bias): requisition rebate. If a purchase
@@ -49569,6 +50108,18 @@ class Game {
             { to: 20, up: (sd) => {
                 if (typeof sd.wifeModeP1 !== 'boolean') sd.wifeModeP1 = false;
                 if (typeof sd.wifeModeP2 !== 'boolean') sd.wifeModeP2 = false;
+            }},
+            // v21 (NEW STOCK GUNS): Abakan + Thumper magazine tracks.
+            // Additive only — never edit an older step.
+            { to: 21, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.magAbakan !== 'number') sd.metaUpgrades.magAbakan = 0;
+                if (typeof sd.metaUpgrades.magThumper !== 'number') sd.metaUpgrades.magThumper = 0;
+            }},
+            { to: 22, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.magMauler !== 'number') sd.metaUpgrades.magMauler = 0;
+                if (typeof sd.metaUpgrades.magJudge !== 'number') sd.metaUpgrades.magJudge = 0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -49625,6 +50176,12 @@ class Game {
         if (MA.topSecretOracle === undefined) MA.topSecretOracle = 0;
         // v19: TOP SECRET Rift Network gate (mirrors the v19 migration).
         if (MA.topSecretRift === undefined) MA.topSecretRift = 0;
+        // v21: ABAKAN + THUMPER magazine tracks (mirrors the v21 migration).
+        if (MA.magAbakan === undefined) MA.magAbakan = 0;
+        if (MA.magThumper === undefined) MA.magThumper = 0;
+        // v22: MAULER + JUDGE magazine tracks (mirrors the v22 migration).
+        if (MA.magMauler === undefined) MA.magMauler = 0;
+        if (MA.magJudge === undefined) MA.magJudge = 0;
         if (typeof this.saveData.buildTier !== 'string') this.saveData.buildTier = '';
         if (typeof this.saveData.hasSeenArmoryTutorial !== 'boolean') this.saveData.hasSeenArmoryTutorial = false;
         if (typeof this.saveData.touchFireHintDone !== 'boolean') this.saveData.touchFireHintDone = false;
@@ -50106,20 +50663,24 @@ class Game {
                 const nDrain = Math.round((level + 1) * 8);
                 return formatStat(`Regen +${cReg}% / Drain -${cDrain}%`, `Regen +${nReg}% / Drain -${nDrain}%`);
             }
-            case 'magSmg': {
-                const c = 360 + level * 60;
-                const n = 360 + (level + 1) * 60;
-                return formatStat(`${c} SMG rounds`, `${n} SMG rounds`);
-            }
-            case 'magM1a': {
-                const c = 60 + level * 20;
-                const n = 60 + (level + 1) * 20;
-                return formatStat(`${c} M1A rounds`, `${n} M1A rounds`);
-            }
-            case 'magShotgun': {
-                const c = 48 + level * 12;
-                const n = 48 + (level + 1) * 12;
-                return formatStat(`${c} shotgun shells`, `${n} shotgun shells`);
+            case 'magSmg':
+            case 'magM1a':
+            case 'magShotgun':
+            case 'magAbakan':
+            case 'magThumper':
+            case 'magMauler':
+            case 'magJudge': {
+                // BUG-002 fixed: magazine preview reads the live tables
+                // (BASE_MAX_AMMO + MAG_META_UPGRADES) instead of hardcoded
+                // literals, so the card cannot drift from recalcPlayerMaxAmmo.
+                const _mu = (typeof MAG_META_UPGRADES !== 'undefined' && MAG_META_UPGRADES[upg.key]) || null;
+                const _base = (typeof BASE_MAX_AMMO !== 'undefined' && _mu) ? (BASE_MAX_AMMO[_mu.ammoKey] || 0) : 0;
+                const _per = _mu ? (_mu.perLevel || 0) : 0;
+                const _lbl = upg.key === 'magSmg' ? 'SMG rounds' : upg.key === 'magM1a' ? 'M1A rounds'
+                    : upg.key === 'magShotgun' ? 'shotgun shells' : upg.key === 'magAbakan' ? 'Abakan rounds' : upg.key === 'magMauler' ? 'Mauler shells' : upg.key === 'magJudge' ? 'Judge rounds' : 'Thumper shells';
+                const c = _base + level * _per;
+                const n = _base + (level + 1) * _per;
+                return formatStat(`${c} ${_lbl}`, `${n} ${_lbl}`);
             }
             default:
                 return '';
@@ -51592,8 +52153,10 @@ class Game {
         // ui-layer (top bars + weapon/item carousels + boss HUD) scales
         // too: it's pure buttons/bars (no canvas-coord math — crosshair
         // and touch sticks live OUTSIDE it), and its children anchor to
-        // edges/center so zoom keeps them pinned.
-        for (const id of ['start-screen', 'pause-screen', 'ui-layer']) {
+        // edges/center so zoom keeps them pinned. Roots live in
+        // UI_SCALE_ROOTS (top-level, above class Game) — never inline a
+        // second list here or the buy menu rots back to 100%.
+        for (const id of UI_SCALE_ROOTS) {
             const el = document.getElementById(id);
             if (el) el.style.zoom = best;
         }
@@ -52792,6 +53355,34 @@ class Game {
                     this.ctx.lineWidth = 1.5;
                     this.ctx.beginPath();
                     this.ctx.arc(mscx, mscy, 90 * (p.kitBlastMult || 1), 0, Math.PI * 2);
+                    this.ctx.stroke();
+                    this.ctx.restore();
+                }
+                // THUMPER hold-to-range: same tick-and-landing-circle language
+                // as the GL marker above, in Thumper olive with the shell's
+                // own blast radius (HEDP draws its tighter ring). The marker
+                // starts far and walks in while held — what you see is where
+                // release lands the shell.
+                if (p.thumperCharging) {
+                    const _TT = (typeof THUMPER_TUNING !== 'undefined') ? THUMPER_TUNING : { BLAST_R: 150 };
+                    const _hedp = (p.ammoTypes && p.ammoTypes.thumper === 'hedp');
+                    let tX = lStartX + Math.cos(laserAngle) * p.thumperChargeDist;
+                    let tY = lStartY + Math.sin(laserAngle) * p.thumperChargeDist;
+                    let tPerp = laserAngle + Math.PI / 2;
+                    let tTickX = Math.cos(tPerp) * 9;
+                    let tTickY = Math.sin(tPerp) * 9;
+                    let tscx = tX - cam.x, tscy = tY - cam.y - pz;
+                    this.ctx.save();
+                    this.ctx.strokeStyle = 'rgba(192, 202, 51, 0.9)';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(tscx - tTickX, tscy - tTickY);
+                    this.ctx.lineTo(tscx + tTickX, tscy + tTickY);
+                    this.ctx.stroke();
+                    this.ctx.strokeStyle = 'rgba(192, 202, 51, 0.4)';
+                    this.ctx.lineWidth = 1.5;
+                    this.ctx.beginPath();
+                    this.ctx.arc(tscx, tscy, (_TT.BLAST_R || 150) * (_hedp ? 0.65 : 1) * (p.kitBlastMult || 1), 0, Math.PI * 2);
                     this.ctx.stroke();
                     this.ctx.restore();
                 }
@@ -55809,6 +56400,12 @@ class TouchController {
             const firingNow = this.rightStick.active && this.rightStick.dist > 0.98;
             if (firingNow !== !!this._fireRingActive) {
                 this._fireRingActive = firingNow;
+                // THUMPER hold-to-range on touch: fire-button press starts the
+                // far-default charge, release lobs (same trio as mouse/pad).
+                if (game && game.player && !game.player.dead) {
+                    if (firingNow) tryStartThumperCharge(game.player);
+                    else releaseThumperCharge(game.player);
+                }
                 const stickEl = document.getElementById('touch-joystick-right');
                 if (stickEl) stickEl.classList.toggle('firing', firingNow);
                 if (firingNow && game && game.saveData && !game.saveData.touchFireHintDone) {
