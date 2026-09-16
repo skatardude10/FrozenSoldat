@@ -72,6 +72,14 @@
         touch-action: manipulation;
     }
     canvas { display: block; }
+    /* RENDER SCALE (2026-09-16 fix): the backing store (canvas.width/height)
+       is CSS-px x renderScale, but the ELEMENT must always cover the viewport
+       so the browser upscales a smaller store fullscreen (soft) or downscales
+       a larger one (crisp supersample). Without this pin the element rendered
+       at backing-store size and a sub-100% scale shrank the picture into the
+       top-left with gutters instead of softening it. All input/aim math stays
+       in CSS px (this.width/height), so this pure-display pin can't skew it. */
+    #gameCanvas { position: fixed; inset: 0; width: 100vw; height: 100vh; }
 
     /* --- OS cursor suppression, everywhere -------------------------------
        The OS arrow is never wanted in this game. In-round it's a second,
@@ -383,14 +391,14 @@
         background: radial-gradient(circle at 50% 50%, rgba(1, 10, 21, 0) 30%, rgba(1, 10, 21, 0.4) 68%, rgba(1, 10, 21, 0.9) 100%);
     }
     @keyframes auroraBloom {
-        0%   { transform: scale(1) rotate(0deg); opacity: 0.85; }
-        50%  { transform: scale(1.1) rotate(4deg); opacity: 1; }
-        100% { transform: scale(1.05) rotate(-3deg); opacity: 0.9; }
+        0%   { transform: translate(calc(var(--apx, 0) * 22px), calc(var(--apy, 0) * 22px)) scale(1) rotate(0deg); opacity: 0.85; }
+        50%  { transform: translate(calc(var(--apx, 0) * 22px), calc(var(--apy, 0) * 22px)) scale(1.1) rotate(4deg); opacity: 1; }
+        100% { transform: translate(calc(var(--apx, 0) * 22px), calc(var(--apy, 0) * 22px)) scale(1.05) rotate(-3deg); opacity: 0.9; }
     }
     @keyframes auroraBloomReverse {
-        0%   { transform: scale(1.05) rotate(0deg); opacity: 0.75; }
-        50%  { transform: scale(0.95) rotate(-5deg); opacity: 0.95; }
-        100% { transform: scale(1.1) rotate(3deg); opacity: 0.8; }
+        0%   { transform: translate(calc(var(--apx, 0) * -26px), calc(var(--apy, 0) * -26px)) scale(1.05) rotate(0deg); opacity: 0.75; }
+        50%  { transform: translate(calc(var(--apx, 0) * -26px), calc(var(--apy, 0) * -26px)) scale(0.95) rotate(-5deg); opacity: 0.95; }
+        100% { transform: translate(calc(var(--apx, 0) * -26px), calc(var(--apy, 0) * -26px)) scale(1.1) rotate(3deg); opacity: 0.8; }
     }
     @keyframes gridPulse {
         0%   { opacity: 0.5; }
@@ -610,6 +618,12 @@
     .insp-mech { font-size: 11px; color: #e0f7fa; line-height: 1.45; }
     .insp-held { font-size: 10px; color: var(--green); letter-spacing: 1px; margin-top: 4px; }
     .insp-bought { font-size: 10px; color: #ffb700; letter-spacing: 1px; margin-top: 4px; }
+    /* SHOP VISIBILITY (hide/grey): stashable ammo (buyable without its gun)
+       reads as a dashed outline + dimmed text; the reason line carries the
+       why (lock red / short-max grey / stashable blue / info). Text always
+       pairs color so nothing is color-alone. */
+    .shop-grid button.stashable { border-style: dashed !important; opacity: 0.75; }
+    .insp-reason { font-size: 10px; letter-spacing: 1px; margin-top: 4px; line-height: 1.5; }
     .insp-hint { font-size: 11px; color: #5a6b7a; letter-spacing: 1px; text-align: center; padding-top: 28px; }
     
     .hidden { display: none !important; }
@@ -2046,12 +2060,14 @@
                         <span id="lbl-render-scale">100%</span>
                     </div>
                     <select id="opt-render-scale" onchange="game.setRenderScale(this.value)" style="width: 100%; cursor: pointer; background: #0a1420; color: #e8f6ff; border: 1px solid rgba(0, 229, 255, 0.3); padding: 7px; border-radius: 4px; font-size: 12px;">
+                        <option value="150">150% (Supersample)</option>
+                        <option value="125">125% (Supersample)</option>
                         <option value="100" selected>100% (Native)</option>
                         <option value="90">90%</option>
                         <option value="75">75%</option>
                         <option value="66">66%</option>
                     </select>
-                    <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 100% &nbsp;|&nbsp; Lower = less GPU load, softer image</div>
+                    <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 100% &nbsp;|&nbsp; Lower = less GPU load, softer image &nbsp;|&nbsp; Above 100% = crisper (supersample), more GPU load</div>
                 </div>
             </div>
 
@@ -2763,12 +2779,14 @@
                     <span id="lbl-render-scale-pause">100%</span>
                 </div>
                 <select id="opt-render-scale-pause" onchange="game.setRenderScale(this.value)" style="width: 100%; cursor: pointer; background: #0a1420; color: #e8f6ff; border: 1px solid rgba(0, 229, 255, 0.3); padding: 7px; border-radius: 4px; font-size: 12px;">
+                    <option value="150">150% (Supersample)</option>
+                    <option value="125">125% (Supersample)</option>
                     <option value="100" selected>100% (Native)</option>
                     <option value="90">90%</option>
                     <option value="75">75%</option>
                     <option value="66">66%</option>
                 </select>
-                <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 100% &nbsp;|&nbsp; Lower = less GPU load, softer image</div>
+                <div style="font-size: 9px; color: #808f9c; margin-top: 8px;">Default: 100% &nbsp;|&nbsp; Lower = less GPU load, softer image &nbsp;|&nbsp; Above 100% = crisper (supersample), more GPU load</div>
             </div>
         </div>
         
@@ -17620,6 +17638,43 @@ class Player extends Entity {
         const near = nearestInReach();
         if (!near) return false;                       // nothing in reach -> weld empty-swing
         if (near.hp < near.maxHp) return false;        // damaged nearest -> weld owns it
+        // WELD PRIORITY (2026-09-16): the gate above only consults the
+        // NEAREST node, so aiming past a healthy turret at a chewed cable
+        // (or stump) still STARTED a spool with fiber in pocket — and once
+        // committed, the trigger is captured until a fiddly walk-away
+        // cancel. Repair is the urgent combat action; spooling is deliberate.
+        // If the weld scan would find ANY damaged ally in weld reach, yield
+        // (weld owns the trigger). Deliberate spooling just needs a step
+        // away from the damage — or one second of welding first. Same
+        // candidate set + ownership the weld path itself uses, so the two
+        // can never disagree about what "needs repair" means.
+        {
+            const wr = (typeof REPAIR_TUNING !== 'undefined' && REPAIR_TUNING.reach) || 105;
+            const wr2 = wr * wr;
+            let needsWeld = false;
+            const damaged = (ent) => {
+                if (needsWeld || !ent || ent.dead || !(ent.hp < ent.maxHp)) return;
+                const c = (ent.ax !== undefined)
+                    ? { x: (ent.ax + ent.bx) / 2, y: (ent.ay + ent.by) / 2 }
+                    : { x: ent.x, y: ent.y };
+                const dx = c.x - this.x, dy = c.y - this.y;
+                if (dx * dx + dy * dy < wr2) needsWeld = true;
+            };
+            for (const t of game.turrets) { if (isMine(t.owner)) damaged(t); }
+            if (game.fieldGens) for (const g of game.fieldGens) { if (isMine(g.owner)) damaged(g); }
+            if (game.riftStations) for (const s of game.riftStations) { if (isMine(s.owner)) damaged(s); }
+            for (const d of game.dogs) { if (isMine(d.owner)) damaged(d); }
+            for (const c of game.securityCameras) { if (isMine(c.owner)) damaged(c); }
+            for (const md of game.miniDrones) { if (!md.fromMine && isMine(md.owner)) damaged(md); }
+            for (const b of game.barriers) { if (!b.owner || isMine(b.owner)) damaged(b); }
+            if (game.dataCables) {
+                for (const cable of game.dataCables) {
+                    // Mirrors the weld scan exactly (live-chewed + stumps).
+                    if ((!cable.a || !cable.a.dead) && (!cable.b || !cable.b.dead)) damaged(cable);
+                }
+            }
+            if (needsWeld) return false;
+        }
         if (this.fiberCables <= 0) {
             this._spoolNoFiberTimer = (this._spoolNoFiberTimer || 0) + dt;
             if (this._spoolNoFiberTimer >= 0.4) { this._spoolNoFiberTimer = 0; floater('NO FIBER', '#ffb400'); }
@@ -17713,7 +17768,10 @@ class Player extends Entity {
         for (const b of game.barriers) { if (!b.owner || isMine(b.owner)) consider(b); }
         if (game.dataCables) {
             for (const cable of game.dataCables) {
-                if (cable.cut && cable.stump && (!cable.a || !cable.a.dead) && (!cable.b || !cable.b.dead)) {
+                // Live-but-chewed cables too (not just cut stumps): blast
+                // splash leaves partial-hp cables no other path heals, and
+                // the weld-priority veto below mirrors this exact set.
+                if ((!cable.a || !cable.a.dead) && (!cable.b || !cable.b.dead)) {
                     consider(cable);
                 }
             }
@@ -29869,6 +29927,8 @@ class MiniDrone extends Entity {
                     this.state = 'HUNTING';
                     this.target = nearestEnemy;
                     this.targetGenId = nearestEnemy._aiStaggerId;
+                    // Fix J: a new target invalidates any kept waypoint.
+                    this._huntWp = null; this._repathT = 0; this._clearT = 0; this._steerSm = null;
                     nearestEnemy.lastMiniDroneTargetTime = game.gameTime;
                     this.owner.lastMiniDroneBreakoffTime = game.gameTime;
                     this.initAudio();
@@ -29999,14 +30059,89 @@ class MiniDrone extends Entity {
                 if (nearestEnemy) {
                     this.target = nearestEnemy;
                     this.targetGenId = nearestEnemy._aiStaggerId;
+                    this._huntWp = null; this._repathT = 0; this._steerSm = null;
+                    this._loiterT = undefined; this._loiterC = undefined;
                 } else {
-                    this.detonate();
-                    return;
+                    // Fix R (2026-09-16): loiter instead of popping. A drone
+                    // whose target died/recycled/jammed with no visible
+                    // replacement used to self-destruct on the spot — the
+                    // random mid-air blasts. Now it orbits its current
+                    // position for up to 4s, rescanning every frame, and only
+                    // detonates on TTL expiry (or any contact condition,
+                    // which all still apply below). Lethality untouched:
+                    // acquisition, pursuit, and contact kill are identical.
+                    if (this._loiterT === undefined) {
+                        this._loiterT = 4.0;
+                        // Loiter-AWAY (2026-09-16): a battlefield pop is
+                        // FF-gated for own deployables, but walls and fiber
+                        // are not — a TTL pop next to your hardware eats both.
+                        // Anchor the orbit clear of own stuff: nearest own
+                        // node/cable/barrier within 150px pushes the anchor
+                        // 110px directly away (pop edge lands ~45px clear of
+                        // the 65px blast). Clamped in-bounds; grace slide +
+                        // repel still guard the drift over. Blast rules
+                        // themselves are untouched (tongs zone).
+                        let ax = this.x, ay = this.y;
+                        const own = this.owner;
+                        let nx = 0, ny = 0, nd = 150;
+                        const considerPt = (px, py) => {
+                            if (px === undefined || py === undefined) return;
+                            const d = Math.hypot(px - this.x, py - this.y);
+                            if (d < nd) { nd = d; nx = px; ny = py; }
+                        };
+                        if (own) {
+                            for (const t of game.turrets) if (t.owner === own && !t.dead) considerPt(t.x, t.y);
+                            for (const d of game.dogs) if (d.owner === own && !d.dead) considerPt(d.x, d.y);
+                            for (const c of game.securityCameras) if (c.owner === own && !c.dead) considerPt(c.x, c.y);
+                            for (const m of game.mines) if (m.owner === own) considerPt(m.x, m.y);
+                            if (game.fieldGens) for (const g of game.fieldGens) if (g.owner === own && !g.dead) considerPt(g.x, g.y);
+                            if (game.riftStations) for (const s of game.riftStations) if (s.owner === own && !s.dead) considerPt(s.x, s.y);
+                            for (const b of game.barriers) {
+                                if (b.owner && b.owner !== own) continue;
+                                considerPt((b.ax + b.bx) / 2, (b.ay + b.by) / 2);
+                            }
+                            if (game.dataCables) for (const cb of game.dataCables) {
+                                if (cb.owner !== own || cb.cut) continue;
+                                if (cb.a) considerPt(cb.a.x, cb.a.y);
+                                if (cb.b) considerPt(cb.b.x, cb.b.y);
+                            }
+                        }
+                        if (nd < 150) {
+                            let avx = this.x - nx, avy = this.y - ny;
+                            let al = Math.hypot(avx, avy);
+                            if (al < 1) { avx = 1; avy = 0; al = 1; }
+                            ax = this.x + (avx / al) * 110;
+                            ay = this.y + (avy / al) * 110;
+                            ax = MathUtils.clamp(ax, this.r + 2, game.mapW - this.r - 2);
+                            ay = MathUtils.clamp(ay, this.r + 2, game.mapH - this.r - 2);
+                        }
+                        this._loiterC = { x: ax, y: ay };
+                        this._loiterA = Math.atan2(this.vy, this.vx) || 0;
+                    }
+                    this._loiterT -= dt;
+                    if (this._loiterT <= 0) { this.detonate(); return; }
                 }
             }
-            
-            let dx = this.target.x - this.x;
-            let dy = this.target.y - this.y;
+
+            // Fix R: targetless loiter steering. loiterPt replaces the target
+            // as the steer reference (slow orbit point); every downstream
+            // consumer (blocked test, waypoint logic, contact checks) reads
+            // through tx/ty, so a null target can never crash them and the
+            // target-contact kill (dist < r+4) can never false-trigger on a
+            // point 42px away.
+            let loiterPt = null;
+            if ((!this.target || this.target.dead || targetIsStaleRecycle || (this.target._jamTimer > 0)) && this._loiterT !== undefined && this._loiterT > 0) {
+                this._loiterA += 2.4 * dt;
+                loiterPt = {
+                    x: this._loiterC.x + Math.cos(this._loiterA) * 42,
+                    y: this._loiterC.y + Math.sin(this._loiterA) * 42,
+                };
+            }
+            const tx = loiterPt ? loiterPt.x : this.target.x;
+            const ty = loiterPt ? loiterPt.y : this.target.y;
+
+            let dx = tx - this.x;
+            let dy = ty - this.y;
             let dist = Math.hypot(dx, dy);
 
             // PHASE 8c: route occluded targets through the shared A* cache
@@ -30015,18 +30150,34 @@ class MiniDrone extends Entity {
             // blind launch otherwise rams the wall and detonates en route,
             // taking nearby cables with it. Open-ground steering below is
             // untouched; A* is only ever paid when LOS is blocked.
-            let steerX = this.target.x, steerY = this.target.y;
-            const blocked = game.map.getWallsAlongSegment(this.x, this.y, this.target.x, this.target.y)
-                .some(w => MathUtils.lineIntersectAABB(this.x, this.y, this.target.x, this.target.y, w));
+            let steerX = tx, steerY = ty;
+            // Loitering needs no route: the orbit point is 42px out in open
+            // steering space, so skip the LOS/A* query entirely (also saves
+            // the segment scan while targetless).
+            const blockedNow = loiterPt ? false : game.map.getWallsAlongSegment(this.x, this.y, tx, ty)
+                .some(w => MathUtils.lineIntersectAABB(this.x, this.y, tx, ty, w));
+            // Regime hysteresis (2026-09-16, Fix J): the raw LOS flag
+            // flickers at wall edges, and every flick pumped targetSpeed
+            // 400<->600 while nulling the waypoint — steer-target jumps +
+            // speed pumping read as spazz. The occluded regime is sticky:
+            // it takes 0.3s of continuous clear LOS to leave it, and the
+            // waypoint survives clear frames until reached or repathed.
+            if (this._clearT === undefined) this._clearT = 0;
+            if (blockedNow) this._clearT = 0; else this._clearT += dt;
+            const blocked = blockedNow || this._clearT < 0.3;
             if (blocked) {
                 this._repathT = (this._repathT === undefined) ? 0 : this._repathT - dt;
                 const wp = this._huntWp;
                 const wpReached = wp && Math.hypot(wp.x - this.x, wp.y - this.y) < 30;
                 if (!wp || wpReached || this._repathT <= 0) {
-                    const path = game.map.getSharedPath(this.x, this.y, this.target.x, this.target.y, game.map.walls);
+                    const path = game.map.getSharedPath(this.x, this.y, tx, ty, game.map.walls);
                     if (path && path.length) {
+                        // 45px arrival (not 30): advance to the next waypoint
+                        // early so 400-speed cornering starts the turn before
+                        // the jamb, not inside it — matches the capped turn
+                        // radius above.
                         let idx = 0;
-                        while (idx < path.length - 1 && Math.hypot(path[idx].x - this.x, path[idx].y - this.y) < 30) idx++;
+                        while (idx < path.length - 1 && Math.hypot(path[idx].x - this.x, path[idx].y - this.y) < 45) idx++;
                         this._huntWp = path[idx];
                     } else {
                         this._huntWp = null;
@@ -30035,15 +30186,42 @@ class MiniDrone extends Entity {
                 }
                 if (this._huntWp) { steerX = this._huntWp.x; steerY = this._huntWp.y; }
             } else {
-                this._huntWp = null;
-                this._repathT = 0;
+                // Fix J: keep the last waypoint across clear frames (it is
+                // still a valid route point) instead of nulling it — nulling
+                // snapped steering back to the raw target every flicker.
+                const wp = this._huntWp;
+                const wpReached = !wp || Math.hypot(wp.x - this.x, wp.y - this.y) < 30;
+                if (wpReached) { this._huntWp = null; this._repathT = 0; }
+                else { steerX = wp.x; steerY = wp.y; }
             }
+
+            // Fix J2 (2026-09-16): low-pass the STEER POINT itself. Velocity
+            // already lerps at 8/s, but the steer target teleports — waypoint
+            // switches, arrival advances, separation/repel fights — and every
+            // teleport reads as a visible swerve (the jerk). A fast 10/s
+            // glide on the point turns teleports into curves while staying
+            // an order of magnitude quicker than the flight itself, so
+            // arrival radii, contact kills, and waypoint progression (all
+            // measured on real position, below) are unaffected.
+            if (!this._steerSm) this._steerSm = { x: steerX, y: steerY };
+            const smK = Math.min(1, 10 * dt);
+            this._steerSm.x += (steerX - this._steerSm.x) * smK;
+            this._steerSm.y += (steerY - this._steerSm.y) * smK;
+            steerX = this._steerSm.x; steerY = this._steerSm.y;
 
             let sdx = steerX - this.x;
             let sdy = steerY - this.y;
             let sdist = Math.hypot(sdx, sdy);
 
-            let targetSpeed = 600;
+            // Occluded-regime speed cap (2026-09-16): steering converges at
+            // ~8/s, so turn radius scales with v^2 — at 600 that is ~75px,
+            // wider than door jambs and pocket corners, and the 24px repel
+            // band cannot save the clip. While LOS is blocked, fly at 400
+            // (~30px turn radius, inside the repel band's authority) so the
+            // A* waypoints are actually flyable; open ground keeps full 600
+            // and lethality is untouched (arrival, not speed, kills).
+            // Loiter orbit flies 170 — a slow holding circle, not an attack run.
+            let targetSpeed = loiterPt ? 170 : (blocked ? 400 : 600);
             if (sdist > 0) {
                 let targetVx = (sdx / sdist) * targetSpeed;
                 let targetVy = (sdy / sdist) * targetSpeed;
@@ -30070,15 +30248,18 @@ class MiniDrone extends Entity {
             // launches start blind, so without this they grind head-on into
             // walls and stall. Same force values, same spatial-hash query —
             // no new per-frame system, cost already paid by ORBITING drones.
+            // 2026-09-16: in the occluded regime the band widens 24→36 so a
+            // door jamb starts pushing a full turn-radius out; open ground
+            // keeps the stock 24.
             {
                 let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+                const repelDist = blocked ? 36 : 24;
                 for (let wall of nearbyWalls) {
                     let cx = Math.max(wall.x, Math.min(this.x, wall.x + wall.w));
                     let cy = Math.max(wall.y, Math.min(this.y, wall.y + wall.h));
                     let wdx = this.x - cx;
                     let wdy = this.y - cy;
                     let wdist = Math.hypot(wdx, wdy);
-                    let repelDist = 24;
                     if (wdist < repelDist) {
                         let force = (repelDist - wdist) / repelDist;
                         if (wdist > 0) {
@@ -30203,9 +30384,34 @@ class MiniDrone extends Entity {
             }
             
             let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+            // Fix 1B (2026-09-16): post-launch contact forgiveness. For the
+            // first 0.45s of flight (same dilated dt as steering, so Eventide
+            // fields stay in lockstep) a wall graze slides along the contact
+            // normal instead of detonating — launch momentum can't suicide
+            // before steering bites. Target-contact kill below stays live the
+            // whole time, so lethality never blinks; after expiry the classic
+            // contact-detonates resumes.
+            if (this._launchT === undefined) this._launchT = 0;
+            else if (this._launchT > 0) this._launchT -= dt;
+            const inGrace = this._launchT > 0;
             for (let wall of nearbyWalls) {
                 let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
                 if (col.hit) {
+                    if (inGrace) {
+                        // Slide: push out along the contact normal and kill
+                        // the into-wall velocity component, keep the rest.
+                        const cx = Math.max(wall.x, Math.min(this.x, wall.x + wall.w));
+                        const cy = Math.max(wall.y, Math.min(this.y, wall.y + wall.h));
+                        let nx = this.x - cx, ny = this.y - cy;
+                        let nl = Math.hypot(nx, ny);
+                        if (nl === 0) { nx = -this.vx; ny = -this.vy; nl = Math.hypot(nx, ny) || 1; }
+                        nx /= nl; ny /= nl;
+                        const into = this.vx * nx + this.vy * ny;
+                        if (into < 0) { this.vx -= into * nx; this.vy -= into * ny; }
+                        this.x = cx + nx * (this.r + 0.5);
+                        this.y = cy + ny * (this.r + 0.5);
+                        continue;
+                    }
                     this.detonate();
                     return;
                 }
@@ -30231,7 +30437,10 @@ class MiniDrone extends Entity {
                 return;
             }
             
-            if (dist < this.target.r + this.r) {
+            // Fix R: loitering drones never contact-kill (dist is measured
+            // to the 42px orbit point); the null-guard is belt-and-suspenders
+            // for a target object lost entirely.
+            if (!loiterPt && this.target && dist < this.target.r + this.r) {
                 this.detonate();
                 return;
             }
@@ -31557,8 +31766,41 @@ class TripMine {
         }
 
         const a = Math.atan2(target.y - this.y, target.x - this.x);
-        d.vx = Math.cos(a) * 320;
-        d.vy = Math.sin(a) * 320;
+        // DRONE-BAY LAUNCH PATHING (2026-09-16, Fix 1A): a blind (network)
+        // launch used to kick straight at the target — through any wall in
+        // between — so a buried post's momentum carried the drone into the
+        // adjacent rock before steering could turn it, detonating en route
+        // (and cutting nearby cables). If the launch segment is occluded,
+        // solve the shared A* cache once HERE and kick along the route's
+        // first waypoint instead; the drone's first HUNTING frame then
+        // continues the same route (seeded _huntWp/_repathT below) rather
+        // than re-solving. Clear-LOS launches are byte-identical to before.
+        let kickX = target.x, kickY = target.y;
+        let seedWp = null, holdHover = false;
+        const launchBlocked = game.map.getWallsAlongSegment(this.x, this.y, target.x, target.y)
+            .some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
+        if (launchBlocked) {
+            const path = game.map.getSharedPath(this.x, this.y, target.x, target.y, game.map.walls);
+            if (path && path.length) {
+                let idx = 0;
+                while (idx < path.length - 1 && Math.hypot(path[idx].x - this.x, path[idx].y - this.y) < 45) idx++;
+                seedWp = path[idx];
+                kickX = seedWp.x; kickY = seedWp.y;
+            } else {
+                holdHover = true; // no route: hover, let HUNTING steering acquire
+            }
+        }
+        const ka = Math.atan2(kickY - this.y, kickX - this.x);
+        const kickSpeed = holdHover ? 0 : 320;
+        d.vx = Math.cos(ka) * kickSpeed;
+        d.vy = Math.sin(ka) * kickSpeed;
+        d._huntWp = seedWp;
+        d._repathT = seedWp ? 0.5 : 0;
+        d._steerSm = null;
+        // Fix 1B companion: launch grace window (decayed in HUNTING below).
+        // Covers the first moments of flight while launch momentum settles
+        // onto the route — a graze then slides instead of detonating.
+        d._launchT = 0.45;
         d.initAudio();
         game.miniDrones.push(d);
         if (audio && audio.playMinePlace) audio.playMinePlace(this.x, this.y); // launch-bay clack
@@ -32990,6 +33232,14 @@ const CORRUPTED_OVERCLOCKS = {
 // Guidance §6's earned refactor: adding a shop item is now one entry here
 // (plus its buyItem branch + button), and the strip/inspector/nav pick it
 // up with zero further edits.
+// VISIBILITY DISCIPLINE (hide/grey, 2026-09): hide is hardware-only —
+// drone_upgrade/dog_upgrade hide when that panel has no base unit (see
+// _applyShopVisibility). Everything else greys with a reason: armory GATE
+// locks stay RED + "(UNLOCK IN ARMORY)"; cash-short/MAXED/OWNED grey via
+// disabled; unowned-gun ammo stays BUYABLE but dimmed "STASHABLE" (stash-
+// ahead is legitimate — same shared pool, type flips wholesale). If you add
+// a gated item, add its GATE row in buyItem AND mirror the price in
+// _shopPriceFor (display-only; buyItem owns the truth).
 const SHOP_ITEMS = {
     hp: { name: 'FIELD HEAL', icon: 'medpack', color: '#39ff14', strip: false,
         flavor: 'Patch up and get back in.',
@@ -33227,6 +33477,23 @@ const SHOP_ITEMS = {
 };
 // Loadout-strip order: gear first, ammo pools second, overclocks last.
 const SHOP_STRIP_ORDER = ['grenade', 'mine', 'barrier', 'medpack', 'boost', 'drone', 'turret', 'dog', 'swarm_drone', 'camera', 'fiber_optic', 'repairgun', 'field_gen', 'oracle', 'rift_seed', 'rift_station', 'riftlance', 'rubble', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std', 'ammo_abakan_std', 'ammo_thumper_he', 'ammo_mauler_std', 'ammo_judge_std', 'ammo_pistol_hp', 'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC', 'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel'];
+
+// SHOP VISIBILITY: ammo key -> inventory gun name (w.name). Ammo stays
+// buyable without its gun (stash-ahead is legitimate), but renders dimmed
+// "STASHABLE" via _applyShopVisibility. Pistol HP excluded (pistol always
+// owned). Keys mirror the buyItem ammo branches; add a row here when a new
+// gun + ammo pair lands.
+const SHOP_AMMO_GUN = {
+    ammo_shotgun: 'Shotgun', ammo_shotgun_slug: 'Shotgun',
+    ammo_smg_std: 'SMG', ammo_smg_hp: 'SMG',
+    ammo_lmg_std: 'LMG', ammo_lmg_ap: 'LMG',
+    ammo_sniper_std: 'Sniper', ammo_sniper_ap: 'Sniper',
+    ammo_m1a_std: 'M1A', ammo_m1a_ap: 'M1A',
+    ammo_abakan_std: 'Abakan', ammo_abakan_ap: 'Abakan',
+    ammo_thumper_he: 'Thumper', ammo_thumper_hedp: 'Thumper',
+    ammo_mauler_std: 'Mauler', ammo_mauler_ap: 'Mauler',
+    ammo_judge_std: 'Judge', ammo_judge_ap: 'Judge'
+};
 
 // Escalation Protocols: opt-in pre-mission risk toggles (extraction only).
 // Each raises real danger and pays a flat bonus multiplier on ALL mission
@@ -37175,17 +37442,29 @@ class Game {
             }
             setCrosshairPos(this.crosshair, this.input.mx, this.input.my);
 
-            // Subtle 3D parallax tilt for main menu glass box
+            // Reactive menu backdrop (2026-09-16, Fix M): the parallax life
+            // moved OFF the text-bearing box (which stays vector-crisp) and
+            // onto the blurred backdrop layers, where softness is invisible.
+            // Mouse position drives aurora drift (via --apx/--apy consumed
+            // inside the keyframes, so the slow ambient animation keeps
+            // running underneath) plus a small counter-shift of the grid.
+            // The menu box itself is pinned to transform:none.
             if (this.state === 'start') {
+                const startScreen = document.getElementById('start-screen');
                 const menuBox = document.querySelector('#start-screen .menu-box');
-                if (menuBox) {
+                if (menuBox && menuBox.style.transform) menuBox.style.transform = 'none';
+                if (startScreen) {
                     const cx = window.innerWidth / 2;
                     const cy = window.innerHeight / 2;
-                    const dx = (e.clientX - cx) / cx;
-                    const dy = (e.clientY - cy) / cy;
-                    const rotX = (-dy * 0.6).toFixed(2);
-                    const rotY = (dx * 0.6).toFixed(2);
-                    menuBox.style.transform = `perspective(1000px) rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+                    let dx = (e.clientX - cx) / cx;
+                    let dy = (e.clientY - cy) / cy;
+                    if (Math.abs(dx) < 0.04) dx = 0;
+                    if (Math.abs(dy) < 0.04) dy = 0;
+                    startScreen.style.setProperty('--apx', dx.toFixed(3));
+                    startScreen.style.setProperty('--apy', dy.toFixed(3));
+                    const grid = startScreen.querySelector('.menu-grid-pattern');
+                    if (grid) grid.style.transform =
+                        `translate(${(dx * -12).toFixed(1)}px, ${(dy * -12).toFixed(1)}px)`;
                 }
             }
 
@@ -37194,6 +37473,12 @@ class Game {
             if (focused.length > 0) {
                 focused.forEach(el => el.classList.remove('focused-btn'));
             }
+        });
+        // MENU CRISPNESS companion (2026-09-16): pointer leaving the window
+        // freezes the last fractional tilt forever — reset to vector-crisp.
+        document.addEventListener('mouseleave', () => {
+            const menuBox = document.querySelector('#start-screen .menu-box');
+            if (menuBox && menuBox.style.transform) menuBox.style.transform = 'none';
         });
         window.addEventListener('mousedown', e => { 
             if(e.button===0) {
@@ -37987,6 +38272,14 @@ class Game {
             + '<div class="insp-flavor">' + it.flavor + '</div>'
             + '<div class="insp-mech">' + it.mech + '</div>'
             + (held ? '<div class="insp-held">' + held + '</div>' : '')
+            + (() => {
+                try {
+                    const rs = (this._shopReasons && this._shopReasons[suffix]) ? this._shopReasons[suffix][itemId] : null;
+                    if (!rs || !rs.text) return '';
+                    const col = rs.kind === 'lock' ? '#ff2a5f' : rs.kind === 'stash' ? '#00e5ff' : rs.kind === 'info' ? '#ffb700' : '#8a93a3';
+                    return '<div class="insp-reason" style="color:' + col + '">' + rs.text + '</div>';
+                } catch (e) { return ''; }
+            })()
             + (justBought ? '<div class="insp-bought">ACQUIRED ✓</div>' : '');
     }
 
@@ -38016,6 +38309,20 @@ class Game {
                 const itemId = self._shopBtnReverse[base];
                 if (itemId && SHOP_ITEMS[itemId]) self._showShopInspector(suffix, itemId);
             });
+            // SHOP VISIBILITY: denial feedback. Disabled buttons never fire
+            // their own click (mouse/touch dead-end; pad routes straight to
+            // buyItem, covered at its tail). This capture listener best-
+            // efforts a denial tick + the reason explainer on press; hover
+            // already explains via mouseover above.
+            box.addEventListener('pointerdown', (e) => {
+                const b = e.target && e.target.closest ? e.target.closest('button') : null;
+                if (!b || !box.contains(b) || !b.disabled) return;
+                const base = b.id ? b.id.replace(/-p[12]$/, '') : '';
+                const itemId = self._shopBtnReverse[base];
+                if (!itemId || !SHOP_ITEMS[itemId]) return;
+                try { if (typeof audio !== 'undefined' && audio && audio.playBakedSound) audio.playBakedSound('empty_click', audio.sfxGain, 0.5); } catch (ee) {}
+                self._showShopInspector(suffix, itemId);
+            }, true);
             const strip = document.getElementById('shop-loadout-' + suffix);
             if (strip) strip.addEventListener('click', (e) => {
                 const chip = e.target && e.target.closest ? e.target.closest('.loadout-chip') : null;
@@ -40284,7 +40591,10 @@ class Game {
         if (!this.dataCables) return;
         if (x instanceof DataCable) {
             if (typeof audio !== 'undefined' && audio && audio.playDataLinkSevered) {
-                const mid = x._mid ? x._mid() : { x: (x.a.x + x.b.x) / 2, y: (x.a.y + x.b.y) / 2 };
+                // _mid() refreshes the cached midpoint in place (x.x/x.y)
+                // and returns undefined — read the fields, not the return.
+                if (x._mid) x._mid();
+                const mid = (x.x !== undefined) ? x : { x: (x.a.x + x.b.x) / 2, y: (x.a.y + x.b.y) / 2 };
                 audio.playDataLinkSevered(mid.x, mid.y);
             }
             this._recomputeComponents();
@@ -41672,8 +41982,17 @@ class Game {
         const cur = player.doctrine || 'standard';
         player.doctrine = cur === 'standard' ? 'focus' : (cur === 'focus' ? 'overwatch' : 'standard');
         const label = player.doctrine === 'focus' ? 'FOCUS FIRE' : (player.doctrine === 'overwatch' ? 'OVERWATCH' : 'STANDARD');
+        // DOCTRINE EXPLAINER (2026-09-16): a second, smaller floater under the
+        // mode name stating what the network will do — the mode name alone
+        // never said. Copy matches the traced read sites (turret focusOnly,
+        // camera adopt/converge gates): standard = any fresh track, focus =
+        // corroborated tracks only, overwatch = sensors hold own sectors.
+        const sub = player.doctrine === 'focus' ? '2 SENSORS AGREE'
+            : (player.doctrine === 'overwatch' ? 'HOLD OWN SECTORS' : 'ANY SIGHTING');
         const ft = this.spawnFloatingText(player.x, player.y - 15, 'DOCTRINE: ' + label, '#f59e0b', 1.2);
         if (ft) this.floatingTexts.push(ft);
+        const ft2 = this.spawnFloatingText(player.x, player.y + 5, sub, '#a9c2c7', 0.9);
+        if (ft2) this.floatingTexts.push(ft2);
         if (typeof audio !== 'undefined' && audio && audio.playDataLinkConnected) audio.playDataLinkConnected(hub.x, hub.y);
         else audio.playPickup('weapon');
         return true;
@@ -46640,7 +46959,17 @@ class Game {
         }
         
         // SHOP REWORK: see buyItem tail — 'oc_' + ocType is the registry key.
-        if (player.cash < _ocCashBefore) this._noteShopBuy(player, 'oc_' + type);
+        if (player.cash < _ocCashBefore) {
+            this._noteShopBuy(player, 'oc_' + type);
+        } else if (this.state === 'shop' && type !== 'extMags') {
+            // Denial feedback like buyItem — except extMags, whose no-cash-
+            // move means the picker opened (its own screen is the feedback).
+            try { if (typeof audio !== 'undefined' && audio && audio.playBakedSound) audio.playBakedSound('empty_click', audio.sfxGain, 0.5); } catch (e) {}
+            try {
+                this._shopInspector = this._shopInspector || {};
+                this._shopInspector[player.isPlayer2 ? 'p2' : 'p1'] = 'oc_' + type;
+            } catch (e) {}
+        }
         this.openShopInterface();
     }
     
@@ -48735,6 +49064,192 @@ class Game {
         return false;                         // unlocked -> caller proceeds
     }
 
+    // SHOP VISIBILITY (hide/grey, 2026-09). Display-only mirror of the buy
+    // truth: buyItem/buyOverclock own every price/cap/gate (never trust the
+    // UI), this only decides show-vs-grey + the reason string. Throw-safe by
+    // contract — every read guarded, null means "no opinion".
+    // Discipline: hide = missing base hardware on THIS panel only
+    // (drone_upgrade/dog_upgrade); MAXED/OWNED grey, never hide (receipt +
+    // stable list); armory locks stay RED via _armoryGate; unowned-gun ammo
+    // stays BUYABLE but dashed STASHABLE.
+    _shopPriceFor(typeKey, p, suffix) {
+        try {
+            if (!typeKey || !p) return null;
+            if (typeKey === 'call_evac' || typeKey === 'ready') return null;
+            const FLAT = { hp: 50, armor: 30, speed: 60, grenade: 40, medpack: 40, boost: 40,
+                barrier: 75, rubble: 75, drone: 150, drone_upgrade: 600, fiber_optic: 600,
+                turret: 650, turret_mk2: 1200, barrier_upgrade: 400, dog: 500, dog_upgrade: 1000,
+                swarm_drone: 100, swarm_pack: 300, camera: 350, repairgun: 1250, field_gen: 20000,
+                rift_seed: 300, rift_station: 12000, riftlance: 9000,
+                ammo_shotgun: 30, ammo_shotgun_slug: 60, ammo_smg_std: 30, ammo_smg_hp: 75,
+                ammo_lmg_std: 40, ammo_lmg_ap: 100, ammo_sniper_std: 40, ammo_sniper_ap: 100,
+                ammo_pistol_hp: 80, ammo_m1a_std: 35, ammo_m1a_ap: 85,
+                ammo_abakan_std: 40, ammo_abakan_ap: 95, ammo_thumper_he: 60, ammo_thumper_hedp: 95,
+                ammo_mauler_std: 45, ammo_mauler_ap: 95, ammo_judge_std: 50, ammo_judge_ap: 95 };
+            if (FLAT[typeKey] !== undefined) {
+                if (typeKey === 'mine') return this.mineShopCost();
+                return FLAT[typeKey];
+            }
+            if (typeKey === 'mine') return this.mineShopCost();
+            if (typeKey === 'oracle') {
+                if (typeof oracleShopPrice === 'function') return oracleShopPrice(this, p);
+                return 300;
+            }
+            if (typeKey.indexOf('oc_') === 0) {
+                const oc = this.runOverclocks && this.runOverclocks[suffix];
+                if (!oc) return null;
+                const o = typeKey.substring(3);
+                if (o === 'hollowPoint') return Math.round(150 * Math.pow(1.5, oc.hollowPoint || 0));
+                if (o === 'exoServos') return Math.round(100 * Math.pow(1.5, oc.exoServos || 0));
+                if (o === 'extMags') { let n = 0; for (const k in (oc.extMags || {})) n += oc.extMags[k]; return Math.round(200 * Math.pow(1.5, n)); }
+                if (o === 'fireRate') return Math.round(200 * Math.pow(1.5, oc.fireRate || 0));
+                if (o === 'maxHpOC') return Math.round(175 * Math.pow(1.5, oc.maxHpOC || 0));
+                if (typeof CORRUPTED_OVERCLOCKS !== 'undefined' && CORRUPTED_OVERCLOCKS[o]) return CORRUPTED_OVERCLOCKS[o].cost;
+                return null;
+            }
+            return null;
+        } catch (e) { return null; }
+    }
+
+    // Kit requisition rebate preview (mirrors the buyItem single exit:
+    // KIT_SHOP_REBATE[kitId].match(type) refunds pct on the spot). Returns
+    // the $ back (0 when no kit / no match). Cash, never Intel.
+    _shopRebateFor(p, typeKey, price) {
+        try {
+            if (!p || !p.kitId || !(price > 0) || !typeKey) return 0;
+            if (typeof KIT_SHOP_REBATE === 'undefined') return 0;
+            const reb = KIT_SHOP_REBATE[p.kitId];
+            if (!reb || !reb.match || !reb.match(typeKey)) return 0;
+            return Math.round(price * (reb.pct || 0.20));
+        } catch (e) { return 0; }
+    }
+
+    _shopKitName(p) {
+        try {
+            if (!p || !p.kitId) return null;
+            if (typeof OPERATOR_KITS !== 'undefined' && OPERATOR_KITS[p.kitId]) return OPERATOR_KITS[p.kitId].name || p.kitId.toUpperCase();
+            return String(p.kitId).toUpperCase();
+        } catch (e) { return null; }
+    }
+
+    // Final visibility pass over one panel. Runs AFTER every per-button
+    // write in updatePanel (so lock/maxed labels already exist) and BEFORE
+    // _renderShopLoadout. Records reasons in this._shopReasons[suffix][key]
+    // for the inspector + click feedback. Operator-whitelist hiding
+    // (display:none) stays authoritative and is never undone here.
+    _applyShopVisibility(p, suffix) {
+        if (!p || typeof SHOP_ITEMS === 'undefined') return;
+        this._shopReasons = this._shopReasons || {};
+        const reasons = (this._shopReasons[suffix] = {});
+        let idMap = null;
+        try { idMap = this._shopBtnIdMap(); } catch (e) { return; }
+        const inOp = !!this.operatorMode;
+        for (const key in idMap) {
+            if (key === 'call_evac' || key === 'ready') continue;
+            let btn = null;
+            try { btn = document.getElementById(idMap[key] + '-' + suffix); } catch (e) { btn = null; }
+            if (!btn) continue;
+            try {
+                if (inOp && btn.style.display === 'none') continue; // whitelist owns operator hiding
+                // LOCKED (red): _armoryGate/lockStd/corrupted-gate already
+                // stamped the label. Keep visible, attach the why.
+                if (btn.classList.contains('maxed') && /UNLOCK IN ARMORY/.test(btn.innerText || '')) {
+                    const m = /^(.*) \(UNLOCK IN ARMORY\)/.exec(btn.innerText || '');
+                    const what = m ? m[1] : 'ITEM';
+                    const text = 'LOCKED — UNLOCK ' + what + ' IN THE ARMORY (PERSISTENT META, BETWEEN RUNS)';
+                    btn.title = text;
+                    reasons[key] = { kind: 'lock', text: text };
+                    if (!inOp && btn.style.display === 'none') btn.style.display = '';
+                    continue;
+                }
+                // HIDE (hardware-only): upgrades with no base unit HERE.
+                if (key === 'drone_upgrade') {
+                    const owns = (p.dronesCount > 0 || (p.activeDrone && !p.activeDrone.dead));
+                    btn.style.display = owns ? '' : 'none';
+                    if (!owns) continue;
+                } else if (key === 'dog_upgrade') {
+                    const has = (p.dogsCount >= 1 || (this.dogs && this.dogs.some(d => d.owner === p && !d.dead)));
+                    btn.style.display = has ? '' : 'none';
+                    if (!has) continue;
+                } else if (!inOp && btn.style.display === 'none') {
+                    btn.style.display = ''; // un-hide anything we hid last render that now qualifies
+                }
+                const price = this._shopPriceFor(key, p, suffix);
+                const back = this._shopRebateFor(p, key, price || 0);
+                const eff = (price != null) ? Math.max(0, price - back) : null;
+                const kit = back > 0 ? this._shopKitName(p) : null;
+                const rebateText = back > 0 ? (' · KIT REQUISITION (' + (kit || 'KIT') + '): 20% BACK (−$' + back + ') → EFFECTIVE $' + eff) : '';
+                // STASHABLE ammo: pool open, gun absent — buyable, dashed.
+                if (typeof SHOP_AMMO_GUN !== 'undefined' && SHOP_AMMO_GUN[key] && price != null) {
+                    const gunName = SHOP_AMMO_GUN[key];
+                    const hasGun = (p.inventory || []).some(w => w && w.name === gunName);
+                    const maxed = btn.classList.contains('maxed');
+                    if (!hasGun && !maxed) {
+                        btn.classList.add('stashable');
+                        if (btn.innerText && btn.innerText.indexOf('STASHABLE') < 0) btn.innerText += ' · STASHABLE';
+                        const st = 'NO ' + String(gunName).toUpperCase() + ' YET — STASHABLE: SAME SHARED POOL, TYPE FLIPS ON PICKUP' + rebateText;
+                        btn.title = st;
+                        reasons[key] = { kind: 'stash', text: st };
+                        if (p.cash < eff) { // broke AND stashable: short wins, keep the dash
+                            btn.disabled = true;
+                            const sht = 'SHORT $' + (eff - p.cash) + ' — YOU HAVE $' + p.cash + ', NEEDS $' + eff + rebateText;
+                            btn.title = sht + ' · ' + st;
+                            reasons[key] = { kind: 'short', text: sht + ' · STASHABLE WHEN FUNDED' };
+                        } else if (!btn.disabled) {
+                            btn.disabled = false;
+                        }
+                        continue;
+                    } else {
+                        btn.classList.remove('stashable');
+                    }
+                }
+                // MAXED/OWNED (grey-red receipt): keep, explain.
+                if (btn.classList.contains('maxed')) {
+                    const label = btn.innerText || 'MAXED';
+                    btn.title = label + rebateText;
+                    reasons[key] = { kind: 'max', text: label + ' — ALREADY HELD THIS RUN' + rebateText };
+                    continue;
+                }
+                // Static USE-TIME hints (buy-time is open; the gate is later).
+                let infoHint = '';
+                if (key === 'barrier_upgrade' && !p.barrierUpgraded && (p.barriersCount || 0) === 0) {
+                    infoHint = 'APPLIES RETROACTIVELY — SAFE TO BUY BEFORE PLACING';
+                } else if (key === 'fiber_optic') {
+                    infoHint = 'SPOOLS WITH THE REPAIR GUN (USE-TIME, NOT BUY-TIME)';
+                } else if (key === 'rift_seed') {
+                    infoHint = 'NEEDS A PLACED STATION AT THROW TIME — FIZZLES WITHOUT ONE';
+                } else if (key === 'oc_extMags') {
+                    const hasEligible = (p.inventory || []).some(w => w && w.name !== 'Pistol');
+                    if (!hasEligible && !btn.disabled) { /* existing code disables; fall through to generic */ }
+                    if (!hasEligible) {
+                        btn.title = 'REQUIRES A NON-PISTOL GUN IN INVENTORY' + rebateText;
+                        reasons[key] = { kind: 'info', text: 'REQUIRES A NON-PISTOL GUN IN INVENTORY — PICK UP ANY GUN FIRST' + rebateText };
+                        continue;
+                    }
+                } else if (key === 'oracle' && this._oracleShop && this._oracleShop.sample && !btn.disabled) {
+                    const debt = this._oracleSampleDebt || 0;
+                    infoHint = 'FREE SAMPLE — THE DEALER ADDS +1 ENEMY NEXT WAVE' + (debt > 0 ? ' (DEBT DUE: +' + debt + ')' : '');
+                }
+                // CASH-SHORT (grey): effective price after kit rebate.
+                if (price != null && eff != null && p.cash < eff && !btn.disabled) {
+                    btn.disabled = true;
+                    const sht = 'SHORT $' + (eff - p.cash) + ' — YOU HAVE $' + p.cash + ', NEEDS $' + eff + rebateText;
+                    btn.title = sht;
+                    reasons[key] = { kind: 'short', text: sht };
+                    continue;
+                }
+                // AFFORDABLE (+ optional rebate/info): keep enabled, explain.
+                if (back > 0 || infoHint) {
+                    const t = (back > 0 ? ('KIT REQUISITION (' + (kit || 'KIT') + '): 20% BACK (−$' + back + ') → EFFECTIVE $' + eff) : '') + (back > 0 && infoHint ? ' · ' : '') + infoHint;
+                    if (t) {
+                        if (!btn.title || btn.title === '') btn.title = t;
+                        reasons[key] = { kind: 'info', text: t };
+                    }
+                }
+            } catch (e) { /* one bad row must never break the panel */ }
+        }
+    }
+
     // Manually open the inter-wave shop mid-session (PEACEFUL mode). Flagged
     // so the shop-close deploy path resumes play instead of starting a wave,
     // and so openShopInterface skips the wave-clear payout. No-op unless a run
@@ -49304,6 +49819,12 @@ class Game {
                     }
                 }
             }
+            // SHOP VISIBILITY (hide/grey): final pass after every per-button
+            // write (locks/caps/labels exist) and before the strip — hides
+            // base-less upgrades, greys broke rows, dims stashable ammo, and
+            // records reasons for the inspector. Never re-pays Intel (no
+            // ledger touch) and never unhides the operator whitelist.
+            this._applyShopVisibility(p, suffix);
             // SHOP REWORK: visual loadout strip (at-a-glance equipped).
             this._renderShopLoadout(p, suffix);
         };
@@ -49618,8 +50139,21 @@ class Game {
 
         // SHOP REWORK: a purchase that moved cash becomes the inspector
         // selection (with ACQUIRED tag) — the touch path's explainer.
-        if (p.cash < _cashBeforeBuy) this._noteShopBuy(p, type);
-        this.openShopInterface(); 
+        if (p.cash < _cashBeforeBuy) {
+            this._noteShopBuy(p, type);
+        } else if (this.state === 'shop' && type && typeof SHOP_ITEMS !== 'undefined' && SHOP_ITEMS[type]) {
+            // SHOP VISIBILITY: denial feedback. The pad confirm path calls
+            // buyItem directly (disabled buttons stay in the nav model), so
+            // a no-op must tick + focus the reason explainer — the mouse
+            // path is covered by the pointerdown capture in
+            // _wireShopInspector (disabled buttons fire no click).
+            try { if (typeof audio !== 'undefined' && audio && audio.playBakedSound) audio.playBakedSound('empty_click', audio.sfxGain, 0.5); } catch (e) {}
+            try {
+                this._shopInspector = this._shopInspector || {};
+                this._shopInspector[(p && p === this.player2) ? 'p2' : 'p1'] = type;
+            } catch (e) {}
+        }
+        this.openShopInterface();
     }
 
     setReady(playerNum) {
@@ -50449,9 +50983,11 @@ class Game {
             if (marks) marks.value = this.maxPermanentMarks;
             const marksLbl = document.getElementById('lbl-max-marks');
             if (marksLbl) marksLbl.textContent = Number(this.maxPermanentMarks).toLocaleString();
-            // PERF #1: sync the render-scale select from the imported save.
-            const rsSel = document.getElementById('opt-render-scale');
-            if (rsSel) rsSel.value = String(Math.round((this.renderScale || 1) * 100));
+            // PERF #1: sync the render-scale selects from the imported save.
+            // Routed through the setter (persist=false, we're post-import) so
+            // BOTH selects + labels follow and the backing store is re-sized;
+            // a direct select-value write left the pause select/label stale.
+            if (this.setRenderScale) this.setRenderScale(this.renderScale || 1, false);
             // VIDEO sub-tab: route through setUIScale so slider, label,
             // camera factor, and menu zoom all move together.
             if (this.setUIScale && this.saveData.uiScale !== undefined) this.setUIScale(this.saveData.uiScale, false);
@@ -50620,6 +51156,9 @@ class Game {
             // node was hidden (display:none) the last time
             // setMaxPermanentMarks() ran and didn't find it.
             this.setMaxPermanentMarks(this.maxPermanentMarks);
+            // Same re-assert for the render-scale pair so neither select can
+            // read stale after an import or a mid-load restore.
+            if (this.setRenderScale) this.setRenderScale(this.renderScale || 1, false);
         }
     }
 
@@ -52099,19 +52638,21 @@ class Game {
         this.canvas.height = Math.max(1, Math.round(this.height * s));
     }
 
-    // PERF #1 (2026-08-23): user-togglable render scale. Snaps to the four
-    // offered steps (100/90/75/66%), resizes the backing store, syncs the
+    // PERF #1 (2026-08-23; 150%/125% steps 2026-09-16): user-togglable render scale. Snaps to the six
+    // offered steps (150/125/100/90/75/66%), resizes the backing store, syncs the
     // options controls, and persists. persist=false is used by load-time
     // restore to avoid a redundant save. Render-only: no sim/RNG change, and
     // 100% is pixel-identical to the pre-feature 1:1 behavior.
     setRenderScale(value, persist = true) {
-        const opts = [1, 0.9, 0.75, 0.66];
+        const opts = [1.5, 1.25, 1, 0.9, 0.75, 0.66];
         let v = parseFloat(value);
         if (!Number.isFinite(v)) v = 1;
-        // BUG-024: the options menu passes whole percents ("75"), not
-        // fractions — without this the snap below always lands on 1 and
-        // the selector can never leave 100%.
-        if (v > 1) v = v / 100;
+        // BUG-024 (extended 2026-09-16 for the 150%/125% steps): the options
+        // menu passes whole percents ("75"), not fractions -- but fractional
+        // callers pass 1.5/1.25/0.75 directly. Percent inputs are all >= 66
+        // while fractions never exceed 1.5, so only divide when v > 2; without
+        // this a numeric 1.5 would divide to 0.015 and snap to 0.66.
+        if (v > 2) v = v / 100;
         let best = opts[0], bd = Infinity;
         for (const o of opts) { const d = Math.abs(o - v); if (d < bd) { bd = d; best = o; } }
         this.renderScale = best;
