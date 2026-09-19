@@ -47012,6 +47012,134 @@ class Game {
         if (F.energy < EPS * 0.25) F.energy = 0;
     }
 
+    // PHASE 3 Item 0 (plumbing): dedicated GPU render-target set for the
+    // shader tier. Allocates targets and owns their lifecycle ONLY — renders
+    // nothing to screen yet (Item 1+ plug passes into these slots). The
+    // emitter API is untouched (invariant 393) and the CPU fluid path never
+    // reads this set: it stays the fallback forever, not a corpse.
+    // Lifecycle (invariant 395): size-keyed realloc on resize/renderScale,
+    // destroy+recreate on map swap (field state is map-bound), frame-token
+    // stamp per housekeep. Zero `Math.random`/`Date.now` (PORT LAW).
+    _pixiGpuHousekeep() {
+        const R = window.PIXI, rend = this._pixiOverlayRenderer;
+        const G = this._pixiGpu;
+        // Gate: master kill-switch, PIXI absent, no overlay device, or a
+        // non-GL fallback renderer (Canvas2D cannot host float passes) —
+        // any of these sleeps the tier; the CPU path runs untouched.
+        let glTier = false;
+        try {
+            if (this.pixiLayer_factory !== false && R && rend) {
+                const nm = rend.name || '';
+                glTier = (nm === 'webgl' || nm === 'webgpu') ||
+                    ((R.WebGLRenderer && rend instanceof R.WebGLRenderer) ||
+                     (R.WebGPURenderer && rend instanceof R.WebGPURenderer));
+            }
+        } catch (e) { glTier = false; }
+        if (!glTier) { if (G) this._pixiGpuKill('no-gl'); return false; }
+        const W = this.width || 1, H = this.height || 1;
+        const bw = Math.max(1, Math.round(W * 0.5)), bh = Math.max(1, Math.round(H * 0.5));
+        try {
+            let g = this._pixiGpu;
+            if (!g || !g.ok) { g = this._pixiGpuEnsure(R, rend); if (!g || !g.ok) return false; }
+            // Map swap: same identity rule as the CPU `this._fl.map !==
+            // this.map` lazy re-init — stale field from the old map must
+            // never survive into the new one (aberration has no flush; the
+            // night mapRef pattern is the precedent we copy).
+            if (g.mapRef !== this.map) { this._pixiGpuKill('map'); g = this._pixiGpuEnsure(R, rend); if (!g || !g.ok) return false; }
+            // Resize / renderScale / 1P<->2P: the half-res key follows CSS px
+            // (aberration's lazy W/H-mismatch realloc, same shape).
+            if (g.bw !== bw || g.bh !== bh) { this._pixiGpuKill('resize'); g = this._pixiGpuEnsure(R, rend); if (!g || !g.ok) return false; }
+            g.frame = this._pixiFrameToken;
+            return true;
+        } catch (e) { try { this._pixiGpuKill('throw'); } catch (_e) {} return false; }
+    }
+
+    _pixiGpuEnsure(R, rend) {
+        // Half-float verdict, probed once per device (real render+readback,
+        // factory-proof precedent — never a capability guess). Byte fallback
+        // is smoke-tolerant by design. A probe failure sleeps the tier,
+        // never the game.
+        try {
+            if (this._pixiGpuFloatFmt === undefined || this._pixiGpuFloatDev !== rend) {
+                this._pixiGpuFloatDev = rend;
+                this._pixiGpuFloatFmt = null;
+                // Float verdict via the exact data path Item 1 needs: render
+                // into a float RT, SAMPLE it into a byte RT, read back the
+                // byte copy. (Direct readPixels off a float framebuffer is
+                // an invalid RGBA/UNSIGNED_BYTE combo in WebGL2 — it returns
+                // zeros on real GPUs, which is what the first probe tripped
+                // on. Never read a float RT back; sample it.)
+                try {
+                    const frt = R.RenderTexture.create({ width: 4, height: 4, format: 'rgba16float' });
+                    try { if (frt.source) frt.source.scaleMode = 'nearest'; } catch (e) {}
+                    const psp = new R.Sprite(R.Texture.WHITE);
+                    psp.width = 4; psp.height = 4;
+                    rend.render({ container: psp, target: frt });
+                    const csp = new R.Sprite(frt);
+                    const brt = R.RenderTexture.create({ width: 4, height: 4 });
+                    rend.render({ container: csp, target: brt });
+                    const px = rend.extract.pixels(brt);
+                    const arr = (px && px.pixels) || (px && px.data) || px || [];
+                    let hits = 0;
+                    for (let i = 3; i < arr.length; i += 4) if (arr[i] > 0) hits++;
+                    try { brt.destroy(true); } catch (e) {}
+                    try { csp.destroy(); } catch (e) {}
+                    try { frt.destroy(true); } catch (e) {}
+                    try { psp.destroy(); } catch (e) {}
+                    if (hits > 0) this._pixiGpuFloatFmt = 'rgba16float';
+                } catch (e) { this._pixiGpuFloatFmt = null; }
+            }
+        } catch (e) { try { this._pixiGpuFloatFmt = null; } catch (_e) {} }
+        const G = this._pixiGpuAlloc(R);
+        if (!G) { this._pixiGpu = null; return null; }
+        this._pixiGpu = G;
+        return G;
+    }
+
+    _pixiGpuAlloc(R) {
+        const W = this.width || 1, H = this.height || 1;
+        const bw = Math.max(1, Math.round(W * 0.5)), bh = Math.max(1, Math.round(H * 0.5));
+        const ff = this._pixiGpuFloatFmt || null; // null = byte fallback
+        const made = [];
+        try {
+            const mk = (float) => {
+                const rt = (float && ff)
+                    ? R.RenderTexture.create({ width: bw, height: bh, format: ff })
+                    : R.RenderTexture.create({ width: bw, height: bh });
+                made.push(rt);
+                return rt;
+            };
+            // Fluid field doubles (Item 1 ping-pongs these): velocity XY +
+            // density/heat in RGBA, plus the pressure scratch pair. B_rt
+            // (bloom chain scratch) + S_rt (shock scene capture) are byte by
+            // design — post-process data, never sim state. No AA on sim
+            // targets (data, not pictures).
+            const G = {
+                ok: true, w: W, h: H, bw, bh, floatFmt: ff,
+                mapRef: this.map || null, frame: this._pixiFrameToken,
+                velA: mk(true), velB: mk(true),
+                denA: mk(true), denB: mk(true),
+                prsA: mk(true), prsB: mk(true),
+                bRt: mk(false), sRt: mk(false),
+            };
+            return G;
+        } catch (e) {
+            for (const rt of made) { try { rt.destroy(true); } catch (_e) {} }
+            return null;
+        }
+    }
+
+    _pixiGpuKill(reason) {
+        const G = this._pixiGpu;
+        this._pixiGpu = null;
+        // Last sleep reason, stored not logged (no per-frame spam). The CPU
+        // fluid path is unaffected — it never reads this set.
+        try { this._pixiGpuSleep = reason || 'off'; } catch (e) {}
+        if (!G) return;
+        const keys = ['velA', 'velB', 'denA', 'denB', 'prsA', 'prsB', 'bRt', 'sRt'];
+        for (const k of keys) { try { if (G[k]) G[k].destroy(true); } catch (e) {} }
+    }
+
     spawnParticle(x, y, vx, vy, color, life, size, isGib) {
         let p = null;
         if (this.inactiveParticles.length > 0) {
@@ -64935,6 +65063,9 @@ class Game {
         } catch (e) {}
         if (this._pixiOverlayRenderer) {
             this._pixiOverlayGfx.clear();
+            // PHASE 3 Item 0: GPU RT set housekeep (alloc/lifecycle only —
+            // renders nothing; the tier sleeps cleanly when gated off).
+            try { this._pixiGpuHousekeep(); } catch (e) {}
             if (this._pixiHeroGfx) this._pixiHeroGfx.clear();
             // F6 frozen rings: shared enemy-FX Graphics only clears inside the
             // enemy twin — an empty wave never calls it, freezing last rings.
