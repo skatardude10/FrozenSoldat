@@ -17081,6 +17081,8 @@ const LOOT_TUNING = { HALO_ALPHA: 0.55 };
 const GLOW_OOZE = { R_MULT: 1.18, AURA_LIFT: 1.0, CORE_T: 0.55, CORE_R: 0.45, BLOOM_R: 1.12, PULSE_RANGE: 420, PULSE_AMT: 0.30 }; // SHADER-ERA #2: pooled-glow ooze (bake stays baked; radii/alpha/pulse only)
 const FLUID_TUNING = { CELL: 40, MAXCELLS: 24000, JACOBI: 8, VEL_DISS: 0.5, DENS_DISS: 0.55, EPS: 0.0008, MAXV: 900, RENDER_CAP: 96, SMOKE_TINT: 0x91a7c3, BUOY: 30 }; // SHADER-ERA fluid v1 (CPU Stam grid; square cells under a cell budget)
 const BLOOM_TUNING = { NIGHT_T: 0.45, VEIL_T: 0.62, DIM: 0.5 }; // SHADER-ERA #3: selective-bloom gate (hot passes, wash dims; veil tightens)
+// PHASE 3 Item 3: heavy-gun muzzle refraction rings (UV-only — no vector ring, glow, blast or gameplay). radius px / life s / strength. Absent = none.
+const MUZZLE_SHOCK = { Shotgun: { r: 60, t: 0.15, s: 0.9 }, Sniper: { r: 70, t: 0.18, s: 1.0 }, LMG: { r: 36, t: 0.12, s: 0.6 }, M1A: { r: 40, t: 0.12, s: 0.7 }, Abakan: { r: 36, t: 0.12, s: 0.6 }, Thumper: { r: 80, t: 0.2, s: 1.0 } };
 const WORLD_BREATHE = { CANOPY_PX: 3.0, BUSH_PX: 1.5, RIM_A: 0.03, BAND_A: 0.025, HAZE_STD: 0.02, HAZE_OP: 0.04, HAZE_R: 0.03 };
 const BODY_MOTION = {
     LEAN_K: 0.009,      // px lean per px/s forward (walk 260px/s -> ~2.3px, sprint caps at MAX)
@@ -20658,6 +20660,14 @@ class Player extends Entity {
         }
 
         game.spawnBarrelFX(barrelX, barrelY, this.angle, this.z || 0, this.vx || 0, this.vy || 0, Math.min(2.0, Math.max(0.5, recoilForce / 120)));
+        // PHASE 3 Item 3: heavy guns push a UV-only refraction ring off the
+        // muzzle (render-side pool, no gameplay). Suppressed shots stay quiet.
+        if (!_supp) {
+            try {
+                const MS = (typeof MUZZLE_SHOCK !== 'undefined') ? MUZZLE_SHOCK[this.weapon.name] : null;
+                if (MS && game.spawnUvShock) game.spawnUvShock(barrelX, barrelY, MS.r, MS.t, MS.s);
+            } catch (e) {}
+        }
 
         // JULY item 1 (auto-switch to sidearm on empty): the shot that just
         // left the barrel was this weapon's LAST round -- fall back to the
@@ -39264,6 +39274,28 @@ class Game {
     // param blooms the blast in its own color for free via stampGlow, so
     // every explosion in the game glows with zero caller changes when the
     // default warm orange fits (it almost always does).
+    // UV-only refraction ring (no vector ring, no glow stamp, no fluid
+    // blast, no gameplay): pooled 12 slots, ring-overwrite on the oldest.
+    // Fed by spawnShockwave (explosions, with tail) and heavy-gun muzzles
+    // (Player.shoot → weapon.shockRing). Aged in the shockwave update.
+    spawnUvShock(x, y, maxRadius, duration, strength) {
+        if (!this._uvShocks) {
+            this._uvShocks = [];
+            for (let i = 0; i < 12; i++) this._uvShocks.push({ active: false, x: 0, y: 0, maxRadius: 0, life: 0, maxLife: 0, str: 1 });
+        }
+        let slot = null, oldest = null, oldestLife = Infinity;
+        for (const u of this._uvShocks) {
+            if (!u.active) { slot = u; break; }
+            if (u.life < oldestLife) { oldestLife = u.life; oldest = u; }
+        }
+        if (!slot) slot = oldest;
+        if (!slot) return;
+        slot.active = true; slot.x = x; slot.y = y;
+        slot.maxRadius = Math.max(8, maxRadius || 60);
+        slot.maxLife = Math.max(0.05, duration || 0.2); slot.life = slot.maxLife;
+        slot.str = (strength === undefined) ? 1 : strength;
+    }
+
     spawnShockwave(x, y, maxRadius = 150, duration = 0.3, glowColor) {
         for (let i = 0; i < this.shockwaves.length; i++) {
             let sw = this.shockwaves[i];
@@ -39279,6 +39311,10 @@ class Game {
         }
         // Bloom fires even when the ring pool is saturated (cheaper channel).
         this.stampGlow(x, y, maxRadius * 0.85, glowColor || '#ff9500', 0.5);
+        // PHASE 3 Item 3 (UV shock): own refraction ring with a 0.25s tail
+        // beyond the vector ring (keeps expanding after the ring dies —
+        // the distortion reads as a pressure wave, not a flash). Render-only.
+        try { this.spawnUvShock(x, y, maxRadius * 1.15, duration + 0.25, 1.0); } catch (e) {}
         // SHADER-ERA fluid: every blast is a pressure splat — explosions
         // visibly shove smoke/dust sideways (the money shot). One choke
         // covers all ~20 blast sites; zero RNG, sim untouched.
@@ -46632,9 +46668,11 @@ class Game {
     // their CENTER LINE — 1 cell thin, centered on true geometry, so tiny
     // corridors stay breathable and smoke snugs both faces (spillover
     // intended). THICK blocks keep rect fill (smoke has no business inside
-    // a pillar). Half-height parapets stay open (wash-over matches the
-    // 2.5D fiction). Dilation is a hair (0.1 cell); plain intersection
-    // already guarantees capture. Rebuilt only on _wallsVer moves.
+    // a pillar). Window-sill parapets (seeThrough) stay open — wash-over
+    // matches the 2.5D fiction; TALL SOLID mesa rims stamp like any wall,
+    // so deck smoke is contained except at stairs/windows. Dilation is a
+    // hair (0.1 cell); plain intersection already guarantees capture.
+    // Rebuilt only on _wallsVer moves.
     _fluidMaskBuild() {
         const F = this._fl; if (!F) return;
         const W = F.W, H = F.H;
@@ -46652,22 +46690,29 @@ class Game {
         };
         for (let wi = 0; wi < walls.length; wi++) {
             const w = walls[wi];
-            if (!w || w._parapet) continue;
+            if (!w) continue;
+            if (w._parapet && w.seeThrough) continue;
+            // Cell index math (the wall-gap lesson): a cell CONTAINING a
+            // coordinate is floor(coord/cell) — Math.round on the center
+            // line landed the obstacle in the NEXT cell (up to a full cell
+            // outside the wall on one face, the true face cell left open),
+            // and an inclusive Math.ceil upper bound stamped a cell that
+            // never intersects the wall (+1 cell each end/side — corridors
+            // lost 1-2 of ~3 open cells). Now: floor everywhere, upper bound
+            // = cell containing the last interior px.
+            const cx0 = (v) => Math.max(0, Math.floor(v / F.mw * W)), cx1 = (v) => Math.min(W - 1, Math.floor((v - 0.001) / F.mw * W));
+            const cy0 = (v) => Math.max(0, Math.floor(v / F.mh * H)), cy1 = (v) => Math.min(H - 1, Math.floor((v - 0.001) / F.mh * H));
             if (Math.min(w.w, w.h) < thinPx) {
                 // Center line along the long axis (single cell row/column).
                 if (w.w >= w.h) {
-                    const j = Math.max(0, Math.min(H - 1, Math.round((w.y + w.h / 2) / F.mh * H)));
-                    const x0 = Math.max(0, Math.floor((w.x - pad) / F.mw * W)), x1 = Math.min(W - 1, Math.ceil((w.x + w.w + pad) / F.mw * W));
-                    stamp(x0, x1, j, j);
+                    const j = Math.max(0, Math.min(H - 1, Math.floor((w.y + w.h / 2) / F.mh * H)));
+                    stamp(cx0(w.x - pad), cx1(w.x + w.w + pad), j, j);
                 } else {
-                    const i = Math.max(0, Math.min(W - 1, Math.round((w.x + w.w / 2) / F.mw * W)));
-                    const y0 = Math.max(0, Math.floor((w.y - pad) / F.mh * H)), y1 = Math.min(H - 1, Math.ceil((w.y + w.h + pad) / F.mh * H));
-                    stamp(i, i, y0, y1);
+                    const i = Math.max(0, Math.min(W - 1, Math.floor((w.x + w.w / 2) / F.mw * W)));
+                    stamp(i, i, cy0(w.y - pad), cy1(w.y + w.h + pad));
                 }
             } else {
-                const x0 = Math.max(0, Math.floor((w.x - pad) / F.mw * W)), x1 = Math.min(W - 1, Math.ceil((w.x + w.w + pad) / F.mw * W));
-                const y0 = Math.max(0, Math.floor((w.y - pad) / F.mh * H)), y1 = Math.min(H - 1, Math.ceil((w.y + w.h + pad) / F.mh * H));
-                stamp(x0, x1, y0, y1);
+                stamp(cx0(w.x - pad), cx1(w.x + w.w + pad), cy0(w.y - pad), cy1(w.y + w.h + pad));
             }
         }
         F.wallsVer = (this.map && this.map._wallsVer) || 0;
@@ -46761,6 +46806,18 @@ class Game {
         if (!F.forces) F.forces = [];
         F.forces.push({ x: gx, y: gy, gr: Math.max(2, gr * 0.75), pw: Math.hypot(vx, vy), age: 0, ttl: 0.4, hard: Math.hypot(vx, vy) > 250 });
         if (F.forces.length > 8) F.forces.shift();
+        // PHASE 3 Item 1a3: mirror the accepted splat + energy + forces to
+        // the GPU field (parallel sim; CPU still renders). Energy is COPIED
+        // from the CPU scalar — never re-derived, cannot diverge. Flag-gated
+        // (`_pixiGpuSim === false` parks the tier for A/B). Never breaks CPU.
+        try {
+            if (this._pixiGpuSim !== false && this._pixiGpu && this._pixiGpu.ok) {
+                this._pixiGpuSplat(x, y, vx, vy, dens, radiusPx, heat);
+                const _gg = this._pixiGpu;
+                _gg.energy = F.energy;
+                _gg.forces = (F.forces || []).map((fo) => ({ x: fo.x, y: fo.y, gr: fo.gr, pw: fo.pw, age: fo.age, ttl: fo.ttl, hard: !!fo.hard }));
+            }
+        } catch (e) {}
         // (Gun heroes are seeded once per shot in spawnBarrelFX — not here —
         // so a trigger pull births ONE cohesive 2–4 puff fan, not 3×2 metronomic twins.)
     }
@@ -46847,6 +46904,16 @@ class Game {
             F.heroN = (F.heroN || 0) + 1;
         }
         if (F.hero.length > 96) F.hero.splice(0, F.hero.length - 96);
+        // PHASE 3 Item 1a3: mirror the accepted blast (same hook contract as
+        // the splat above — raw emitter args, copied energy/forces).
+        try {
+            if (this._pixiGpuSim !== false && this._pixiGpu && this._pixiGpu.ok) {
+                this._pixiGpuBlast(x, y, radiusPx, power);
+                const _gg2 = this._pixiGpu;
+                _gg2.energy = F.energy;
+                _gg2.forces = (F.forces || []).map((fo) => ({ x: fo.x, y: fo.y, gr: fo.gr, pw: fo.pw, age: fo.age, ttl: fo.ttl, hard: !!fo.hard }));
+            }
+        } catch (e) {}
     }
     // Bilinear velocity sample (world px in, px/s out via scratch — no alloc).
     // Consumers: dust motes, smoke puffs (ride the field for free).
@@ -47102,25 +47169,41 @@ class Game {
         const ff = this._pixiGpuFloatFmt || null; // null = byte fallback
         const made = [];
         try {
-            const mk = (float) => {
+            const mk = (float, lin, full) => {
+                const rw = full ? W : bw, rh = full ? H : bh;
                 const rt = (float && ff)
-                    ? R.RenderTexture.create({ width: bw, height: bh, format: ff })
-                    : R.RenderTexture.create({ width: bw, height: bh });
+                    ? R.RenderTexture.create({ width: rw, height: rh, format: ff })
+                    : R.RenderTexture.create({ width: rw, height: rh });
+                // Sim doubles sample bilinearly with edge clamp (the advect
+                // backtrace lives on this); post-process RTs keep defaults.
+                try { if (lin && rt.source) { rt.source.scaleMode = 'linear'; rt.source.wrapMode = 'clamp-to-edge'; } } catch (e) {}
                 made.push(rt);
                 return rt;
             };
             // Fluid field doubles (Item 1 ping-pongs these): velocity XY +
             // density/heat in RGBA, plus the pressure scratch pair. B_rt
-            // (bloom chain scratch) + S_rt (shock scene capture) are byte by
-            // design — post-process data, never sim state. No AA on sim
-            // targets (data, not pictures).
+            // (bloom chain scratch) + S_rt (bloom scene capture) + R_rt
+            // (shock/cloak refraction capture — its own RT: a live shock
+            // mesh samples it every frame, so nothing else may render into
+            // it) are byte by design — post-process data. No AA on sim
+            // targets (data, not pictures). Bloom pair is FULL-RES (the
+            // half-res capture shimmered: bloom edges blipped across wall
+            // faces with sub-pixel camera motion — operator report);
+            // refraction capture stays half-res (bent content, no edges).
             const G = {
                 ok: true, w: W, h: H, bw, bh, floatFmt: ff,
                 mapRef: this.map || null, frame: this._pixiFrameToken,
-                velA: mk(true), velB: mk(true),
-                denA: mk(true), denB: mk(true),
-                prsA: mk(true), prsB: mk(true),
-                bRt: mk(false), sRt: mk(false),
+                velA: mk(true, true), velB: mk(true, true),
+                denA: mk(true, true), denB: mk(true, true),
+                prsA: mk(true, true), prsB: mk(true, true),
+                dvA: mk(true, true),
+                bRt: mk(false, false, true), sRt: mk(false, false, true), rRt: mk(false),
+                // Item 1a1: pass cache (quad + per-key programs), field
+                // identity (world-space grid = CPU dims), mask texture,
+                // mirrored energy scalar (copied, never re-derived).
+                prog: null, quad: null, maskTex: null,
+                fw: 0, fh: 0, fmw: 0, fmh: 0, fmapRef: null,
+                fwallsVer: -1, maskCpu: -1, energy: 0, forces: [],
             };
             return G;
         } catch (e) {
@@ -47136,8 +47219,1500 @@ class Game {
         // fluid path is unaffected — it never reads this set.
         try { this._pixiGpuSleep = reason || 'off'; } catch (e) {}
         if (!G) return;
-        const keys = ['velA', 'velB', 'denA', 'denB', 'prsA', 'prsB', 'bRt', 'sRt'];
+        const keys = ['velA', 'velB', 'denA', 'denB', 'prsA', 'prsB', 'dvA', 'bRt', 'sRt', 'rRt'];
         for (const k of keys) { try { if (G[k]) G[k].destroy(true); } catch (e) {} }
+        // Item 1a1: programs, shared quad, and mask texture die with the
+        // set — no orphan GL state across resize/map-swap reallocs.
+        try { if (G.maskTex) G.maskTex.destroy(true); } catch (e) {}
+        try { if (G.quad) G.quad.destroy(); } catch (e) {}
+        // Item 1b: display meshes leave the stage with the set (visible
+        // rigs must never outlive their GL programs).
+        try {
+            if (G.dispH) for (const D of G.dispH) {
+                if (!D) continue;
+                try { if (D.mesh && D.mesh.parent) D.mesh.parent.removeChild(D.mesh); } catch (e) {}
+                try { if (D.sh) D.sh.destroy(); } catch (e) {}
+                try { if (D.ug) D.ug.destroy(); } catch (e) {}
+                try { if (D.mesh) D.mesh.destroy(); } catch (e) {}
+                try { if (D.geo) D.geo.destroy(); } catch (e) {}
+            }
+        } catch (e) {}
+        try { if (G.dispProg) G.dispProg.destroy(); } catch (e) {}
+        G.dispH = null; G.dispProg = null;
+        // Item 3: shock meshes + program leave with the set.
+        try {
+            if (G.shockH) for (const D of G.shockH) {
+                if (!D) continue;
+                try { if (D.mesh && D.mesh.parent) D.mesh.parent.removeChild(D.mesh); } catch (e) {}
+                try { if (D.sh) D.sh.destroy(); } catch (e) {}
+                try { if (D.ug) D.ug.destroy(); } catch (e) {}
+                try { if (D.mesh) D.mesh.destroy(); } catch (e) {}
+                try { if (D.geo) D.geo.destroy(); } catch (e) {}
+            }
+        } catch (e) {}
+        try { if (G.shockProg) G.shockProg.destroy(); } catch (e) {}
+        G.shockH = null; G.shockProg = null; G.shockCapFrame = -1;
+        // Item 4: cloak meshes + program leave with the set.
+        try {
+            if (G.cloakH) for (const D of G.cloakH) {
+                if (!D) continue;
+                try { if (D.mesh && D.mesh.parent) D.mesh.parent.removeChild(D.mesh); } catch (e) {}
+                try { if (D.sh) D.sh.destroy(); } catch (e) {}
+                try { if (D.ug) D.ug.destroy(); } catch (e) {}
+                try { if (D.mesh) D.mesh.destroy(); } catch (e) {}
+                try { if (D.geo) D.geo.destroy(); } catch (e) {}
+            }
+        } catch (e) {}
+        try { if (G.cloakProg) G.cloakProg.destroy(); } catch (e) {}
+        G.cloakH = null; G.cloakProg = null; G.cloakCapFrame = -1;
+        // Item 2: bloom blit leaves the stage with the set.
+        try {
+            if (G.bloomSp) {
+                try { if (G.bloomSp.parent) G.bloomSp.parent.removeChild(G.bloomSp); } catch (e) {}
+                try { G.bloomSp.destroy(); } catch (e) {}
+            }
+        } catch (e) {}
+        G.bloomSp = null;
+        try {
+            if (G.prog) for (const k in G.prog) {
+                try { G.prog[k].destroy(); } catch (e) {}
+            }
+        } catch (e) {}
+        G.prog = null; G.quad = null; G.maskTex = null;
+    }
+
+    // PHASE 3 Item 1a1 (harness): world-space GPU field + fullscreen-pass
+    // runner. The field is the CPU grid cell-for-cell (same CELL/MAXCELLS
+    // budget math) — mask bytes upload 1:1, splat coords map identically,
+    // one field for both 2P halves, camera-independent (no false advection
+    // from camera motion). Probe-driven for now; emitters hook up in 1a3
+    // behind the parity gate. CPU rendering untouched.
+    _pixiGpuFieldDims() {
+        const T = (typeof FLUID_TUNING !== 'undefined') ? FLUID_TUNING : {};
+        const mw = (this.map && this.map.width) || this.mapW || 2200;
+        const mh = (this.map && this.map.height) || this.mapH || 2200;
+        const cell = T.CELL || 40;
+        let W = Math.max(48, Math.round(mw / cell));
+        let H = Math.max(32, Math.round(mh / cell));
+        const MAXC = T.MAXCELLS || 24000;
+        if (W * H > MAXC) {
+            const sc = Math.sqrt((W * H) / MAXC);
+            W = Math.max(48, Math.round(W / sc));
+            H = Math.max(32, Math.round(H / sc));
+        }
+        return { W, H, mw, mh };
+    }
+
+    _pixiGpuFieldEnsure() {
+        const R = window.PIXI, G = this._pixiGpu;
+        if (!R || !G || !G.ok) return null;
+        const d = this._pixiGpuFieldDims();
+        if (G.fw !== d.W || G.fh !== d.H || G.fmapRef !== this.map) {
+            // (Re)size the six sim doubles to field dims (tiny: e.g.
+            // 154x154 on the 7500 — passes cost ~nothing). Screen-space
+            // bRt/sRt are untouched (post-process stays half-res screen).
+            const ff = G.floatFmt || null;
+            const keys = ['velA', 'velB', 'denA', 'denB', 'prsA', 'prsB', 'dvA'];
+            try {
+                for (const k of keys) { try { if (G[k]) G[k].destroy(true); } catch (e) {} G[k] = null; }
+                for (const k of keys) {
+                    G[k] = ff ? R.RenderTexture.create({ width: d.W, height: d.H, format: ff })
+                              : R.RenderTexture.create({ width: d.W, height: d.H });
+                    try { if (G[k].source) { G[k].source.scaleMode = 'linear'; G[k].source.wrapMode = 'clamp-to-edge'; } } catch (e) {}
+                }
+            } catch (e) { try { this._pixiGpuKill('field'); } catch (_e) {} return null; }
+            G.fw = d.W; G.fh = d.H; G.fmw = d.mw; G.fmh = d.mh; G.fmapRef = this.map || null;
+            G.fwallsVer = -1; G.maskCpu = -1;
+            try { if (G.maskTex) G.maskTex.destroy(true); } catch (e) {}
+            G.maskTex = null;
+        }
+        return G;
+    }
+
+    _pixiGpuVert() {
+        return 'attribute vec2 aPosition; attribute vec2 aUV; varying vec2 vUV;\n' +
+            'void main(){ vUV = aUV; gl_Position = vec4(aPosition, 0.0, 1.0); }';
+    }
+
+    // One cached GlProgram per pass key (compile once); per run, a fresh
+    // UniformGroup + Shader over the CURRENT sources/values (v8 syncs UBOs
+    // through its per-frame batcher — this is the engine's own churn
+    // pattern, not a leak). Post-construction mutation of a live Shader's
+    // resources corrupts bindings (probed: second run writes zeros), so
+    // nothing is ever mutated — only rebuilt. Fresh Mesh wrapper per run
+    // (draw-call descriptor; GL objects belong to quad/program).
+    _pixiGpuPass(key, frag, uniforms, target) {
+        const R = window.PIXI, rend = this._pixiOverlayRenderer, G = this._pixiGpu;
+        if (!R || !rend || !G || !G.ok || !target) return false;
+        try {
+            if (!G.quad) {
+                const geo = new R.Geometry();
+                geo.addAttribute('aPosition', [-1, -1, 1, -1, 1, 1, -1, 1], 2);
+                geo.addAttribute('aUV', [0, 0, 1, 0, 1, 1, 0, 1], 2);
+                geo.addIndex([0, 1, 2, 0, 2, 3]);
+                G.quad = geo;
+            }
+            if (!G.prog) G.prog = {};
+            let glp = G.prog[key];
+            if (!glp) {
+                glp = new R.GlProgram({ vertex: this._pixiGpuVert(), fragment: frag });
+                G.prog[key] = glp;
+            }
+            const isScalar = (v) => (typeof v === 'number') || (Array.isArray(v));
+            const scalarType = (v) => (typeof v === 'number') ? 'f32' : ('vec' + v.length + '<f32>');
+            // Pre-built structures ({value, type[, size]} — e.g. vec4 force
+            // arrays) ride the group as-is; sampler sources stay bare.
+            const isStruct = (v) => v && typeof v === 'object' && !Array.isArray(v) && ('value' in v) && ('type' in v);
+            const structs = {};
+            const res = {};
+            for (const u in uniforms) {
+                const v = uniforms[u];
+                if (isScalar(v)) structs[u] = { value: v, type: scalarType(v) };
+                else if (isStruct(v)) structs[u] = v;
+                else res[u] = v;
+            }
+            const ug = new R.UniformGroup(structs);
+            res.uGpu = ug;
+            const sh = new R.Shader({ glProgram: glp, resources: res });
+            const mesh = new R.Mesh({ geometry: G.quad, shader: sh });
+            rend.render({ container: mesh, target });
+            try { mesh.destroy(); } catch (e) {}
+            try { sh.destroy(); } catch (e) {}
+            try { ug.destroy(); } catch (e) {}
+            return true;
+        } catch (e) { return false; }
+    }
+
+    // Byte obstacle texture for the sim passes. Prefers the CPU's own obs
+    // bytes (identical grid by construction — upload is a copy, not a
+    // re-raster); all-open when the CPU field isn't up yet. Refreshed only
+    // on _wallsVer moves (same discipline as _fluidMaskBuild).
+    _pixiGpuMaskSync() {
+        const R = window.PIXI, G = this._pixiGpu;
+        if (!R || !G || !G.ok || !G.fw) return null;
+        const wv = (this.map && this.map._wallsVer) || 0;
+        const F = this._fl;
+        const cpu = (F && F.map === this.map && F.obs && F.W === G.fw && F.H === G.fh) ? F : null;
+        if (G.maskTex && G.fwallsVer === wv && G.maskCpu === (cpu ? 1 : 0)) return G.maskTex;
+        try {
+            const W = G.fw, H = G.fh;
+            const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+            const cx = cv.getContext('2d');
+            const img = cx.createImageData(W, H);
+            const px = img.data;
+            if (cpu) {
+                const obs = cpu.obs;
+                for (let k = 0, n = W * H; k < n; k++) {
+                    const o = k * 4, v = obs[k] ? 255 : 0;
+                    px[o] = v; px[o + 1] = v; px[o + 2] = v; px[o + 3] = 255;
+                }
+            } else {
+                for (let k = 0, n = W * H; k < n; k++) px[k * 4 + 3] = 255;
+            }
+            cx.putImageData(img, 0, 0);
+            try { if (G.maskTex) G.maskTex.destroy(true); } catch (e) {}
+            G.maskTex = R.Texture.from(cv);
+            try { if (G.maskTex.source) { G.maskTex.source.scaleMode = 'nearest'; G.maskTex.source.wrapMode = 'clamp-to-edge'; } } catch (e) {}
+            G.fwallsVer = wv; G.maskCpu = cpu ? 1 : 0;
+            return G.maskTex;
+        } catch (e) { return null; }
+    }
+
+    // Seed deflect (CPU mirror): rock-seated source cells spill 2 cells
+    // toward open along the mask gradient instead of vanishing. Operates on
+    // `s` (source cell), yields `t2` (deposit cell) or `drop`. Deep-rock
+    // spiral omitted (micro-volume, walls-interior only — noted gap).
+    _pixiGpuDeflectGLSL() {
+        return 'vec2 t2 = s;\n' +
+            'bool drop = false;\n' +
+            'if (texture2D(uMask, muv(s)).r > 0.5) {\n' +
+            'float dnx = texture2D(uMask, muv(cl(s + vec2(1.0, 0.0)))).r - texture2D(uMask, muv(cl(s - vec2(1.0, 0.0)))).r;\n' +
+            'float dny = texture2D(uMask, muv(cl(s + vec2(0.0, 1.0)))).r - texture2D(uMask, muv(cl(s - vec2(0.0, 1.0)))).r;\n' +
+            'if (dnx == 0.0 && dny == 0.0) drop = true;\n' +
+            'else {\n' +
+            'vec2 tt = cl(s - sign(vec2(dnx, dny)) * 2.0);\n' +
+            'if (texture2D(uMask, muv(tt)).r > 0.5) drop = true;\n' +
+            'else t2 = tt;\n' +
+            '}\n' +
+            '}\n';
+    }
+
+    // Gather-form seed: output cell o sums deposits from source cells s in
+    // ±2 that deflect onto o (scatter inverted — fullscreen-safe). Profile
+    // matches fluidSplat exactly: exp(-d2*2), 0.02 cutoff, NO velocity cap
+    // (CPU doesn't clamp), open-field bit-comparable modulo float/double.
+    _pixiGpuSplatFragV() {
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uPrev;\n' +
+            'uniform sampler2D uMask;\n' +
+            'uniform vec2 uCenter;\n' +
+            'uniform float uRadius;\n' +
+            'uniform vec2 uImp;\n' +
+            'void main(){\n' +
+            'vec2 o = cc();\n' +
+            'vec2 vc = texture2D(uPrev, fuv(o)).xy;\n' +
+            'if (length(o - uCenter) < uRadius * 2.0 + 3.0) {\n' +
+            'for (int aj = -2; aj <= 2; aj++) {\n' +
+            'for (int ai = -2; ai <= 2; ai++) {\n' +
+            'vec2 s = o + vec2(float(ai), float(aj));\n' +
+            'vec2 sc = cl(s);\n' +
+            'if (sc.x != s.x || sc.y != s.y) continue;\n' +
+            'vec2 d = (s - uCenter) / uRadius;\n' +
+            'float g = exp(-dot(d, d) * 2.0);\n' +
+            'if (g < 0.02) continue;\n' +
+            this._pixiGpuDeflectGLSL() +
+            'if (!drop && t2.x == o.x && t2.y == o.y) vc += uImp * g;\n' +
+            '}\n}\n' +
+            '}\n' +
+            'gl_FragColor = vec4(vc, 0.0, 1.0);\n' +
+            '}';
+    }
+
+    _pixiGpuSplatFragD() {
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uPrev;\n' +
+            'uniform sampler2D uMask;\n' +
+            'uniform vec2 uCenter;\n' +
+            'uniform float uRadius;\n' +
+            'uniform vec2 uAmt;\n' +
+            'void main(){\n' +
+            'vec2 o = cc();\n' +
+            'vec2 dh = texture2D(uPrev, fuv(o)).xy;\n' +
+            'if (length(o - uCenter) < uRadius * 2.0 + 3.0) {\n' +
+            'for (int aj = -2; aj <= 2; aj++) {\n' +
+            'for (int ai = -2; ai <= 2; ai++) {\n' +
+            'vec2 s = o + vec2(float(ai), float(aj));\n' +
+            'vec2 sc = cl(s);\n' +
+            'if (sc.x != s.x || sc.y != s.y) continue;\n' +
+            'vec2 d = (s - uCenter) / uRadius;\n' +
+            'float g = exp(-dot(d, d) * 2.0);\n' +
+            'if (g < 0.02) continue;\n' +
+            this._pixiGpuDeflectGLSL() +
+            'if (!drop && t2.x == o.x && t2.y == o.y) dh += uAmt * g;\n' +
+            '}\n}\n' +
+            '}\n' +
+            'dh = min(dh, vec2(1.5));\n' +
+            'gl_FragColor = vec4(dh, 0.0, 1.0);\n' +
+            '}';
+    }
+
+    // Blast seed: the exact 3-zone fluidBlast stamp (compact core mound +
+    // fast shell + faint skirt, heat on core) as a ±3 gather. Same deflect,
+    // same 1.5 caps, no velocity cap — open-field comparable to CPU.
+    _pixiGpuBlastFragV() {
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uPrev;\n' +
+            'uniform sampler2D uMask;\n' +
+            'uniform vec2 uCenter;\n' +
+            'uniform float uRadius;\n' +
+            'uniform float uPw;\n' +
+            'uniform float uCs;\n' +
+            'void main(){\n' +
+            'vec2 o = cc();\n' +
+            'vec2 vc = texture2D(uPrev, fuv(o)).xy;\n' +
+            'if (length(o - uCenter) < uRadius + 4.0) {\n' +
+            'for (int aj = -3; aj <= 3; aj++) {\n' +
+            'for (int ai = -3; ai <= 3; ai++) {\n' +
+            'vec2 s = o + vec2(float(ai), float(aj));\n' +
+            'vec2 sc = cl(s);\n' +
+            'if (sc.x != s.x || sc.y != s.y) continue;\n' +
+            'vec2 off = s - uCenter;\n' +
+            'float d = length(off) / uRadius;\n' +
+            'if (d > 1.0) continue;\n' +
+            'float fall = 1.0 - d;\n' +
+            'float inv = 1.0 / max(d * uRadius, 1.0);\n' +
+            'float vm = uPw * (0.3 + 0.7 * d) * fall * uCs * 0.06;\n' +
+            this._pixiGpuDeflectGLSL() +
+            'if (!drop && t2.x == o.x && t2.y == o.y) vc += off * inv * vm;\n' +
+            '}\n}\n' +
+            '}\n' +
+            'gl_FragColor = vec4(vc, 0.0, 1.0);\n' +
+            '}';
+    }
+
+    _pixiGpuBlastFragD() {
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uPrev;\n' +
+            'uniform sampler2D uMask;\n' +
+            'uniform vec2 uCenter;\n' +
+            'uniform float uRadius;\n' +
+            'void main(){\n' +
+            'vec2 o = cc();\n' +
+            'vec2 dh = texture2D(uPrev, fuv(o)).xy;\n' +
+            'if (length(o - uCenter) < uRadius + 4.0) {\n' +
+            'for (int aj = -3; aj <= 3; aj++) {\n' +
+            'for (int ai = -3; ai <= 3; ai++) {\n' +
+            'vec2 s = o + vec2(float(ai), float(aj));\n' +
+            'vec2 sc = cl(s);\n' +
+            'if (sc.x != s.x || sc.y != s.y) continue;\n' +
+            'float d = length(s - uCenter) / uRadius;\n' +
+            'if (d > 1.0) continue;\n' +
+            'float dc = d > 0.5 ? 1.0 : d / 0.5;\n' +
+            'float core = exp(-(dc * dc) / (0.42 * 0.42));\n' +
+            'float add = 0.45 * (1.0 - dc) + 0.65 * core + 0.30 * exp(-((d - 0.8) * (d - 0.8)) / 0.0225);\n' +
+            'float hadd = exp(-(d * d) / (0.5 * 0.5));\n' +
+            this._pixiGpuDeflectGLSL() +
+            'if (!drop && t2.x == o.x && t2.y == o.y) dh += vec2(add, hadd);\n' +
+            '}\n}\n' +
+            '}\n' +
+            'dh = min(dh, vec2(1.5));\n' +
+            'gl_FragColor = vec4(dh, 0.0, 1.0);\n' +
+            '}';
+    }
+
+    // GPU replay of one accepted CPU splat (world px + px/s — the frozen
+    // emitter contract). Velocity stays in px/s (the step divides by cell
+    // size itself, same as _fluidStep). Probe-driven in 1a1; emitters hook
+    // up in 1a3 behind the parity gate. Energy is COPIED from the CPU
+    // scalar at hook time (never re-derived — cannot diverge).
+    _pixiGpuSplat(x, y, vx, vy, dens, radiusPx, heat) {
+        const G = this._pixiGpuFieldEnsure();
+        if (!G) return false;
+        try {
+            this._pixiGpuMaskSync();
+            const maskSrc = G.maskTex ? G.maskTex.source : null;
+            if (!maskSrc) return false;
+            const cx = x / G.fmw * G.fw, cy = y / G.fmh * G.fh;
+            const cs = Math.max(G.fmw / G.fw, G.fmh / G.fh);
+            // Same floor as fluidSplat (gr >= 1.5 cells): a tighter radius
+            // strands the gaussian between cells (probed: seed reads ~5%
+            // of CPU mass). Bit-comparable footprint by construction.
+            const rr = Math.max(1.5, (radiusPx || 24) / cs);
+            const res = [G.fw, G.fh], ctr = [cx, cy];
+            if (!this._pixiGpuPass('splatV', this._pixiGpuSplatFragV(),
+                { uPrev: G.velA.source, uMask: maskSrc, uRes: res, uCenter: ctr, uRadius: rr, uImp: [vx, vy] }, G.velB)) return false;
+            let t = G.velA; G.velA = G.velB; G.velB = t;
+            if (!this._pixiGpuPass('splatD', this._pixiGpuSplatFragD(),
+                { uPrev: G.denA.source, uMask: maskSrc, uRes: res, uCenter: ctr, uRadius: rr, uAmt: [dens, heat || 0] }, G.denB)) return false;
+            t = G.denA; G.denA = G.denB; G.denB = t;
+            return true;
+        } catch (e) { return false; }
+    }
+
+    // GPU replay of one accepted CPU blast (raw emitter args — grid math
+    // re-derived identically: same dims, same map, same formulas).
+    _pixiGpuBlast(x, y, radiusPx, power) {
+        const G = this._pixiGpuFieldEnsure();
+        if (!G) return false;
+        try {
+            this._pixiGpuMaskSync();
+            const maskSrc = G.maskTex ? G.maskTex.source : null;
+            if (!maskSrc) return false;
+            const cs = (G.fmw / G.fw + G.fmh / G.fh) * 0.5;
+            const cx = x / G.fmw * G.fw, cy = y / G.fmh * G.fh;
+            const rr = Math.max(2, (radiusPx || 60) / cs);
+            const res = [G.fw, G.fh], ctr = [cx, cy];
+            const pw = power || 500;
+            if (!this._pixiGpuPass('blastV', this._pixiGpuBlastFragV(),
+                { uPrev: G.velA.source, uMask: maskSrc, uRes: res, uCenter: ctr, uRadius: rr, uPw: pw, uCs: cs }, G.velB)) return false;
+            let t = G.velA; G.velA = G.velB; G.velB = t;
+            if (!this._pixiGpuPass('blastD', this._pixiGpuBlastFragD(),
+                { uPrev: G.denA.source, uMask: maskSrc, uRes: res, uCenter: ctr, uRadius: rr }, G.denB)) return false;
+            t = G.denA; G.denA = G.denB; G.denB = t;
+            return true;
+        } catch (e) { return false; }
+    }
+
+    // PHASE 3 Item 1a2 (core passes): 1:1 port of _fluidStep's pass order.
+    // Coordinate law (probed, 1a1): memory rows are GL bottom-up, extract
+    // does not flip — CPU (i,j-topdown) maps as below. fuv = field
+    // self-sample (bottom-up memory), muv = mask (top-down canvas texture,
+    // Pixi flipY convention), cc = this output fragment as CPU (i,j), cl =
+    // CPU index clamp (matches the Math.max/min in the CPU loops).
+    // Parity note: GPU memory is bottom-up, so a 1a3 probe compares GPU
+    // readback row j against CPU row H-1-j. Jacobi is ping-pong (not the
+    // CPU's in-place Gauss-Seidel) — same attractor, noted deviation.
+    _pixiGpuCellPrelude() {
+        return 'uniform vec2 uRes;\n' +
+            'vec2 fuv(vec2 c){ return (vec2(c.x, uRes.y - 1.0 - c.y) + 0.5) / uRes; }\n' +
+            'vec2 muv(vec2 c){ return (c + 0.5) / uRes; }\n' +
+            'vec2 cc(){ return vec2(floor(gl_FragCoord.x), uRes.y - 1.0 - floor(gl_FragCoord.y)); }\n' +
+            'vec2 cl(vec2 c){ return clamp(c, vec2(0.0), uRes - 1.0); }\n';
+    }
+
+    _pixiGpuAdvectFrag() {
+        // Buoyancy folded in (CPU buoys vy THEN advects with it — one pass,
+        // same math): v0 pick up heat lift, backtrace with lifted velocity.
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uVel;\n' +
+            'uniform sampler2D uDen;\n' +
+            'uniform sampler2D uMask;\n' +
+            'uniform vec2 uCs;\n' +
+            'uniform float uDt;\n' +
+            'uniform float uBuoy;\n' +
+            'void main(){\n' +
+            'vec2 c = cc();\n' +
+            'vec2 v0 = texture2D(uVel, fuv(c)).xy;\n' +
+            'float dn = texture2D(uDen, fuv(c)).x;\n' +
+            'v0.y -= uBuoy * uDt * dn;\n' +
+            'vec2 back = c - v0 * uDt / uCs;\n' +
+            'vec2 v = texture2D(uVel, fuv(cl(back))).xy;\n' +
+            'if (texture2D(uMask, muv(c)).r > 0.5) v = vec2(0.0);\n' +
+            'gl_FragColor = vec4(v, 0.0, 1.0);\n' +
+            '}';
+    }
+
+    _pixiGpuDivergeFrag() {
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uVel;\n' +
+            'void main(){\n' +
+            'vec2 c = cc();\n' +
+            'float xl = texture2D(uVel, fuv(cl(c - vec2(1.0, 0.0)))).x;\n' +
+            'float xr = texture2D(uVel, fuv(cl(c + vec2(1.0, 0.0)))).x;\n' +
+            'float yb = texture2D(uVel, fuv(cl(c - vec2(0.0, 1.0)))).y;\n' +
+            'float yt = texture2D(uVel, fuv(cl(c + vec2(0.0, 1.0)))).y;\n' +
+            'gl_FragColor = vec4(0.0, 0.5 * ((xr - xl) + (yt - yb)), 0.0, 1.0);\n' +
+            '}';
+    }
+
+    _pixiGpuClearFrag() {
+        return 'void main(){ gl_FragColor = vec4(0.0); }';
+    }
+
+    _pixiGpuJacobiFrag() {
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uPr;\n' +
+            'uniform sampler2D uDv;\n' +
+            'uniform sampler2D uMask;\n' +
+            'void main(){\n' +
+            'vec2 c = cc();\n' +
+            'float pc = texture2D(uPr, fuv(c)).x;\n' +
+            'float dv = texture2D(uDv, fuv(c)).y;\n' +
+            'float p = 0.0;\n' +
+            'if (texture2D(uMask, muv(c)).r < 0.5) {\n' +
+            'float pl = texture2D(uPr, fuv(cl(c - vec2(1.0, 0.0)))).x;\n' +
+            'float prr = texture2D(uPr, fuv(cl(c + vec2(1.0, 0.0)))).x;\n' +
+            'float pb = texture2D(uPr, fuv(cl(c - vec2(0.0, 1.0)))).x;\n' +
+            'float pt = texture2D(uPr, fuv(cl(c + vec2(0.0, 1.0)))).x;\n' +
+            'if (texture2D(uMask, muv(cl(c - vec2(1.0, 0.0)))).r > 0.5) pl = pc;\n' +
+            'if (texture2D(uMask, muv(cl(c + vec2(1.0, 0.0)))).r > 0.5) prr = pc;\n' +
+            'if (texture2D(uMask, muv(cl(c - vec2(0.0, 1.0)))).r > 0.5) pb = pc;\n' +
+            'if (texture2D(uMask, muv(cl(c + vec2(0.0, 1.0)))).r > 0.5) pt = pc;\n' +
+            'p = (pl + prr + pb + pt - dv) * 0.25;\n' +
+            '}\n' +
+            'gl_FragColor = vec4(p, 0.0, 0.0, 1.0);\n' +
+            '}';
+    }
+
+    _pixiGpuGradFrag() {
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uVel;\n' +
+            'uniform sampler2D uPr;\n' +
+            'void main(){\n' +
+            'vec2 c = cc();\n' +
+            'vec2 v = texture2D(uVel, fuv(c)).xy;\n' +
+            'float pl = texture2D(uPr, fuv(cl(c - vec2(1.0, 0.0)))).x;\n' +
+            'float prr = texture2D(uPr, fuv(cl(c + vec2(1.0, 0.0)))).x;\n' +
+            'float pb = texture2D(uPr, fuv(cl(c - vec2(0.0, 1.0)))).x;\n' +
+            'float pt = texture2D(uPr, fuv(cl(c + vec2(0.0, 1.0)))).x;\n' +
+            'v -= 0.5 * vec2(prr - pl, pt - pb);\n' +
+            'gl_FragColor = vec4(v, 0.0, 1.0);\n' +
+            '}';
+    }
+
+    _pixiGpuForceFrag() {
+        // Live blast forces, post-projection (CPU order). Force slots are
+        // uniform vec4 arrays (A = x,y topdown-cells, gr cells, pw;
+        // B = age,ttl,hard,unused); uFn counts live slots. If array
+        // uniforms ever fail a probe, the fallback is per-force splatV
+        // passes (profile differs — a fidelity call, not silent).
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uPrev;\n' +
+            'uniform sampler2D uMask;\n' +
+            'uniform vec2 uCs;\n' +
+            'uniform float uSdt;\n' +
+            'uniform float uFn;\n' +
+            'uniform vec4 uFa[8];\n' +
+            'uniform vec4 uFb[8];\n' +
+            'void main(){\n' +
+            'vec2 c = cc();\n' +
+            'vec2 v = texture2D(uPrev, fuv(c)).xy;\n' +
+            'if (texture2D(uMask, muv(c)).r < 0.5) {\n' +
+            'for (int k = 0; k < 8; k++) {\n' +
+            'if (float(k) >= uFn) break;\n' +
+            'vec4 A = uFa[k];\n' +
+            'vec4 B = uFb[k];\n' +
+            'float d = length(c - A.xy) / A.z;\n' +
+            'if (d > 1.0 || d < 0.05) continue;\n' +
+            'float fstr = A.w * (1.0 - B.x / B.y) * 3.5 * uSdt;\n' +
+            'float push = fstr * (0.3 + 0.7 * d) * (1.0 - d) / (d * A.z);\n' +
+            'v += (c - A.xy) * push;\n' +
+            '}\n' +
+            '}\n' +
+            'gl_FragColor = vec4(v, 0.0, 1.0);\n' +
+            '}';
+    }
+
+    _pixiGpuVelScaleFrag() {
+        // Step-4 velocity half: dissipate in place + no-slip (runs in BOTH
+        // CPU paths — full-solve and advect-only alike).
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uPrev;\n' +
+            'uniform sampler2D uMask;\n' +
+            'uniform float uVd;\n' +
+            'void main(){\n' +
+            'vec2 c = cc();\n' +
+            'vec2 v = texture2D(uPrev, fuv(c)).xy * uVd;\n' +
+            'if (texture2D(uMask, muv(c)).r > 0.5) v = vec2(0.0);\n' +
+            'gl_FragColor = vec4(v, 0.0, 1.0);\n' +
+            '}';
+    }
+
+    _pixiGpuDensFrag() {
+        // Step-4 density half: backtrace with the DISSIPATED velocity (CPU
+        // order — velScale lands first), heat burns out 2.4x faster.
+        return this._pixiGpuCellPrelude() +
+            'uniform sampler2D uDen;\n' +
+            'uniform sampler2D uVel;\n' +
+            'uniform vec2 uCs;\n' +
+            'uniform float uDt;\n' +
+            'uniform float uDd;\n' +
+            'uniform float uDh;\n' +
+            'void main(){\n' +
+            'vec2 c = cc();\n' +
+            'vec2 v = texture2D(uVel, fuv(c)).xy;\n' +
+            'vec2 back = c - v * uDt / uCs;\n' +
+            'vec4 t = texture2D(uDen, fuv(cl(back)));\n' +
+            'gl_FragColor = vec4(t.x * uDd, t.y * uDh, 0.0, 1.0);\n' +
+            '}';
+    }
+
+    // Full GPU step — same gates, same order as _fluidStep. Energy-only
+    // calm gate (the maxD half needs a readback; deviation noted: the GPU
+    // runs a negligible superset while dense-but-calm). Surge bypass,
+    // forcing, and both dissipation paths mirror the CPU branch structure.
+    _pixiGpuStep(dt) {
+        const G = this._pixiGpuFieldEnsure();
+        if (!G) return false;
+        const T = (typeof FLUID_TUNING !== 'undefined') ? FLUID_TUNING : {};
+        const EPS = T.EPS || 0.0008;
+        if (G.energy < EPS) return true;
+        const sdt = Math.max(0.0005, Math.min(dt, 1 / 30));
+        const W = G.fw, H = G.fh, res = [W, H];
+        const cs = [G.fmw / W, G.fmh / H];
+        try {
+            this._pixiGpuMaskSync();
+            const maskSrc = G.maskTex ? G.maskTex.source : null;
+            let t = null;
+            if (G.energy >= 0.05) {
+                if (!this._pixiGpuPass('advV', this._pixiGpuAdvectFrag(),
+                    { uVel: G.velA.source, uDen: G.denA.source, uMask: maskSrc, uRes: res, uCs: cs, uDt: sdt, uBuoy: T.BUOY || 0 }, G.velB)) return false;
+                t = G.velA; G.velA = G.velB; G.velB = t;
+                let surging = false;
+                const Fs = G.forces || [];
+                for (let fi = 0; fi < Fs.length; fi++) { const fo = Fs[fi]; if (fo.pw > 400 || (fo.hard && fo.age < 0.3)) { surging = true; break; } }
+                if (!surging) {
+                    if (!this._pixiGpuPass('div', this._pixiGpuDivergeFrag(),
+                        { uVel: G.velA.source, uRes: res }, G.dvA)) return false;
+                    if (!this._pixiGpuPass('clr', this._pixiGpuClearFrag(), {}, G.prsA)) return false;
+                    const JI = T.JACOBI || 8;
+                    for (let it = 0; it < JI; it++) {
+                        if (!this._pixiGpuPass('jac', this._pixiGpuJacobiFrag(),
+                            { uPr: G.prsA.source, uDv: G.dvA.source, uMask: maskSrc, uRes: res }, G.prsB)) return false;
+                        t = G.prsA; G.prsA = G.prsB; G.prsB = t;
+                    }
+                    if (!this._pixiGpuPass('grad', this._pixiGpuGradFrag(),
+                        { uVel: G.velA.source, uPr: G.prsA.source, uRes: res }, G.velB)) return false;
+                    t = G.velA; G.velA = G.velB; G.velB = t;
+                }
+            }
+            // Age forces (same splice discipline as the CPU loop).
+            const Fs2 = G.forces || [];
+            for (let fi = Fs2.length - 1; fi >= 0; fi--) {
+                const fo = Fs2[fi]; fo.age += sdt;
+                if (fo.age >= fo.ttl) Fs2.splice(fi, 1);
+            }
+            if (Fs2.length) {
+                const fa = [], fb = [];
+                for (let fi = 0; fi < 8; fi++) {
+                    const fo = Fs2[fi];
+                    if (fo) { fa.push(fo.x, fo.y, fo.gr, fo.pw); fb.push(fo.age, fo.ttl, fo.hard ? 1 : 0, 0); }
+                    else { fa.push(0, 0, 1, 0); fb.push(1, 1, 0, 0); }
+                }
+                if (!this._pixiGpuPass('force', this._pixiGpuForceFrag(),
+                    { uPrev: G.velA.source, uMask: maskSrc, uRes: res, uCs: cs, uSdt: sdt, uFn: Fs2.length, uFa: { value: fa, type: 'vec4<f32>', size: 8 }, uFb: { value: fb, type: 'vec4<f32>', size: 8 } }, G.velB)) return false;
+                t = G.velA; G.velA = G.velB; G.velB = t;
+            }
+            const vd = Math.pow(T.VEL_DISS || 0.35, sdt), dd = Math.pow(T.DENS_DISS || 0.45, sdt);
+            const dh = Math.pow(T.DENS_DISS || 0.45, sdt * 2.4);
+            if (!this._pixiGpuPass('velS', this._pixiGpuVelScaleFrag(),
+                { uPrev: G.velA.source, uMask: maskSrc, uRes: res, uVd: vd }, G.velB)) return false;
+            t = G.velA; G.velA = G.velB; G.velB = t;
+            if (!this._pixiGpuPass('dens', this._pixiGpuDensFrag(),
+                { uDen: G.denA.source, uVel: G.velA.source, uRes: res, uCs: cs, uDt: sdt, uDd: dd, uDh: dh }, G.denB)) return false;
+            t = G.denA; G.denA = G.denB; G.denB = t;
+            G.energy *= Math.pow(0.22, sdt);
+            if (G.energy < EPS * 0.25) G.energy = 0;
+            return true;
+        } catch (e) { return false; }
+    }
+
+    // PHASE 3 Item 1b (display): the field draws. Fullscreen-per-half
+    // quad, screen-space mesh under the night blit (above all world —
+    // same relative slot as the CPU fluid, which draws after bloom/shock).
+    // World-anchored static fbm erodes edges (no traveling waves — the
+    // shimmer lesson); continuous density ramp + 20% heat ramp (no
+    // threshold flips — the patch-boundary lesson); heat cools to the same
+    // 20% warm grey as the CPU heroes. uGain/uErode are the headed feel
+    // knobs. ON unless `_pixiGpuDisplayOn === false` (1c cutover flipped it).
+    _pixiGpuDispVert() {
+        // uNdc: 1 = positions already clip (pass-quad proof vehicle),
+        // 0 = positions are stage px (live stage meshes).
+        // THE FLIP LESSON: a hand-rolled screen projection (1 - y/H*2) is
+        // right on the canvas and MIRRORED in every RenderTexture — Pixi
+        // flips its projection only for the root target (`!isRoot !=
+        // flipY`). So the smoke/shock/cloak meshes landed upside-down in
+        // each scene capture (shock rings, aberration ghosts, cloak,
+        // bloom) = the 3090 "smoke mirrors for 0.5s / pops under fire"
+        // report. Route through the engine's projection + world/local
+        // transforms exactly like Pixi's own mesh vertex (the mesh adaptor
+        // injects these globals/locals into every custom mesh shader).
+        return 'uniform mat3 uProjectionMatrix;\n' +
+            'uniform mat3 uWorldTransformMatrix;\n' +
+            'uniform mat3 uTransformMatrix;\n' +
+            'uniform vec2 uStage;\n' +
+            'uniform float uNdc;\n' +
+            'attribute vec2 aPosition;\n' +
+            'attribute vec2 aUV;\n' +
+            'varying vec2 vUV;\n' +
+            'void main(){\n' +
+            'vUV = aUV;\n' +
+            'if (uNdc > 0.5) gl_Position = vec4(aPosition, 0.0, 1.0);\n' +
+            'else {\n' +
+            'mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;\n' +
+            'gl_Position = vec4((mvp * vec3(aPosition, 1.0)).xy, 0.0, 1.0);\n' +
+            '}\n' +
+            '}';
+    }
+
+    _pixiGpuDispFrag() {
+        // High-precision fragment: Pixi injects mediump by default, and the
+        // sin-hash fbm collapses into a visible STATIC grid at fp16 (the
+        // field advects under a frozen lattice — 3090 report). highp where
+        // the device offers it, mediump elsewhere. Same guard on the two
+        // refraction frags (their sin ripples step-band at fp16).
+        return '#ifdef GL_FRAGMENT_PRECISION_HIGH\n' +
+            'precision highp float;\n' +
+            '#endif\n' +
+            'uniform sampler2D uDen;\n' +
+            'uniform vec2 uFm;\n' +
+            'uniform vec2 uMw;\n' +
+            'uniform vec4 uRect;\n' +
+            'uniform vec2 uCam;\n' +
+            'uniform float uEz;\n' +
+            'uniform vec2 uSh;\n' +
+            'uniform vec3 uTint;\n' +
+            'uniform vec3 uWarm;\n' +
+            'uniform float uGain;\n' +
+            'uniform float uErode;\n' +
+            'uniform float uDetail;\n' +
+            'uniform float uTime;\n' +
+            'uniform sampler2D uMask;\n' +
+            'uniform float uLap;\n' +
+            'varying vec2 vUV;\n' +
+            'float dHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' +
+            'float dNoise(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);\n' +
+            'return mix(mix(dHash(i), dHash(i + vec2(1.0, 0.0)), f.x), mix(dHash(i + vec2(0.0, 1.0)), dHash(i + vec2(1.0, 1.0)), f.x), f.y); }\n' +
+            'float fbm3(vec2 p){ float v = dNoise(p) * 0.5; p = vec2(p.x * 1.6 - p.y * 1.2, p.x * 1.2 + p.y * 1.6) + 17.0; v += dNoise(p) * 0.3;\n' +
+            'p = vec2(p.x * 1.6 - p.y * 1.2, p.x * 1.2 + p.y * 1.6) + 31.0; v += dNoise(p) * 0.2; return v; }\n' +
+            'void main(){\n' +
+            'vec2 sp = uRect.xy + vUV * uRect.zw;\n' +
+            'vec2 w = vec2(uCam.x + (sp.x - uRect.x) / uEz - uSh.x, uCam.y + sp.y / uEz - uSh.y);\n' +
+            'vec2 fc = vec2(w.x / uMw.x * uFm.x, w.y / uMw.y * uFm.y);\n' +
+            'vec2 fuv = vec2(fc.x / uFm.x, 1.0 - fc.y / uFm.y);\n' +
+            'vec4 t = texture2D(uDen, fuv);\n' +
+            // Wall lap (display-only): the sim keeps mass out of obstacle
+            // cells, and bilinear falloff leaves a half-cell of empty air at
+            // every face. Inside a rock cell, borrow the field at the point
+            // pushed back toward open air by uLap cells (probe the 4 axis
+            // directions + the field's bilinear tail, take the brightest,
+            // fade with depth into the wall) so smoke touches and just laps
+            // the face. Mask is top-down (fc / uFm), density GL bottom-up.
+            'float rock = texture2D(uMask, fc / uFm).r;\n' +
+            'if (rock > 0.5 && uLap > 0.0) {\n' +
+            'vec2 cellC = floor(fc) + 0.5;\n' +
+            'vec2 dlt = fc - cellC;\n' +
+            'float best = 0.0; float bestH = 0.0; float depth = 1.0;\n' +
+            'for (int k = 0; k < 4; k++) {\n' +
+            'vec2 dir = (k == 0) ? vec2(1.0, 0.0) : (k == 1) ? vec2(-1.0, 0.0) : (k == 2) ? vec2(0.0, 1.0) : vec2(0.0, -1.0);\n' +
+            'vec2 nc = cellC + dir;\n' +
+            'if (texture2D(uMask, nc / uFm).r < 0.5) {\n' +
+            // distance from this fragment to the shared face, in cells (0 at face, 1 at far side)
+            'float toFace = 0.5 - dot(dlt, dir);\n' +
+            'vec2 pf = cellC + dir * 0.5 + dir * 0.35;\n' +
+            'vec4 tn = texture2D(uDen, vec2(pf.x / uFm.x, 1.0 - pf.y / uFm.y));\n' +
+            'if (tn.x > best) { best = tn.x; bestH = tn.y; depth = toFace; }\n' +
+            '}\n' +
+            '}\n' +
+            'float lapW = 1.0 - smoothstep(0.0, uLap, depth);\n' +
+            't = vec4(max(t.x, best * lapW), max(t.y, bestH * lapW), t.z, t.w);\n' +
+            '}\n' +
+            'float dens = t.x;\n' +
+            'float heat = clamp(t.y, 0.0, 1.5);\n' +
+            // Detail gate (slot-like discreteness): flat field reads as veil
+            // no matter the ramp — only gradients survive. Local contrast
+            // scales alpha, so uniform fills fade and textured regions keep.
+            // Live knob uDetail (6). WIDE stencil: central differences one
+            // whole cell apart sit exactly on the bilinear creases, so a
+            // 4-tap gate imprints the 40px sim lattice (3090 grid). Averaging
+            // a narrow (±1 cell) and a wide (±1.5 cell, creases fall
+            // elsewhere) stencil breaks the lattice lock; floor 0.5 keeps
+            // smooth cores from hollowing at the seams.
+            'float px = 1.0 / uFm.x;\n' +
+            'float py = px * uFm.x / uFm.y;\n' +
+            'float gE = texture2D(uDen, fuv + vec2(px, 0.0)).x;\n' +
+            'float gW = texture2D(uDen, fuv - vec2(px, 0.0)).x;\n' +
+            'float gN = texture2D(uDen, fuv + vec2(0.0, py)).x;\n' +
+            'float gS = texture2D(uDen, fuv - vec2(0.0, py)).x;\n' +
+            'float wE = texture2D(uDen, fuv + vec2(px * 1.5, py * 0.5)).x;\n' +
+            'float wW = texture2D(uDen, fuv - vec2(px * 1.5, py * 0.5)).x;\n' +
+            'float wN = texture2D(uDen, fuv + vec2(px * 0.5, py * 1.5)).x;\n' +
+            'float wS = texture2D(uDen, fuv - vec2(px * 0.5, py * 1.5)).x;\n' +
+            'float grad = (abs(gE - gW) + abs(gN - gS) + abs(wE - wW) + abs(wN - wS)) * 0.25;\n' +
+            'float detail = clamp(grad * uDetail, 0.0, 1.0);\n' +
+            // Drifted coords for the modulation noise ONLY (field sampling
+            // stays put — the field advects itself). World-anchored grain
+            // that never moves reads as a frozen lattice under drifting
+            // smoke (3090 grid report); a ~7s crawl breaks the static lock
+            // far below shimmer visibility. Octaves ROTATED (37°/68°,
+            // irrational scales): axis-aligned value noise stacks its own
+            // lattice on the cell period — rotated octaves can't stack.
+            'vec2 fcd = fc + vec2(uTime * 0.050, uTime * 0.031);\n' +
+            'vec2 rA = vec2(fcd.x * 0.7986 - fcd.y * 0.6018, fcd.x * 0.6018 + fcd.y * 0.7986);\n' +
+            'vec2 rB = vec2(fcd.x * 0.3746 - fcd.y * 0.9272, fcd.x * 0.9272 + fcd.y * 0.3746);\n' +
+            'float n = dNoise(rA * 0.317) * 0.55 + dNoise(fcd * 0.127 + 7.3) * 0.30 + dNoise(rB * 0.877 + 3.1) * 0.15;\n' +
+            // Coverage + compressive magnitude: the toe kills haze, the log
+            // curve lifts wisps while flattening cores (discrete sprites
+            // leave gaps; a linear continuous ramp can't). Ragged toe,
+            // carve holes in hot cores, 0.45 peak (slot-peak 0.42 + hero
+            // headroom: the stack lands where the approved look sat).
+            // Gain 0.7 parks combat-density fields ON the curve (at 1.0 the
+            // log comp clips at its ceiling across whole cores, flattening
+            // every gate downstream — keep fresh blasts on the slope).
+            // All continuous (no flips).
+            // Feather (operator: "cohesive blob, not a volume"): the toe
+            // was a 0.09-wide band → a crisp outline. Now a long skirt
+            // (0.02→0.30) torn by a stronger rag (0.45), a gentler log knee
+            // (×5) so mids differentiate instead of clipping, and a
+            // low-frequency BODY term (fbm3, ~3-cell period) so the
+            // interior reads as varying density, not one fill.
+            'float base = dens * uGain + heat * 0.2;\n' +
+            'float rag = (n - 0.5) * uErode * 0.45 * step(0.015, base);\n' +
+            'float cov = smoothstep(0.02, 0.30, base + rag);\n' +
+            'float comp = log(1.0 + max(base, 0.0) * 5.0) / 1.79175947;\n' +
+            'float aa = cov * clamp(comp, 0.0, 1.0);\n' +
+            'aa *= mix(0.5, 1.0, fbm3(rA * 0.31 + 11.0));\n' +
+            // Carve + puff gates (THE CHECKER LESSON): single-octave value
+            // noise is lattice-shaped by construction — smoothstepped squares
+            // on its own grid — and a hard 8%↔100% gate turned them into
+            // blocks (rotation only made the checkers diagonal). fbm3
+            // (3 rotated octaves) has blob-shaped isolines with no plateau
+            // grid; gates widened + floors lifted so holes read as breaths,
+            // not tiles. Skirts and toe stay smooth so wisps never hole out.
+            'vec2 rC = vec2(fcd.x * 0.7986 - fcd.y * 0.6018, fcd.x * 0.6018 + fcd.y * 0.7986);\n' +
+            'aa *= mix(1.0, mix(0.35, 1.0, smoothstep(0.32, 0.62, fbm3(rC * 2.1 + 7.7))), clamp((base - 0.08) * 3.0, 0.0, 1.0));\n' +
+            'vec2 rD = vec2(fcd.x * 0.3746 - fcd.y * 0.9272, fcd.x * 0.9272 + fcd.y * 0.3746);\n' +
+            'aa *= mix(1.0, mix(0.3, 1.0, smoothstep(0.36, 0.66, fbm3(rD * 0.7 + 3.7))), clamp((base - 0.06) * 2.0, 0.0, 1.0));\n' +
+            'aa *= mix(0.5, 1.0, detail);\n' +
+            // Peak 0.34 (was 0.45 — operator: ~75% of that visibility).
+            'aa = clamp(aa, 0.0, 1.0) * 0.34;\n' +
+            'if (aa <= 0.003) discard;\n' +
+            'vec3 col = mix(uTint, uWarm, clamp(heat * 0.8, 0.0, 1.0));\n' +
+            // Premultiplied pipeline: Pixi composites the screen with
+            // (ONE, ONE_MINUS_SRC_ALPHA), so rgb must arrive pre-scaled by
+            // alpha. Straight vec4(col, aa) added FULL col every fragment
+            // (the white-slab lesson: mesh RT read 0.1 alpha while the
+            // screen showed ~0.9) and the discard cliff became a hard
+            // edge. Same law for every custom shader that lands on screen.
+            'gl_FragColor = vec4(col * aa, aa);\n' +
+            '}';
+    }
+
+    _pixiGpuDisplayEnsure(h, vw) {
+        const R = window.PIXI, G = this._pixiGpu, st = this._pixiOverlayStage;
+        if (!R || !G || !G.ok || !st) return null;
+        if (!G.dispH) G.dispH = [null, null];
+        const W = this.width || 1, H = this.height || 1;
+        const key = W + 'x' + H + ':' + (this.isTwoPlayer ? '2' : '1') + ':' + h;
+        let D = G.dispH[h];
+        if (!D || D.key !== key) {
+            try { if (D) { try { if (D.mesh.parent) D.mesh.parent.removeChild(D.mesh); } catch (e) {} try { D.mesh.destroy(); } catch (e) {} try { D.geo.destroy(); } catch (e) {} } } catch (e) {}
+            D = null;
+            try {
+                const ox = (h === 1 && this.isTwoPlayer) ? W / 2 : 0;
+                const w = this.isTwoPlayer ? W / 2 : W;
+                const geo = new R.Geometry();
+                geo.addAttribute('aPosition', [ox, 0, ox + w, 0, ox + w, H, ox, H], 2);
+                geo.addAttribute('aUV', [0, 0, 1, 0, 1, 1, 0, 1], 2);
+                geo.addIndex([0, 1, 2, 0, 2, 3]);
+                const mesh = new R.Mesh({ geometry: geo, shader: null });
+                mesh.visible = false;
+                st.addChild(mesh);
+                D = G.dispH[h] = { key, geo, mesh, ox, w };
+            } catch (e) { return null; }
+        }
+        return D;
+    }
+
+    // Per-half display update. Fresh Shader per frame over the cached
+    // program (the 1a1 no-mutation law). Meshes persist below the screen
+    // layers (addChild order — the screen-top pass keeps its own list
+    // above, night blit included whenever it appears).
+    _pixiGpuDisplay(cam, isPlayer2) {
+        const R = window.PIXI, G = this._pixiGpu;
+        if (!R || !G || !G.ok) return false;
+        const h = (isPlayer2 && this.isTwoPlayer) ? 1 : 0;
+        const on = this._pixiGpuDisplayOn !== false;
+        let D = null;
+        try { D = on ? this._pixiGpuDisplayEnsure(h) : (G.dispH && G.dispH[h]); } catch (e) { return false; }
+        if (!D) return false;
+        try {
+            D.mesh.visible = on;
+            if (!on) return true;
+            try { D.mesh.mask = this.isTwoPlayer ? this._pixiHalfMask(h) : null; } catch (e) { try { D.mesh.mask = null; } catch (_e) {} }
+            const GF = this._pixiGpuFieldEnsure();
+            if (!GF || !GF.fw) { D.mesh.visible = false; return false; }
+            const T = (typeof FLUID_TUNING !== 'undefined') ? FLUID_TUNING : {};
+            const tint = T.SMOKE_TINT || 0x91a7c3;
+            const ez = cam.zoom + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
+            if (!G.dispProg) G.dispProg = new R.GlProgram({ vertex: this._pixiGpuDispVert(), fragment: this._pixiGpuDispFrag() });
+            const W = this.width || 1, H = this.height || 1;
+            const structs = {
+                uStage: { value: [W, H], type: 'vec2<f32>' },
+                uNdc: { value: 0, type: 'f32' },
+                uFm: { value: [GF.fw, GF.fh], type: 'vec2<f32>' },
+                uMw: { value: [GF.fmw, GF.fmh], type: 'vec2<f32>' },
+                uRect: { value: [D.ox, 0, D.w, H], type: 'vec4<f32>' },
+                uCam: { value: [cam.x, cam.y], type: 'vec2<f32>' },
+                uEz: { value: ez, type: 'f32' },
+                uSh: { value: [cam._shX || 0, cam._shY || 0], type: 'vec2<f32>' },
+                uTint: { value: [((tint >> 16) & 255) / 255, ((tint >> 8) & 255) / 255, (tint & 255) / 255], type: 'vec3<f32>' },
+                uWarm: { value: [167 / 255, 164 / 255, 170 / 255], type: 'vec3<f32>' },
+                uGain: { value: (this._pixiGpuGain === undefined ? 0.7 : this._pixiGpuGain), type: 'f32' },
+                uErode: { value: (this._pixiGpuErode === undefined ? 0.65 : this._pixiGpuErode), type: 'f32' },
+                uDetail: { value: (this._pixiGpuDetail === undefined ? 6 : this._pixiGpuDetail), type: 'f32' },
+                uTime: { value: this.gameTime || 0, type: 'f32' },
+                // Wall lap depth in cells (0.5 = half a cell ≈ 20px on the
+                // 40px grid: touch + slight overlap). 0 disables.
+                uLap: { value: (this._pixiGpuLap === undefined ? 0.5 : this._pixiGpuLap), type: 'f32' },
+            };
+            let maskTex = null;
+            try { maskTex = this._pixiGpuMaskSync(); } catch (e) { maskTex = null; }
+            if (!maskTex) { structs.uLap.value = 0; maskTex = R.Texture.WHITE; }
+            const ug = new R.UniformGroup(structs);
+            const sh = new R.Shader({ glProgram: G.dispProg, resources: { uDen: GF.denA.source, uMask: maskTex.source, uGpu: ug } });
+            try { if (D.sh) D.sh.destroy(); } catch (e) {}
+            try { if (D.ug) D.ug.destroy(); } catch (e) {}
+            D.sh = sh; D.ug = ug;
+            D.mesh.shader = sh;
+            return true;
+        } catch (e) { try { D.mesh.visible = false; } catch (_e) {} return false; }
+    }
+
+    // PHASE 3 Item 2 (threshold bloom): half-res scene capture (smoke
+    // hidden — no self-halo; darkness INCLUDED so night bloom localizes to
+    // surviving light) → soft-knee threshold (the proven _bloomGate math as
+    // uniform drivers: NIGHT_T / VEIL_T + warm rule + DIM floor) →
+    // separable 9-tap H/V → additive composite ABOVE the night blit.
+    // Always-on day and night (operator call); `_pixiBloomAlways=false`
+    // restores the _glowPool burst gate. S_rt/B_rt pre-provisioned in Item 0.
+    // ON unless `_pixiBloomOn === false`. Knobs: _pixiBloomStrength (0.7),
+    // _pixiBloomThAdj (0; glass rooms +0.08 / dark open -0.05 headed).
+    _pixiBloomHot() {
+        try {
+            const pool = this._glowPool;
+            if (!pool) return false;
+            const n = Math.min(this._glowCount || 0, 256);
+            for (let i = 0; i < n; i++) {
+                const s = pool[i];
+                if (s && s.r > 0 && (s.a || 0) > 0.02) return true;
+            }
+        } catch (e) {}
+        return false;
+    }
+
+    _pixiBloomThreshFrag() {
+        return 'uniform sampler2D uSrc;\n' +
+            'uniform float uT;\n' +
+            'uniform float uStrength;\n' +
+            'varying vec2 vUV;\n' +
+            'void main(){\n' +
+            'vec4 c = texture2D(uSrc, vUV);\n' +
+            'float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n' +
+            'float lift = clamp(c.r - c.b, 0.0, 1.0) * 0.2;\n' +
+            'float w = smoothstep(uT, uT + 0.15, lum + lift);\n' +
+            'gl_FragColor = vec4(c.rgb * (w * uStrength), w);\n' +
+            '}';
+    }
+
+    _pixiBloomBlurFrag() {
+        return 'uniform sampler2D uSrc;\n' +
+            'uniform vec2 uDir;\n' +
+            'varying vec2 vUV;\n' +
+            'void main(){\n' +
+            'vec3 c = texture2D(uSrc, vUV).rgb * 0.227027;\n' +
+            'c += texture2D(uSrc, vUV + uDir * 1.0).rgb * 0.1945946;\n' +
+            'c += texture2D(uSrc, vUV - uDir * 1.0).rgb * 0.1945946;\n' +
+            'c += texture2D(uSrc, vUV + uDir * 2.0).rgb * 0.1216216;\n' +
+            'c += texture2D(uSrc, vUV - uDir * 2.0).rgb * 0.1216216;\n' +
+            'c += texture2D(uSrc, vUV + uDir * 3.0).rgb * 0.054054;\n' +
+            'c += texture2D(uSrc, vUV - uDir * 3.0).rgb * 0.054054;\n' +
+            'c += texture2D(uSrc, vUV + uDir * 4.0).rgb * 0.016216;\n' +
+            'c += texture2D(uSrc, vUV - uDir * 4.0).rgb * 0.016216;\n' +
+            'gl_FragColor = vec4(c, 1.0);\n' +
+            '}';
+    }
+
+    // Shared scene capture (bloom full-res / shock+cloak half-res): Pixi renders 1:1
+    // into a target with no auto-scale, so a W×H stage drawn into a
+    // bw×bh (half-res) RT captures only the top-left quadrant — the
+    // quadrant-stretch lesson (bloom float / shock flip: sRt held the
+    // wrong quarter, blit/refraction stretched it 2× over the screen).
+    // Scale the stage 0.5 for the capture like the aberration path, then
+    // restore. extraHide: mesh arrays to suppress (no feedback).
+    _pixiSceneCapture(target, extraHide) {
+        const R = window.PIXI, G = this._pixiGpu;
+        const st = this._pixiOverlayStage, rend = this._pixiOverlayRenderer;
+        if (!R || !G || !G.ok || !st || !rend || !target) return false;
+        try {
+            const crisp = [this._pixiOvVigC, this._pixiOvTextC,
+                this._pixiOvArrowG ? this._pixiOvArrowG[0] : null,
+                this._pixiOvArrowG ? this._pixiOvArrowG[1] : null,
+                this._pixiOvFlashC, this._pixiOvMarkC, this._pixiDividerG,
+                this._pixiChromeH ? this._pixiChromeH.c : null];
+            const hide = [];
+            const hideIt = (o) => { try { if (o && o.visible) { hide.push(o); o.visible = false; } } catch (e) {} };
+            for (const o of crisp) hideIt(o);
+            try {
+                if (this._pixiAber && this._pixiAber.c) {
+                    const c = this._pixiAber.c; let any = false;
+                    try { for (const sp of this._pixiAber.g) if (sp.visible) any = true; } catch (e) {}
+                    if (any && c.visible) hide.push(c), c.visible = false;
+                    else if (!any) hideIt(c);
+                }
+            } catch (e) {}
+            if (extraHide) for (const arr of extraHide) {
+                if (!arr) continue;
+                for (const DD of arr) {
+                    try { if (DD && DD.mesh && DD.mesh.visible) { hide.push(DD.mesh); DD.mesh.visible = false; } } catch (e) {}
+                }
+            }
+            const oldSX = st.scale.x, oldSY = st.scale.y;
+            try {
+                // Scale = target/stage (1.0 for the full-res bloom pair,
+                // 0.5 for the half-res refraction capture).
+                const scX = target.width / (this.width || 1), scY = target.height / (this.height || 1);
+                st.scale.set(scX, scY);
+                rend.render({ container: st, target, clear: true });
+            } finally {
+                try { st.scale.set(oldSX, oldSY); } catch (e) {}
+            }
+            for (const o of hide) { try { o.visible = true; } catch (e) {} }
+            return true;
+        } catch (e) { return false; }
+    }
+
+    // Capture the settled stage (minus crisp chrome + ghosts + the bloom
+    // blit itself — no feedback) 1:1 into the full-res S_rt.
+    // The night blit STAYS in the capture (the whole-building-glow lesson:
+    // thresholding the undarkened scene at night lit every interior — only
+    // light that survives the darkness should bloom: light holes, muzzles,
+    // glow stamps, lasers). Smoke hides so bright smoke can't double itself
+    // through the blit (fringe glow only, no self-halo).
+    _pixiBloomCapture() {
+        const G = this._pixiGpu;
+        if (!G) return false;
+        const reShow = [];
+        try {
+            if (G.bloomSp && G.bloomSp.visible) { G.bloomSp.visible = false; reShow.push(G.bloomSp); }
+            if (G.dispH) for (const D of G.dispH) {
+                if (D && D.mesh && D.mesh.visible) { D.mesh.visible = false; reShow.push(D.mesh); }
+            }
+        } catch (e) {}
+        let ok = false;
+        // Refraction meshes stay IN this capture (bloom sees the bent scene).
+        // Safe only because they sample rRt, never sRt — the feedback-loop
+        // lesson: rendering into an RT a visible mesh is sampling drops the
+        // draw with GL_INVALID_OPERATION (framebuffer == bound texture).
+        try { ok = this._pixiSceneCapture(G.sRt, null); } finally {
+            for (const o of reShow) { try { o.visible = true; } catch (e) {} }
+        }
+        return ok;
+    }
+
+    _pixiBloomBlitEnsure() {
+        const R = window.PIXI, G = this._pixiGpu, st = this._pixiOverlayStage;
+        if (!R || !G || !G.ok || !st || !G.bRt) return null;
+        try {
+            let sp = G.bloomSp;
+            if (!sp) {
+                sp = new R.Sprite(G.bRt);
+                sp.blendMode = 'add';
+                G.bloomSp = sp;
+            }
+            // Order: ABOVE the night blit (bloom is light — it punches through
+            // darkness, operator call), below hero/texts/chrome (readability —
+            // the screen-top list above night keeps its order). Smoke meshes
+            // sit below night, so bloom rides above smoke too; self-doubling
+            // is prevented at the CAPTURE (smoke hidden there), not by order.
+            // Runs after _pixiScreenTop in present, so this order is final.
+            try {
+                const st = this._pixiOverlayStage;
+                if (!st.children.includes(sp)) st.addChild(sp);
+                const ci = (c) => { try { return (c && st.children.includes(c)) ? st.getChildIndex(c) : -1; } catch (e) { return -1; } };
+                const ni = ci(this._pixiNightBlit);
+                if (ni >= 0) {
+                    if (ci(sp) !== ni + 1) st.addChildAt(sp, ni + 1);
+                } else {
+                    let ceil = -1;
+                    if (G.dispH) for (const D of G.dispH) {
+                        if (!D || !D.mesh) continue;
+                        const di = ci(D.mesh);
+                        if (di >= 0 && (ceil < 0 || di < ceil)) ceil = di;
+                    }
+                    if (ceil >= 0 && ci(sp) > ceil) st.addChildAt(sp, ceil);
+                }
+            } catch (e) {}
+            if (sp.texture !== G.bRt) { try { sp.texture = G.bRt; } catch (e) {} }
+            sp.position.set(0, 0);
+            try { sp.scale.set(this.width / G.bRt.width, this.height / G.bRt.height); } catch (e) {}
+            return sp;
+        } catch (e) { return null; }
+    }
+
+    // Full chain, called in present before the final render. Returns visible
+    // sprite (or null when gated/off) — the present renders it with the rest.
+    // ON unless `_pixiBloomOn === false`. ALWAYS-ON day and night (operator
+    // call — smooth, no gate flicker; 1 capture + 3 half-res passes/frame).
+    // Day: bright surfaces/flames/lasers bloom continuously. Night: the
+    // capture includes the darkness, so only surviving light blooms
+    // (localized to light sources). `_pixiBloomAlways=false` restores the
+    // burst-gated mode (0.5s linger on glow stamps).
+    _pixiBloomPresent() {
+        const G = this._pixiGpu;
+        if (this._pixiBloomOn === false || !G || !G.ok) {
+            try { if (G && G.bloomSp) G.bloomSp.visible = false; } catch (e) {}
+            return false;
+        }
+        try {
+            const now = this.gameTime || 0;
+            if (G.bloomLastT === undefined) G.bloomLastT = now;
+            const dt = Math.min(0.1, Math.max(0, now - G.bloomLastT));
+            G.bloomLastT = now;
+            const nightAlways = this._pixiBloomAlways !== false;
+            if (!nightAlways) {
+                if (this._pixiBloomHot()) G.bloomHold = 0.5;
+                else G.bloomHold = Math.max(0, (G.bloomHold || 0) - dt);
+                if (!(G.bloomHold > 0)) {
+                    try { if (G.bloomSp) G.bloomSp.visible = false; } catch (e) {}
+                    return false;
+                }
+            }
+            if (!this._pixiBloomCapture()) return false;
+            const T = (typeof BLOOM_TUNING !== 'undefined') ? BLOOM_TUNING : { NIGHT_T: 0.45, VEIL_T: 0.62 };
+            const base = (!this.nightMode && this.dayVeil) ? T.VEIL_T : T.NIGHT_T;
+            const uT = base + (this._pixiBloomThAdj || 0);
+            const uS = (this._pixiBloomStrength === undefined ? 0.7 : this._pixiBloomStrength);
+            // threshold: S_rt -> B_rt
+            if (!this._pixiGpuPass('bloomT', this._pixiBloomThreshFrag(),
+                { uSrc: G.sRt.source, uT, uStrength: uS }, G.bRt)) return false;
+            // blur H: B_rt -> S_rt ; blur V: S_rt -> B_rt (S_rt is scratch
+            // after threshold — the capture is consumed, no extra RT).
+            const dx = 1 / Math.max(1, G.bRt.width), dy = 1 / Math.max(1, G.bRt.height);
+            if (!this._pixiGpuPass('bloomB', this._pixiBloomBlurFrag(),
+                { uSrc: G.bRt.source, uDir: [dx, 0] }, G.sRt)) return false;
+            if (!this._pixiGpuPass('bloomB', this._pixiBloomBlurFrag(),
+                { uSrc: G.sRt.source, uDir: [0, dy] }, G.bRt)) return false;
+            const sp = this._pixiBloomBlitEnsure();
+            if (!sp) return false;
+            sp.visible = true;
+            // Fade the day-linger with its hold (0.5s tails decay); at night
+            // the chain runs continuously, full strength — the capture is
+            // re-taken every frame, so nothing stale can float.
+            try {
+                if (nightAlways) sp.alpha = 1;
+                else sp.alpha = Math.max(0, Math.min(1, (G.bloomHold || 0) / 0.5));
+            } catch (e) {}
+            return true;
+        } catch (e) {
+            try { if (G && G.bloomSp) G.bloomSp.visible = false; } catch (_e) {}
+            return false;
+        }
+    }
+
+    // PHASE 3 Item 3 (UV shock): burst-only ring-mask refraction. Active
+    // shockwave rings displace the settled-scene capture (world + smoke +
+    // bloom light) inside a gaussian band with a sine ripple; idle = meshes
+    // hidden, zero binds, zero passes. Per-half overlay quads on the proven
+    // 1b pattern (below screen layers, 2P-masked). Own capture RT (R_rt):
+    // sharing S_rt with bloom formed a GL feedback loop (bloom captured into
+    // S_rt while the live shock mesh sampled it — draws dropped). ON unless
+    // `_pixiShockOn === false`. Knob: _pixiShockAmp (10px, headed).
+    _pixiShockFrag() {
+        // 4 ring slots, explicit (no packing cleverness): center vec2 +
+        // params (radius px, width px, strength, envelope) each; uM shared
+        // (freq, speed, time, y-aspect). uN gates slots.
+        return '#ifdef GL_FRAGMENT_PRECISION_HIGH\n' +
+            'precision highp float;\n' +
+            '#endif\n' +
+            'uniform sampler2D uScene;\n' +
+            // FS-LOCAL reciprocal (never redeclare a vertex uniform in the
+            // fragment: uStage lives in the vertex at vertex precision, and
+            // a fragment-side twin kills strict ANGLE links with an empty
+            // log — the shock/cloak silent-death lesson). Multiply, not divide.
+            'uniform vec2 uInvStage;\n' +
+            'uniform vec4 uRect;\n' +
+            'uniform vec2 uC0;\n' +
+            'uniform vec4 uP0;\n' +
+            'uniform vec2 uC1;\n' +
+            'uniform vec4 uP1;\n' +
+            'uniform vec2 uC2;\n' +
+            'uniform vec4 uP2;\n' +
+            'uniform vec2 uC3;\n' +
+            'uniform vec4 uP3;\n' +
+            'uniform vec4 uM;\n' +
+            'uniform float uN;\n' +
+            'uniform float uAmp;\n' +
+            'varying vec2 vUV;\n' +
+            'vec2 ringUV(vec2 sp, vec2 c, vec4 p, inout float a) {\n' +
+            'vec2 dxy = (sp - c) * vec2(1.0, uM.w);\n' +
+            'float d = length(dxy);\n' +
+            // NOTE: never pow(negative, 2.0) — undefined (NaN) on strict GPUs.
+            'float bt = (d - p.x) / max(p.y, 1.0);\n' +
+            'float band = exp(-bt * bt);\n' +
+            'float rip = sin((d - p.x) * uM.x - uM.z * uM.y);\n' +
+            'vec2 dir = d > 0.001 ? dxy / d : vec2(0.0);\n' +
+            'a += band * p.z * p.w;\n' +
+            // Ripple share 0.3: at 10px amp a 0.6 share serrated straight
+            // edges into sawteeth (headless shot) — the bend should read as
+            // one smooth pressure lens with a faint shimmer riding it.
+            'return dir * (band * (p.z * uAmp + rip * p.z * uAmp * 0.3));\n' +
+            '}\n' +
+            'void main(){\n' +
+            'vec2 sp = uRect.xy + vUV * uRect.zw;\n' +
+            'vec2 baseUV = sp * uInvStage;\n' +
+            'float a = 0.0;\n' +
+            'vec2 off = vec2(0.0);\n' +
+            'if (uN > 0.5) off += ringUV(sp, uC0, uP0, a);\n' +
+            'if (uN > 1.5) off += ringUV(sp, uC1, uP1, a);\n' +
+            'if (uN > 2.5) off += ringUV(sp, uC2, uP2, a);\n' +
+            'if (uN > 3.5) off += ringUV(sp, uC3, uP3, a);\n' +
+            'if (a <= 0.004) discard;\n' +
+            'vec4 c = texture2D(uScene, clamp(baseUV + off * uInvStage, vec2(0.0), vec2(1.0)));\n' +
+            'gl_FragColor = vec4(c.rgb * clamp(a, 0.0, 1.0), clamp(a, 0.0, 1.0));\n' +
+            '}';
+    }
+
+    _pixiShockEnsure(h) {
+        const R = window.PIXI, G = this._pixiGpu, st = this._pixiOverlayStage;
+        if (!R || !G || !G.ok || !st) return null;
+        if (!G.shockH) G.shockH = [null, null];
+        const W = this.width || 1, H = this.height || 1;
+        const key = W + 'x' + H + ':' + (this.isTwoPlayer ? '2' : '1') + ':' + h;
+        let D = G.shockH[h];
+        if (!D || D.key !== key) {
+            try {
+                if (D) {
+                    try { if (D.mesh.parent) D.mesh.parent.removeChild(D.mesh); } catch (e) {}
+                    try { if (D.sh) D.sh.destroy(); } catch (e) {}
+                    try { if (D.ug) D.ug.destroy(); } catch (e) {}
+                    try { D.mesh.destroy(); } catch (e) {}
+                    try { D.geo.destroy(); } catch (e) {}
+                }
+            } catch (e) {}
+            D = null;
+            try {
+                const ox = (h === 1 && this.isTwoPlayer) ? W / 2 : 0;
+                const w = this.isTwoPlayer ? W / 2 : W;
+                const geo = new R.Geometry();
+                geo.addAttribute('aPosition', [ox, 0, ox + w, 0, ox + w, H, ox, H], 2);
+                geo.addAttribute('aUV', [0, 0, 1, 0, 1, 1, 0, 1], 2);
+                geo.addIndex([0, 1, 2, 0, 2, 3]);
+                const mesh = new R.Mesh({ geometry: geo, shader: null });
+                mesh.visible = false;
+                st.addChild(mesh);
+                D = G.shockH[h] = { key, geo, mesh, ox, w };
+            } catch (e) { return null; }
+        }
+        return D;
+    }
+
+    // Collect live UV rings (the _uvShocks pool — explosions with tail +
+    // heavy-gun muzzles) with per-half world→screen mapping (same formula
+    // as the canvas shock twin). Radius eases out like the vector ring;
+    // envelope = fast attack (first 15%) then slow decay, so the wave is
+    // strongest just after it leaves the blast and fades as it spreads.
+    // Band = 0.28 of radius (was 0.12 — an 18px sliver on a 150px ring).
+    _pixiShockRings(cam, isPlayer2) {
+        const all = this._uvShocks;
+        if (!all) return [];
+        const ez = cam.zoom + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
+        const ox = (isPlayer2 && this.isTwoPlayer) ? this.width / 2 : 0;
+        const vw = this.isTwoPlayer ? this.width / 2 : this.width;
+        const vh = this.height;
+        const shX = cam._shX || 0, shY = cam._shY || 0;
+        const live = [];
+        // Emanation speed: radius runs on a compressed clock (1.6× — the
+        // ring reaches full size in the first ~60% of its life, then holds
+        // while the envelope fades). Operator: "slowly expand" at 1.0.
+        const spd = (this._pixiShockSpeed === undefined ? 1.6 : this._pixiShockSpeed);
+        for (const u of all) {
+            if (!u || !u.active) continue;
+            const t = 1 - ((u.life || 0) / (u.maxLife || 1));
+            const tr = Math.min(1, t * spd);
+            const rad = u.maxRadius * (1 - Math.pow(1 - tr, 3));
+            const sx = ox + (u.x - cam.x + shX) * ez, sy = (u.y - cam.y + shY) * ez;
+            const sr = Math.max(1, rad * ez);
+            if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+            const attack = Math.min(1, t / 0.15);
+            const decay = 1 - Math.pow(Math.max(0, (t - 0.15) / 0.85), 1.5);
+            const env = Math.max(0, Math.min(1, attack * decay)) * (u.str || 1);
+            if (env <= 0.01) continue;
+            live.push({ sx, sy, sr, w: Math.max(3, sr * 0.28), env });
+        }
+        return live;
+    }
+
+    _pixiShockPresent(cam, isPlayer2) {
+        const R = window.PIXI, G = this._pixiGpu;
+        if (!R || !G || !G.ok) return false;
+        const h = (isPlayer2 && this.isTwoPlayer) ? 1 : 0;
+        const on = this._pixiShockOn !== false;
+        let D = null;
+        try { D = on ? this._pixiShockEnsure(h) : (G.shockH && G.shockH[h]); } catch (e) { return false; }
+        if (!D) return false;
+        try {
+            if (!on) { D.mesh.visible = false; return true; }
+            const rings = this._pixiShockRings(cam, isPlayer2);
+            if (!rings.length) { D.mesh.visible = false; return true; }
+            // Capture the settled scene (with smoke + bloom) for refraction,
+            // once per frame (both halves share it) via the shared half-res
+            // helper (stage scaled 0.5 — true downsample, not the quadrant).
+            if (G.shockCapFrame !== this._pixiFrameToken) {
+            try {
+                if (!this._pixiSceneCapture(G.rRt, [G.shockH])) return false;
+                G.shockCapFrame = this._pixiFrameToken;
+            } catch (e) { return false; }
+            }
+            try { D.mesh.mask = this.isTwoPlayer ? this._pixiHalfMask(h) : null; } catch (e) { try { D.mesh.mask = null; } catch (_e) {} }
+            const W = this.width || 1, H = this.height || 1;
+            // Up to 4 live rings, strongest envelope first (burst count is
+            // small; oldest beyond 4 keep their vector rings, no UV).
+            rings.sort((a, b) => b.env - a.env);
+            const q = [rings[0], rings[1], rings[2], rings[3]];
+            const pk = (i) => {
+                const r = q[i];
+                if (!r) return { c: [0, 0], p: [0, 1, 0, 0] };
+                // Strength scales with on-screen ring size (a 60px muzzle
+                // ring bends less than a 300px blast), clamped so tiny
+                // rings still read and huge ones don't tear the frame.
+                const sz = Math.max(0.35, Math.min(1.6, r.sr / 120));
+                return { c: [r.sx, r.sy], p: [r.sr, r.w, 0.9 * sz, r.env] };
+            };
+            const k0 = pk(0), k1 = pk(1), k2 = pk(2), k3 = pk(3);
+            const structs = {
+                uStage: { value: [W, H], type: 'vec2<f32>' },
+                uNdc: { value: 0, type: 'f32' },
+                uRect: { value: [D.ox, 0, D.w, H], type: 'vec4<f32>' },
+                uInvStage: { value: [1 / W, 1 / H], type: 'vec2<f32>' },
+                uC0: { value: k0.c, type: 'vec2<f32>' },
+                uP0: { value: k0.p, type: 'vec4<f32>' },
+                uC1: { value: k1.c, type: 'vec2<f32>' },
+                uP1: { value: k1.p, type: 'vec4<f32>' },
+                uC2: { value: k2.c, type: 'vec2<f32>' },
+                uP2: { value: k2.p, type: 'vec4<f32>' },
+                uC3: { value: k3.c, type: 'vec2<f32>' },
+                uP3: { value: k3.p, type: 'vec4<f32>' },
+                uM: { value: [0.35, 22, this.gameTime || 0, 1], type: 'vec4<f32>' },
+                uN: { value: Math.min(4, rings.length), type: 'f32' },
+                uAmp: { value: (this._pixiShockAmp === undefined ? 10 : this._pixiShockAmp), type: 'f32' },
+            };
+            if (!G.shockProg) G.shockProg = new R.GlProgram({ vertex: this._pixiGpuDispVert(), fragment: this._pixiShockFrag() });
+            const ug = new R.UniformGroup(structs);
+            const sh = new R.Shader({ glProgram: G.shockProg, resources: { uScene: G.rRt.source, uGpu: ug } });
+            try { if (D.sh) D.sh.destroy(); } catch (e) {}
+            try { if (D.ug) D.ug.destroy(); } catch (e) {}
+            D.sh = sh; D.ug = ug;
+            D.mesh.shader = sh;
+            D.mesh.visible = true;
+            return true;
+        } catch (e) { try { D.mesh.visible = false; } catch (_e) {} return false; }
+    }
+
+    // PHASE 3 Item 4 (cloak refraction, LAST): the settled scene bends
+    // around cloaked infiltrators. Per-slot disc: gaussian edge band (the
+    // rim) offsets along radial + wobble, inside gets a faint inward pull
+    // (fake lens thickness); alpha scales with cloak so decloak hands back
+    // to the body sprite untouched (fairness floor + rim garnish stay — this
+    // ADDS, never replaces). Day and night (own S_rt capture, shared with
+    // shock's when same-frame). Idle (no cloaked infiltrator in view) =
+    // hidden meshes, zero binds. ON unless `_pixiCloakOn === false`.
+    // Knob: _pixiCloakAmp (5px, headed).
+    _pixiCloakFrag() {
+        return '#ifdef GL_FRAGMENT_PRECISION_HIGH\n' +
+            'precision highp float;\n' +
+            '#endif\n' +
+            'uniform sampler2D uScene;\n' +
+            // FS-LOCAL reciprocal (never redeclare a vertex uniform in the
+            // fragment: uStage lives in the vertex at vertex precision, and
+            // a fragment-side twin kills strict ANGLE links with an empty
+            // log — the shock/cloak silent-death lesson). Multiply, not divide.
+            'uniform vec2 uInvStage;\n' +
+            'uniform vec4 uRect;\n' +
+            'uniform vec2 uC0;\n' +
+            'uniform vec4 uP0;\n' +
+            'uniform vec2 uC1;\n' +
+            'uniform vec4 uP1;\n' +
+            'uniform float uN;\n' +
+            'uniform float uAmp;\n' +
+            'uniform float uTime;\n' +
+            'varying vec2 vUV;\n' +
+            'vec2 cloakUV(vec2 sp, vec2 c, vec4 p, inout float a) {\n' +
+            'vec2 dxy = sp - c;\n' +
+            'float d = length(dxy);\n' +
+            'vec2 dir = d > 0.001 ? dxy / d : vec2(0.0, 1.0);\n' +
+            // NOTE: never pow(negative, 2.0) — undefined (NaN) on strict GPUs.
+            'float bt = (d - p.x) / max(p.z, 1.0);\n' +
+            'float band = exp(-bt * bt);\n' +
+            'float inside = (1.0 - smoothstep(p.x - p.z * 1.5, p.x, d)) * step(d, p.x);\n' +
+            'float wob = sin(d * 0.5 - uTime * 3.0 + p.y * 8.0);\n' +
+            'a += band * (0.35 + 0.65 * p.w) + inside * 0.22 * p.w;\n' +
+            'return dir * band * uAmp * (0.5 + p.y) + dir * wob * band * uAmp * 0.3 - dir * inside * uAmp * 0.4;\n' +
+            '}\n' +
+            'void main(){\n' +
+            'vec2 sp = uRect.xy + vUV * uRect.zw;\n' +
+            'vec2 baseUV = sp * uInvStage;\n' +
+            'float a = 0.0;\n' +
+            'vec2 off = vec2(0.0);\n' +
+            'if (uN > 0.5) off += cloakUV(sp, uC0, uP0, a);\n' +
+            'if (uN > 1.5) off += cloakUV(sp, uC1, uP1, a);\n' +
+            'if (a <= 0.004) discard;\n' +
+            'vec4 c = texture2D(uScene, clamp(baseUV + off * uInvStage, vec2(0.0), vec2(1.0)));\n' +
+            'gl_FragColor = vec4(c.rgb * clamp(a, 0.0, 1.0), clamp(a, 0.0, 1.0));\n' +
+            '}';
+    }
+
+    _pixiCloakEnsure(h) {
+        const R = window.PIXI, G = this._pixiGpu, st = this._pixiOverlayStage;
+        if (!R || !G || !G.ok || !st) return null;
+        if (!G.cloakH) G.cloakH = [null, null];
+        const W = this.width || 1, H = this.height || 1;
+        const key = W + 'x' + H + ':' + (this.isTwoPlayer ? '2' : '1') + ':' + h;
+        let D = G.cloakH[h];
+        if (!D || D.key !== key) {
+            try {
+                if (D) {
+                    try { if (D.mesh.parent) D.mesh.parent.removeChild(D.mesh); } catch (e) {}
+                    try { if (D.sh) D.sh.destroy(); } catch (e) {}
+                    try { if (D.ug) D.ug.destroy(); } catch (e) {}
+                    try { D.mesh.destroy(); } catch (e) {}
+                    try { D.geo.destroy(); } catch (e) {}
+                }
+            } catch (e) {}
+            D = null;
+            try {
+                const ox = (h === 1 && this.isTwoPlayer) ? W / 2 : 0;
+                const w = this.isTwoPlayer ? W / 2 : W;
+                const geo = new R.Geometry();
+                geo.addAttribute('aPosition', [ox, 0, ox + w, 0, ox + w, H, ox, H], 2);
+                geo.addAttribute('aUV', [0, 0, 1, 0, 1, 1, 0, 1], 2);
+                geo.addIndex([0, 1, 2, 0, 2, 3]);
+                const mesh = new R.Mesh({ geometry: geo, shader: null });
+                mesh.visible = false;
+                st.addChild(mesh);
+                D = G.cloakH[h] = { key, geo, mesh, ox, w };
+            } catch (e) { return null; }
+        }
+        return D;
+    }
+
+    // Live cloaked infiltrators, per half (world→screen, culled). Gate:
+    // cloak above 0.25 (below that the rim + body carry it).
+    _pixiCloakCollect(cam, isPlayer2) {
+        const out = [];
+        try {
+            const all = this.bosses || this.enemies || [];
+            for (let i = 0; i < all.length; i++) {
+                const b = all[i];
+                if (!b || b.dead) continue;
+                if (typeof InfiltratorBoss !== 'undefined' && !(b instanceof InfiltratorBoss)) continue;
+                const ck = (b.cloak === undefined) ? 0 : b.cloak;
+                if (ck < 0.25) continue;
+                out.push(b);
+                if (out.length >= 2) break;
+            }
+        } catch (e) {}
+        if (!out.length) return [];
+        const ez = cam.zoom + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
+        const ox = (isPlayer2 && this.isTwoPlayer) ? this.width / 2 : 0;
+        const vw = this.isTwoPlayer ? this.width / 2 : this.width;
+        const vh = this.height;
+        const shX = cam._shX || 0, shY = cam._shY || 0;
+        const live = [];
+        for (const b of out) {
+            const rw = b.radius || b.r || 28;
+            const sx = ox + (b.x - cam.x + shX) * ez, sy = (b.y - cam.y + shY) * ez;
+            const sr = Math.max(4, rw * ez);
+            if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+            let shim = 1;
+            try { shim = this._pixiFxEnvelope('cloak', 1, 1, (b.x || 0) + (b.y || 0)).shimmer; } catch (e) {}
+            live.push({ sx, sy, sr, ck: b.cloak || 0, shim });
+        }
+        return live;
+    }
+
+    _pixiCloakPresent(cam, isPlayer2) {
+        const R = window.PIXI, G = this._pixiGpu;
+        if (!R || !G || !G.ok) return false;
+        const h = (isPlayer2 && this.isTwoPlayer) ? 1 : 0;
+        const on = this._pixiCloakOn !== false;
+        let D = null;
+        try { D = on ? this._pixiCloakEnsure(h) : (G.cloakH && G.cloakH[h]); } catch (e) { return false; }
+        if (!D) return false;
+        try {
+            if (!on) { D.mesh.visible = false; return true; }
+            const slots = this._pixiCloakCollect(cam, isPlayer2);
+            if (!slots.length) { D.mesh.visible = false; return true; }
+            // Settled-scene source: shock's same-frame capture when live
+            // (refract the shock too), else own capture via the shared
+            // half-res helper (true downsample, not the quadrant).
+            if (G.shockCapFrame !== this._pixiFrameToken && G.cloakCapFrame !== this._pixiFrameToken) {
+            try {
+                if (!this._pixiSceneCapture(G.rRt, [G.cloakH, G.shockH])) return false;
+                G.cloakCapFrame = this._pixiFrameToken;
+            } catch (e) { return false; }
+            }
+            try { D.mesh.mask = this.isTwoPlayer ? this._pixiHalfMask(h) : null; } catch (e) { try { D.mesh.mask = null; } catch (_e) {} }
+            const W = this.width || 1, H = this.height || 1;
+            const pk = (i) => {
+                const s = slots[i];
+                if (!s) return { c: [0, 0], p: [0, 1, 0, 3] };
+                return { c: [s.sx, s.sy], p: [s.sr, s.ck * (s.shim || 1), 3, s.ck] };
+            };
+            const k0 = pk(0), k1 = pk(1);
+            const structs = {
+                uStage: { value: [W, H], type: 'vec2<f32>' },
+                uNdc: { value: 0, type: 'f32' },
+                uRect: { value: [D.ox, 0, D.w, H], type: 'vec4<f32>' },
+                uInvStage: { value: [1 / W, 1 / H], type: 'vec2<f32>' },
+                uC0: { value: k0.c, type: 'vec2<f32>' },
+                uP0: { value: k0.p, type: 'vec4<f32>' },
+                uC1: { value: k1.c, type: 'vec2<f32>' },
+                uP1: { value: k1.p, type: 'vec4<f32>' },
+                uAmp: { value: (this._pixiCloakAmp === undefined ? 10 : this._pixiCloakAmp), type: 'f32' },
+                uTime: { value: this.gameTime || 0, type: 'f32' },
+                uN: { value: Math.min(2, slots.length), type: 'f32' },
+            };
+            if (!G.cloakProg) G.cloakProg = new R.GlProgram({ vertex: this._pixiGpuDispVert(), fragment: this._pixiCloakFrag() });
+            const ug = new R.UniformGroup(structs);
+            const sh = new R.Shader({ glProgram: G.cloakProg, resources: { uScene: G.rRt.source, uGpu: ug } });
+            try { if (D.sh) D.sh.destroy(); } catch (e) {}
+            try { if (D.ug) D.ug.destroy(); } catch (e) {}
+            D.sh = sh; D.ug = ug;
+            D.mesh.shader = sh;
+            D.mesh.visible = true;
+            return true;
+        } catch (e) { try { D.mesh.visible = false; } catch (_e) {} return false; }
     }
 
     spawnParticle(x, y, vx, vy, color, life, size, isGib) {
@@ -51203,6 +52778,13 @@ class Game {
             let t = 1 - (sw.life / sw.maxLife);
             sw.radius = sw.maxRadius * (1 - Math.pow(1 - t, 3));
         }
+        // UV-only refraction rings (render-side pool; ages here so pause
+        // freezes them with everything else).
+        if (this._uvShocks) for (const u of this._uvShocks) {
+            if (!u.active) continue;
+            u.life -= dt;
+            if (u.life <= 0) u.active = false;
+        }
         
         if (this.prepTimer > 0) {
             this.prepTimer -= dt;
@@ -51909,6 +53491,9 @@ class Game {
         // SHADER-ERA fluid: step the velocity/density grid (epsilon-gated —
         // a calm field returns immediately, no per-frame tax).
         try { this._fluidStep(dt); } catch (e) {}
+        // PHASE 3 Item 1a3: step the GPU mirror alongside (same dt, same
+        // energy discipline inside). Parallel sim — CPU still renders.
+        try { if (this._pixiGpuSim !== false) this._pixiGpuStep(dt); } catch (e) {}
 
         for (let i = this.smokeParticles.length - 1; i >= 0; i--) {
             let s = this.smokeParticles[i];
@@ -60250,8 +61835,11 @@ class Game {
     // sills above walls (below entity rigs by creation order), solid at
     // world end (below screen-top muzzle/shock/night).
     _pixiStairTex(stair, PL, sdir) {
-        if (!this._pixiStairTex) this._pixiStairTex = new Map();
-        let tex = this._pixiStairTex.get(stair);
+        // Cache lives in _pixiStairTexCache (NEVER this._pixiStairTex — an
+        // own-property of the same name shadows this prototype method after
+        // the first call, and every later stair silently bakes nothing).
+        if (!this._pixiStairTexCache) this._pixiStairTexCache = new Map();
+        let tex = this._pixiStairTexCache.get(stair);
         if (tex) return tex;
         try {
             const w = Math.max(1, Math.ceil(stair.w)), h = Math.max(1, Math.ceil(stair.h));
@@ -60265,7 +61853,7 @@ class Game {
             g.addColorStop(0, PL.cliff); g.addColorStop(1, PL.deck);
             x2.fillStyle = g; x2.fillRect(0, 0, stair.w, stair.h);
             tex = window.PIXI.Texture.from(c);
-            this._pixiStairTex.set(stair, tex);
+            this._pixiStairTexCache.set(stair, tex);
         } catch (e) { tex = null; }
         return tex;
     }
@@ -60380,9 +61968,9 @@ class Game {
         const ver = map._wallsVer || 0;
         if (!S || S.map !== map) {
             try {
-                if (this._pixiStairTex) {
-                    for (const t of this._pixiStairTex.values()) { try { t.destroy(true); } catch (e) {} }
-                    this._pixiStairTex.clear();
+                if (this._pixiStairTexCache) {
+                    for (const t of this._pixiStairTexCache.values()) { try { t.destroy(true); } catch (e) {} }
+                    this._pixiStairTexCache.clear();
                 }
             } catch (e) {}
         }
@@ -62022,6 +63610,9 @@ class Game {
             this._pixiWorldOrder();
             this._pixiScreenTop();
             this._pixiStageBackdrop();
+            // PHASE 3 Item 2: threshold bloom chain (always-on at night,
+            // burst-gated by day; blit above night, below texts/chrome).
+            try { this._pixiBloomPresent(); } catch (e) {}
             // L12 aberration twin: an active burst replaces the world present
             // with captured triple-ghosts (returns true); otherwise normal.
             if (!this._pixiAberTryPresent()) this._pixiOverlayRenderer.render(this._pixiOverlayStage);
@@ -62133,9 +63724,13 @@ class Game {
                 if (seenH[h]) continue;
                 seenH[h] = true;
                 const originX = (twoP && h) ? W / 2 : 0;
-                const shiftVal = (q.t / (q.peak || 0.5)) * 26 * q.ez;
+                // Fringe, don't float: ghost copies must hug the walls they
+                // come from (true chromatic-aberration read). 26px offsets
+                // detached whole buildings into screen space (operator
+                // report: replicas floating in the middle of nowhere).
+                const shiftVal = (q.t / (q.peak || 0.5)) * 6 * q.ez;
                 let wobble = 0;
-                try { wobble = Math.sin(Date.now() * 0.05) * 6 * q.ez; } catch (e) {}
+                try { wobble = Math.sin(Date.now() * 0.05) * 2.5 * q.ez; } catch (e) {}
                 const conf = [[originX, 0, 0.55], [originX - shiftVal, wobble, 0.40], [originX + shiftVal, -wobble, 0.40]];
                 for (let s = 0; s < 3; s++) {
                     const sp = A.g[h * 3 + s];
@@ -62247,6 +63842,60 @@ class Game {
             const st = this._pixiOverlayStage;
             if (!st) return;
             const idx = (c) => { try { return st.children.includes(c) ? st.getChildIndex(c) : -1; } catch (e) { return -1; } };
+            // (c) FIRST (clause (b) returns early when no item rigs exist —
+            // anything placed after it is silently skipped on those frames):
+            // mesa dressing above units (canvas parapet pass-2 / canopy /
+            // roof order). Tall SOLID rim walls + canopy + roofs draw OVER
+            // entities — otherwise units walk visibly ON TOP of second-floor
+            // walls. Sills (windows) stay below (see-through, canvas
+            // deck-pass order), as do base/ground/stairs. The GPU smoke
+            // meshes ride below the rims too (smoke piles AT faces, same
+            // treatment the scorch deck-lift got). Converges to no-op via
+            // index guards (plain append — index math against a shifting top
+            // is a silent-skip trap); _pixiScreenTop re-asserts the screen
+            // layers above later in the same present, so never to top.
+            try {
+                const unitTop = () => {
+                    let t = -1;
+                    const note = (o) => { const i = idx(o); if (i > t) t = i; };
+                    try {
+                        const maps = [this._pixiPlayerRigs, this._pixiEnemyRigs, this._pixiDogRigs, this._pixiDroneRigs];
+                        for (const m of maps) {
+                            if (!m) continue;
+                            for (const R of m.values()) {
+                                if (!R) continue;
+                                if (R.root) note(R.root);
+                                else {
+                                    if (R.a && R.a.root) note(R.a.root);
+                                    if (R.b && R.b.root) note(R.b.root);
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                    try {
+                        for (const s of (this._pixiShadowSprites || [])) note(s);
+                        note(this._pixiShadowSprite);
+                    } catch (e) {}
+                    try {
+                        const G = this._pixiGpu;
+                        if (G && G.dispH) for (const D of G.dispH) if (D && D.mesh) note(D.mesh);
+                    } catch (e) {}
+                    return t;
+                };
+                if (this._pixiDressH) {
+                    for (const DH of this._pixiDressH) {
+                        if (!DH) continue;
+                        for (const c of [DH.solidC, DH.canopyC, DH.roofC]) {
+                            if (!c) continue;
+                            const t = unitTop();
+                            const ci = idx(c);
+                            if (ci < 0 || t < 0 || ci >= t) continue;
+                            st.removeChild(c);
+                            st.addChild(c);
+                        }
+                    }
+                }
+            } catch (e) {}
             // (a) walls directly above marks-ground (both halves): one move
             // fixes both inversions (walls were below floor AND marks).
             try {
@@ -63465,6 +65114,30 @@ class Game {
                 pt.alpha = pa;
                 n++;
             }
+    }
+
+    // PHASE 3 Item 1c fix: hero puffs render ALWAYS (sim-driven sprites,
+    // GPU-independent — part of the approved look forever). Split from
+    // drawPixiFluid so the slot pass can retire under the GPU display
+    // without taking the heroes with it. Same pool key + frame-token
+    // discipline, so the shared cursor survives the split either order.
+    drawPixiFluidHeroes(cam, isPlayer2) {
+        if (!this._pixiOverlayRenderer || !this._fl) return;
+        const F = this._fl;
+        if (!F.dn || F.maxD < 0.03) return;
+        const v = (isPlayer2 && this.isTwoPlayer) ? 1 : 0;
+        const tex = this._pixiSmokePuffTex();
+        const texSoft = this._pixiSmokePuffSoftTex();
+        const P = this._pixiPC('fluid', v, tex, null, 0.5, 0.5);
+        if (!P) return;
+        const ez = cam.zoom + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
+        const ox = (isPlayer2 && this.isTwoPlayer) ? this.width / 2 : 0;
+        const viewportW = this.isTwoPlayer ? this.width / 2 : this.width;
+        const viewportH = this.height;
+        const shX = cam._shX || 0, shY = cam._shY || 0;
+        const csx = F.mw / F.W;
+        const TINT = (typeof FLUID_TUNING !== 'undefined' && FLUID_TUNING.SMOKE_TINT) || 0x91a7c3;
+        let n = 0; // pool cursor share (dropped in the split — undeclared n threw, parking heroes silently)
         // Hero puffs: every shot/blast births NEW sprites at the emission
         // point that fly out, swell, cool orange→grey, and die — the old
         // ones never modulate, so rapid fire can't flash stale smoke.
@@ -64725,7 +66398,20 @@ class Game {
 
         // === FLUID SMOKE (world space, density grid → pooled sprites) ===
         // Below the night composite so darkness + flashlight holes shape it.
-        if (this.drawPixiFluid) this.drawPixiFluid(cam, isPlayer2);
+        // PHASE 3 Item 1c: GPU display cutover — the twin renders the field
+        // (flag), the CPU slot pass retires (heroes below always render —
+        // sim-driven sprites, GPU-independent).
+        if (this.drawPixiFluid && this._pixiGpuDisplayOn === false) this.drawPixiFluid(cam, isPlayer2);
+        // Guarded (neighbors are): a render throw must never reach the frame
+        // loop — an uncaught throw kills rAF with the last frame painted
+        // (hard freeze, no recovery, no black screen).
+        try { if (this.drawPixiFluidHeroes) this.drawPixiFluidHeroes(cam, isPlayer2); } catch (e) {}
+        // PHASE 3 Item 1b: GPU display twin (flag-gated, off until 1c).
+        try { this._pixiGpuDisplay(cam, isPlayer2); } catch (e) {}
+        // PHASE 3 Item 3: UV shock refraction (flag-gated, burst-only).
+        try { this._pixiShockPresent(cam, isPlayer2); } catch (e) {}
+        // PHASE 3 Item 4: cloak refraction (flag-gated, cloaked-only).
+        try { this._pixiCloakPresent(cam, isPlayer2); } catch (e) {}
 
         // Phase 3: the veil runs the identical light-hole machinery in
         // daylight at VEIL_ALPHA — same holes, same culling, same blit.
