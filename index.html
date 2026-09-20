@@ -39296,7 +39296,13 @@ class Game {
         slot.str = (strength === undefined) ? 1 : strength;
     }
 
-    spawnShockwave(x, y, maxRadius = 150, duration = 0.3, glowColor) {
+    // opts.fluid: 'blast' (default — every existing caller) | 'suck' (rift
+    // inhale: inward velocity, no density) | 'none'. opts.rift: UV ring runs
+    // the RIFT branch (implode/release tear, chromatic, event horizon)
+    // instead of the pressure lens.
+    spawnShockwave(x, y, maxRadius = 150, duration = 0.3, glowColor, opts) {
+        const fluid = (opts && opts.fluid) || 'blast';
+        const rift = !!(opts && opts.rift);
         for (let i = 0; i < this.shockwaves.length; i++) {
             let sw = this.shockwaves[i];
             if (!sw.active) {
@@ -39314,11 +39320,17 @@ class Game {
         // PHASE 3 Item 3 (UV shock): own refraction ring with a 0.25s tail
         // beyond the vector ring (keeps expanding after the ring dies —
         // the distortion reads as a pressure wave, not a flash). Render-only.
-        try { this.spawnUvShock(x, y, maxRadius * 1.15, duration + 0.25, 1.0); } catch (e) {}
+        // Rift: longer life (the implode phase needs room to read), negative
+        // strength selects the tear branch in _pixiShockFrag.
+        try {
+            if (rift) this.spawnUvShock(x, y, maxRadius * 1.1, duration + 0.55, -1.0);
+            else this.spawnUvShock(x, y, maxRadius * 1.15, duration + 0.25, 1.0);
+        } catch (e) {}
         // SHADER-ERA fluid: every blast is a pressure splat — explosions
         // visibly shove smoke/dust sideways (the money shot). One choke
         // covers all ~20 blast sites; zero RNG, sim untouched.
-            try { this.fluidBlast(x, y, maxRadius, 850); } catch (e) {}
+        if (fluid === 'blast') { try { this.fluidBlast(x, y, maxRadius, 850); } catch (e) {} }
+        else if (fluid === 'suck') { try { this.fluidBlast(x, y, maxRadius * 1.4, -700); } catch (e) {} }
     }
 
     // WO-001 Phase 4: IMPACT FUNNEL — material response for a point hit.
@@ -42970,7 +42982,7 @@ class Game {
                 else if (own.some(s => (s._riftCooldown || 0) > 0)) reason = 'STATION RECHARGING';
             }
             this.applyExplosionShake(sx, sy, 10, 90);
-            this.spawnShockwave(sx, sy, 90, 0.3);
+            this.spawnShockwave(sx, sy, 90, 0.3, '#9d4edd', { fluid: 'suck', rift: true });
             for (let i = 0; i < 14; i++) {
                 const a = Math.random() * Math.PI * 2, spd = Math.random() * 260 + 60;
                 this.addParticle(sx, sy, Math.cos(a)*spd, Math.sin(a)*spd, '#9d4edd', 0.5, 2.5);
@@ -42988,7 +43000,9 @@ class Game {
         const ring0 = T.ARRIVAL_RING || 40, step = T.ARRIVAL_STEP || 14;
         // Departure: black implosion at the seed.
         this.applyExplosionShake(sx, sy, 16, 160);
-        this.spawnShockwave(sx, sy, 200, 0.35);
+        // Timespace tear, not an explosion: no smoke — the pop INHALES
+        // (fluid suck) and the UV ring runs the rift branch (implode/release).
+        this.spawnShockwave(sx, sy, 200, 0.35, '#9d4edd', { fluid: 'suck', rift: true });
         for (let i = 0; i < 22; i++) {
             const a = Math.random() * Math.PI * 2, spd = Math.random() * 380 + 80;
             this.addParticle(sx, sy, Math.cos(a)*spd, Math.sin(a)*spd, wired && i % 2 ? '#00f5d4' : '#9d4edd', 0.55, 3);
@@ -43020,7 +43034,7 @@ class Game {
             }
         });
         // Arrival flash + ring at the station + cooldown + floater.
-        this.spawnShockwave(station.x, station.y, 120 + live.length * 8, 0.35);
+        this.spawnShockwave(station.x, station.y, 120 + live.length * 8, 0.35, '#00f5d4', { fluid: 'none', rift: true });
         this.spawnDeployRing(station.x, station.y);
         station._riftCooldown = T.STATION_COOLDOWN || 0.5;
         if (live.length >= 2 && typeof this.triggerHitStop === 'function') {
@@ -46835,6 +46849,31 @@ class Game {
         const x0 = Math.max(0, Math.floor(gx - gr)), x1 = Math.min(F.W - 1, Math.ceil(gx + gr));
         const y0 = Math.max(0, Math.floor(gy - gr)), y1 = Math.min(F.H - 1, Math.ceil(gy + gr));
         const pw = power || 500;
+        if (pw < 0) {
+            // SUCK (Riftlance pop): a tear inhales. Inward velocity only —
+            // NO density, NO heat, NO heroes (a timespace gun does not make
+            // smoke; it drags what is already there into the eye). The
+            // sustained force is linear in pw, so a negative entry keeps
+            // pulling for its ttl (the inhale outlasts the frame). Zero RNG.
+            for (let j = y0; j <= y1; j++) {
+                for (let i = x0; i <= x1; i++) {
+                    const dx = i - gx, dy = j - gy;
+                    const d = Math.sqrt(dx * dx + dy * dy) / gr;
+                    if (d > 1 || d < 0.04) continue;
+                    const k = j * F.W + i;
+                    if ((F.vis || F.obs)[k]) continue;
+                    const inv = 1 / (d * gr);
+                    // Strongest at mid-radius: the rim rushes in, the eye is calm.
+                    const vm = pw * Math.sin(d * Math.PI) * cs * 0.06;
+                    F.vx[k] += dx * inv * vm;
+                    F.vy[k] += dy * inv * vm;
+                }
+            }
+            F.energy = Math.min(4, F.energy + (-pw / (T.MAXV || 900)) * 0.5 + 0.2);
+            F.forces.push({ x: gx, y: gy, gr, pw: pw * 0.6, age: 0, ttl: 0.4 });
+            if (F.forces.length > 8) F.forces.shift();
+            return;
+        }
         for (let j = y0; j <= y1; j++) {
             for (let i = x0; i <= x1; i++) {
                 let dx = i - gx, dy = j - gy;
@@ -47198,6 +47237,7 @@ class Game {
                 prsA: mk(true, true), prsB: mk(true, true),
                 dvA: mk(true, true),
                 bRt: mk(false, false, true), sRt: mk(false, false, true), rRt: mk(false),
+                eRt: mk(false, false, true),
                 // Item 1a1: pass cache (quad + per-key programs), field
                 // identity (world-space grid = CPU dims), mask texture,
                 // mirrored energy scalar (copied, never re-derived).
@@ -47219,7 +47259,7 @@ class Game {
         // fluid path is unaffected — it never reads this set.
         try { this._pixiGpuSleep = reason || 'off'; } catch (e) {}
         if (!G) return;
-        const keys = ['velA', 'velB', 'denA', 'denB', 'prsA', 'prsB', 'dvA', 'bRt', 'sRt', 'rRt'];
+        const keys = ['velA', 'velB', 'denA', 'denB', 'prsA', 'prsB', 'dvA', 'bRt', 'sRt', 'rRt', 'eRt'];
         for (const k of keys) { try { if (G[k]) G[k].destroy(true); } catch (e) {} }
         // Item 1a1: programs, shared quad, and mask texture die with the
         // set — no orphan GL state across resize/map-swap reallocs.
@@ -47265,6 +47305,25 @@ class Game {
         } catch (e) {}
         try { if (G.cloakProg) G.cloakProg.destroy(); } catch (e) {}
         G.cloakH = null; G.cloakProg = null; G.cloakCapFrame = -1;
+        // Rift/eventide/oracle passes + emissive guard die with the set.
+        const _killH = (nm) => {
+            try {
+                if (G[nm]) for (const D of G[nm]) {
+                    if (!D) continue;
+                    try { if (D.mesh && D.mesh.parent) D.mesh.parent.removeChild(D.mesh); } catch (e) {}
+                    try { if (D.sh) D.sh.destroy(); } catch (e) {}
+                    try { if (D.ug) D.ug.destroy(); } catch (e) {}
+                    try { if (D.mesh) D.mesh.destroy(); } catch (e) {}
+                    try { if (D.geo) D.geo.destroy(); } catch (e) {}
+                }
+            } catch (e) {}
+        };
+        _killH('fieldH'); _killH('tripH');
+        try { if (G.fieldProg) G.fieldProg.destroy(); } catch (e) {}
+        try { if (G.tripProg) G.tripProg.destroy(); } catch (e) {}
+        try { if (G._emisBlack) G._emisBlack.destroy(); } catch (e) {}
+        G.fieldH = null; G.fieldProg = null; G.fieldCapFrame = -1;
+        G.tripH = null; G.tripProg = null; G.tripAmt = null; G.tripLast = null; G.tripLastT = null;
         // Item 2: bloom blit leaves the stage with the set.
         try {
             if (G.bloomSp) {
@@ -48133,16 +48192,55 @@ class Game {
 
     _pixiBloomThreshFrag() {
         return 'uniform sampler2D uSrc;\n' +
+            'uniform sampler2D uEmis;\n' +
             'uniform float uT;\n' +
             'uniform float uStrength;\n' +
+            'uniform float uEmisGain;\n' +
             'varying vec2 vUV;\n' +
             'void main(){\n' +
             'vec4 c = texture2D(uSrc, vUV);\n' +
             'float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n' +
             'float lift = clamp(c.r - c.b, 0.0, 1.0) * 0.2;\n' +
             'float w = smoothstep(uT, uT + 0.15, lum + lift);\n' +
-            'gl_FragColor = vec4(c.rgb * (w * uStrength), w);\n' +
+            // Emissive feed: collimated/arcane light (lasers, rift beams,
+            // host halos) bypasses the luminance gate and adds at full
+            // weight — a dim beam still blooms.
+            'vec4 e = texture2D(uEmis, vUV);\n' +
+            'vec3 rgb = c.rgb * (w * uStrength) + e.rgb * uEmisGain;\n' +
+            'gl_FragColor = vec4(rgb, max(w, clamp(dot(e.rgb, vec3(0.333)) * uEmisGain, 0.0, 1.0)));\n' +
             '}';
+    }
+
+    // Emissive container: hidden from the composite (visible=false always
+    // in the main present), rendered 1:1 into eRt during the bloom capture
+    // with the same stage-scale trick. Per-half Graphics, cleared per frame
+    // by token (the _pixiLaserFx pattern). Never sampled by a visible mesh
+    // (feedback law) — only the threshold pass reads eRt.
+    _pixiEmisEnsure(v) {
+        const R = window.PIXI, st = this._pixiOverlayStage;
+        if (!R || !st) return null;
+        if (!this._pixiEmisC) {
+            try {
+                this._pixiEmisC = new R.Container();
+                this._pixiEmisC.visible = false;
+                st.addChild(this._pixiEmisC);
+            } catch (e) { return null; }
+        }
+        if (!this._pixiEmisG) this._pixiEmisG = [null, null];
+        if (!this._pixiEmisFrame) this._pixiEmisFrame = [-1, -1];
+        let G = this._pixiEmisG[v];
+        if (!G) {
+            try {
+                G = new R.Graphics();
+                this._pixiEmisC.addChild(G);
+                this._pixiEmisG[v] = G;
+            } catch (e) { return null; }
+        }
+        if (this._pixiEmisFrame[v] !== this._pixiFrameToken) {
+            try { G.clear(); } catch (e) {}
+            this._pixiEmisFrame[v] = this._pixiFrameToken;
+        }
+        return G;
     }
 
     _pixiBloomBlurFrag() {
@@ -48237,6 +48335,50 @@ class Game {
         try { ok = this._pixiSceneCapture(G.sRt, null); } finally {
             for (const o of reShow) { try { o.visible = true; } catch (e) {} }
         }
+        // Emissive feed → eRt (cleared every frame so nothing goes stale).
+        // Same stage-scale trick as _pixiSceneCapture (full-res 1:1).
+        try {
+            const R = window.PIXI, rend = this._pixiOverlayRenderer, st = this._pixiOverlayStage;
+            if (ok && R && rend && st && G.eRt && this._pixiEmisC) {
+                const oldSX = this._pixiEmisC.scale.x, oldSY = this._pixiEmisC.scale.y;
+                try {
+                    this._pixiEmisC.scale.set(G.eRt.width / (this.width || 1), G.eRt.height / (this.height || 1));
+                    this._pixiEmisC.visible = true;
+                    rend.render({ container: this._pixiEmisC, target: G.eRt, clear: true });
+                } finally {
+                    try { this._pixiEmisC.visible = false; } catch (e) {}
+                    try { this._pixiEmisC.scale.set(oldSX, oldSY); } catch (e) {}
+                }
+            } else if (ok && G.eRt) {
+                // No emissive content yet: still clear so the threshold's
+                // uEmis read is black, not last season's beam.
+                try {
+                    const R2 = window.PIXI, rend2 = this._pixiOverlayRenderer;
+                    if (R2 && rend2 && G.quad !== undefined) {
+                        if (!G.prog) G.prog = {};
+                        let glp = G.prog.emisClear;
+                        if (!glp) {
+                            glp = new R2.GlProgram({ vertex: this._pixiGpuVert(), fragment: 'void main(){ gl_FragColor = vec4(0.0); }' });
+                            G.prog.emisClear = glp;
+                        }
+                        if (!G.quad) {
+                            const geo = new R2.Geometry();
+                            geo.addAttribute('aPosition', [-1, -1, 1, -1, 1, 1, -1, 1], 2);
+                            geo.addAttribute('aUV', [0, 0, 1, 0, 1, 1, 0, 1], 2);
+                            geo.addIndex([0, 1, 2, 0, 2, 3]);
+                            G.quad = geo;
+                        }
+                        const ug = new R2.UniformGroup({});
+                        const sh = new R2.Shader({ glProgram: glp, resources: { uGpu: ug } });
+                        const mesh = new R2.Mesh({ geometry: G.quad, shader: sh });
+                        rend2.render({ container: mesh, target: G.eRt });
+                        try { mesh.destroy(); } catch (e) {}
+                        try { sh.destroy(); } catch (e) {}
+                        try { ug.destroy(); } catch (e) {}
+                    }
+                } catch (e) {}
+            }
+        } catch (e) {}
         return ok;
     }
 
@@ -48313,9 +48455,19 @@ class Game {
             const base = (!this.nightMode && this.dayVeil) ? T.VEIL_T : T.NIGHT_T;
             const uT = base + (this._pixiBloomThAdj || 0);
             const uS = (this._pixiBloomStrength === undefined ? 0.7 : this._pixiBloomStrength);
-            // threshold: S_rt -> B_rt
+            // threshold (+emissive bypass): S_rt + eRt -> B_rt. eRt missing
+            // (pre-realloc) falls back to threshold-only via a black 1px
+            // guard so the program shape never changes (SILENT SHADER).
+            const uEG = (this._pixiEmisGain === undefined ? 1.0 : this._pixiEmisGain);
+            if (!G._emisBlack) {
+                try {
+                    const cv = document.createElement('canvas'); cv.width = 1; cv.height = 1;
+                    G._emisBlack = window.PIXI.Texture.from(cv);
+                } catch (e) { G._emisBlack = null; }
+            }
+            const eSrc = (G.eRt && G.eRt.source) ? G.eRt.source : G._emisBlack;
             if (!this._pixiGpuPass('bloomT', this._pixiBloomThreshFrag(),
-                { uSrc: G.sRt.source, uT, uStrength: uS }, G.bRt)) return false;
+                { uSrc: G.sRt.source, uEmis: eSrc, uT, uStrength: uS, uEmisGain: uEG }, G.bRt)) return false;
             // blur H: B_rt -> S_rt ; blur V: S_rt -> B_rt (S_rt is scratch
             // after threshold — the capture is consumed, no extra RT).
             const dx = 1 / Math.max(1, G.bRt.width), dy = 1 / Math.max(1, G.bRt.height);
@@ -48374,14 +48526,37 @@ class Game {
             'uniform float uN;\n' +
             'uniform float uAmp;\n' +
             'varying vec2 vUV;\n' +
-            'vec2 ringUV(vec2 sp, vec2 c, vec4 p, inout float a) {\n' +
+            // RIFT kind is sign-packed: p.z < 0 = spacetime tear (Riftlance
+            // paint/pop, Rift Station). |p.z| = strength; sign(p.w) = phase
+            // (+ implode/pull, - release/push), |p.w| = envelope. dk/ch
+            // accumulate event-horizon darkening + chromatic dispersion.
+            'vec2 ringUV(vec2 sp, vec2 c, vec4 p, inout float a, inout float dk, inout float ch) {\n' +
             'vec2 dxy = (sp - c) * vec2(1.0, uM.w);\n' +
             'float d = length(dxy);\n' +
             // NOTE: never pow(negative, 2.0) — undefined (NaN) on strict GPUs.
             'float bt = (d - p.x) / max(p.y, 1.0);\n' +
             'float band = exp(-bt * bt);\n' +
-            'float rip = sin((d - p.x) * uM.x - uM.z * uM.y);\n' +
             'vec2 dir = d > 0.001 ? dxy / d : vec2(0.0);\n' +
+            'if (p.z < 0.0) {\n' +
+            'float s = -p.z; float env = abs(p.w); float ph = p.w < 0.0 ? -1.0 : 1.0;\n' +
+            // inner: 1 at the eye, 0 at the ring — the whole disc is warped
+            // (a tear is a volume, not a shell); the band is where it bites.
+            'float inner = 1.0 - smoothstep(0.0, max(p.x, 1.0), d);\n' +
+            'float inner2 = inner * inner;\n' +
+            // Radial: pull (sample outward => content falls in) while
+            // imploding, push on release. Tangential twist keeps its sense
+            // across the flip (angular momentum) and winds tightest at the eye.
+            'float pull = (band * 1.2 + inner * 0.7) * s * uAmp * env * ph;\n' +
+            'vec2 tang = vec2(-dir.y, dir.x);\n' +
+            'float twist = (inner2 * 2.2 + band * 0.4) * s * uAmp * env;\n' +
+            // Faint tick along the ring: spacetime shivering, not a ripple.
+            'float shiv = sin(d * uM.x * 1.7 + uM.z * 9.0) * band * s * uAmp * env * 0.12;\n' +
+            'a += clamp(band * 0.9 + inner * 0.8, 0.0, 1.0) * s * env;\n' +
+            'dk += inner2 * inner * s * env;\n' +
+            'ch += (band + inner * 0.4) * s * env;\n' +
+            'return dir * (pull + shiv) + tang * twist;\n' +
+            '}\n' +
+            'float rip = sin((d - p.x) * uM.x - uM.z * uM.y);\n' +
             'a += band * p.z * p.w;\n' +
             // Ripple share 0.3: at 10px amp a 0.6 share serrated straight
             // edges into sawteeth (headless shot) — the bend should read as
@@ -48391,14 +48566,26 @@ class Game {
             'void main(){\n' +
             'vec2 sp = uRect.xy + vUV * uRect.zw;\n' +
             'vec2 baseUV = sp * uInvStage;\n' +
-            'float a = 0.0;\n' +
+            'float a = 0.0; float dk = 0.0; float ch = 0.0;\n' +
             'vec2 off = vec2(0.0);\n' +
-            'if (uN > 0.5) off += ringUV(sp, uC0, uP0, a);\n' +
-            'if (uN > 1.5) off += ringUV(sp, uC1, uP1, a);\n' +
-            'if (uN > 2.5) off += ringUV(sp, uC2, uP2, a);\n' +
-            'if (uN > 3.5) off += ringUV(sp, uC3, uP3, a);\n' +
+            'if (uN > 0.5) off += ringUV(sp, uC0, uP0, a, dk, ch);\n' +
+            'if (uN > 1.5) off += ringUV(sp, uC1, uP1, a, dk, ch);\n' +
+            'if (uN > 2.5) off += ringUV(sp, uC2, uP2, a, dk, ch);\n' +
+            'if (uN > 3.5) off += ringUV(sp, uC3, uP3, a, dk, ch);\n' +
             'if (a <= 0.004) discard;\n' +
-            'vec4 c = texture2D(uScene, clamp(baseUV + off * uInvStage, vec2(0.0), vec2(1.0)));\n' +
+            'vec2 o = off * uInvStage;\n' +
+            'vec4 c = texture2D(uScene, clamp(baseUV + o, vec2(0.0), vec2(1.0)));\n' +
+            'if (ch > 0.01) {\n' +
+            // Dispersion: red bends least, blue most (gravitational-lens
+            // prism). Scales with the local offset so flat areas stay clean.
+            'float k = clamp(ch, 0.0, 1.0) * 0.22;\n' +
+            'c.r = texture2D(uScene, clamp(baseUV + o * (1.0 - k), vec2(0.0), vec2(1.0))).r;\n' +
+            'c.b = texture2D(uScene, clamp(baseUV + o * (1.0 + k), vec2(0.0), vec2(1.0))).b;\n' +
+            // Violet bleed at the horizon (Riftlance #9d4edd family).
+            'c.rgb = mix(c.rgb, c.rgb * vec3(0.85, 0.55, 1.15) + vec3(0.05, 0.0, 0.10), clamp(ch, 0.0, 1.0) * 0.5);\n' +
+            '}\n' +
+            // Event horizon: the eye of a tear swallows light.
+            'c.rgb *= 1.0 - 0.85 * clamp(dk, 0.0, 1.0);\n' +
             'gl_FragColor = vec4(c.rgb * clamp(a, 0.0, 1.0), clamp(a, 0.0, 1.0));\n' +
             '}';
     }
@@ -48459,9 +48646,32 @@ class Game {
         for (const u of all) {
             if (!u || !u.active) continue;
             const t = 1 - ((u.life || 0) / (u.maxLife || 1));
+            const sx = ox + (u.x - cam.x + shX) * ez, sy = (u.y - cam.y + shY) * ez;
+            if (u.str < 0) {
+                // RIFT (negative strength): implode 0→0.35 of life — the
+                // tear contracts from full radius to a quarter while the
+                // pull winds up; release 0.35→1 — it snaps back out past
+                // full size, pushing, and the warp bleeds off. Phase rides
+                // the sign of env (shader: sign(p.w)).
+                let rad, env, ph;
+                if (t < 0.35) {
+                    const ti = t / 0.35;
+                    rad = u.maxRadius * (1 - 0.75 * ti * ti);
+                    env = Math.pow(ti, 0.7); ph = 1;
+                } else {
+                    const tu = (t - 0.35) / 0.65;
+                    rad = u.maxRadius * (0.25 + 1.05 * (1 - Math.pow(1 - tu, 3)));
+                    env = Math.pow(1 - tu, 1.6); ph = -1;
+                }
+                const sr = Math.max(1, rad * ez);
+                if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+                env *= -u.str;
+                if (env <= 0.01) continue;
+                live.push({ sx, sy, sr, w: Math.max(3, sr * 0.22), env, rift: true, ph });
+                continue;
+            }
             const tr = Math.min(1, t * spd);
             const rad = u.maxRadius * (1 - Math.pow(1 - tr, 3));
-            const sx = ox + (u.x - cam.x + shX) * ez, sy = (u.y - cam.y + shY) * ez;
             const sr = Math.max(1, rad * ez);
             if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
             const attack = Math.min(1, t / 0.15);
@@ -48470,6 +48680,40 @@ class Game {
             if (env <= 0.01) continue;
             live.push({ sx, sy, sr, w: Math.max(3, sr * 0.28), env });
         }
+        // RIFTLANCE hold: while the beam paints a mark, the paint disc is a
+        // live tear — a steady pull that deepens with hold progress and
+        // breathes at ~2Hz (the field straining). Per-player, no pool slot.
+        // Also RIFT STATIONS idle: a faint standing lens (portal is alive);
+        // collapses to nothing while recharging (cooldown) or jammed (EMP).
+        try {
+            const T = (typeof RIFT_TUNING !== 'undefined') ? RIFT_TUNING : {};
+            const MARK_S = T.LANCE_MARK_S || 0.8;
+            const now = this.gameTime || 0;
+            const pls = [this.player];
+            if (this.isTwoPlayer && this.player2) pls.push(this.player2);
+            for (const p of pls) {
+                if (!p || p.dead) continue;
+                const tgt = p._riftBeamTarget;
+                if (!tgt || tgt.dead) continue;
+                const u = Math.max(0, Math.min(1, (p._riftMarkT || 0) / MARK_S));
+                const Rw = (12 + u * 60) * 1.25;
+                const sx = ox + (tgt.x - cam.x + shX) * ez, sy = (tgt.y - cam.y + shY) * ez;
+                const sr = Math.max(1, Rw * ez);
+                if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+                const breathe = 1 + 0.12 * Math.sin(now * 12.6);
+                const env = (0.18 + 0.42 * u) * breathe;
+                live.push({ sx, sy, sr, w: Math.max(3, sr * 0.3), env, rift: true, ph: 1 });
+            }
+            if (this.riftStations) for (const s of this.riftStations) {
+                if (!s || s.dead) continue;
+                if ((s.empTimer || 0) > 0 || (s._riftCooldown || 0) > 0) continue;
+                const sx = ox + (s.x - cam.x + shX) * ez, sy = (s.y - cam.y + shY) * ez;
+                const sr = Math.max(1, 54 * ez);
+                if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+                const env = 0.14 + 0.05 * Math.sin(now * 2.1 + (s.x + s.y) * 0.01);
+                live.push({ sx, sy, sr, w: Math.max(3, sr * 0.35), env, rift: true, ph: 1 });
+            }
+        } catch (e) {}
         return live;
     }
 
@@ -48490,7 +48734,7 @@ class Game {
             // helper (stage scaled 0.5 — true downsample, not the quadrant).
             if (G.shockCapFrame !== this._pixiFrameToken) {
             try {
-                if (!this._pixiSceneCapture(G.rRt, [G.shockH])) return false;
+                if (!this._pixiSceneCapture(G.rRt, [G.shockH, G.cloakH, G.fieldH, G.tripH])) return false;
                 G.shockCapFrame = this._pixiFrameToken;
             } catch (e) { return false; }
             }
@@ -48507,6 +48751,11 @@ class Game {
                 // ring bends less than a 300px blast), clamped so tiny
                 // rings still read and huge ones don't tear the frame.
                 const sz = Math.max(0.35, Math.min(1.6, r.sr / 120));
+                if (r.rift) {
+                    // Sign-packed rift: -strength, env carries the phase sign.
+                    const ra = (this._pixiRiftAmp === undefined ? 1.0 : this._pixiRiftAmp);
+                    return { c: [r.sx, r.sy], p: [r.sr, r.w, -0.9 * sz * ra, r.env * (r.ph || 1)] };
+                }
                 return { c: [r.sx, r.sy], p: [r.sr, r.w, 0.9 * sz, r.env] };
             };
             const k0 = pk(0), k1 = pk(1), k2 = pk(2), k3 = pk(3);
@@ -48678,7 +48927,7 @@ class Game {
             // half-res helper (true downsample, not the quadrant).
             if (G.shockCapFrame !== this._pixiFrameToken && G.cloakCapFrame !== this._pixiFrameToken) {
             try {
-                if (!this._pixiSceneCapture(G.rRt, [G.cloakH, G.shockH])) return false;
+                if (!this._pixiSceneCapture(G.rRt, [G.cloakH, G.shockH, G.fieldH, G.tripH])) return false;
                 G.cloakCapFrame = this._pixiFrameToken;
             } catch (e) { return false; }
             }
@@ -48706,6 +48955,370 @@ class Game {
             if (!G.cloakProg) G.cloakProg = new R.GlProgram({ vertex: this._pixiGpuDispVert(), fragment: this._pixiCloakFrag() });
             const ug = new R.UniformGroup(structs);
             const sh = new R.Shader({ glProgram: G.cloakProg, resources: { uScene: G.rRt.source, uGpu: ug } });
+            try { if (D.sh) D.sh.destroy(); } catch (e) {}
+            try { if (D.ug) D.ug.destroy(); } catch (e) {}
+            D.sh = sh; D.ug = ug;
+            D.mesh.shader = sh;
+            D.mesh.visible = true;
+            return true;
+        } catch (e) { try { D.mesh.visible = false; } catch (_e) {} return false; }
+    }
+
+    // Generic per-half full-viewport quad (same shape as shock/cloak
+    // Ensure, keyed on size+split+half). `name` is the G slot (fieldH,
+    // tripH). Never render into an RT while one of these is visible and
+    // sampling it (GL feedback) — every rRt capture must extraHide them.
+    _pixiHalfQuadEnsure(name, h) {
+        const R = window.PIXI, G = this._pixiGpu, st = this._pixiOverlayStage;
+        if (!R || !G || !G.ok || !st) return null;
+        if (!G[name]) G[name] = [null, null];
+        const W = this.width || 1, H = this.height || 1;
+        const key = W + 'x' + H + ':' + (this.isTwoPlayer ? '2' : '1') + ':' + h;
+        let D = G[name][h];
+        if (!D || D.key !== key) {
+            try {
+                if (D) {
+                    try { if (D.mesh.parent) D.mesh.parent.removeChild(D.mesh); } catch (e) {}
+                    try { if (D.sh) D.sh.destroy(); } catch (e) {}
+                    try { if (D.ug) D.ug.destroy(); } catch (e) {}
+                    try { D.mesh.destroy(); } catch (e) {}
+                    try { D.geo.destroy(); } catch (e) {}
+                }
+            } catch (e) {}
+            D = null;
+            try {
+                const ox = (h === 1 && this.isTwoPlayer) ? W / 2 : 0;
+                const w = this.isTwoPlayer ? W / 2 : W;
+                const geo = new R.Geometry();
+                geo.addAttribute('aPosition', [ox, 0, ox + w, 0, ox + w, H, ox, H], 2);
+                geo.addAttribute('aUV', [0, 0, 1, 0, 1, 1, 0, 1], 2);
+                geo.addIndex([0, 1, 2, 0, 2, 3]);
+                const mesh = new R.Mesh({ geometry: geo, shader: null });
+                mesh.visible = false;
+                st.addChild(mesh);
+                D = G[name][h] = { key, geo, mesh, ox, w };
+            } catch (e) { return null; }
+        }
+        return D;
+    }
+
+    // Shared settled-scene source for the rRt refraction family (shock,
+    // cloak, field, trip): reuse any same-frame capture, else capture now
+    // hiding EVERY rRt-sampling mesh (feedback law).
+    _pixiRefractSource() {
+        const G = this._pixiGpu;
+        const tok = this._pixiFrameToken;
+        if (G.shockCapFrame === tok || G.cloakCapFrame === tok || G.fieldCapFrame === tok || G.tripCapFrame === tok) return true;
+        if (!this._pixiSceneCapture(G.rRt, [G.shockH, G.cloakH, G.fieldH, G.tripH])) return false;
+        G.fieldCapFrame = tok;
+        return true;
+    }
+
+    // EVENTIDE FIELD (time-dilation lens): every anchor disc + projected
+    // ring becomes a region where the settled scene is desaturated, tinted
+    // toward the mode colour, and domain-warped by a crawl whose SPEED
+    // FALLS TOWARD THE EYE (time runs slower nearer the device — inner
+    // radii visibly shear against outer). Rim = gaussian lens (outward
+    // refraction + chromatic split + additive mode-colour glow, which the
+    // bloom threshold picks up for free). EMP-jammed anchors: rim flickers
+    // at 8Hz and the interior fills with scanline static. Up to 4 fields
+    // (nearest to viewport centre). Half-res rRt source, so the interior
+    // blends at 0.55 over the crisp frame (readable, not mush).
+    // ON unless `_pixiFieldOn === false`. Knobs: _pixiFieldAmp (6 px).
+    _pixiFieldFrag() {
+        return '#ifdef GL_FRAGMENT_PRECISION_HIGH\n' +
+            'precision highp float;\n' +
+            '#endif\n' +
+            'uniform sampler2D uScene;\n' +
+            'uniform vec2 uInvStage;\n' +
+            'uniform vec4 uRect;\n' +
+            'uniform vec4 uF0;\n' + 'uniform vec4 uK0;\n' +
+            'uniform vec4 uF1;\n' + 'uniform vec4 uK1;\n' +
+            'uniform vec4 uF2;\n' + 'uniform vec4 uK2;\n' +
+            'uniform vec4 uF3;\n' + 'uniform vec4 uK3;\n' +
+            'uniform vec4 uM;\n' +   // time, amp, n, y-aspect
+            'varying vec2 vUV;\n' +
+            'float hsh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' +
+            'float vn(vec2 p) {\n' +
+            'vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);\n' +
+            'return mix(mix(hsh(i), hsh(i + vec2(1.0, 0.0)), f.x), mix(hsh(i + vec2(0.0, 1.0)), hsh(i + vec2(1.0, 1.0)), f.x), f.y);\n' +
+            '}\n' +
+            // f: (cx, cy, R, flags) flags = mode(0 tide,1 aegis,2 horizon,3 projection) + 10*jammed
+            // k: (r, g, b, intensity)
+            'void field(vec2 sp, vec4 f, vec4 k, inout vec2 off, inout float a, inout float ch, inout float des, inout vec3 tint, inout float tintA, inout vec3 glow, inout float stat) {\n' +
+            'if (f.z < 1.0) return;\n' +
+            'vec2 dxy = (sp - f.xy) * vec2(1.0, uM.w);\n' +
+            'float d = length(dxy);\n' +
+            'vec2 dir = d > 0.001 ? dxy / d : vec2(0.0);\n' +
+            'float jam = f.w >= 9.5 ? 1.0 : 0.0;\n' +
+            'float inF = 1.0 - smoothstep(f.z * 0.9, f.z, d);\n' +
+            'float rw = max(3.0, f.z * 0.04);\n' +
+            'float rt = (d - f.z) / rw;\n' +
+            'float rim = exp(-rt * rt);\n' +
+            'if (inF < 0.002 && rim < 0.002) return;\n' +
+            // Dilated crawl: phase speed shrinks toward the eye.
+            'float spd = mix(0.06, 0.55, clamp(d / f.z, 0.0, 1.0));\n' +
+            'float ph = uM.x * spd;\n' +
+            'vec2 q = sp * 0.011 + vec2(ph, -ph * 0.7);\n' +
+            'float n1 = vn(q) - 0.5;\n' +
+            'float n2 = vn(q * 1.9 + vec2(5.2, 1.3) - ph * 0.3) - 0.5;\n' +
+            'float wamp = uM.y * 0.35 * (1.0 + 2.0 * jam);\n' +
+            'off += vec2(n1, n2) * 2.0 * wamp * inF;\n' +
+            // Rim lens: outward bend + faint slow ripple riding it.
+            'float flick = jam > 0.5 ? (0.3 + 0.7 * step(0.5, fract(uM.x * 8.0 + f.x * 0.013))) : 1.0;\n' +
+            'off += dir * rim * uM.y * (0.9 + 0.15 * sin(d * 0.2 - uM.x * 2.0)) * flick;\n' +
+            'ch += rim * 0.8;\n' +
+            'des += inF * 0.35 * k.w;\n' +
+            'tint += k.rgb * inF * k.w; tintA += inF * k.w;\n' +
+            'glow += k.rgb * rim * 0.42 * k.w * flick;\n' +
+            'stat += inF * jam;\n' +
+            'a = max(a, max(inF * 0.55, rim));\n' +
+            '}\n' +
+            'void main(){\n' +
+            'vec2 sp = uRect.xy + vUV * uRect.zw;\n' +
+            'vec2 baseUV = sp * uInvStage;\n' +
+            'vec2 off = vec2(0.0); float a = 0.0; float ch = 0.0; float des = 0.0; vec3 tint = vec3(0.0); float tintA = 0.0; vec3 glow = vec3(0.0); float stat = 0.0;\n' +
+            'if (uM.z > 0.5) field(sp, uF0, uK0, off, a, ch, des, tint, tintA, glow, stat);\n' +
+            'if (uM.z > 1.5) field(sp, uF1, uK1, off, a, ch, des, tint, tintA, glow, stat);\n' +
+            'if (uM.z > 2.5) field(sp, uF2, uK2, off, a, ch, des, tint, tintA, glow, stat);\n' +
+            'if (uM.z > 3.5) field(sp, uF3, uK3, off, a, ch, des, tint, tintA, glow, stat);\n' +
+            'if (a <= 0.004) discard;\n' +
+            'vec2 o = off * uInvStage;\n' +
+            'vec4 c = texture2D(uScene, clamp(baseUV + o, vec2(0.0), vec2(1.0)));\n' +
+            'if (ch > 0.01) {\n' +
+            'float kk = clamp(ch, 0.0, 1.0) * 0.18;\n' +
+            'c.r = texture2D(uScene, clamp(baseUV + o * (1.0 - kk), vec2(0.0), vec2(1.0))).r;\n' +
+            'c.b = texture2D(uScene, clamp(baseUV + o * (1.0 + kk), vec2(0.0), vec2(1.0))).b;\n' +
+            '}\n' +
+            'float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n' +
+            'c.rgb = mix(c.rgb, vec3(lum), clamp(des, 0.0, 0.5));\n' +
+            'if (tintA > 0.001) {\n' +
+            'vec3 tc = tint / tintA;\n' +
+            // Tint rides luminance (dark stays dark, light takes the hue) —
+            // a wash, not a paint bucket.
+            'c.rgb = mix(c.rgb, tc * (0.12 + lum * 1.1), clamp(tintA, 0.0, 1.0) * 0.28);\n' +
+            '}\n' +
+            'if (stat > 0.01) {\n' +
+            // Jammed: scanline static crawling through the interior.
+            'float row = floor(sp.y * 0.5);\n' +
+            'float sn = hsh(vec2(row, floor(uM.x * 24.0)) + floor(sp.x * 0.02));\n' +
+            'float sl = 0.75 + 0.25 * sin(sp.y * 3.1416);\n' +
+            'c.rgb = mix(c.rgb, vec3(sn * 0.55 + 0.15) * sl, clamp(stat, 0.0, 1.0) * 0.35);\n' +
+            '}\n' +
+            'c.rgb += glow;\n' +
+            'float aa = clamp(a, 0.0, 1.0);\n' +
+            'gl_FragColor = vec4(c.rgb * aa, aa);\n' +
+            '}';
+    }
+
+    _pixiFieldCollect(cam, isPlayer2) {
+        const out = [];
+        const gens = this.fieldGens, pj = this._evProj;
+        if ((!gens || !gens.length) && (!pj || !pj.length)) return out;
+        const ez = cam.zoom + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
+        const ox = (isPlayer2 && this.isTwoPlayer) ? this.width / 2 : 0;
+        const vw = this.isTwoPlayer ? this.width / 2 : this.width, vh = this.height;
+        const shX = cam._shX || 0, shY = cam._shY || 0;
+        const R0 = (typeof EVENTIDE_TUNING !== 'undefined' && EVENTIDE_TUNING.RADIUS) || 500;
+        const COL = { tide: [0.70, 0.53, 1.0], aegis: [1.0, 0.77, 0.30], horizon: [1.0, 0.37, 0.43] };
+        const push = (wx, wy, wr, mode, jam, inten) => {
+            if (!(wr > 8)) return;
+            const sx = ox + (wx - cam.x + shX) * ez, sy = (wy - cam.y + shY) * ez, sr = wr * ez;
+            if (sx < -sr - 20 || sy < -sr - 20 || sx > vw + sr + 20 || sy > vh + sr + 20) return;
+            const dc = Math.hypot(sx - ox - vw / 2, sy - vh / 2);
+            const mi = mode === 'aegis' ? 1 : mode === 'horizon' ? 2 : mode === 'proj' ? 3 : 0;
+            const col = COL[mode] || COL.tide;
+            out.push({ f: [sx, sy, sr, mi + (jam ? 10 : 0)], k: [col[0], col[1], col[2], inten], dc });
+        };
+        if (gens) for (const g of gens) {
+            if (!g || g.dead) continue;
+            // HORIZON is a global effect (no local disc in fieldTimeFactor)
+            // — draw its device disc small so the mode still reads.
+            const wr = g.mode === 'horizon' ? 90 : ((g._evR !== undefined) ? g._evR : R0);
+            push(g.x, g.y, wr, g.mode || 'tide', (g.empTimer || 0) > 0, 1.0);
+        }
+        if (pj) for (const p of pj) { if (p && p.r >= 8) push(p.x, p.y, p.r, 'proj', false, 0.7); }
+        out.sort((a, b) => a.dc - b.dc);
+        if (out.length > 4) out.length = 4;
+        return out;
+    }
+
+    _pixiFieldPresent(cam, isPlayer2) {
+        const R = window.PIXI, G = this._pixiGpu;
+        if (!R || !G || !G.ok) return false;
+        const h = (isPlayer2 && this.isTwoPlayer) ? 1 : 0;
+        const on = this._pixiFieldOn !== false;
+        let D = null;
+        try { D = on ? this._pixiHalfQuadEnsure('fieldH', h) : (G.fieldH && G.fieldH[h]); } catch (e) { return false; }
+        if (!D) return false;
+        try {
+            if (!on) { D.mesh.visible = false; return true; }
+            const slots = this._pixiFieldCollect(cam, isPlayer2);
+            if (!slots.length) { D.mesh.visible = false; return true; }
+            if (!this._pixiRefractSource()) { D.mesh.visible = false; return false; }
+            try { D.mesh.mask = this.isTwoPlayer ? this._pixiHalfMask(h) : null; } catch (e) { try { D.mesh.mask = null; } catch (_e) {} }
+            const W = this.width || 1, H = this.height || 1;
+            const pk = (i) => slots[i] || { f: [0, 0, 0, 0], k: [0, 0, 0, 0] };
+            const s0 = pk(0), s1 = pk(1), s2 = pk(2), s3 = pk(3);
+            const structs = {
+                uStage: { value: [W, H], type: 'vec2<f32>' },
+                uNdc: { value: 0, type: 'f32' },
+                uRect: { value: [D.ox, 0, D.w, H], type: 'vec4<f32>' },
+                uInvStage: { value: [1 / W, 1 / H], type: 'vec2<f32>' },
+                uF0: { value: s0.f, type: 'vec4<f32>' }, uK0: { value: s0.k, type: 'vec4<f32>' },
+                uF1: { value: s1.f, type: 'vec4<f32>' }, uK1: { value: s1.k, type: 'vec4<f32>' },
+                uF2: { value: s2.f, type: 'vec4<f32>' }, uK2: { value: s2.k, type: 'vec4<f32>' },
+                uF3: { value: s3.f, type: 'vec4<f32>' }, uK3: { value: s3.k, type: 'vec4<f32>' },
+                uM: { value: [this.gameTime || 0, (this._pixiFieldAmp === undefined ? 6 : this._pixiFieldAmp), Math.min(4, slots.length), 1], type: 'vec4<f32>' },
+            };
+            if (!G.fieldProg) G.fieldProg = new R.GlProgram({ vertex: this._pixiGpuDispVert(), fragment: this._pixiFieldFrag() });
+            const ug = new R.UniformGroup(structs);
+            const sh = new R.Shader({ glProgram: G.fieldProg, resources: { uScene: G.rRt.source, uGpu: ug } });
+            try { if (D.sh) D.sh.destroy(); } catch (e) {}
+            try { if (D.ug) D.ug.destroy(); } catch (e) {}
+            D.sh = sh; D.ug = ug;
+            D.mesh.shader = sh;
+            D.mesh.visible = true;
+            return true;
+        } catch (e) { try { D.mesh.visible = false; } catch (_e) {} return false; }
+    }
+
+    // ORACLE SPICE trip veil — LAYERED over the CSS hue-rotate + 4Hz DOM
+    // wobble (operator: layer, don't replace). This pass owns SPACE, the
+    // CSS owns COLOUR: a slow two-octave domain warp that breathes outward
+    // from the host (tangential swirl + radial breath, both keyed to trip
+    // time), an edge-weighted radial chromatic split, a 4Hz vignette pulse
+    // (same cadence as the wobble so they lock), and two additive tells —
+    // a magenta halo on the possessed host (bloom picks it up) or, in aura
+    // mode, the 950px influence ring. Ramps in 1.5s, out over the final
+    // 1.2s (and decays smoothly on any abrupt end — comedown/host lost).
+    // Resonance (dud/SEER omen) deepens the warp. Half-res rRt source; the
+    // veil blends at ~0.7 so the frame stays readable under it.
+    // ON unless `_pixiTripOn === false`. Knob: _pixiTripAmp (8 px).
+    _pixiTripFrag() {
+        return '#ifdef GL_FRAGMENT_PRECISION_HIGH\n' +
+            'precision highp float;\n' +
+            '#endif\n' +
+            'uniform sampler2D uScene;\n' +
+            'uniform vec2 uInvStage;\n' +
+            'uniform vec4 uRect;\n' +
+            'uniform vec4 uH;\n' +    // host sx, sy, influence r px, aura flag
+            'uniform vec4 uM;\n' +    // trip t, amt, amp px, resonance
+            'varying vec2 vUV;\n' +
+            'float hsh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' +
+            'float vn(vec2 p) {\n' +
+            'vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);\n' +
+            'return mix(mix(hsh(i), hsh(i + vec2(1.0, 0.0)), f.x), mix(hsh(i + vec2(0.0, 1.0)), hsh(i + vec2(1.0, 1.0)), f.x), f.y);\n' +
+            '}\n' +
+            'void main(){\n' +
+            'vec2 sp = uRect.xy + vUV * uRect.zw;\n' +
+            'vec2 baseUV = sp * uInvStage;\n' +
+            'float t = uM.x; float amt = uM.y; float amp = uM.z * (1.0 + 0.5 * uM.w);\n' +
+            'if (amt <= 0.004) discard;\n' +
+            'vec2 ctr = uRect.xy + uRect.zw * 0.5;\n' +
+            'float halfDiag = length(uRect.zw) * 0.5;\n' +
+            'vec2 fromC = sp - ctr; float dC = length(fromC) / halfDiag;\n' +
+            'vec2 dirC = dC > 0.001 ? fromC / (dC * halfDiag) : vec2(0.0);\n' +
+            // Breath from the host: everything slowly inhales/exhales
+            // around the possessed body (or the tripper in aura mode).
+            'vec2 fromH = sp - uH.xy; float dH = length(fromH);\n' +
+            'vec2 dirH = dH > 0.001 ? fromH / dH : vec2(0.0);\n' +
+            'vec2 tangH = vec2(-dirH.y, dirH.x);\n' +
+            'float breath = sin(dH * 0.012 - t * 1.7) * amp * 0.45;\n' +
+            'float swirl = sin(dH * 0.006 + t * 0.9) * amp * 0.35 * smoothstep(0.0, 260.0, dH);\n' +
+            // Two-octave domain warp drifting on trip time.
+            'vec2 q = sp * 0.0055 + vec2(t * 0.11, -t * 0.07);\n' +
+            'float n1 = vn(q) - 0.5; float n2 = vn(q * 2.1 + vec2(3.7, 9.1) + t * 0.05) - 0.5;\n' +
+            'float n3 = vn(q.yx * 1.3 + vec2(7.3, 2.2) - t * 0.09) - 0.5;\n' +
+            'vec2 warp = vec2(n1 + 0.5 * n2, n3 + 0.5 * n2) * 2.0 * amp;\n' +
+            'vec2 off = (warp + dirH * breath + tangH * swirl) * amt;\n' +
+            'vec2 o = off * uInvStage;\n' +
+            // Radial chromatic split, edge-weighted (the lens of the eye).
+            'vec2 cs = dirC * (0.3 + 0.7 * dC) * 3.0 * amt * uInvStage;\n' +
+            'vec4 c = texture2D(uScene, clamp(baseUV + o, vec2(0.0), vec2(1.0)));\n' +
+            'c.r = texture2D(uScene, clamp(baseUV + o + cs, vec2(0.0), vec2(1.0))).r;\n' +
+            'c.b = texture2D(uScene, clamp(baseUV + o - cs, vec2(0.0), vec2(1.0))).b;\n' +
+            // 4Hz vignette pulse (locks to the DOM wobble cadence).
+            'float vig = smoothstep(0.45, 1.05, dC) * (0.28 + 0.10 * sin(t * 25.13)) * amt;\n' +
+            'c.rgb = mix(c.rgb, vec3(0.09, 0.0, 0.07), vig);\n' +
+            // Tells: host halo (possession) or aura influence ring.
+            'vec3 mag = vec3(1.0, 0.373, 0.824);\n' +
+            'if (uH.w > 0.5) {\n' +
+            'float rt = (dH - uH.z) / 7.0;\n' +
+            'float ring = exp(-rt * rt) * (0.30 + 0.12 * sin(t * 4.2));\n' +
+            'c.rgb += mag * ring * amt;\n' +
+            '} else {\n' +
+            'float halo = exp(-(dH * dH) / (2.0 * 32.0 * 32.0)) * (0.35 + 0.15 * sin(t * 6.0));\n' +
+            'float ring = exp(-((dH - 46.0) * (dH - 46.0)) / 18.0) * 0.25;\n' +
+            'c.rgb += mag * (halo + ring) * amt;\n' +
+            '}\n' +
+            'float aa = clamp(amt * 0.7 + vig, 0.0, 1.0);\n' +
+            'gl_FragColor = vec4(c.rgb * aa, aa);\n' +
+            '}';
+    }
+
+    _pixiTripPresent(cam, isPlayer2) {
+        const R = window.PIXI, G = this._pixiGpu;
+        if (!R || !G || !G.ok) return false;
+        const h = (isPlayer2 && this.isTwoPlayer) ? 1 : 0;
+        const on = this._pixiTripOn !== false;
+        let D = null;
+        try { D = on ? this._pixiHalfQuadEnsure('tripH', h) : (G.tripH && G.tripH[h]); } catch (e) { return false; }
+        if (!D) return false;
+        try {
+            if (!on) { D.mesh.visible = false; return true; }
+            const p = (h === 1) ? this.player2 : this.player;
+            const trip = (p && !p.dead) ? p.trip : null;
+            // Smoothed amount: ramp in 1.5s / out over the last 1.2s, and
+            // ease toward 0 on abrupt end (~0.6s) so the veil never pops.
+            if (!G.tripAmt) G.tripAmt = [0, 0];
+            if (!G.tripLastT) G.tripLastT = [0, 0];
+            const now = this.gameTime || 0;
+            const dt = Math.min(0.1, Math.max(0, now - (G.tripLastT[h] || now)));
+            G.tripLastT[h] = now;
+            let target = 0;
+            if (trip) {
+                target = Math.min(1, (trip.t || 0) / 1.5);
+                if (trip.timeLeft !== undefined) target = Math.min(target, Math.max(0, trip.timeLeft / 1.2));
+            }
+            const cur = G.tripAmt[h] || 0;
+            const k = 1 - Math.pow(0.001, dt / (target > cur ? 0.5 : 0.6));
+            const amt = cur + (target - cur) * k;
+            G.tripAmt[h] = amt;
+            if (amt <= 0.01) { G.tripAmt[h] = 0; D.mesh.visible = false; return true; }
+            if (!this._pixiRefractSource()) { D.mesh.visible = false; return false; }
+            try { D.mesh.mask = this.isTwoPlayer ? this._pixiHalfMask(h) : null; } catch (e) { try { D.mesh.mask = null; } catch (_e) {} }
+            const W = this.width || 1, H = this.height || 1;
+            const ez = cam.zoom + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
+            const ox = (h === 1 && this.isTwoPlayer) ? W / 2 : 0;
+            const shX = cam._shX || 0, shY = cam._shY || 0;
+            // Host (or self) + influence radius; remember last trip so the
+            // fade-out keeps its centre after the trip object is gone.
+            let hx = p ? p.x : cam.x, hy = p ? p.y : cam.y, rad = 950, aura = 1;
+            if (trip) {
+                const host = (trip.host && !trip.host.dead) ? trip.host : null;
+                if (host) { hx = host.x; hy = host.y; aura = 0; } else aura = 1;
+                rad = trip.radius || 950;
+                G.tripLast = G.tripLast || [null, null];
+                G.tripLast[h] = { hx, hy, rad, aura, res: trip.resonance || 0, t: trip.t || 0 };
+            } else if (G.tripLast && G.tripLast[h]) {
+                const L = G.tripLast[h]; hx = L.hx; hy = L.hy; rad = L.rad; aura = L.aura;
+            }
+            const L = (G.tripLast && G.tripLast[h]) || { res: 0, t: 0 };
+            const tT = trip ? (trip.t || 0) : (L.t + (now - (L.endAt || now)));
+            if (!trip && L && L.endAt === undefined) L.endAt = now;
+            const sx = ox + (hx - cam.x + shX) * ez, sy = (hy - cam.y + shY) * ez;
+            const structs = {
+                uStage: { value: [W, H], type: 'vec2<f32>' },
+                uNdc: { value: 0, type: 'f32' },
+                uRect: { value: [D.ox, 0, D.w, H], type: 'vec4<f32>' },
+                uInvStage: { value: [1 / W, 1 / H], type: 'vec2<f32>' },
+                uH: { value: [sx, sy, rad * ez, aura], type: 'vec4<f32>' },
+                uM: { value: [tT, amt, (this._pixiTripAmp === undefined ? 8 : this._pixiTripAmp), L.res || 0], type: 'vec4<f32>' },
+            };
+            if (!G.tripProg) G.tripProg = new R.GlProgram({ vertex: this._pixiGpuDispVert(), fragment: this._pixiTripFrag() });
+            const ug = new R.UniformGroup(structs);
+            const sh = new R.Shader({ glProgram: G.tripProg, resources: { uScene: G.rRt.source, uGpu: ug } });
             try { if (D.sh) D.sh.destroy(); } catch (e) {}
             try { if (D.ug) D.ug.destroy(); } catch (e) {}
             D.sh = sh; D.ug = ug;
@@ -59451,6 +60064,41 @@ class Game {
             G.closePath();
             G.fill({ color: col, alpha: Math.min(1, a) });
         }
+        // EMISSIVE: crisp tight laser — a bright narrow core (the beam's
+        // own width, full alpha) plus a faint close haze (1.4× + 1px, ~1/3
+        // alpha). Total emissive energy is ~1/4 of the old 2.2×/×1.4 halo,
+        // so the bloom reads as a gentle sheath on a hot wire, not a glow
+        // stick. Knob _pixiLaserEmis (1.0) for headed tuning.
+        try {
+            const EG = this._pixiEmisEnsure(v);
+            if (EG) {
+                const lEm = (this._pixiLaserEmis === undefined ? 1.0 : this._pixiLaserEmis);
+                for (let s = 0; s < NSEG; s++) {
+                    const f0 = s / NSEG, f1 = (s + 1) / NSEG;
+                    const fall = Math.pow(MathUtils.clamp(1 - ((f0 + f1) / 2) * visibleRange / effectiveMaxRange, 0, 1), AIM_WEIGHT.BEAM_FALLOFF_EXPONENT);
+                    const cw0 = visHalfWidth * 0.9 * f0, cw1 = visHalfWidth * 0.9 * f1;
+                    const hw0 = (visHalfWidth * 1.4 + 1 * ez) * f0, hw1 = (visHalfWidth * 1.4 + 1 * ez) * f1;
+                    const ca = Math.min(1, peakAlpha * 0.9 * fall) * lEm;
+                    const ha = Math.min(1, peakAlpha * 0.32 * fall) * lEm;
+                    if (ha > 0.004) {
+                        EG.moveTo(ax + dx * f0 + px * hw0, ay + dy * f0 + py * hw0);
+                        EG.lineTo(ax + dx * f0 - px * hw0, ay + dy * f0 - py * hw0);
+                        EG.lineTo(ax + dx * f1 - (px * hw1), ay + dy * f1 - (py * hw1));
+                        EG.lineTo(ax + dx * f1 + (px * hw1), ay + dy * f1 + (py * hw1));
+                        EG.closePath();
+                        EG.fill({ color: col, alpha: ha });
+                    }
+                    if (ca > 0.004) {
+                        EG.moveTo(ax + dx * f0 + px * cw0, ay + dy * f0 + py * cw0);
+                        EG.lineTo(ax + dx * f0 - px * cw0, ay + dy * f0 - py * cw0);
+                        EG.lineTo(ax + dx * f1 - (px * cw1), ay + dy * f1 - (py * cw1));
+                        EG.lineTo(ax + dx * f1 + (px * cw1), ay + dy * f1 + (py * cw1));
+                        EG.closePath();
+                        EG.fill({ color: 0xffffff, alpha: ca * 0.55 });
+                    }
+                }
+            }
+        } catch (e) {}
         // Aim dot + glow.
         const dotFlare = (p._dotHitFlare > 0) ? Math.min(1, p._dotHitFlare / 0.08) : 0;
         const dotHalfWidth = (Math.max(1.2, dist * Math.tan(halfAngle)) + 2.5 * g1Flash + 3.0 * dotFlare) * AIM_WEIGHT.DOT_RADIUS_MULT * ez;
@@ -59473,6 +60121,17 @@ class Game {
             gl._frame = this._pixiFrameToken;
             G.circle(hx, hy, dotHalfWidth);
             G.fill({ color: col, alpha: dotAlpha });
+            // Wall-hit dot: small hot point + tight halo (no more flare disc).
+            try {
+                const EG2 = this._pixiEmisEnsure(v);
+                if (EG2) {
+                    const lEm2 = (this._pixiLaserEmis === undefined ? 1.0 : this._pixiLaserEmis);
+                    EG2.circle(hx, hy, dotHalfWidth * 1.4 + 1.5 * ez);
+                    EG2.fill({ color: col, alpha: Math.min(1, dotAlpha * 0.7) * lEm2 });
+                    EG2.circle(hx, hy, Math.max(1.5, dotHalfWidth * 0.7));
+                    EG2.fill({ color: 0xffffff, alpha: Math.min(1, dotAlpha * 0.8) * lEm2 });
+                }
+            } catch (e) {}
         } else if (this._pixiLaserGlow[v]) this._pixiLaserGlow[v].visible = false;
         // GL + thumper charge ticks.
         if (p.glCharging) {
@@ -60433,6 +61092,18 @@ class Game {
             // White hot center.
             FX.moveTo(sx, sy); FX.lineTo(tx, ty);
             FX.stroke({ width: 1 * ez, color: 0xffffff, alpha: 0.8 });
+            // EMISSIVE: beam + core + paint rim bypass the threshold gate.
+            try {
+                const EG = this._pixiEmisEnsure(v);
+                if (EG) {
+                    EG.moveTo(sx, sy); EG.lineTo(tx, ty);
+                    EG.stroke({ width: 6 * ez, color: 0x9d4edd, alpha: 0.9 });
+                    EG.moveTo(sx, sy); EG.lineTo(tx, ty);
+                    EG.stroke({ width: 2.5 * ez, color: 0xffffff, alpha: 0.9 });
+                    EG.circle(tx, ty, (Rw + 6) * ez);
+                    EG.stroke({ width: 3 * ez, color: 0x9d4edd, alpha: 0.5 + u * 0.4 });
+                }
+            } catch (e) {}
             // Paint field: black disc growing with hold progress + rim.
             const Rw = 12 + u * 60;
             FX.circle(tx, ty, Rw * ez);
@@ -66412,6 +67083,10 @@ class Game {
         try { this._pixiShockPresent(cam, isPlayer2); } catch (e) {}
         // PHASE 3 Item 4: cloak refraction (flag-gated, cloaked-only).
         try { this._pixiCloakPresent(cam, isPlayer2); } catch (e) {}
+        // EVENTIDE field lens (anchors + projections) — same rRt source.
+        try { this._pixiFieldPresent(cam, isPlayer2); } catch (e) {}
+        // ORACLE trip veil (layered over the CSS hue-rotate) — same source.
+        try { this._pixiTripPresent(cam, isPlayer2); } catch (e) {}
 
         // Phase 3: the veil runs the identical light-hole machinery in
         // daylight at VEIL_ALPHA — same holes, same culling, same blit.
