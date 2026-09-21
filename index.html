@@ -15370,7 +15370,10 @@ class MapGen {
             let idx = this._nodeIndexArray[i];
             let n = this.navNodes[idx];
             let midX = (x + n.x) / 2, midY = (y + n.y) / 2;
-            let localWalls = this.getWallsNear(midX, midY);
+            // MESA-FIX: midpoint getWallsNear misses walls at the segment ends,
+            // so snap could pick a node through a far parapet. Full-segment
+            // candidate set instead (shared scratch, consumed synchronously).
+            let localWalls = this.getWallsAlongSegment(x, y, n.x, n.y);
             let clear = !localWalls.some(w => MathUtils.lineIntersectAABB(x, y, n.x, n.y, w));
             if (clear && typeof game !== 'undefined' && game.barriers) {
                 for (let b of game.barriers) {
@@ -17183,6 +17186,15 @@ function buildTweakRegistry() {
     TW('Body Feel', 'BODY_MOTION.BREATHE_PX', BODY_MOTION, 'BREATHE_PX', 0, 3, 0.1);
     TW('Body Feel', 'BODY_MOTION.SQUASH_DIVE_AMP', BODY_MOTION, 'SQUASH_DIVE_AMP', 0, 0.09, 0.005);
     TW('Body Feel', 'BODY_MOTION.SQUASH_SPRINT_AMP', BODY_MOTION, 'SQUASH_SPRINT_AMP', 0, 0.06, 0.005);
+    // --- Blood splatter (victim-only screen wash; transient, no save) ---
+    TW('Body Feel', 'BLOOD_TUNING.EDGE_FRAC', BLOOD_TUNING, 'EDGE_FRAC', 0, 0.5, 0.01);
+    TW('Body Feel', 'BLOOD_TUNING.HEAVY_FRAC', BLOOD_TUNING, 'HEAVY_FRAC', 0, 1, 0.01);
+    TW('Body Feel', 'BLOOD_TUNING.HEAVY_ABS', BLOOD_TUNING, 'HEAVY_ABS', 0, 100, 1);
+    TW('Body Feel', 'BLOOD_TUNING.PEAK_EDGE', BLOOD_TUNING, 'PEAK_EDGE', 0, 0.5, 0.01);
+    TW('Body Feel', 'BLOOD_TUNING.PEAK_DIR', BLOOD_TUNING, 'PEAK_DIR', 0, 0.5, 0.01);
+    TW('Body Feel', 'BLOOD_TUNING.DECAY', BLOOD_TUNING, 'DECAY', 0, 4, 0.05);
+    TW('Body Feel', 'BLOOD_TUNING.REFR', BLOOD_TUNING, 'REFR', 0, 1, 0.01);
+    TW('Body Feel', 'BLOOD_TUNING.GPU_PEAK', BLOOD_TUNING, 'GPU_PEAK', 0, 0.6, 0.01);
     // --- Camera ---
     TW('Camera', 'CAMERA_BODY.BREATH_AMP', CAMERA_BODY, 'BREATH_AMP', 0, 0.015, 0.001);
     TW('Camera', 'CAMERA_BODY.LOOKAHEAD_GAIN', CAMERA_BODY, 'LOOKAHEAD_GAIN', 0, 0.2, 0.005);
@@ -17547,6 +17559,15 @@ const FEEL_PUNCT = {
     KILL_MIN_ABS: 8, KILL_MIN_FRAC: 0.12, KILL_MIN: 0.015, KILL_MAX: 0.070, KILL_REFR: 0.12,
     DESAT_FRAC: 0.35, DESAT_ABS: 30, DESAT_DUR: 0.20, DESAT_REFR: 0.30, DESAT_PEAK: 0.28,
 };
+// Blood-splatter knobs (victim-only screen wash, transient toggle
+// game._bloodOn !== false; wall-clock decay BLOOD_DECAY in loop()).
+// frac = net HP lost / maxHp (post-armor, post-modifiers, so assists read
+// fair). EDGE_FRAC mirrors hurt-drag's effective band (0.25*0.35); HEAVY
+// mirrors desat's absolute leg. Caps keep capped-sum washes honest.
+const BLOOD_TUNING = {
+    EDGE_FRAC: 0.025, HEAVY_FRAC: 0.30, HEAVY_ABS: 18, REFR: 0.15,
+    PEAK_EDGE: 0.38, PEAK_DIR: 0.32, DECAY: 0.90, GPU_PEAK: 0.35,
+};
 // SFX muffle channels (Game.update per-frame lowpass write): flashbang is
 // the total-muffle channel, blast the shallow concussion one. Effective =
 // deeper of the two (min) -- see the FELLPASS-CLEANUP A4 note at the write.
@@ -17656,6 +17677,12 @@ class Player extends Entity {
         // down from DESAT_DUR, alpha = PEAK * timer/DUR. Decayed in update
         // (pause-frozen like the damage flash). Rendered as fw('des').
         this.desatTimer = 0; this.desatPeak = 0.20; this._desatRefr = 0;
+        // Blood-splatter bus (victim-only screen-space edge + dir wash):
+        // _bloodMag decays on wall-clock raw dt in loop() (never scaledDt,
+        // so slow-mo / hurt-drag / hit-pause can't stretch it); _bloodRefr
+        // is a per-player wall-clock refractory. Rendered as fw('bld').
+        this._bloodMag = 0; this._bloodBearing = null; this._bloodRefr = 0;
+        this._bloodDripY = 0; this._bloodDripS = 0; this._bloodDripT = 0;
         this.muzzleFlashTimer = 0;
         this.muzzleFlashX = 0;
         this.muzzleFlashY = 0;
@@ -18469,6 +18496,15 @@ class Player extends Entity {
             if (_stopSpeed > 200 && typeof BODY_MOTION !== 'undefined') {
                 this._landSquashT = BODY_MOTION.SQUASH_DUR;
                 this._landSquashAmp = BODY_MOTION.SQUASH_SPRINT_AMP;
+                // Grounding: one dirt print + dust puff on a hard stop
+                // (same trail/decal + mote path as footfalls; single-shot,
+                // never on deck, no spacing gate needed).
+                try {
+                    if (game && game.map && game.map.floorAt(this.x, this.y) !== 2) {
+                        game._pushPermanentMark({ type: 'trail', x: this.x, y: this.y, r: 1.5 + Math.random(), c: '#3a332c', a: 0.12 + Math.random() * 0.06 });
+                    }
+                    if (game && typeof game.applyDustShockwave === 'function') game.applyDustShockwave(this.x, this.y, 120, 90, null);
+                } catch (e) {}
             }
         }
         this._wasSprinting = isSprinting;
@@ -19086,6 +19122,15 @@ class Player extends Entity {
             if (this.isDiving && typeof BODY_MOTION !== 'undefined') {
                 this._landSquashT = BODY_MOTION.SQUASH_DUR;
                 this._landSquashAmp = BODY_MOTION.SQUASH_DIVE_AMP;
+                // Grounding: one dirt print + dust puff on touchdown
+                // (same trail/decal + mote path as footfalls; single-shot,
+                // never on deck).
+                try {
+                    if (game && game.map && game.map.floorAt(this.x, this.y) !== 2) {
+                        game._pushPermanentMark({ type: 'trail', x: this.x, y: this.y, r: 1.5 + Math.random(), c: '#3a332c', a: 0.12 + Math.random() * 0.06 });
+                    }
+                    if (game && typeof game.applyDustShockwave === 'function') game.applyDustShockwave(this.x, this.y, 120, 90, null);
+                } catch (e) {}
             }
             this.isDiving = false;
             // Hand horizontal drag back to the universal rate now that the
@@ -20871,6 +20916,10 @@ class Player extends Entity {
             this._insurancePayout = Math.floor(this.cash * retention);
         }
         
+        // Blood-splatter source of truth: net HP actually lost (post
+        // chaos-shield/armor via super; projectedHp ignores chaos shield,
+        // amt is pre-armor, dmgI fires even on fully-absorbed hits).
+        const _hpBefore = this.hp;
         super.takeDamage(amt, pushDir, pushForce);
         // FELLPASS item 7: the base takeDamage only records lastHitAngle
         // when pushDir is non-null, so a directionless hit leaves a STALE
@@ -20883,6 +20932,31 @@ class Player extends Entity {
         }
         this.stamina = Math.max(0, this.stamina - amt * 0.5); // Shock takes away stamina instantly
         this.damageFlashIntensity = 1.0; // Trigger damage flash
+        // Blood splatter (victim-only screen wash): armor/shield-only hits
+        // lose no HP so net is 0 and never bleed; direction needs a finite
+        // push angle (0 is valid east; null/NaN/Infinity fall back to edge).
+        try {
+            if (game && game._bloodOn !== false && typeof BLOOD_TUNING !== 'undefined') {
+                const _net = Math.max(0, _hpBefore - this.hp);
+                if (_net > 0) {
+                    const _bfrac = _net / (this.maxHp || 100);
+                    let _bNow = 0;
+                    try { _bNow = performance.now() / 1000; } catch (e) { _bNow = Date.now() / 1000; }
+                    if (_bfrac >= BLOOD_TUNING.EDGE_FRAC && _bNow >= (this._bloodRefr || 0)) {
+                        const _heavy = (_bfrac >= BLOOD_TUNING.HEAVY_FRAC || _net >= BLOOD_TUNING.HEAVY_ABS);
+                        this._bloodMag = Math.min(1, Math.max(_bfrac / BLOOD_TUNING.HEAVY_FRAC, _net / BLOOD_TUNING.HEAVY_ABS));
+                        this._bloodBearing = (Number.isFinite(pushDir) && _heavy) ? (pushDir + Math.PI) : null;
+                        this._bloodRefr = _bNow + BLOOD_TUNING.REFR;
+                        // Heavy-hit red glow in the shared light buffer (half-res,
+                        // motion-compensated, punches night via nightBlit+1, feeds
+                        // bloom uLight): fixed 90px/0.10 dark red — under the
+                        // whitening cap, smallest ledger pressure, heavy-only so
+                        // it never starves muzzle/blast in the 10-slot queue.
+                        if (_heavy) { try { game._pixiLightSplat(this.x, this.y, 90, 0.10, '#8a0e0e'); } catch (e) {} }
+                    }
+                }
+            }
+        } catch (e) {}
         if (this.camera && amt > 0) {
             // Bounded damage shake: was `10 + amt*1.5` (unbounded) -- a 250-dmg
             // barrel at point-blank shook the screen for ~15s. Capped at 28
@@ -22609,7 +22683,24 @@ class Enemy extends Entity {
                 moveAngle = Math.atan2(this.y - runFromObj.y, this.x - runFromObj.x);
             }
             let checkWalls = (this.weaponType === 'sniper') ? walls : nearbyWalls;
-            let moveHasLOS = !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, moveTargetX, moveTargetY, w));
+            // MESA-FIX (gated long-ray): nearbyWalls is a ~440px 3x3 neighborhood,
+            // so a distant parapet never appears in it and A* never fires — the
+            // enemy walks the stale cached angle into the wall for 30 frames.
+            // Only long rays (or cross-floor pursuits) pay the full segment
+            // query; short rays keep the cheap path. Opaque lineIntersectAABB
+            // always — never lineBlocksSight here, or window opacity (which is
+            // what routes enemies to stairs) regresses. Consumed synchronously
+            // (shared scratch, BUG-016 rule).
+            let _moveLen = Math.hypot(moveTargetX - this.x, moveTargetY - this.y);
+            let _moveCrossFloor = false;
+            try { _moveCrossFloor = !!(game && game.map && typeof game.map.floorSeparated === 'function' && game.map.floorSeparated(this.x, this.y, moveTargetX, moveTargetY)); } catch (e) {}
+            let _moveSegWalls = null;
+            if (this.weaponType !== 'sniper' && (_moveLen > 500 || _moveCrossFloor)) {
+                try { _moveSegWalls = game.map.getWallsAlongSegment(this.x, this.y, moveTargetX, moveTargetY); } catch (e) { _moveSegWalls = null; }
+            }
+            let moveHasLOS = _moveSegWalls
+                ? !_moveSegWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, moveTargetX, moveTargetY, w))
+                : !checkWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, moveTargetX, moveTargetY, w));
 
             let checkPathBlocked = false;
             if (runFromDrone) {
@@ -22663,8 +22754,13 @@ class Enemy extends Entity {
                 // and _findNearestClearNode sorts every nav node twice per
                 // call.
                 let path = (this.type === 'swarmer' || this._sharedPathOk)
-                    ? game.map.getSharedPath(this.x, this.y, pathTargetX, pathTargetY, checkWalls)
-                    : game.map.findPath(this.x, this.y, pathTargetX, pathTargetY, checkWalls);
+                    // MESA-FIX: when the gated long-ray above fired, hand A* the
+                    // full wall set so findPath takes its getWallsAlongSegment
+                    // superset fast-path; the nearbyWalls subset made its
+                    // direct-LOS early-out return a false clear. Short rays keep
+                    // the old arg (byte-identical, no perf change).
+                    ? game.map.getSharedPath(this.x, this.y, pathTargetX, pathTargetY, _moveSegWalls ? walls : checkWalls)
+                    : game.map.findPath(this.x, this.y, pathTargetX, pathTargetY, _moveSegWalls ? walls : checkWalls);
                 if (path && path.length > 0) {
                     moveAngle = Math.atan2(path[0].y - this.y, path[0].x - this.x);
                 }
@@ -23513,6 +23609,14 @@ class Enemy extends Entity {
             if (dSq > RSq || dSq < 3600) continue; // too far, or basically where I already am
             tried++;
             if (dSq >= bestDSq) continue;
+            // MESA-FIX: skip cover across a floor boundary (deck cover for a
+            // ground threat routes the wounded unit into the stair funnel to a
+            // node it cannot reach; arrival then latches _intentionalHold and
+            // hides the wedge from the stuck detector). Stair nodes are the
+            // wildcard (connected to both) so they still qualify.
+            try {
+                if (game.map.floorSeparated && game.map.floorSeparated(n.x, n.y, this.x, this.y)) continue;
+            } catch (e) {}
             // Cover == the threat CANNOT see this node.
             const segWalls = game.map.getWallsAlongSegment(n.x, n.y, threatX, threatY);
             let blockedSight = false;
@@ -27041,13 +27145,25 @@ class HostileMiniDrone {
         if (this._repathTimer <= 0) {
             this._repathTimer = 0.45;
             let segWalls = game.map.getWallsAlongSegment(this.x, this.y, target.x, target.y);
-            let los = !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
+            // DRONE-SILL routing: same-floor drones fly OVER sills
+            // (sight-class LOS, transparent) while cross-floor drones must use
+            // the stairs (opaque LOS into ground A* — a drone cannot climb a
+            // floor; elevation is position-only, no z-field). Solid parapets
+            // stay opaque in both cases.
+            let crossFloor = false;
+            try { crossFloor = !!(game && game.map && game.map.floorSeparated(this.x, this.y, target.x, target.y)); } catch (e) {}
+            let los = crossFloor
+                ? !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w))
+                : !segWalls.some(w => MathUtils.lineBlocksSight(this.x, this.y, target.x, target.y, w));
             if (los) {
                 this._wp = null;
             } else {
-                let nearbyW = game.map.getWallsNear(this.x, this.y);
-                let path = game.map.getSharedPath(this.x, this.y, target.x, target.y, nearbyW);
-                this._wp = (path && path.length > 0) ? { x: path[0].x, y: path[0].y } : null;
+                let path = game.map.getSharedPath(this.x, this.y, target.x, target.y, game.map.walls);
+                // Lookahead: advance past already-reached nodes so 340px/s
+                // cornering starts the turn before the jamb (TripMine precedent).
+                let idx = 0;
+                while (idx < path.length - 1 && Math.hypot(path[idx].x - this.x, path[idx].y - this.y) < 45) idx++;
+                this._wp = (path && path.length > 0) ? { x: path[idx].x, y: path[idx].y } : null;
             }
         }
         let steerX = target.x, steerY = target.y;
@@ -27066,8 +27182,11 @@ class HostileMiniDrone {
 
         // Wall repulsion (MiniDrone pattern) so it slides around corners
         // instead of face-planting into cover between repath ticks.
+        // DRONE-SILL: window sills (seeThrough) never repel — the drone flies
+        // over them; tall solid parapets still push.
         let nearbyWalls = game.map.getWallsNear(this.x, this.y);
         for (let wall of nearbyWalls) {
+            if (wall.seeThrough) continue;
             let cx = Math.max(wall.x, Math.min(this.x, wall.x + wall.w));
             let cy = Math.max(wall.y, Math.min(this.y, wall.y + wall.h));
             let wdx = this.x - cx, wdy = this.y - cy;
@@ -27092,6 +27211,25 @@ class HostileMiniDrone {
         this.y = MathUtils.clamp(this.y, this.r, game.mapH - this.r);
         let spd = Math.hypot(this.vx, this.vy);
         if (spd > 10) this.angle = Math.atan2(this.vy, this.vx);
+
+        // DRONE-SILL watchdog: ~1s window with <30px net displacement means a
+        // jamb (sill corner, stair cheek, arrival-pop loop). Sidestep to the
+        // alternating flank + force a fresh repath now; cross-floor targets
+        // re-route via the stair rule above (stair-seeking fallback), same
+        // floor just breaks the symmetry. No teleport — wrong scale for a
+        // 340px/s airframe.
+        if (this._nstT === undefined) { this._nstT = 0; this._nstX = this.x; this._nstY = this.y; this._nstSide = 1; }
+        this._nstT += dt;
+        if (this._nstT >= 1.0) {
+            let moved = Math.hypot(this.x - this._nstX, this.y - this._nstY);
+            if (moved < 30 && target && !target.dead) {
+                this._wp = null; this._repathTimer = 0;
+                this._nstSide = -this._nstSide;
+                let sa = this.angle + this._nstSide * Math.PI / 2;
+                this.vx += Math.cos(sa) * 140; this.vy += Math.sin(sa) * 140;
+            }
+            this._nstT = 0; this._nstX = this.x; this._nstY = this.y;
+        }
 
         if (game.barriers && game.barriers.length > 0) {
             for (let j = game.barriers.length - 1; j >= 0; j--) {
@@ -27340,14 +27478,22 @@ class EnemyFPVDrone {
         if (this._repathTimer <= 0) {
             this._repathTimer = 0.4;
             let segWalls = game.map.getWallsAlongSegment(this.x, this.y, target.x, target.y);
-            let los = !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
+            // DRONE-SILL routing: same-floor flies OVER sills (sight-class),
+            // cross-floor routes via stairs (opaque into ground A*). Solids
+            // opaque in both cases.
+            let crossFloor = false;
+            try { crossFloor = !!(game && game.map && game.map.floorSeparated(this.x, this.y, target.x, target.y)); } catch (e) {}
+            let los = crossFloor
+                ? !segWalls.some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w))
+                : !segWalls.some(w => MathUtils.lineBlocksSight(this.x, this.y, target.x, target.y, w));
             this._audBlocked = !los; // reuse this LOS for the hum's occlusion (no extra wall query)
             if (los) {
                 this._wp = null;
             } else {
-                let nearbyW = game.map.getWallsNear(this.x, this.y);
-                let path = game.map.getSharedPath(this.x, this.y, target.x, target.y, nearbyW);
-                this._wp = (path && path.length > 0) ? { x: path[0].x, y: path[0].y } : null;
+                let path = game.map.getSharedPath(this.x, this.y, target.x, target.y, game.map.walls);
+                let idx = 0;
+                while (idx < path.length - 1 && Math.hypot(path[idx].x - this.x, path[idx].y - this.y) < 45) idx++;
+                this._wp = (path && path.length > 0) ? { x: path[idx].x, y: path[idx].y } : null;
             }
         }
         let steerX = target.x, steerY = target.y;
@@ -27364,8 +27510,10 @@ class EnemyFPVDrone {
         }
 
         // Wall repulsion (MiniDrone pattern) so it slides around corners.
+        // DRONE-SILL: seeThrough sills never repel (flown over); solids push.
         let nearbyWalls = game.map.getWallsNear(this.x, this.y);
         for (let wall of nearbyWalls) {
+            if (wall.seeThrough) continue;
             let cx = Math.max(wall.x, Math.min(this.x, wall.x + wall.w));
             let cy = Math.max(wall.y, Math.min(this.y, wall.y + wall.h));
             let wdx = this.x - cx, wdy = this.y - cy;
@@ -27390,6 +27538,21 @@ class EnemyFPVDrone {
         this.y = MathUtils.clamp(this.y, this.r, game.mapH - this.r);
         let spd = Math.hypot(this.vx, this.vy);
         if (spd > 10) this.angle = Math.atan2(this.vy, this.vx);
+
+        // DRONE-SILL watchdog: same jamb rule as HostileMiniDrone (1s, <30px
+        // → alternating sidestep + forced repath; cross-floor stair-seeks).
+        if (this._nstT === undefined) { this._nstT = 0; this._nstX = this.x; this._nstY = this.y; this._nstSide = 1; }
+        this._nstT += dt;
+        if (this._nstT >= 1.0) {
+            let moved = Math.hypot(this.x - this._nstX, this.y - this._nstY);
+            if (moved < 30 && target && !target.dead) {
+                this._wp = null; this._repathTimer = 0;
+                this._nstSide = -this._nstSide;
+                let sa = this.angle + this._nstSide * Math.PI / 2;
+                this.vx += Math.cos(sa) * 140; this.vy += Math.sin(sa) * 140;
+            }
+            this._nstT = 0; this._nstX = this.x; this._nstY = this.y;
+        }
 
         // Barrier hit = detonate (same contract as HostileMiniDrone).
         if (game.barriers && game.barriers.length > 0) {
@@ -29500,6 +29663,7 @@ class FPVDrone {
                 if (!exploded) {
                     let nearbyWalls = game.map.getWallsNear(this.x, this.y);
                     for (let wall of nearbyWalls) {
+                        if (wall.seeThrough) continue; // DRONE-SILL: sills are flown over, never crashed into
                         let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
                         if (col.hit) {
                             exploded = true;
@@ -29560,6 +29724,7 @@ class FPVDrone {
                 if (!exploded) {
                     let nearbyWalls = game.map.getWallsNear(this.x, this.y);
                     for (let wall of nearbyWalls) {
+                        if (wall.seeThrough) continue; // DRONE-SILL: placed/drift drones fly over sills too
                         let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
                         if (col.hit) {
                             exploded = true;
@@ -32630,7 +32795,7 @@ class MiniDrone extends Entity {
                     
                     let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                     if (d < nearestDist) {
-                        let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment)
+                        let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineBlocksSight(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment) + DRONE-SILL (sight-class: acquire over sills)
                         if (hasLOS) {
                             nearestDist = d;
                             nearestEnemy = enemy;
@@ -32648,7 +32813,7 @@ class MiniDrone extends Entity {
                         
                         let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                         if (d < nearestDist) {
-                            let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment)
+                            let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineBlocksSight(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment) + DRONE-SILL (sight-class: acquire over sills)
                             if (hasLOS) {
                                 nearestDist = d;
                                 nearestEnemy = enemy;
@@ -32731,6 +32896,7 @@ class MiniDrone extends Entity {
                 
                 let nearbyWalls = game.map.getWallsNear(this.x, this.y);
                 for (let wall of nearbyWalls) {
+                    if (wall.seeThrough) continue; // DRONE-SILL: flown over, never repelled
                     let cx = Math.max(wall.x, Math.min(this.x, wall.x + wall.w));
                     let cy = Math.max(wall.y, Math.min(this.y, wall.y + wall.h));
                     let wdx = this.x - cx;
@@ -32783,7 +32949,7 @@ class MiniDrone extends Entity {
                     if (enemy.type === 'jammer' || enemy._jamTimer > 0) continue; // NEW ENEMY TYPES: signal-hardened
                     let d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                     if (d < nearestDist) {
-                        let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineIntersectAABB(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment)
+                        let hasLOS = !game.map.getWallsAlongSegment(this.x, this.y, enemy.x, enemy.y).some(w => MathUtils.lineBlocksSight(this.x, this.y, enemy.x, enemy.y, w)); // PERF: segment-filtered (see getWallsAlongSegment) + DRONE-SILL (sight-class: acquire over sills)
                         if (hasLOS) {
                             nearestDist = d;
                             nearestEnemy = enemy;
@@ -32889,7 +33055,7 @@ class MiniDrone extends Entity {
             // steering space, so skip the LOS/A* query entirely (also saves
             // the segment scan while targetless).
             const blockedNow = loiterPt ? false : game.map.getWallsAlongSegment(this.x, this.y, tx, ty)
-                .some(w => MathUtils.lineIntersectAABB(this.x, this.y, tx, ty, w));
+                .some(w => MathUtils.lineBlocksSight(this.x, this.y, tx, ty, w)); // DRONE-SILL: sills don't occlude
             // Regime hysteresis (2026-09-16, Fix J): the raw LOS flag
             // flickers at wall edges, and every flick pumped targetSpeed
             // 400<->600 while nulling the waypoint — steer-target jumps +
@@ -32989,6 +33155,7 @@ class MiniDrone extends Entity {
                 let nearbyWalls = game.map.getWallsNear(this.x, this.y);
                 const repelDist = blocked ? 36 : 24;
                 for (let wall of nearbyWalls) {
+                    if (wall.seeThrough) continue; // DRONE-SILL: flown over, never repelled
                     let cx = Math.max(wall.x, Math.min(this.x, wall.x + wall.w));
                     let cy = Math.max(wall.y, Math.min(this.y, wall.y + wall.h));
                     let wdx = this.x - cx;
@@ -33131,6 +33298,21 @@ class MiniDrone extends Entity {
             for (let wall of nearbyWalls) {
                 let col = MathUtils.circleIntersectAABB(this.x, this.y, this.r, wall);
                 if (col.hit) {
+                    // DRONE-SILL: sills always slide (same shape as the launch
+                    // grace below) instead of detonating — the drone flies over.
+                    if (wall.seeThrough) {
+                        const cx = Math.max(wall.x, Math.min(this.x, wall.x + wall.w));
+                        const cy = Math.max(wall.y, Math.min(this.y, wall.y + wall.h));
+                        let nx = this.x - cx, ny = this.y - cy;
+                        let nl = Math.hypot(nx, ny);
+                        if (nl === 0) { nx = -this.vx; ny = -this.vy; nl = Math.hypot(nx, ny) || 1; }
+                        nx /= nl; ny /= nl;
+                        const into = this.vx * nx + this.vy * ny;
+                        if (into < 0) { this.vx -= into * nx; this.vy -= into * ny; }
+                        this.x = cx + nx * (this.r + 0.5);
+                        this.y = cy + ny * (this.r + 0.5);
+                        continue;
+                    }
                     if (inGrace) {
                         // Slide: push out along the contact normal and kill
                         // the into-wall velocity component, keep the rest.
@@ -34510,7 +34692,7 @@ class TripMine {
         let kickX = target.x, kickY = target.y;
         let seedWp = null, holdHover = false;
         const launchBlocked = game.map.getWallsAlongSegment(this.x, this.y, target.x, target.y)
-            .some(w => MathUtils.lineIntersectAABB(this.x, this.y, target.x, target.y, w));
+            .some(w => MathUtils.lineBlocksSight(this.x, this.y, target.x, target.y, w)); // DRONE-SILL: bays launch over sills
         if (launchBlocked) {
             const path = game.map.getSharedPath(this.x, this.y, target.x, target.y, game.map.walls);
             if (path && path.length) {
@@ -46394,6 +46576,10 @@ class Game {
         this.drawBarriers(droneCam, true);
         this.drawDataCables(droneCam, true);
         this.map.drawFoliageGround(this.ctx, droneCam, pw, ph);
+        // MESA-FIX (Full PiP parity): window sills draw BELOW entities so bodies
+        // read over cover in the feed exactly like the main viewport (INV 87
+        // two-pass split). Canvas-only; the Pixi twin is suspended in feeds.
+        this.map.drawPlatformParapets(this.ctx, droneCam, pw, ph, true);
         
         for (let i of this.items) i.draw(this.ctx, droneCam);
         for (let m of this.mines) m.draw(this.ctx, droneCam);
@@ -46452,6 +46638,10 @@ class Game {
 
         droneInstance.draw(this.ctx, droneCam);
 
+        // MESA-FIX (Full PiP parity): tall solid parapets draw ABOVE entities
+        // plus the baked wall-shadow blit, mirroring the main pass order.
+        this.map.drawPlatformParapets(this.ctx, droneCam, pw, ph, false);
+        this.map.drawWallShadows(this.ctx, droneCam, pw, ph);
         this.map.drawFoliageCanopy(this.ctx, droneCam, pw, ph);
         this.map.drawRoofs(this.ctx, droneCam, pw, ph);
         
@@ -49831,6 +50021,208 @@ class Game {
             'float aa = clamp(amt * 0.7 + vig, 0.0, 1.0);\n' +
             'gl_FragColor = vec4(c.rgb * aa, aa);\n' +
             '}';
+    }
+
+    // BLOOD GPU QUAD (victim-only screen splatter as one shader, default OFF
+    // via _pixiBloodOn until the headed verdict — sprite washes bld/bldDir/
+    // bldP own the look unless on). Samples baked noise only, never rRt (so
+    // no RefractHidden registration); child of FlashC at index 0 (crisp-
+    // inherit + below des/win washes, PILLAR ORDER LAW). Idle = hidden mesh,
+    // zero binds; burst = 1 quad per live half, zero _pixiGpuPass RT passes.
+    _pixiBloodFrag() {
+        return '#ifdef GL_FRAGMENT_PRECISION_HIGH\n' +
+            'precision highp float;\n' +
+            '#endif\n' +
+            'uniform sampler2D uNoise;\n' +
+            'uniform vec4 uRect;\n' +
+            'uniform float uMag;\n' +
+            'uniform float uGrime;\n' +
+            'uniform vec2 uBearing;\n' +
+            'uniform float uTime;\n' +
+            'uniform float uPulse;\n' +
+            'uniform float uPeak;\n' +
+            'uniform vec3 uCol;\n' +
+            'varying vec2 vUV;\n' +
+            'void main(){\n' +
+            'vec2 euv = vUV;\n' +
+            'float aspect = uRect.z / max(uRect.w, 1.0);\n' +
+            'vec2 qc = vec2((euv.x - 0.5) * aspect, euv.y - 0.5);\n' +
+            'float rr = length(qc) * 2.0;\n' +
+            'float edge = smoothstep(0.30, 1.05, rr);\n' +
+            'vec2 nuv1 = fract(vec2(euv.x * 3.0, euv.y * 1.5 - uTime * 0.030));\n' +
+            'vec2 nuv2 = fract(vec2(euv.x * 5.0 + 0.37, euv.y * 2.5 + uTime * 0.021));\n' +
+            'float n = texture2D(uNoise, nuv1).r * 0.45 + texture2D(uNoise, nuv2).g * 0.30;\n' +
+            'vec2 gcell = floor((uRect.xy + vUV * uRect.zw) * 0.35);\n' +
+            'float hg = fract(sin(dot(gcell, vec2(127.1, 311.7))) * 43758.5453);\n' +
+            'n += (hg - 0.5) * 0.5;\n' +
+            'float amt = clamp(uMag + uGrime, 0.0, 1.5);\n' +
+            'float gate = smoothstep(0.04, 0.55, amt);\n' +
+            'float hasDir = step(0.001, dot(uBearing, uBearing));\n' +
+            'float fl = length(qc);\n' +
+            'vec2 dirC = fl > 0.001 ? qc / fl : vec2(0.0);\n' +
+            'float toward = max(dot(dirC, uBearing), 0.0);\n' +
+            'float wedge = toward * toward * (3.0 - 2.0 * toward);\n' +
+            'float body = edge * gate * (0.7 + 0.5 * clamp(uPulse, 0.0, 1.5));\n' +
+            'body *= mix(1.0, 0.4, hasDir);\n' +
+            'float brkM = smoothstep(0.40, 0.80, n * 0.75 + amt * 0.25);\n' +
+            'body *= 0.30 + 0.70 * brkM;\n' +
+            'float dirVeil = hasDir * edge * wedge * smoothstep(0.04, 0.50, uMag);\n' +
+            'float dripN = texture2D(uNoise, fract(vec2(euv.x * 6.0, euv.y * 0.9 - uTime * 0.060))).g * 0.85 + hg * 0.15;\n' +
+            'float drip = smoothstep(0.62, 0.92, dripN) * edge * smoothstep(0.15, 0.75, euv.y);\n' +
+            'float drips = drip * (0.35 * uMag + 0.45 * uGrime + 0.10);\n' +
+            'float aa = clamp(body + dirVeil + drips, 0.0, 1.0);\n' +
+            'aa = min(aa, uPeak);\n' +
+            'if (aa <= 0.004) discard;\n' +
+            'gl_FragColor = vec4(uCol * aa, aa);\n' +
+            '}\n';
+    }
+    // Opaque 256px value-noise bake (R coarse blotch, G fine grain; breakup
+    // lives in channels, never alpha). Fixed size, cached, wrap repeat for
+    // fract() tiling. Seeded deterministic, zero RNG in sim.
+    _pixiBloodNoiseTex() {
+        const G = this._pixiGpu;
+        if (G._bloodNoise) return G._bloodNoise;
+        const S = 256;
+        const mkGrid = (cell, seed) => {
+            const n = Math.ceil(S / cell) + 2, g = new Float32Array(n * n);
+            let s = seed >>> 0;
+            const rnd = () => {
+                s = (s + 0x6D2B79F5) >>> 0;
+                let t = s;
+                t = Math.imul(t ^ (t >>> 15), t | 1);
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+            for (let i = 0; i < n * n; i++) g[i] = rnd();
+            return { n, g, cell };
+        };
+        const sample = (gr, px, py) => {
+            const gx = px / gr.cell, gy = py / gr.cell;
+            const x0 = Math.floor(gx), y0 = Math.floor(gy);
+            let fx = gx - x0, fy = gy - y0;
+            fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+            const n = gr.n, g = gr.g;
+            const a = g[y0 * n + x0], b = g[y0 * n + x0 + 1];
+            const c = g[(y0 + 1) * n + x0], d = g[(y0 + 1) * n + x0 + 1];
+            return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+        };
+        try {
+            const cv = document.createElement('canvas');
+            cv.width = S; cv.height = S;
+            const cx = cv.getContext('2d');
+            const img = cx.createImageData(S, S);
+            const d = img.data;
+            const gR = mkGrid(32, 0xB100D), gG = mkGrid(16, 0xD1FF);
+            for (let py = 0; py < S; py++) {
+                for (let px = 0; px < S; px++) {
+                    const idx = (py * S + px) * 4;
+                    d[idx] = Math.round(sample(gR, px, py) * 255);
+                    d[idx + 1] = Math.round(sample(gG, px, py) * 255);
+                    d[idx + 2] = 128;
+                    d[idx + 3] = 255;
+                }
+            }
+            cx.putImageData(img, 0, 0);
+            const tex = window.PIXI.Texture.from(cv);
+            try { tex.source.scaleMode = 'linear'; } catch (e) {}
+            try { tex.source.wrapMode = 'repeat'; } catch (e) {}
+            G._bloodNoise = tex;
+            return tex;
+        } catch (e) { return null; }
+    }
+    // Per-half viewport quad as child of FlashC index 0 (below des/win).
+    // Clone of _pixiHalfQuadEnsure geometry; FlashC parentage gives crisp-
+    // inherit + ScreenTop order free. No RefractHidden (never samples rRt).
+    _pixiBloodEnsure(h) {
+        const R = window.PIXI, G = this._pixiGpu;
+        if (!R || !G || !G.ok || !this._pixiOvFlashC) return null;
+        if (!G.bloodH) G.bloodH = [null, null];
+        const W = this.width || 1, H = this.height || 1;
+        const key = W + 'x' + H + ':' + (this.isTwoPlayer ? '2' : '1') + ':' + h;
+        let D = G.bloodH[h];
+        if (!D || D.key !== key) {
+            try {
+                if (D) {
+                    try { if (D.mesh.parent) D.mesh.parent.removeChild(D.mesh); } catch (e) {}
+                    try { if (D.sh) D.sh.destroy(); } catch (e) {}
+                    try { if (D.ug) D.ug.destroy(); } catch (e) {}
+                    try { D.mesh.destroy(); } catch (e) {}
+                    try { D.geo.destroy(); } catch (e) {}
+                }
+            } catch (e) {}
+            D = null;
+            try {
+                const ox = (h === 1 && this.isTwoPlayer) ? W / 2 : 0;
+                const w = this.isTwoPlayer ? W / 2 : W;
+                const geo = new R.Geometry();
+                geo.addAttribute('aPosition', [ox, 0, ox + w, 0, ox + w, H, ox, H], 2);
+                geo.addAttribute('aUV', [0, 0, 1, 0, 1, 1, 0, 1], 2);
+                geo.addIndex([0, 1, 2, 0, 2, 3]);
+                const mesh = new R.Mesh({ geometry: geo, shader: null });
+                mesh.visible = false;
+                this._pixiOvFlashC.addChildAt(mesh, 0);
+                D = G.bloodH[h] = { key, geo, mesh, ox, w };
+            } catch (e) { return null; }
+        }
+        return D;
+    }
+    // Per-frame blood quad present. Epsilon-gated BEFORE any bind (idle =
+    // hidden mesh, zero binds). While live, sprite twins hide (owns-all);
+    // kill off restores the sprite path byte-identical.
+    _pixiBloodPresent(p, x, y, w, h) {
+        const R = window.PIXI, G = this._pixiGpu;
+        if (!R || !G || !G.ok) return false;
+        const vh = (p === this.player2 && this.isTwoPlayer) ? 1 : 0;
+        const hh = vh;
+        const on = this._pixiBloodOn !== false;
+        let D = null;
+        try { D = on ? this._pixiBloodEnsure(hh) : (G.bloodH && G.bloodH[hh]); } catch (e) { return false; }
+        if (!D) return false;
+        try {
+            if (!on) { D.mesh.visible = false; return true; }
+            const mag = p._bloodMag || 0;
+            const hpPct = (p.maxHp > 0) ? (p.hp / p.maxHp) : 1;
+            const grime = (!p.dead && hpPct < 0.5) ? Math.min(1, (0.5 - hpPct) / 0.5) : 0;
+            const bb = p._bloodBearing;
+            const bx = Number.isFinite(bb) ? Math.cos(bb) : 0, by = Number.isFinite(bb) ? Math.sin(bb) : 0;
+            if (this._bloodOn === false) { D.mesh.visible = false; return true; }
+            if (this.state !== 'playing' || this.isPaused || p.dead) { D.mesh.visible = false; return true; }
+            if (!this.isTwoPlayer && G.bloodH && G.bloodH[1]) { try { G.bloodH[1].mesh.visible = false; } catch (e) {} }
+            if (mag <= 0.004 && grime <= 0.004) { D.mesh.visible = false; return true; }
+            try { D.mesh.mask = this.isTwoPlayer ? this._pixiHalfMask(hh) : null; } catch (e) { try { D.mesh.mask = null; } catch (_e) {} }
+            const W = this.width || 1, H = this.height || 1;
+            let ntex = null;
+            try { ntex = this._pixiBloodNoiseTex(); } catch (e) {}
+            const nSrc = (ntex && ntex.source) ? ntex.source : (G._emisBlack && G._emisBlack.source);
+            if (!nSrc) { D.mesh.visible = false; return false; }
+            const structs = {
+                uStage: { value: [W, H], type: 'vec2<f32>' },
+                uNdc: { value: 0, type: 'f32' },
+                uRect: { value: [D.ox, 0, D.w, H], type: 'vec4<f32>' },
+                uMag: { value: mag, type: 'f32' },
+                uGrime: { value: grime, type: 'f32' },
+                uBearing: { value: [bx, by], type: 'vec2<f32>' },
+                uTime: { value: this.gameTime || 0, type: 'f32' },
+                uPulse: { value: this.heartbeatIntensity || 0, type: 'f32' },
+                uPeak: { value: (typeof BLOOD_TUNING !== 'undefined' && BLOOD_TUNING.GPU_PEAK !== undefined) ? BLOOD_TUNING.GPU_PEAK : 0.35, type: 'f32' },
+                uCol: { value: [0x6e / 255, 0x0b / 255, 0x0b / 255], type: 'vec3<f32>' },
+            };
+            if (!G.bloodProg) G.bloodProg = new R.GlProgram({ vertex: this._pixiGpuDispVert(), fragment: this._pixiBloodFrag() });
+            const ug = new R.UniformGroup(structs);
+            const sh = new R.Shader({ glProgram: G.bloodProg, resources: { uNoise: nSrc, uGpu: ug } });
+            try { if (D.sh) D.sh.destroy(); } catch (e) {}
+            try { if (D.ug) D.ug.destroy(); } catch (e) {}
+            D.sh = sh; D.ug = ug;
+            D.mesh.shader = sh;
+            D.mesh.visible = true;
+            try {
+                const FC = this._pixiOvFlashC;
+                if (FC['bld' + vh]) FC['bld' + vh].visible = false;
+                if (FC['bldDir' + vh]) FC['bldDir' + vh].visible = false;
+                if (FC['bldP' + vh]) FC['bldP' + vh].visible = false;
+            } catch (e) {}
+            return true;
+        } catch (e) { try { D.mesh.visible = false; } catch (_e) {} return false; }
     }
 
     _pixiTripPresent(cam, isPlayer2) {
@@ -54398,6 +54790,28 @@ class Game {
                     this.bossDrones.pop();
                 }
             }
+            // DRONE-SILL separation: swarm-mates sharing one target + one
+            // waypoint collapse onto a single equilibrium point (one pile on
+            // the sill). Pairwise push (MiniDrone minSep idiom) so each holds
+            // its own slot; n is small (drone-op cap + pilot singles).
+            if (this.bossDrones.length > 1) {
+                for (let i = 0; i < this.bossDrones.length; i++) {
+                    let a = this.bossDrones[i];
+                    if (a.dead || a.x === undefined) continue;
+                    for (let j = i + 1; j < this.bossDrones.length; j++) {
+                        let b = this.bossDrones[j];
+                        if (b.dead || b.x === undefined) continue;
+                        let dx = b.x - a.x, dy = b.y - a.y;
+                        let dd = Math.hypot(dx, dy);
+                        if (dd > 0 && dd < 22) {
+                            let push = (22 - dd) / 22 * 150 * dt;
+                            let nx = dx / dd, ny = dy / dd;
+                            a.vx -= nx * push; a.vy -= ny * push;
+                            b.vx += nx * push; b.vy += ny * push;
+                        }
+                    }
+                }
+            }
         }
 
         // PERF: this list feeds every bullet's collision check + explosive
@@ -55439,6 +55853,8 @@ class Game {
             'oracle', 'rift-seed', 'rift-station', 'riftlance',
             'ammo-shotgun', 'ammo-smg-std', 'ammo-lmg-std', 'ammo-sniper-std', 'ammo-m1a-std',
             'ammo-smg-hp', 'ammo-lmg-ap', 'ammo-sniper-ap', 'ammo-pistol-hp', 'ammo-m1a-ap',
+            'ammo-abakan-std', 'ammo-abakan-ap', 'ammo-thumper-he', 'ammo-thumper-hedp',
+            'ammo-mauler-std', 'ammo-mauler-ap', 'ammo-judge-std', 'ammo-judge-ap',
             'oc-hollow', 'oc-servos', 'oc-mags', 'oc-firerate', 'oc-maxhp'];
 
         for (let suffix of ['p1', 'p2']) {
@@ -55689,12 +56105,13 @@ class Game {
                             const sht = 'SHORT $' + (eff - p.cash) + ' — YOU HAVE $' + p.cash + ', NEEDS $' + eff + rebateText;
                             btn.title = sht + ' · ' + st;
                             reasons[key] = { kind: 'short', text: sht + ' · STASHABLE WHEN FUNDED' };
-                        } else if (!btn.disabled) {
+                        } else {
                             btn.disabled = false;
                         }
                         continue;
                     } else {
                         btn.classList.remove('stashable');
+                        if (btn.innerText) btn.innerText = btn.innerText.replace(' · STASHABLE', '');
                     }
                 }
                 // MAXED/OWNED (grey-red receipt): keep, explain.
@@ -55732,6 +56149,10 @@ class Game {
                     reasons[key] = { kind: 'short', text: sht };
                     continue;
                 }
+                // AFFORDABLE: re-enable anything a prior broke render latched
+                // (BUG-029 — the old `else if (!btn.disabled)` no-op never cleared).
+                // LOCKED/MAXED/hidden branches continued above, so they keep state.
+                if (!btn.classList.contains('maxed')) btn.disabled = false;
                 // AFFORDABLE (+ optional rebate/info): keep enabled, explain.
                 if (back > 0 || infoHint) {
                     const t = (back > 0 ? ('KIT REQUISITION (' + (kit || 'KIT') + '): 20% BACK (−$' + back + ') → EFFECTIVE $' + eff) : '') + (back > 0 && infoHint ? ' · ' : '') + infoHint;
@@ -56210,6 +56631,14 @@ class Game {
             checkAmmoCap('btn-buy-ammo-sniper-ap-' + suffix, p.ammo.sniper, p.maxAmmo.sniper, "Sniper AP x5 ($100)");
             checkAmmoCap('btn-buy-ammo-m1a-std-' + suffix, p.ammo.m1a, p.maxAmmo.m1a, "M1A Standard x20 ($35)");
             checkAmmoCap('btn-buy-ammo-m1a-ap-' + suffix, p.ammo.m1a, p.maxAmmo.m1a, "M1A AP x20 ($85)");
+            checkAmmoCap('btn-buy-ammo-abakan-std-' + suffix, p.ammo.abakan, p.maxAmmo.abakan, "Abakan Standard x48 ($40)");
+            checkAmmoCap('btn-buy-ammo-abakan-ap-' + suffix, p.ammo.abakan, p.maxAmmo.abakan, "Abakan AP x48 ($95)");
+            checkAmmoCap('btn-buy-ammo-thumper-he-' + suffix, p.ammo.thumper, p.maxAmmo.thumper, "Thumper HE x6 ($60)");
+            checkAmmoCap('btn-buy-ammo-thumper-hedp-' + suffix, p.ammo.thumper, p.maxAmmo.thumper, "Thumper HEDP x6 ($95)");
+            checkAmmoCap('btn-buy-ammo-mauler-std-' + suffix, p.ammo.mauler, p.maxAmmo.mauler, "Mauler Buck x10 ($45)");
+            checkAmmoCap('btn-buy-ammo-mauler-ap-' + suffix, p.ammo.mauler, p.maxAmmo.mauler, "Mauler Flechette x10 ($95)");
+            checkAmmoCap('btn-buy-ammo-judge-std-' + suffix, p.ammo.judge, p.maxAmmo.judge, "Judge Standard x6 ($50)");
+            checkAmmoCap('btn-buy-ammo-judge-ap-' + suffix, p.ammo.judge, p.maxAmmo.judge, "Judge Magnum x6 ($95)");
 
             let oc = this.runOverclocks[suffix];
             if (oc) {
@@ -62347,7 +62776,7 @@ class Game {
         let dr = r * 1.2, dsy = 0.4;
         if (typeof ApcBoss !== 'undefined' && b instanceof ApcBoss) { dr = r * 1.2; dsy = 0.6 / 1.2; }
         else if (typeof SpotBoss !== 'undefined' && b instanceof SpotBoss) { dr = r * 1.3; dsy = 0.7 / 1.3; }
-        else if (typeof SniperWalkerBoss !== 'undefined' && b instanceof SniperWalkerBoss) { dr = r * 1.3; dsy = 0.7 / 1.3; }
+        else if (typeof SniperWalkerBoss !== 'undefined' && b instanceof SniperWalkerBoss) { dr = r * 1.3; dsy = 0.6 / 1.3; }
         else if (typeof InfiltratorBoss !== 'undefined' && b instanceof InfiltratorBoss) { dr = r * 1.1; dsy = 0.4; }
         {
             let lx = 4, ly = 12;
@@ -63345,6 +63774,13 @@ class Game {
     }
     drawPixiDressing(map, cam, viewportW, viewportH) {
         if (!this._pixiOverlayRenderer || !map) return;
+        // MESA-FIX: foreign-viewport feeds (drone PiP droneCam, operator baseCam)
+        // render under _pixiFlagsSuspend with all pixiLayer_* cleared. Without
+        // this guard the flag-off path below hides BOTH halves' dressing on the
+        // live stage while the feed paints its own canvas fallback — the main
+        // viewport loses the mesa the moment a drone is flown. Return without
+        // touching visible/sig/bake; genuine no-platform eviction stays below.
+        if (cam !== this.camera && cam !== this.camera2) return;
         const h = (this.isTwoPlayer && cam === this.camera2) ? 1 : 0;
         if (!this._pixiDressH) {
             this._pixiDressH = [0, 1].map(() => {
@@ -64654,6 +65090,8 @@ class Game {
             this._pixiOvVigTex = new Map();
             this._pixiOvDirTex = new Map();
             this._pixiOvLowTex = new Map();
+            this._pixiOvBloodTex = new Map();
+            this._pixiOvBloodDirTex = new Map();
         }
     }
     _pixiOvVigTexFor(w, h) {
@@ -64715,6 +65153,108 @@ class Game {
             cx.fillRect(0, 0, cv.width, cv.height);
             tex = window.PIXI.Texture.from(cv);
             this._pixiOvLowTex.set(key, tex);
+        }
+        return tex;
+    }
+    // Blood-splatter bakes (NOT OvDirTex reuse — same texture + red tint +
+    // same geometry as the directional hit glow would read as the glow).
+    // Edge: native-size radial transparent-center -> opaque-edge, broken up
+    // with seeded destination-out speckle + blotches, center force-cleared
+    // for aim. Baked white, tinted dark blood red at use. Keyed WxH (keys
+    // re-mint on resize like OvLow; primed in harness setup per S38).
+    _pixiOvBloodTexFor(w, h) {
+        const key = Math.round(w) + 'x' + Math.round(h) + ':bld2';
+        let tex = this._pixiOvBloodTex.get(key);
+        if (!tex) {
+            const cv = document.createElement('canvas');
+            cv.width = Math.max(1, Math.round(w)); cv.height = Math.max(1, Math.round(h));
+            const cx = cv.getContext('2d');
+            const r0 = Math.min(w, h) * 0.10, r1 = Math.max(w, h) * 0.60;
+            const g = cx.createRadialGradient(w / 2, h / 2, r0, w / 2, h / 2, r1);
+            g.addColorStop(0, 'rgba(255,255,255,0)');
+            g.addColorStop(1, 'rgba(255,255,255,1)');
+            cx.fillStyle = g;
+            cx.fillRect(0, 0, cv.width, cv.height);
+            // Seeded breakup (deterministic per key, zero RNG in sim).
+            let seed = 0;
+            for (let i = 0; i < key.length; i++) seed = ((seed * 31) + key.charCodeAt(i)) >>> 0;
+            const rnd = () => {
+                seed = (seed + 0x6D2B79F5) >>> 0;
+                let t = seed;
+                t = Math.imul(t ^ (t >>> 15), t | 1);
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+            cx.globalCompositeOperation = 'destination-out';
+            for (let i = 0; i < 2200; i++) {
+                const px = rnd() * cv.width, py = rnd() * cv.height;
+                const pr = 1 + rnd() * 3.5;
+                cx.beginPath(); cx.arc(px, py, pr, 0, Math.PI * 2); cx.fill();
+            }
+            for (let i = 0; i < 7; i++) {
+                const px = w * 0.5 + (rnd() < 0.5 ? -1 : 1) * (w * 0.17 + rnd() * w * 0.33);
+                const py = h * 0.5 + (rnd() < 0.5 ? -1 : 1) * (h * 0.17 + rnd() * h * 0.33);
+                const pr = 10 + rnd() * 16;
+                cx.beginPath(); cx.arc(px, py, pr, 0, Math.PI * 2); cx.fill();
+            }
+            // Center clear: the crosshair region never bleeds.
+            cx.beginPath();
+            cx.ellipse(w / 2, h / 2, w * 0.12, h * 0.12, 0, 0, Math.PI * 2);
+            cx.fill();
+            cx.globalCompositeOperation = 'source-over';
+            tex = window.PIXI.Texture.from(cv);
+            this._pixiOvBloodTex.set(key, tex);
+        }
+        return tex;
+    }
+    // Blood dir: 256px radial + angular wedge toward the bucket angle
+    // (opaque at bearing, transparent opposite) + seeded speckle. Keyed
+    // bucket:WxH. Geometry mirrors fw('dir') (R*3 span, center anchor).
+    _pixiOvBloodDirTexFor(bucket, w, h) {
+        const key = bucket + ':' + Math.round(w) + 'x' + Math.round(h) + ':bldDir2';
+        let tex = this._pixiOvBloodDirTex.get(key);
+        if (!tex) {
+            const S = 256, cv = document.createElement('canvas');
+            cv.width = S; cv.height = S;
+            const cx = cv.getContext('2d');
+            const ang = bucket * (Math.PI / 8);
+            const img = cx.createImageData(S, S);
+            const d = img.data;
+            let seed = (bucket * 2654435761) >>> 0;
+            const rnd = () => {
+                seed = (seed + 0x6D2B79F5) >>> 0;
+                let t = seed;
+                t = Math.imul(t ^ (t >>> 15), t | 1);
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+            for (let py = 0; py < S; py++) {
+                for (let px = 0; px < S; px++) {
+                    const dx = (px - S / 2) / (S / 2), dy = (py - S / 2) / (S / 2);
+                    const rr = Math.sqrt(dx * dx + dy * dy);
+                    if (rr > 1) continue;
+                    const pa = Math.atan2(dy, dx);
+                    let da = pa - ang;
+                    while (da > Math.PI) da -= Math.PI * 2;
+                    while (da < -Math.PI) da += Math.PI * 2;
+                    const wedge = Math.max(0, Math.cos(da * 0.75));
+                    const rad = Math.min(1, Math.max(0, (rr - 0.15) / 0.85));
+                    const a = Math.max(0, Math.min(1, wedge * (0.35 + 0.65 * rad)));
+                    const idx = (py * S + px) * 4;
+                    d[idx] = 255; d[idx + 1] = 255; d[idx + 2] = 255;
+                    d[idx + 3] = Math.round(a * 255);
+                }
+            }
+            cx.putImageData(img, 0, 0);
+            cx.globalCompositeOperation = 'destination-out';
+            for (let i = 0; i < 600; i++) {
+                const px = rnd() * S, py = rnd() * S;
+                const pr = 1 + rnd() * 2.5;
+                cx.beginPath(); cx.arc(px, py, pr, 0, Math.PI * 2); cx.fill();
+            }
+            cx.globalCompositeOperation = 'source-over';
+            tex = window.PIXI.Texture.from(cv);
+            this._pixiOvBloodDirTex.set(key, tex);
         }
         return tex;
     }
@@ -64953,6 +65493,10 @@ class Game {
             ai++;
         }
         for (const [key, e] of this._pixiOvTexts) {
+            // 2P-FIX (BUG-027 class): hide sweep is per-call with a per-call
+            // seenA over a shared map; without the prefix guard the second
+            // half's pass hides the first half's just-posed announcements.
+            if (!key.startsWith('a' + v + ':')) continue;
             if (!seenA.has(key) && !seenA.has(key + ':s')) {
                 e.main.visible = false;
                 if (e.sub) e.sub.visible = false;
@@ -65043,6 +65587,28 @@ class Game {
                 s.scale.set(w / s.texture.width, h / s.texture.height);
             }
         }
+        // §3c persistent grime (victim-only static edge): stateless f(hpPct) —
+        // heals clear it free, no timer. Below des/win (capped-sum order).
+        {
+            const s = fw('bldP');
+            let a = 0;
+            if ((hpPct < 0.60) && (this.state === 'playing' && !this.isPaused) && !p.dead) {
+                a = ((0.60 - hpPct) / 0.60) * 0.30;
+                const _bkeyP = w + 'x' + h + ':bld2';
+                if (s._ovKey !== _bkeyP) { s.texture = this._pixiOvBloodTexFor(w, h); s._ovKey = _bkeyP; }
+                s.anchor.set(0, 0);
+                s.rotation = 0;
+            }
+            const _lowAP = (hpPct < 0.20 && !p.dead) ? Math.max(0, ((0.20 - hpPct) / 0.20) * (0.22 + 0.28 * pulseF)) : 0;
+            a = Math.min(a, Math.max(0, 0.60 - _lowAP));
+            s.visible = a > 0.004;
+            if (s.visible) {
+                s.tint = 0x6e0b0b;
+                s.alpha = Math.min(1, a);
+                s.position.set(x, y);
+                s.scale.set(w / s.texture.width, h / s.texture.height);
+            }
+        }
         // §4 flashbang flat white.
         {
             const s = fw('fla');
@@ -65101,6 +65667,90 @@ class Game {
                 s.alpha = Math.min(1, a);
             }
         }
+        // Blood splatter (victim-only): dark edge wash + directional veil.
+        // New slots, created here in code order so they composite BELOW
+        // des/win (PILLAR ORDER LAW: capped-sum washes, win gold keeps
+        // priority; des greys blood on the heaviest hits). Per-half via
+        // fw(name+vh); viewport-rect, never fullscreen in 2P; the bake keeps
+        // the center clear for aim. Render-gated playing/unpaused/alive.
+        {
+            const s = fw('bld');
+            let a = 0;
+            const _bm = p._bloodMag || 0;
+            const _bPeakE = (typeof BLOOD_TUNING !== 'undefined' ? BLOOD_TUNING.PEAK_EDGE : 0.38);
+            // Drip creep (render-only, gameTime-frozen with pause like washes).
+            if (this.state === 'playing' && !this.isPaused) {
+                const _dtG = Math.min(0.05, Math.max(0, (this.gameTime || 0) - (p._bloodDripT || 0)));
+                p._bloodDripT = this.gameTime || 0;
+                if (_bm > 0 && !p.dead) {
+                    p._bloodDripY = Math.min(14, (p._bloodDripY || 0) + _dtG * 6 * _bm);
+                    p._bloodDripS = Math.min(0.04, (p._bloodDripS || 0) + _dtG * 0.02 * _bm);
+                } else {
+                    p._bloodDripY = 0; p._bloodDripS = 0;
+                }
+            }
+            if (_bm > 0 && (this.state === 'playing' && !this.isPaused) && !p.dead) {
+                const _grade = _bm < 0.33 ? 0 : _bm < 0.70 ? 1 : 2;
+                const _bkey = w + 'x' + h + ':bld2:g' + _grade;
+                if (s._ovKey !== _bkey) { s.texture = this._pixiOvBloodTexFor(w, h); s._ovKey = _bkey; }
+                s.anchor.set(0, 0);
+                s.rotation = 0;
+                a = Math.min(0.42, _bm * _bPeakE);
+                if (p._bloodBearing !== null && p._bloodBearing !== undefined) a *= 0.80;
+                a *= (0.75 + 0.45 * pulseF);
+                // Stack guard: persistent grime + low pulse already shown.
+                const _ps = FC['bldP' + vh];
+                const _pa = (_ps && _ps.visible) ? _ps.alpha : 0;
+                const _lowA = (hpPct < 0.20 && !p.dead) ? Math.max(0, ((0.20 - hpPct) / 0.20) * (0.22 + 0.28 * pulseF)) : 0;
+                a = Math.min(a, Math.max(0, 0.60 - _lowA - _pa));
+                s.position.set(x, y + (p._bloodDripY || 0));
+                const _ds = 1 + (p._bloodDripS || 0);
+                s.scale.set(w / s.texture.width * _ds, h / s.texture.height * _ds);
+            }
+            s.visible = a > 0.004;
+            if (s.visible) {
+                s.tint = 0x6e0b0b;
+                s.alpha = Math.min(1, a);
+            } else {
+                s.rotation = 0;
+            }
+        }
+        {
+            const s = fw('bldDir');
+            let a = 0;
+            const _bm2 = p._bloodMag || 0;
+            const _bb = p._bloodBearing;
+            const _bPeakD = (typeof BLOOD_TUNING !== 'undefined' ? BLOOD_TUNING.PEAK_DIR : 0.32);
+            if (_bm2 > 0 && _bb !== null && _bb !== undefined && (this.state === 'playing' && !this.isPaused) && !p.dead) {
+                const bucket = ((Math.round(_bb / (Math.PI / 8)) % 16) + 16) % 16;
+                const _grade2 = _bm2 < 0.33 ? 0 : _bm2 < 0.70 ? 1 : 2;
+                const _bkey2 = bucket + ':' + w + 'x' + h + ':bldDir2:g' + _grade2;
+                if (s._ovKey !== _bkey2) { s.texture = this._pixiOvBloodDirTexFor(bucket, w, h); s._ovKey = _bkey2; }
+                s.anchor.set(0.5, 0.5);
+                const bang = bucket * (Math.PI / 8);
+                const Rr = Math.max(w, h) * 0.55;
+                s.position.set(x + w / 2 + Math.cos(bang) * Rr, y + h / 2 + Math.sin(bang) * Rr);
+                const sc = (Rr * 3) / s.texture.width;
+                s.scale.set(sc);
+                s.rotation = bang + Math.sin((this.gameTime || 0) * 2.1 + bucket * 0.7) * 0.06;
+                a = Math.min(0.42, _bm2 * _bPeakD);
+                a *= (0.75 + 0.45 * pulseF);
+                // Stack guard: low + persistent + edge already shown.
+                const _ps2 = FC['bldP' + vh];
+                const _pa2 = (_ps2 && _ps2.visible) ? _ps2.alpha : 0;
+                const _es2 = FC['bld' + vh];
+                const _ea2 = (_es2 && _es2.visible) ? _es2.alpha : 0;
+                const _lowA2 = (hpPct < 0.20 && !p.dead) ? Math.max(0, ((0.20 - hpPct) / 0.20) * (0.22 + 0.28 * pulseF)) : 0;
+                a = Math.min(a, Math.max(0, 0.60 - _lowA2 - _pa2 - _ea2));
+            }
+            s.visible = a > 0.004;
+            if (s.visible) {
+                s.tint = 0x6e0b0b;
+                s.alpha = Math.min(1, a);
+            } else {
+                s.rotation = 0;
+            }
+        }
         // P4 desat wash (heavy-hit victim only): grey veil at low alpha —
         // never monochrome, painted before win gold (capped-sum order:
         // win > flash > damage > low; flash/low-HP suppress at the trigger).
@@ -65129,6 +65779,17 @@ class Game {
                 s.scale.set(w, h);
             }
         }
+        // 1P stale-half hide (FlashC is not frame-swept; half-1 blood slots
+        // from a prior 2P session would linger visible forever).
+        if (!this.isTwoPlayer) {
+            const _bh1 = FC['bld1'], _bd1 = FC['bldDir1'], _bp1 = FC['bldP1'];
+            if (_bh1) _bh1.visible = false;
+            if (_bd1) _bd1.visible = false;
+            if (_bp1) _bp1.visible = false;
+        }
+        // Blood GPU quad (default ON; set game._pixiBloodOn = false for the
+        // sprite-wash look — kill off restores it byte-identical).
+        try { this._pixiBloodPresent(p, x, y, w, h); } catch (e) {}
     }
 
 
@@ -68708,6 +69369,20 @@ class Game {
         if (this.player2 && this.player2.chromaticAberrationTimer > 0) {
             this.player2.chromaticAberrationTimer -= dt;
             if (this.player2.chromaticAberrationTimer < 0) this.player2.chromaticAberrationTimer = 0;
+        }
+        // Blood-splatter decay (victim bus, wall-clock like chromatic —
+        // scaledDt would stretch it through slow-mo / hurt-drag / hit-pause;
+        // gated playing/unpaused so pause can't trap a visible veil).
+        if (this.state === 'playing' && !this.isPaused) {
+            const _bdec = (typeof BLOOD_TUNING !== 'undefined' ? BLOOD_TUNING.DECAY : 1.8) * dt;
+            if (this.player && (this.player._bloodMag || 0) > 0) {
+                this.player._bloodMag = Math.max(0, this.player._bloodMag - _bdec);
+                if (this.player._bloodMag === 0) { this.player._bloodBearing = null; this.player._bloodDripY = 0; this.player._bloodDripS = 0; }
+            }
+            if (this.player2 && (this.player2._bloodMag || 0) > 0) {
+                this.player2._bloodMag = Math.max(0, this.player2._bloodMag - _bdec);
+                if (this.player2._bloodMag === 0) { this.player2._bloodBearing = null; this.player2._bloodDripY = 0; this.player2._bloodDripS = 0; }
+            }
         }
         
         if (this.gloryKillTimer > 0) {
