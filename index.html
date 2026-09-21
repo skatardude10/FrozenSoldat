@@ -2048,7 +2048,7 @@
                 <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold;">GORE & DEBRIS DENSITY</p>
                 <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left;">
                     <div style="font-size: 10px; color: #a9c2c7; margin-bottom: 14px; line-height: 1.5;">
-                        Maximum number of blood pools, shell casings, gore chunks and scorch marks kept on the ground at once. Raise it to let carnage pile up longer in extended runs; lower it if things start chugging on a weaker device.
+                        Total blood, gore and scorch marks kept on the ground. New paint pushes the oldest out (oldest dissolves instead of popping); paint never fades on a timer, so old battlefields persist. Raise it to let carnage pile up longer in extended runs; lower it if things start chugging on a weaker device.
                     </div>
                     <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
                         <span>MAX GROUND MARKS:</span>
@@ -2769,7 +2769,7 @@
             <p style="color: var(--neon-blue); letter-spacing: 1px; font-weight: bold;">GORE & DEBRIS DENSITY</p>
             <div style="background: rgba(0, 10, 25, 0.6); padding: 15px; border-radius: 4px; border: 1px solid rgba(0, 229, 255, 0.15); text-align: left;">
                 <div style="font-size: 10px; color: #a9c2c7; margin-bottom: 14px; line-height: 1.5;">
-                    Maximum number of blood pools, shell casings, gore chunks and scorch marks kept on the ground at once. Adjustable mid-mission -- lower it here if things start chugging deep into a long run.
+                    Total blood, gore and scorch marks kept on the ground. New paint pushes the oldest out (oldest dissolves instead of popping); paint never fades on a timer, so old battlefields persist. Adjustable mid-mission -- lower it here if things start chugging deep into a long run.
                 </div>
                 <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--neon-blue); font-size: 10px; margin-bottom: 4px;">
                     <span>MAX GROUND MARKS:</span>
@@ -2939,6 +2939,14 @@
                 <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,42,95,0.15); padding-top: 10px; margin-top: 4px;">
                     <span style="font-size: 11px; color: #e0f7fa;">Prestige Level (<span id="dev-prestige-lvl">0</span>)</span>
                     <button class="neon-btn" onclick="game.devResetPrestige()" style="margin: 0; font-size: 10px; padding: 4px 10px; border-color: var(--red); color: var(--red);">RESET TO 0</button>
+                </div>
+                <!-- Ground-marks eviction layer (see MARK_TILES): live counters, refreshed on open -->
+                <div style="border-top: 1px solid rgba(0,229,255,0.15); padding-top: 10px; margin-top: 4px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 11px; color: #e0f7fa;">Ground Marks (eviction layer)</span>
+                        <button class="neon-btn" onclick="game.devRefreshMarkStats()" style="margin: 0; font-size: 10px; padding: 4px 10px; border-color: var(--neon-blue); color: var(--neon-blue);">REFRESH</button>
+                    </div>
+                    <div id="dev-marks-stats" style="font-size: 10px; color: #a9c2c7; margin-top: 6px; line-height: 1.6;">—</div>
                 </div>
             </div>
         </div>
@@ -13797,6 +13805,18 @@ class MapGen {
             let col = MathUtils.circleIntersectAABB(x, y, blastRadius, wall);
             if (!col.hit) continue;
             this._damageWallAOE(wall, x, y, blastRadius, damageAmount);
+            // P1 wall-dust: heavy blasts knock grey dust off walls into the
+            // ground layer at the wall base. Blast-gated by call rate plus
+            // per-wall 0.5s cooldown and 0.5 coin — well under 2/s.
+            try {
+                if (damageAmount > 40 && typeof game !== 'undefined' && game &&
+                    (wall._dustCd || 0) <= (game.gameTime || 0) && Math.random() < 0.5) {
+                    wall._dustCd = (game.gameTime || 0) + 0.5;
+                    const wcx = wall.x + wall.w / 2, wcy = wall.y + wall.h / 2;
+                    const ddx = wcx - x, ddy = wcy - y, ddl = Math.hypot(ddx, ddy) || 1;
+                    game._pushPermanentMark({ type: 'debris', x: wcx + ddx / ddl * 6, y: wcy + ddy / ddl * 6, c: '#6b6560', a: 0.4, circs: [{ ox: 0, oy: 0, r: 3 + Math.random() * 2 }], under: true });
+                }
+            } catch (e) {}
         }
     }
 
@@ -14195,8 +14215,10 @@ class MapGen {
         for (let i = 0; i < chunkCount; i++) {
             circs.push({ ox: (Math.random() - 0.5) * r * 1.6, oy: (Math.random() - 0.5) * r * 1.1, r: MathUtils.rand(3, 7) });
         }
-        game._pushPermanentMark({ type: 'debris', x, y, c: colorMain || '#4a5560', a: 0.9, circs });
-        game.spawnScorchMark(x, y, Math.min(46, r * 0.9));
+        // under:true — carve rubble bakes into the deck-underlay layer
+        // (below surviving wall stubs), never the above-walls deck layer.
+        game._pushPermanentMark({ type: 'debris', x, y, c: colorMain || '#4a5560', a: 0.9, circs, under: true });
+        game.spawnScorchMark(x, y, Math.min(46, r * 0.9), true);
     }
 
     // Recomputes EXACTLY which portions of every piece's edges in a
@@ -14736,6 +14758,12 @@ class MapGen {
         // twin base/sills (canvas path deleted).
         if (typeof game !== 'undefined' && game && game.drawPixiDressing) game.drawPixiDressing(this, cam, viewportW, viewportH);
         if (!(typeof game !== 'undefined' && game && game.pixiLayer_dressing && this.platforms && this.platforms.length)) this.drawPlatformBase(ctx, cam, viewportW, viewportH);
+        // Carve-rubble underlay (canvas path: PiP feeds + flag-off
+        // fallback): deck-floor rubble blitted AFTER the platform base but
+        // BEFORE the wall pass, so surviving stubs occlude it. Gated on the
+        // marks twin being off — when the twin is live (main view) the
+        // Pixi underlay container owns this pass (double-draw guard).
+        if (typeof game !== 'undefined' && game && game.pixiLayer_marks !== true && game.drawPermanentMarks && this.platforms && this.platforms.length) game.drawPermanentMarks(ctx, cam, visibleW, visibleH, false, true);
 
         this.flushLineageEdges();
         // L12 WIDENED (was template>=10): twin covers classic blur maps too —
@@ -16400,6 +16428,10 @@ class Entity {
             // needed. Consumed by Enemy.onDeath()/spawnCorpseDebris() to
             // scale corpse debris speed/spread on a wildly overkilled hit.
             this.lastOverkill = Math.max(0, -this.hp);
+            // P4 magnitude: lethal damage of the killing blow (incoming amt
+            // + overkill excess) stashed before onDeath() drives the
+            // magnitude-gated kill-stop. Zero-RNG, one number.
+            this._lastLethalDmg = Math.max(0, amt) + this.lastOverkill;
             this.dead = true;
             this.onDeath();
         }
@@ -17423,6 +17455,11 @@ const TRACER_STYLE = {
     Mauler:  { lenMult: 0.55, width: 2.6, alpha: 0.95, wobble: 0.0 },
     Judge:   { lenMult: 1.30, width: 2.8, alpha: 0.95, wobble: 0.0 }
 };
+// Firefight core: wall-impact language thresholds (render-only). FLASH is
+// the hot tick every wall hit snaps (bloom turns it into a snap);
+// SHOCK_MAG gates the heavy pressure thump + base-pit decal. Restrained:
+// flash <=40px at 0.5, shock 34px/0.15s/0.35 (a press of air, not a blast).
+const IMPACT_TUNING = { SHOCK_MAG: 0.55 };
 
 // SOUNDSCAPE Phase 4 — GUNFIRE_AUDIO: per-caliber bake specs, the sonic twin
 // of TRACER_STYLE above. bakeSounds() renders 4 round-robin variants per
@@ -17501,6 +17538,15 @@ const ECHO_TUNING = { WET1: 0.25, WET2: 0.10 };
 const DUCK_TUNING = { DEPTH: 0.55, PHRASE: 0.3 };
 // Kill-ladder combo window (registerKillCredit + streak read share it).
 const LADDER_TUNING = { WINDOW: 2.0 };
+
+// P4 feel punctuation knobs (all magnitude-gated, all kill-switched).
+// KILLSTOP master + ENABLE master: === false disables. Durations are
+// wall-clock (hitPauseTimer decays on raw dt) — 1P only, 2P/PvP exempt.
+const FEEL_PUNCT = {
+    ENABLE: 1, DIR: 1, KILLSTOP: 1, BULB: 1, DESAT: 1,
+    KILL_MIN_ABS: 8, KILL_MIN_FRAC: 0.12, KILL_MIN: 0.015, KILL_MAX: 0.070, KILL_REFR: 0.12,
+    DESAT_FRAC: 0.35, DESAT_ABS: 30, DESAT_DUR: 0.20, DESAT_REFR: 0.30, DESAT_PEAK: 0.28,
+};
 // SFX muffle channels (Game.update per-frame lowpass write): flashbang is
 // the total-muffle channel, blast the shallow concussion one. Effective =
 // deeper of the two (min) -- see the FELLPASS-CLEANUP A4 note at the write.
@@ -17606,6 +17652,10 @@ class Player extends Entity {
         // death linger). Decayed in loop() on raw dt (wall-clock).
         this.chromaticAberrationTimer = 0;
         this.chromaticAberrationPeak = 0;
+        // P4 desat bus (victim-only heavy-hit color drop): timer counts
+        // down from DESAT_DUR, alpha = PEAK * timer/DUR. Decayed in update
+        // (pause-frozen like the damage flash). Rendered as fw('des').
+        this.desatTimer = 0; this.desatPeak = 0.20; this._desatRefr = 0;
         this.muzzleFlashTimer = 0;
         this.muzzleFlashX = 0;
         this.muzzleFlashY = 0;
@@ -18895,9 +18945,21 @@ class Player extends Entity {
             if (this.damageFlashIntensity < 0) this.damageFlashIntensity = 0;
         }
 
+        // P4 desat decay (victim bus, pause-frozen like the flash).
+        if ((this.desatTimer || 0) > 0) {
+            this.desatTimer -= dt;
+            if (this.desatTimer < 0) this.desatTimer = 0;
+        }
+
         if (this.muzzleFlashTimer > 0) {
             this.muzzleFlashTimer -= dt;
             if (this.muzzleFlashTimer < 0) this.muzzleFlashTimer = 0;
+        }
+
+        // P1 heat decay: tail tau ~1.8s. Rendered while >0.15.
+        if ((this._heatT || 0) > 0) {
+            this._heatT -= dt / 1.8;
+            if (this._heatT < 0) this._heatT = 0;
         }
 
         if (this._dotHitFlare > 0) {
@@ -19466,6 +19528,21 @@ class Player extends Entity {
                         Math.atan2(-1.0, -this._walkSwaySide * 1.25),
                         12 * swayWeightMult);
                 }
+                // P1 footprints: dirt-ground prints on the same footfall
+                // event, alternating gait via _walkSwaySide (4px lateral).
+                // Never on deck (floorAt 2), 28px spacing, 0.6 coin,
+                // alpha <=0.18 — texture under loot, never cartoon.
+                try {
+                    const _rx = -Math.sin(this.angle), _ry = Math.cos(this.angle);
+                    const _px = this.x + _rx * this._walkSwaySide * 4, _py = this.y + _ry * this._walkSwaySide * 4;
+                    const _ox = _px - (this._lastPrintX === undefined ? 1e9 : this._lastPrintX);
+                    const _oy = _py - (this._lastPrintY === undefined ? 1e9 : this._lastPrintY);
+                    if (game && game.map && game.map.floorAt(this.x, this.y) !== 2 &&
+                        (_ox * _ox + _oy * _oy) > 784 && Math.random() < 0.6) {
+                        this._lastPrintX = _px; this._lastPrintY = _py;
+                        game._pushPermanentMark({ type: 'trail', x: _px, y: _py, r: 1.5 + Math.random(), c: '#3a332c', a: 0.12 + Math.random() * 0.06 });
+                    }
+                } catch (e) {}
             }
         } else {
             this.footstepTimer = 0;
@@ -20667,6 +20744,11 @@ class Player extends Entity {
                 const MS = (typeof MUZZLE_SHOCK !== 'undefined') ? MUZZLE_SHOCK[this.weapon.name] : null;
                 if (MS && game.spawnUvShock) game.spawnUvShock(barrelX, barrelY, MS.r, MS.t, MS.s);
             } catch (e) {}
+            // P1 heat: every unsuppressed shot charges muzzle heat (+0.25,
+            // cap 1 — a mag-dump saturates in ~4 rounds, semis breathe
+            // between shots). Decays in update(); _pixiShockRings renders
+            // heat >0.15 as one faint slot. Suppressed stays quiet.
+            try { this._heatT = Math.min(1, (this._heatT || 0) + 0.25); this._heatX = barrelX; this._heatY = barrelY; } catch (e) {}
         }
 
         // JULY item 1 (auto-switch to sidearm on empty): the shot that just
@@ -20849,6 +20931,25 @@ class Player extends Entity {
             // not the shooter's (and not the other operator's).
             let duration = Math.min(0.6, 0.2 + amt * 0.008);
             game.triggerChromaticAberration(duration, this);
+        }
+        // P4 heavy-hit desat: victim-only 0.2s color drop (the world holds
+        // its breath; blood/embers keep hue — the slot is a low-alpha grey
+        // veil, never monochrome). Stricter than chromatic: >=35% maxHp or
+        // >=30 absolute, 0.30s refractory. Suppressed under flashbang white
+        // or the low-HP pulse (no whiteout stacking).
+        if (game && typeof FEEL_PUNCT !== 'undefined' && FEEL_PUNCT.DESAT !== false) {
+            try {
+                const _dFrac = FEEL_PUNCT.DESAT_FRAC === undefined ? 0.35 : FEEL_PUNCT.DESAT_FRAC;
+                const _dAbs = FEEL_PUNCT.DESAT_ABS === undefined ? 30 : FEEL_PUNCT.DESAT_ABS;
+                const _nowT = game.gameTime || 0;
+                if ((amt >= _dFrac * (this.maxHp || 100) || amt >= _dAbs) &&
+                    (this._desatRefr || 0) <= _nowT && (this.flashOpacity || 0) <= 0.3 &&
+                    (this.hp / (this.maxHp || 1)) >= 0.20) {
+                    this._desatRefr = _nowT + (FEEL_PUNCT.DESAT_REFR === undefined ? 0.30 : FEEL_PUNCT.DESAT_REFR);
+                    this.desatPeak = (FEEL_PUNCT.DESAT_DUR === undefined ? 0.20 : FEEL_PUNCT.DESAT_DUR);
+                    this.desatTimer = this.desatPeak;
+                }
+            } catch (e) {}
         }
         if (game && game.isTestingMode) {
             this.hp = this.maxHp;
@@ -24683,7 +24784,7 @@ class Enemy extends Entity {
         // convention: AoE finishes credit the last bullet dealer; AoE-only
         // kills play at base pitch. Consumed+nulled, so pool-recycled
         // enemies never carry a stale credit.
-        let killSemitones = 0;
+        let killSemitones = 0, killStep = 0;
         if (this._pendingKillLadderPlayer) {
             // (step - 1) x 2.5 semitones, 5 steps: step 1 (a lone kill or a
             // fresh chain) plays at BASE pitch -- matching AoE-only kills --
@@ -24693,9 +24794,20 @@ class Enemy extends Entity {
             // like it was already in a chain, and AoE kills sounded a tone
             // lower than everything else).
             killSemitones = (this._pendingKillLadderPlayer.registerKillCredit(game.gameTime) - 1) * 2.5;
+            killStep = Math.round(killSemitones / 2.5) + 1;
             this._pendingKillLadderPlayer = null;
         }
         audio.playHit(this.x, this.y, killSemitones);
+        // P4 kill-confirm micro-tick (PvE): chained kills (step>=2) drop a
+        // small white tick + micro-glow. Window-gated by the ladder (no
+        // spam), pooled text (no alloc). Falsifier: cut if playtest says it
+        // pulls eyes off the crosshair — audio-only then.
+        try {
+            if (killStep >= 2) {
+                game.floatingTexts.push(game.spawnFloatingText(this.x, this.y - 20, '+' + killStep, '#ffffff', 0.4, 0, -60));
+                game.stampGlow(this.x, this.y, 20, '#ffffff', 0.2);
+            }
+        } catch (e) {}
         
         if ((game.player && game.player.perkVolatileCorpses) || (game.isTwoPlayer && game.player2 && game.player2.perkVolatileCorpses)) {
             game.enrageEnemiesNear(this.x, this.y, 220); // Phase 3 chaos aggro cost
@@ -28166,6 +28278,16 @@ class Bullet {
                                 // in scope from the activePlayers loop) --
                                 // only their viewport flinches.
                                 game.triggerChromaticAberration(AIM_WEIGHT.WHIZ_ABER_DURATION * intensity, player);
+                                // Firefight core: leave a supersonic snap —
+                                // a faint streak along the bullet's path at
+                                // the miss point (the flinch's caption:
+                                // which direction). Capped, gameTime-aged,
+                                // zero RNG (angle/pos/intensity in scope).
+                                try {
+                                    if (!game._whizStreaks) game._whizStreaks = [];
+                                    if (game._whizStreaks.length > 5) game._whizStreaks.shift();
+                                    game._whizStreaks.push({ x: this.x, y: this.y, ang: Math.atan2(this.vy, this.vx), int: intensity, t0: game.gameTime || 0, col: this.color });
+                                } catch (e) {}
                             }
 
                             // Aim Weight: a close call binks the aim too --
@@ -28518,15 +28640,16 @@ class Bullet {
                         }
                     }
 
-                    // Hit-stop triggers (O5 tune, operator-approved: halved —
-                    // the impact beat stays but no longer hangs).
+                    // Hit-stop triggers (P4 selective: kill-gated magnitude
+                    // stops — the old any-hit Sniper freeze is gone; the
+                    // kill "lands" instead, chip kills exempt inside).
                     if (this.isPlayerBullet) {
-                        if (this.weaponName === 'Sniper') {
-                            game.triggerHitStop(0.06);
+                        if (this.weaponName === 'Sniper' && ent.dead) {
+                            game.triggerKillStop(ent, calculatedDmg, ent.lastOverkill || 0);
                         } else if (this.weaponName === 'Shotgun' && ent.dead) {
                             let dist = Math.hypot(this.startX - ent.x, this.startY - ent.y);
                             if (dist <= 250) {
-                                game.triggerHitStop(0.045);
+                                game.triggerKillStop(ent, calculatedDmg, ent.lastOverkill || 0);
                             }
                         }
                     }
@@ -28794,6 +28917,16 @@ class Bullet {
                             this.explode(game, { surface: 'wall', nx, ny });
                         }
                         this.active = false;
+                        // P1 pit: bounce-exhausted terminal hits chip
+                        // indestructible walls (per-wall 0.12s cooldown, 50%
+                        // coin; ghost pass-throughs continued above and never
+                        // reach here).
+                        try {
+                            if (!wall.destructible && game && (wall._pitCd || 0) <= (game.gameTime || 0) && Math.random() < 0.5) {
+                                wall._pitCd = (game.gameTime || 0) + 0.12;
+                                game._pushPermanentMark({ type: 'debris', x: this.x + nx * 3, y: this.y + ny * 3, c: '#0a0c10', a: 0.85, circs: [{ ox: 0, oy: 0, r: 2.5 + Math.random() }] });
+                            }
+                        } catch (e) {}
                         break;
                     }
 
@@ -28832,6 +28965,14 @@ class Bullet {
                         }
                         this.active = false;
                         game.addParticle(this.x, this.y, -this.vx*0.12, -this.vy*0.12, '#ffffff', 0.15, 2);
+                        // P1 pit: absorbed terminal hits chip indestructible
+                        // walls (same throttle as the bounce-exhausted branch).
+                        try {
+                            if (!wall.destructible && game && (wall._pitCd || 0) <= (game.gameTime || 0) && Math.random() < 0.5) {
+                                wall._pitCd = (game.gameTime || 0) + 0.12;
+                                game._pushPermanentMark({ type: 'debris', x: this.x + nx * 3, y: this.y + ny * 3, c: '#0a0c10', a: 0.85, circs: [{ ox: 0, oy: 0, r: 2.5 + Math.random() }] });
+                            }
+                        } catch (e) {}
                         break;
                     }
                 }
@@ -28857,15 +28998,38 @@ class Bullet {
         
         let sprite = Bullet._tracerSprites.get(this.color);
         if (!sprite) {
+            // Comet bake (firefight core): glowing tube with a white-hot
+            // head. Body: transparent tail -> caliber color. Head: white
+            // overlay blooming in over the last 24px + hot core strip.
+            // Vertical destination-in mask softens the tube edges (no hard
+            // bar). Baked once per color; per-frame cost stays one blit.
+            // Zero RNG (gradients only). Shared with the Pixi twin below.
             sprite = document.createElement('canvas');
             sprite.width = 128;
-            sprite.height = 4;
+            sprite.height = 8;
             let sctx = sprite.getContext('2d');
             let grad = sctx.createLinearGradient(0, 0, 128, 0); // left to right
             grad.addColorStop(0, 'rgba(0,0,0,0)'); // left tail
+            grad.addColorStop(0.72, this.color);
             grad.addColorStop(1, this.color); // right head
             sctx.fillStyle = grad;
-            sctx.fillRect(0, 0, 128, 4);
+            sctx.fillRect(0, 0, 128, 8);
+            let hg = sctx.createLinearGradient(104, 0, 128, 0);
+            hg.addColorStop(0, 'rgba(255,255,255,0)');
+            hg.addColorStop(1, 'rgba(255,255,255,0.95)');
+            sctx.fillStyle = hg;
+            sctx.fillRect(104, 0, 24, 8);
+            sctx.fillStyle = 'rgba(255,255,255,0.85)';
+            sctx.fillRect(112, 3, 16, 2);
+            sctx.globalCompositeOperation = 'destination-in';
+            let vg = sctx.createLinearGradient(0, 0, 0, 8);
+            vg.addColorStop(0, 'rgba(0,0,0,0)');
+            vg.addColorStop(0.3, 'rgba(0,0,0,1)');
+            vg.addColorStop(0.7, 'rgba(0,0,0,1)');
+            vg.addColorStop(1, 'rgba(0,0,0,0)');
+            sctx.fillStyle = vg;
+            sctx.fillRect(0, 0, 128, 8);
+            sctx.globalCompositeOperation = 'source-over';
             Bullet._tracerSprites.set(this.color, sprite);
         }
         
@@ -29539,7 +29703,7 @@ class FPVDrone {
         }
         let killCount = postDead - preDead;
         if (killCount > 0) {
-            game.triggerHitStop(0.04 + killCount * 0.015);
+            game.triggerKillBlastStop(killCount);
         }
         
         let fragments = 36;
@@ -29988,6 +30152,9 @@ class AutoTurret extends Entity {
             game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*300, Math.sin(spreadAngle)*300, muzzleColor, 0.04, 2.5);
         }
         try { game.spawnBarrelFX(barrelX, barrelY, this.angle, 0, this.vx || 0, this.vy || 0, isDesignated ? 0.8 : 0.6); } catch (e) {}
+        // E1 ally muzzle: turret flash stamps in its designator color
+        // (buffer splat already rides spawnBarrelFX above — no second one).
+        try { game.stampGlow(barrelX, barrelY, 46, muzzleColor, 0.35); } catch (e) {}
 
         // PHASE 7: designated shots accrue heat; 100% forces a whole-turret
         // lockout (natural fire included). Natural shots never add heat.
@@ -31434,6 +31601,10 @@ class RobotDog extends Entity {
             let spd = Math.random() * 200 + 100;
             game.addParticle(barrelX, barrelY, Math.cos(a)*spd, Math.sin(a)*spd, laserColor, 0.04, 2);
         }
+        // E1 ally muzzle: spot-dog flash stamps + splats in laser color
+        // (no spawnBarrelFX on this path — event-class, fireRate-gated).
+        try { game.stampGlow(barrelX, barrelY, 44, laserColor, 0.35); } catch (e) {}
+        try { game._pixiLightSplat(barrelX, barrelY, 70, 0.20, laserColor); } catch (e) {}
     }
     
     draw(ctx, cam) {
@@ -33083,7 +33254,7 @@ class MiniDrone extends Entity {
         }
         let killCount = postDead - preDead;
         if (killCount > 0) {
-            game.triggerHitStop(0.04 + killCount * 0.015);
+            game.triggerKillBlastStop(killCount);
         }
         
         for (let i = 0; i < 8; i++) {
@@ -33272,7 +33443,7 @@ class ShrapnelGrenade {
         }
         let killCount = postDead - preDead;
         if (killCount > 0) {
-            game.triggerHitStop(0.04 + killCount * 0.015);
+            game.triggerKillBlastStop(killCount);
         }
 
         // WI-0: PvP splash attribution. Scan AFTER the whole blast so a
@@ -34432,7 +34603,7 @@ class TripMine {
         }
         let killCount = postDead - preDead;
         if (killCount > 0) {
-            game.triggerHitStop(0.04 + killCount * 0.015);
+            game.triggerKillBlastStop(killCount);
         }
 
         let fragments = 12;
@@ -35078,7 +35249,7 @@ class ExplosiveBarrel {
         }
         let killCount = postDead - preDead;
         if (killCount > 0) {
-            game.triggerHitStop(0.04 + killCount * 0.015);
+            game.triggerKillBlastStop(killCount);
         }
 
         let fragments = 36;
@@ -36751,28 +36922,45 @@ function setCrosshairPos(el, x, y) {
 // TILED DECAL LAYER for permanent ground marks (blood / trail / debris /
 // scorch). Each mark is stamped ONCE into a small offscreen tile canvas the
 // moment it's created; thereafter every live tile is blitted with a single
-// drawImage per frame instead of re-stroking each mark's path. Tiles fade by
-// age (FADE_SEC after birth, see drawPermanentMarks) AND shed by count —
-// whichever drops them first — so the map cycles like the old mark pool did
-// instead of baking alpha additively forever on small maps.
+// drawImage per frame instead of re-stroking each mark's path. Tiles shed
+// by eviction ONLY — there is no lifetime timer: a tile's mark ring holds
+// the most recent RING marks (oldest replayed out via rebake, see
+// Game._stampMarkIntoTile), and whole cold tiles drop when the layer's
+// tile budget is exceeded (see Game._decalCap / _evictColdest).
 // and the viewport cull bounds per-frame cost to O(visible tiles), not
 // O(all marks). See Game._stampMark / Game.drawPermanentMarks / _decalCap.
 const MARK_TILES = {
     SIZE: 256,       // world units per tile edge
-    // Lifetime is count AND time: a tile sheds when its layer's tile budget
-    // (derived from the "Max Marks" setting, see _decalCap) is exceeded
-    // (coldest evicted first) or when it reaches FADE_SEC after birth —
-    // whichever comes first. The fade restores the old mark pool's cycling.
+    // Lifetime is eviction-only, driven by the "Max Marks" setting: each
+    // tile keeps its most recent marks (ring depth derived from the
+    // budget, see Game._markRingDepth) and replays its canvas when the
+    // oldest is pushed out; whole tiles shed coldest-first past the tile
+    // budget. Blood persists indefinitely until painted over — no timers.
     MIN_TILES: 32,      // floor on the budget when "Max Marks" is ~0
     MAX_TILES: 2048,    // hard memory ceiling per layer (~256 MB; raised from 1024)
     MARKS_PER_TILE: 20, // "Max Marks" -> tile budget divisor (30000 default -> 1500)
-    FADE_SEC: 240,      // time fade (game-seconds, see drawPermanentMarks): a tile
-                        // blits from full alpha down to transparent over this
-                        // window after its BIRTH, then drops. Restores the old
-                        // 30,000-mark pool's cycling look — without it, small
-                        // maps (tile count under budget) accumulate baked
-                        // alpha additively forever and fresh blood stops
-                        // reading against the saturated ground.
+    RING_MIN: 32,       // per-tile mark ring floor (budget-derived depth, see _markRingDepth)
+    RING_MAX: 256,      // per-tile mark ring ceiling (rebake replay cost bound)
+    RETIRE_CAP: 64,     // retirement overlay: evicted marks dissolving at once, max
+    RETIRE_SEC: 2,      // retirement overlay: dissolve time (game-seconds).
+                        // Visual transition ONLY, not a lifetime — evicted
+                        // paint melts out instead of popping. Freezes in pause.
+    TRAIL_STEP: 4,      // gib paint trails stamp per px traveled, not per frame
+    REBAKE_PER_FRAME: 1, // max tile rebakes per frame; overflow past this
+                         // trims the ring (retire overlay covers) and replays
+                         // on the next frame's stamp — bounds hitch stacking
+                         // on hot doorway tiles to one replay per frame.
+};
+
+// Per-type ring-depth shares (P0 infra): one ring per tile, but each type
+// cycles at its own depth so scorch can't starve blood and vice versa.
+// Factor multiplies Game._markRingDepth(); floor 8 keeps tiny budgets alive.
+// pit/dust/footprint types register here when their producers land.
+const MARK_TYPE_DEPTH = {
+    blood: 1.0,   // the persistence promise — deepest
+    trail: 1.0,   // gib trails + footprints (same painter)
+    debris: 1.0,  // pits, chips, knockoff
+    scorch: 0.5,  // soot cycles twice as fast — never starves blood
 };
 
 // VIDEO sub-tab UI scale: every DOM root the menu zoom applies to, in one
@@ -36879,7 +37067,9 @@ class Game {
         this._sepTouched = [];
         this.permanentMarks = [];
         this.casingMarks = [];   // JULY item 2: dedicated capped casing FIFO
-        this.groundTiles = new Map(); this.deckTiles = new Map(); // tiled decal layer (see MARK_TILES)
+        this.groundTiles = new Map(); this.deckTiles = new Map(); this.deckUnderTiles = new Map(); // tiled decal layer (see MARK_TILES); deckUnder = carve rubble that slides UNDER surviving walls
+        this.retiringMarks = []; // eviction dissolve overlay: evicted paint melting out (see _retireMarks). Bounded (RETIRE_CAP), game-time expiry.
+        this._markStats = { stamps: 0, rebakes: 0, retired: 0 }; // render-only counters for the dev-dashboard / probes. Zero sim effect.
         // Cap on blood/casing/debris/scorch marks kept on the ground at
         // once (see _pushPermanentMark). Was a hardcoded 3000, which at
         // higher wave counts was trimming visible gore before it should
@@ -38899,6 +39089,29 @@ class Game {
                 twinkleSpeed: Math.random() * 1.2 + 0.5
             });
         }
+        this.initJunk();
+    }
+
+    // P3 environmental junk: pre-baked bits (dust specks, debris chips,
+    // ember flecks) riding the same fluid field as motes. No runtime
+    // spawn, no RNG post-init — frac-hash variation only (deterministic
+    // per index). Rebuilt with the motes on every map init. Capped 200.
+    // OFF when _airVolOn === false (motes themselves are baseline).
+    initJunk() {
+        try {
+            const mapW = this.mapW || 2200, mapH = this.mapH || 2200;
+            const n = Math.max(60, Math.min(200, Math.round(mapW * mapH / 22000)));
+            this.junk = [];
+            for (let i = 0; i < n; i++) {
+                const hx = (i * 0.618034 + 0.13) % 1, hy = (i * 0.381966 + 0.71) % 1;
+                const ht = (i * 0.154701 + 0.37) % 1, hs = (i * 0.754878 + 0.07) % 1;
+                let r, a, mass, ci;
+                if (ht < 0.6) { r = 0.4 + hs * 0.5; a = 0.04 + hs * 0.06; mass = 1; ci = 0; }
+                else if (ht < 0.88) { r = 0.8 + hs * 0.7; a = 0.08 + hs * 0.08; mass = 1.5; ci = 1; }
+                else { r = 1.5 + hs * 1.5; a = 0.12 + hs * 0.10; mass = 2.5; ci = (hs < 0.4 ? 3 : 2); }
+                this.junk.push({ x: hx * mapW, y: hy * mapH, vx: 0, vy: 0, r, a, mass, ci, ph: hs * 6.28 });
+            }
+        } catch (e) { this.junk = []; }
     }
 
     updateDustMotes(dt) {
@@ -38962,6 +39175,23 @@ class Game {
             if (m.x > mapW) m.x -= mapW;
             if (m.y < 0) m.y += mapH;
             if (m.y > mapH) m.y -= mapH;
+        }
+        // P3 junk drift: same field ride as motes + slow ambient current.
+        // Epsilon-gated (calm field = drift only). No wakes, no twinkle
+        // state — ~200 samples worst case, ~0.02ms.
+        const jk = this.junk;
+        if (jk && jk.length && this._airVolOn !== false) {
+            const live = this._fl && this._fl.energy > 0;
+            for (let j of jk) {
+                if (live) {
+                    const _jv = this._fluidSample(j.x, j.y);
+                    j.vx += _jv.x * safeDt / j.mass; j.vy += _jv.y * safeDt / j.mass;
+                }
+                j.ph += safeDt * 0.9;
+                j.x += (j.vx + 6) * safeDt; j.y += j.vy * safeDt;
+                if (j.x < 0) j.x += mapW; if (j.x > mapW) j.x -= mapW;
+                if (j.y < 0) j.y += mapH; if (j.y > mapH) j.y -= mapH;
+            }
         }
     }
 
@@ -39109,8 +39339,32 @@ class Game {
         }
     }
 
+    // timeScale save/restore STACK (P0 infra): replaces single-slot
+    // baseTimeScale so nested slow-mo writers (glory, death-linger) can't
+    // clobber each other. LIFO; each pop restores its own pushed value.
+    // Writers that only SET timeScale (Adrenaline/Chronos/slider) don't
+    // touch the stack. baseTimeScale is still maintained for compat.
+    _timeScalePush(tag) {
+        try {
+            if (!this._timeScaleStack) this._timeScaleStack = [];
+            this._timeScaleStack.push({ v: this.timeScale, tag: tag || '?' });
+        } catch (e) {}
+    }
+    _timeScalePop(tag) {
+        try {
+            const st = this._timeScaleStack;
+            if (st && st.length) {
+                const top = st.pop();
+                this.timeScale = top.v;
+                return true;
+            }
+        } catch (e) {}
+        return false;
+    }
+
     triggerGloryKill(enemy) {
         if (this.gloryKillTimer > 0) return;
+        this._timeScalePush('glory');
         this.baseTimeScale = this.timeScale;
         this.timeScale = 0.08;
         this.gloryKillTimer = 1.2;
@@ -39206,6 +39460,9 @@ class Game {
             });
             this.embers[this.embers.length - 1].maxLife = this.embers[this.embers.length - 1].life;
         }
+        // P2a muzzle light: warm splat into the decaying buffer (fast
+        // attack via stamp, slow tail via buffer decay). Power-scaled.
+        try { this._pixiLightSplat(x, y, 110, 0.33 * Math.min(2.0, Math.max(0.5, power || 1)), '#ffb14e'); } catch (e) {}
     }
 
     spawnDeployRing(x, y) {
@@ -39267,6 +39524,55 @@ class Game {
 
     triggerHitStop(duration) {
         this.hitPauseTimer = Math.max(this.hitPauseTimer || 0, duration);
+    }
+
+    // P4 selective kill-stop: short, magnitude-based. dur = lerp(KILL_MIN,
+    // KILL_MAX, mag); mag = lethal/maxHp + overkill*0.15/maxHp. Grunts land
+    // ~15-30ms, elites/brutals ~50-70ms. Chip kills (<ABS and <FRAC) are
+    // exempt; 2P/PvP exempt (the freeze is global); glory exempt (already
+    // slowed); 0.12s refractory; longest-wins via triggerHitStop's max.
+    // OFF when FEEL_PUNCT.ENABLE/KILLSTOP === false.
+    _killStopGates() {
+        try {
+            const F = (typeof FEEL_PUNCT !== 'undefined') ? FEEL_PUNCT : null;
+            if (F && (F.ENABLE === false || F.KILLSTOP === false)) return null;
+            if (this.isTwoPlayer) return null;
+            if (this.gloryKillTimer > 0) return null;
+            if ((this._killStopRefr || 0) > (this.gameTime || 0)) return null;
+            return F || {};
+        } catch (e) { return null; }
+    }
+    triggerKillStop(victim, lethalDmg, overkill) {
+        try {
+            const F = this._killStopGates();
+            if (!F) return;
+            const maxHp = (victim && victim.maxHp) || 100;
+            const lethal = Math.max(0, lethalDmg || 0), over = Math.max(0, overkill || 0);
+            const minAbs = (F.KILL_MIN_ABS === undefined ? 8 : F.KILL_MIN_ABS);
+            const minFrac = (F.KILL_MIN_FRAC === undefined ? 0.12 : F.KILL_MIN_FRAC);
+            if (lethal < minAbs && lethal < minFrac * maxHp) return;
+            const mag = Math.min(1, lethal / maxHp + over * 0.15 / maxHp);
+            const dMin = (F.KILL_MIN === undefined ? 0.015 : F.KILL_MIN);
+            const dMax = (F.KILL_MAX === undefined ? 0.070 : F.KILL_MAX);
+            this.triggerHitStop(Math.min(dMax, dMin + (dMax - dMin) * mag));
+            this._killStopRefr = (this.gameTime || 0) + (F.KILL_REFR === undefined ? 0.12 : F.KILL_REFR);
+        } catch (e) {}
+    }
+    // Multi-kill explosive sites (drones, grenades, mines, barrels,
+    // stations): no single victim, so magnitude comes from body count —
+    // 1 kill ≈ 29ms micro, 4+ elite-grade. Same gates as triggerKillStop.
+    triggerKillBlastStop(killCount) {
+        try {
+            const F = this._killStopGates();
+            if (!F) return;
+            const kc = Math.max(0, killCount || 0);
+            if (kc <= 0) return;
+            const mag = Math.min(1, kc * 0.25);
+            const dMin = (F.KILL_MIN === undefined ? 0.015 : F.KILL_MIN);
+            const dMax = (F.KILL_MAX === undefined ? 0.070 : F.KILL_MAX);
+            this.triggerHitStop(Math.min(dMax, dMin + (dMax - dMin) * mag));
+            this._killStopRefr = (this.gameTime || 0) + (F.KILL_REFR === undefined ? 0.12 : F.KILL_REFR);
+        } catch (e) {}
     }
 
     // The universal explosion visual choke (barrels, grenades, novas,
@@ -39331,6 +39637,13 @@ class Game {
         // covers all ~20 blast sites; zero RNG, sim untouched.
         if (fluid === 'blast') { try { this.fluidBlast(x, y, maxRadius, 850); } catch (e) {} }
         else if (fluid === 'suck') { try { this.fluidBlast(x, y, maxRadius * 1.4, -700); } catch (e) {} }
+        // P2a blast light: explosion writes bounce+tail into the buffer
+        // (rift pops write violet at high intensity — the tail reads as
+        // afterglow, ~1.0s visible off tau 0.25s). Same choke, all ~20 sites.
+        try {
+            const li = rift ? 1.3 : 1.0;
+            this._pixiLightSplat(x, y, maxRadius * 1.15, li, rift ? '#9d4edd' : (glowColor || '#ff9500'));
+        } catch (e) {}
     }
 
     // WO-001 Phase 4: IMPACT FUNNEL — material response for a point hit.
@@ -39355,7 +39668,7 @@ class Game {
                 let p = this.spawnParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, this._pickBlood(), 1.2, MathUtils.rand(2.5, 5.5) * (1 + 0.35 * mag));
                 if (p) this.particles.push(p);
             }
-            if (mag >= 0.75) this.stampGlow(x, y, 10 + 14 * mag, '#e60000', 0.35);
+            if (mag >= 0.35) this.stampGlow(x, y, 10 + 14 * mag, '#e60000', 0.35);
             // SHADER-ERA mist: flesh hits breathe blood-mist into the field.
             try { this.fluidSplat(x, y, Math.cos(dir) * 60, Math.sin(dir) * 60, 0.1 + 0.25 * mag, 20, 0.1); } catch (e) {}
         } else if (surface === 'wall') {
@@ -39374,6 +39687,20 @@ class Game {
             // SHADER-ERA haze: wall chips kick dust into the field.
             try { this.fluidSplat(x, y, nx * 40, ny * 40, 0.15, 16); } catch (e) {}
             if (mag < 0.3) this.addParticle(x, y, -Math.cos(dir) * 40, -Math.sin(dir) * 40, '#ffffff', 0.15, 2);
+            // Firefight core: every wall hit snaps — a hot tick the bloom
+            // chain turns into a muzzle-like snap (restrained: <=40px, 0.5).
+            // Heavy hits (>=0.55) thump pressure and pit the floor at the
+            // wall base (under:true — rubble slides under surviving stubs,
+            // never over them). Zero RNG added (branch already rolls).
+            this.stampGlow(x, y, 14 + 26 * mag, '#ffd9a0', 0.5);
+            if (mag >= (typeof IMPACT_TUNING !== 'undefined' ? IMPACT_TUNING.SHOCK_MAG : 0.55)) {
+                try { this.spawnUvShock(x, y, 34, 0.15, 0.35); } catch (e) {}
+                // P2a impact light: heavy wall hits bounce warm off the base.
+                try { this._pixiLightSplat(x, y, 40, 0.25, '#ffd9a0'); } catch (e) {}
+                try {
+                    this._pushPermanentMark({ type: 'debris', x: x + nx * 6, y: y + ny * 6, c: chipCol, a: 0.8, circs: [{ ox: 0, oy: 0, r: 2.5 }], under: true });
+                } catch (e) {}
+            }
         } else if (surface === 'dirt') {
             let n = Math.round(4 * (0.7 + 0.6 * mag));
             for (let i = 0; i < n; i++) {
@@ -39457,7 +39784,7 @@ class Game {
     // the mark, etc.) naturally paints over it, and this mark itself paints
     // over any earlier blood/debris already there -- exactly the layering
     // the ground-truth visual should have, with no z-index bookkeeping.
-    spawnScorchMark(x, y, radius = 40) {
+    spawnScorchMark(x, y, radius = 40, under) {
         // A handful of overlapping irregular blotches reads as a scorch
         // crater far better than one perfect circle, while staying cheap:
         // it's still just a handful of arcs on an existing draw call, not a
@@ -39476,7 +39803,8 @@ class Game {
             x, y,
             blotches,
             r: radius,
-            a: 0.55 + Math.random() * 0.15
+            a: 0.55 + Math.random() * 0.15,
+            under: !!under
         });
     }
     
@@ -43038,7 +43366,7 @@ class Game {
         this.spawnDeployRing(station.x, station.y);
         station._riftCooldown = T.STATION_COOLDOWN || 0.5;
         if (live.length >= 2 && typeof this.triggerHitStop === 'function') {
-            try { this.triggerHitStop(Math.min(0.12, 0.04 + live.length * 0.015)); } catch (e) {}
+            try { this.triggerKillBlastStop(live.length); } catch (e) {}
         }
         if (live.length) {
             this.floatingTexts.push(this.spawnFloatingText(station.x, station.y - 30,
@@ -45572,6 +45900,11 @@ class Game {
                 T.fill({ color: 0x39ff14, alpha: 0.3 });
                 T.circle(dx, dy, 2.2 * ez);
                 T.fill({ color: 0x39ff14 });
+                // E4 datalink packet: the live wire breathes into the buffer
+                // (1 splat/frame max, world coords, cold cyan; yields at
+                // queue>=8 — lowest priority. The fiber itself is never fed:
+                // length floods). h==0 only, never per half.
+                try { if (h === 0 && (!this._lightSplats || this._lightSplats.length < 8)) this._pixiLightSplat(qx, qy, 24, 0.008, '#00e5ff'); } catch (e) {}
             }
             // Cleats (rotated nests).
             for (let i = 0; i < wpts.length - 1; i++) {
@@ -47238,6 +47571,10 @@ class Game {
                 dvA: mk(true, true),
                 bRt: mk(false, false, true), sRt: mk(false, false, true), rRt: mk(false),
                 eRt: mk(false, false, true),
+                // P2a light buffer (unified decaying light): half-res byte
+                // ping-pong, data not pictures. Own pair (never shared with
+                // aberration/night slots); killed/resized/flushed with the set.
+                lRtA: mk(false, false), lRtB: mk(false, false),
                 // Item 1a1: pass cache (quad + per-key programs), field
                 // identity (world-space grid = CPU dims), mask texture,
                 // mirrored energy scalar (copied, never re-derived).
@@ -47259,7 +47596,7 @@ class Game {
         // fluid path is unaffected — it never reads this set.
         try { this._pixiGpuSleep = reason || 'off'; } catch (e) {}
         if (!G) return;
-        const keys = ['velA', 'velB', 'denA', 'denB', 'prsA', 'prsB', 'dvA', 'bRt', 'sRt', 'rRt', 'eRt'];
+        const keys = ['velA', 'velB', 'denA', 'denB', 'prsA', 'prsB', 'dvA', 'bRt', 'sRt', 'rRt', 'eRt', 'lRtA', 'lRtB'];
         for (const k of keys) { try { if (G[k]) G[k].destroy(true); } catch (e) {} }
         // Item 1a1: programs, shared quad, and mask texture die with the
         // set — no orphan GL state across resize/map-swap reallocs.
@@ -47305,6 +47642,15 @@ class Game {
         } catch (e) {}
         try { if (G.cloakProg) G.cloakProg.destroy(); } catch (e) {}
         G.cloakH = null; G.cloakProg = null; G.cloakCapFrame = -1;
+        // P2a light blit sprite dies with the set (its texture is gone).
+        try {
+            if (this._pixiLightSp) {
+                try { if (this._pixiLightSp.parent) this._pixiLightSp.parent.removeChild(this._pixiLightSp); } catch (e) {}
+                try { this._pixiLightSp.destroy(); } catch (e) {}
+            }
+        } catch (e) {}
+        this._pixiLightSp = null;
+        this._lightSplats = []; this._lightEnergy = 0;
         // Rift/eventide/oracle passes + emissive guard die with the set.
         const _killH = (nm) => {
             try {
@@ -48193,9 +48539,11 @@ class Game {
     _pixiBloomThreshFrag() {
         return 'uniform sampler2D uSrc;\n' +
             'uniform sampler2D uEmis;\n' +
+            'uniform sampler2D uLight;\n' +
             'uniform float uT;\n' +
             'uniform float uStrength;\n' +
             'uniform float uEmisGain;\n' +
+            'uniform float uLightGain;\n' +
             'varying vec2 vUV;\n' +
             'void main(){\n' +
             'vec4 c = texture2D(uSrc, vUV);\n' +
@@ -48206,7 +48554,11 @@ class Game {
             // host halos) bypasses the luminance gate and adds at full
             // weight — a dim beam still blooms.
             'vec4 e = texture2D(uEmis, vUV);\n' +
-            'vec3 rgb = c.rgb * (w * uStrength) + e.rgb * uEmisGain;\n' +
+            // P2a light feed: the decaying buffer joins the threshold so
+            // muzzle/explosions bloom through their tails. rgb-only (the
+            // blit is additive — alpha rides the emissive term as before).
+            'vec4 li = texture2D(uLight, vUV);\n' +
+            'vec3 rgb = c.rgb * (w * uStrength) + e.rgb * uEmisGain + li.rgb * uLightGain;\n' +
             'gl_FragColor = vec4(rgb, max(w, clamp(dot(e.rgb, vec3(0.333)) * uEmisGain, 0.0, 1.0)));\n' +
             '}';
     }
@@ -48422,6 +48774,191 @@ class Game {
         } catch (e) { return null; }
     }
 
+    // PILLAR A core (P2a): unified decaying light buffer. Muzzle /
+    // explosion / impact splats land in stage-UV on a half-res byte
+    // ping-pong (lRtA/lRtB); one accum pass per splat folds decay + stamp;
+    // the front buffer presents as an additive sprite ABOVE night (light
+    // punches through darkness — operator call, same as the bloom blit)
+    // and feeds the bloom threshold as uLight. Screen-space with
+    // motion-compensated decay: fast camera whips drain the buffer (no
+    // floating hose-glow); slow pans leave a faint motion tail.
+    // Splat-center convention: u = sx/W, v = sy/H, v DOWN from stage top
+    // (matches the rRt/shock round trip: texture v=0 reads stage-top
+    // content — no flip term anywhere). If the 3090 shows mirrored light,
+    // _pixiLightFlipY flips v with no code change.
+    // ON unless _pixiLightOn === false (idle = hidden sprite, zero binds).
+    // Knobs: _pixiLightStrength (0.7 present alpha), _pixiLightGain (0.8
+    // threshold feed), _pixiLightTau (0.25 tail), _pixiLightFlipY (0).
+    // Bright heads (blast 1.0, rift 1.3) roll off through the soft-clamp —
+    // hot cores, no clipped disc; byte display still maxes at 1.0.
+    _pixiLightAccumFrag() {
+        return '#ifdef GL_FRAGMENT_PRECISION_HIGH\n' +
+            'precision highp float;\n' +
+            '#endif\n' +
+            'varying vec2 vUV;\n' +
+            'uniform sampler2D uPrev;\n' +
+            'uniform float uDecay;\n' +
+            'uniform vec2 uC;\n' +
+            'uniform float uR;\n' +
+            'uniform float uAspect;\n' +
+            'uniform vec3 uCol;\n' +
+            'uniform float uI;\n' +
+            'void main(){\n' +
+            'vec4 p = texture2D(uPrev, vUV) * uDecay;\n' +
+            'vec2 d = (vUV - uC) * vec2(1.0, uAspect);\n' +
+            // Two-component splat: wide soft skirt (0.85) + tight hot core
+            // (0.65 at 0.38R) — integral matches the old single gaussian so
+            // total energy is unchanged, but the center reads intense while
+            // the skirt stays organic. Sigmas matched, no kink joint.
+            'float gW = exp(-dot(d, d) / max(uR * uR, 1e-6));\n' +
+            'float gC = exp(-dot(d, d) / max((0.38 * uR) * (0.38 * uR), 1e-6));\n' +
+            'float s = (gW * 0.85 + gC * 0.65) * uI;\n' +
+            // Capped core whitening: above s=0.25 the color leans toward
+            // white (hot-metal look, max 30% — warm code preserved, no
+            // flashbang-white collision). Skirt and trickles (s<<0.25)
+            // keep their hue; equilibria untouched.
+            'float whiteK = clamp((s - 0.25) * 0.9, 0.0, 0.30);\n' +
+            'vec3 hotCol = mix(uCol, vec3(1.0), whiteK);\n' +
+            // Soft-clamp highlights: compress toward (not through) byte-top
+            // instead of clipping at 1.0 — no flat white disc, no kink ring;
+            // faint tails stay linear and organic.
+            'vec3 acc = p.rgb + hotCol * s;\n' +
+            'gl_FragColor = vec4(acc / (1.0 + acc * 0.55), 1.0);\n' +
+            '}\n';
+    }
+    // World-space light write: queued at event time (update), projected
+    // per-half at present time. Forward-only, try/caught, CPU-unbreakable,
+    // zero RNG — the frozen emitter shape. Queue cap 10/frame (shed
+    // weakest); energy ledger gates the idle fast path.
+    _pixiLightSplat(x, y, rPx, intensity, hex) {
+        try {
+            if (this._pixiLightOn === false) return;
+            if (!(x > -1e5 && x < 1e5 && y > -1e5 && y < 1e5)) return;
+            if (!(rPx > 0) || !(intensity > 0)) return;
+            let r = 1, g = 0.6, b = 0.3;
+            try {
+                if (typeof hex === 'string' && hex.charAt(0) === '#' && hex.length >= 7) {
+                    r = parseInt(hex.slice(1, 3), 16) / 255;
+                    g = parseInt(hex.slice(3, 5), 16) / 255;
+                    b = parseInt(hex.slice(5, 7), 16) / 255;
+                }
+            } catch (e) {}
+            if (!this._lightSplats) this._lightSplats = [];
+            const s = { x, y, r: Math.min(rPx, 600), i: Math.min(intensity, 1.5), c: [r, g, b] };
+            if (this._lightSplats.length >= 10) {
+                let wi = 0;
+                for (let i = 1; i < this._lightSplats.length; i++) if (this._lightSplats[i].i < this._lightSplats[wi].i) wi = i;
+                if (s.i <= this._lightSplats[wi].i) return;
+                this._lightSplats[wi] = s;
+            } else this._lightSplats.push(s);
+            this._lightEnergy = Math.min(4, (this._lightEnergy || 0) + s.i);
+        } catch (e) {}
+    }
+    // Once per frame from presentPixiOverlay, BEFORE _pixiBloomPresent
+    // (the threshold samples the front buffer). No splats + cold tail =
+    // hidden sprite, zero binds. Pass count = splats x halves (+1 decay
+    // pass when the tail outlives its splats); 2P halves share one buffer.
+    _pixiLightStep() {
+        const R = window.PIXI, G = this._pixiGpu;
+        if (!R || !G || !G.ok || !G.lRtA || !G.lRtB) return false;
+        try {
+            const sp0 = this._pixiLightSp;
+            if (this._pixiLightOn === false) {
+                if (sp0) sp0.visible = false;
+                this._lightSplats = []; this._lightEnergy = 0;
+                return true;
+            }
+            const splats = this._lightSplats || [];
+            this._lightSplats = [];
+            const dt = (this._rawDt > 0 && this._rawDt < 0.25) ? this._rawDt : 0.016;
+            let decay = Math.exp(-dt / (this._pixiLightTau === undefined ? 0.25 : this._pixiLightTau));
+            try {
+                const cx = this.camera ? this.camera.x : 0, cy = this.camera ? this.camera.y : 0;
+                const lx = (this._lightCamX === undefined ? cx : this._lightCamX);
+                const ly = (this._lightCamY === undefined ? cy : this._lightCamY);
+                const md = Math.hypot(cx - lx, cy - ly);
+                this._lightCamX = cx; this._lightCamY = cy;
+                decay *= Math.exp(-md / 240);
+            } catch (e) {}
+            let energy = (this._lightEnergy || 0) * decay;
+            this._lightEnergy = energy;
+            if (energy < 0.004 && !splats.length) { if (sp0) sp0.visible = false; return true; }
+            if (!G.lightZeroed) {
+                // RTs aren't guaranteed clear — first write zeroes (the
+                // sampled front is our own output from here on).
+                if (!this._pixiGpuPass('lightA', this._pixiLightAccumFrag(),
+                    { uPrev: G.lRtA.source, uDecay: 0, uC: [0, 0], uR: 1, uAspect: 1, uCol: [0, 0, 0], uI: 0 }, G.lRtB)) return false;
+                G.lightZeroed = true;
+                this._lightPing = true;
+            }
+            const W = this.width || 1, H = this.height || 1;
+            const flip = this._pixiLightFlipY ? true : false;
+            const halves = (this.isTwoPlayer && this.camera2) ? [0, 1] : [0];
+            let queue = splats.length ? splats : [{ x: 0, y: 0, r: 1, i: 0, c: [0, 0, 0] }];
+            if (halves.length > 1 && queue.length > 5) {
+                queue = queue.slice().sort((a, b) => b.i - a.i).slice(0, 5);
+            }
+            let first = true;
+            for (const s of queue) {
+                const d = first ? decay : 1; first = false;
+                for (const h of halves) {
+                    const cam = (h === 1) ? this.camera2 : this.camera;
+                    if (!cam) continue;
+                    const ez = (cam.zoom || 1) + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
+                    const ox = (h === 1 && this.isTwoPlayer) ? W / 2 : 0;
+                    const shX = cam._shX || 0, shY = cam._shY || 0;
+                    let u = 0, v = 0;
+                    if (s.i > 0) {
+                        const sx = ox + (s.x - cam.x + shX) * ez, sy = (s.y - cam.y + shY) * ez;
+                        u = sx / W; v = sy / H;
+                        if (flip) v = 1 - v;
+                    }
+                    const src = this._lightPing ? G.lRtB : G.lRtA;
+                    const dst = this._lightPing ? G.lRtA : G.lRtB;
+                    if (!this._pixiGpuPass('lightA', this._pixiLightAccumFrag(),
+                        { uPrev: src.source, uDecay: d, uC: [u, v], uR: Math.max(1, s.r * ez) / W, uAspect: H / W, uCol: s.c, uI: s.i }, dst)) return false;
+                    this._lightPing = !this._lightPing;
+                }
+            }
+            this._lightFront = this._lightPing ? 'lRtB' : 'lRtA';
+            const sp = this._pixiLightBlitEnsure();
+            if (sp) {
+                sp.visible = true;
+                try { sp.alpha = (this._pixiLightStrength === undefined ? 0.7 : this._pixiLightStrength); } catch (e) {}
+            }
+            return true;
+        } catch (e) { return false; }
+    }
+    // Additive sprite of the front buffer, pinned at nightBlit+1 (light
+    // punches through darkness — operator call, same as the bloom blit).
+    // Both blits are additive so their relative order is irrelevant.
+    _pixiLightBlitEnsure() {
+        const R = window.PIXI, G = this._pixiGpu, st = this._pixiOverlayStage;
+        if (!R || !G || !G.ok || !st) return null;
+        const front = this._lightFront || 'lRtA';
+        if (!G[front]) return null;
+        try {
+            let sp = this._pixiLightSp;
+            if (!sp) {
+                sp = new R.Sprite(G[front]);
+                sp.blendMode = 'add';
+                this._pixiLightSp = sp;
+            }
+            try {
+                if (!st.children.includes(sp)) st.addChild(sp);
+                const ci = (c) => { try { return (c && st.children.includes(c)) ? st.getChildIndex(c) : -1; } catch (e) { return -1; } };
+                const ni = ci(this._pixiNightBlit);
+                if (ni >= 0) {
+                    if (ci(sp) !== ni + 1) st.addChildAt(sp, ni + 1);
+                }
+            } catch (e) {}
+            if (sp.texture !== G[front]) { try { sp.texture = G[front]; } catch (e) {} }
+            sp.position.set(0, 0);
+            try { sp.scale.set(this.width / G[front].width, this.height / G[front].height); } catch (e) {}
+            return sp;
+        } catch (e) { return null; }
+    }
+
     // Full chain, called in present before the final render. Returns visible
     // sprite (or null when gated/off) — the present renders it with the rest.
     // ON unless `_pixiBloomOn === false`. ALWAYS-ON day and night (operator
@@ -48466,8 +49003,15 @@ class Game {
                 } catch (e) { G._emisBlack = null; }
             }
             const eSrc = (G.eRt && G.eRt.source) ? G.eRt.source : G._emisBlack;
-            if (!this._pixiGpuPass('bloomT', this._pixiBloomThreshFrag(),
-                { uSrc: G.sRt.source, uEmis: eSrc, uT, uStrength: uS, uEmisGain: uEG }, G.bRt)) return false;
+            // P2a: light feed rides the black guard too (shape never
+            // changes). Program key versioned (bloomT->bloomT2): the cached
+            // bloomT program was compiled WITHOUT uLight — reusing the key
+            // would sample nothing, silently (SILENT SHADER law).
+            const lFront = this._lightFront || 'lRtA';
+            const lSrc = (G[lFront] && G[lFront].source) ? G[lFront].source : G._emisBlack;
+            const uLG = (this._pixiLightGain === undefined ? 0.8 : this._pixiLightGain);
+            if (!this._pixiGpuPass('bloomT2', this._pixiBloomThreshFrag(),
+                { uSrc: G.sRt.source, uEmis: eSrc, uLight: lSrc, uT, uStrength: uS, uEmisGain: uEG, uLightGain: uLG }, G.bRt)) return false;
             // blur H: B_rt -> S_rt ; blur V: S_rt -> B_rt (S_rt is scratch
             // after threshold — the capture is consumed, no extra RT).
             const dx = 1 / Math.max(1, G.bRt.width), dy = 1 / Math.max(1, G.bRt.height);
@@ -48631,8 +49175,7 @@ class Game {
     // strongest just after it leaves the blast and fades as it spreads.
     // Band = 0.28 of radius (was 0.12 — an 18px sliver on a 150px ring).
     _pixiShockRings(cam, isPlayer2) {
-        const all = this._uvShocks;
-        if (!all) return [];
+        const all = this._uvShocks || [];
         const ez = cam.zoom + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
         const ox = (isPlayer2 && this.isTwoPlayer) ? this.width / 2 : 0;
         const vw = this.isTwoPlayer ? this.width / 2 : this.width;
@@ -48714,6 +49257,31 @@ class Game {
                 live.push({ sx, sy, sr, w: Math.max(3, sr * 0.35), env, rift: true, ph: 1 });
             }
         } catch (e) {}
+        // P1 sustained-fire heat: one faint wide slot per hot player at the
+        // muzzle. env <= 0.30 by construction (~25% of a blast), so the
+        // Present-side top-4 sort always prefers real blasts; heat returns
+        // on the tail. Zero new RT/program/capture. OFF when
+        // _pixiHeatOn === false; scaled by _pixiHeatAmp (default 1).
+        try {
+            if (this._pixiHeatOn !== false) {
+                const hamp = (this._pixiHeatAmp === undefined ? 1 : this._pixiHeatAmp);
+                const hnow = this.gameTime || 0;
+                const hpls = [this.player];
+                if (this.isTwoPlayer && this.player2) hpls.push(this.player2);
+                for (const p of hpls) {
+                    if (!p || p.dead) continue;
+                    const heat = p._heatT || 0;
+                    if (heat <= 0.15) continue;
+                    if (p._heatX === undefined || p._heatY === undefined) continue;
+                    const sx = ox + (p._heatX - cam.x + shX) * ez, sy = (p._heatY - cam.y + shY) * ez;
+                    const sr = Math.max(1, 34 * ez);
+                    if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+                    const henv = Math.min(0.30, 0.22 * heat * (1 + 0.1 * Math.sin(hnow * 31 + p._heatX * 0.01)) * hamp);
+                    if (henv <= 0.01) continue;
+                    live.push({ sx, sy, sr, w: Math.max(3, sr * 0.3), env: henv });
+                }
+            }
+        } catch (e) {}
         return live;
     }
 
@@ -48734,7 +49302,7 @@ class Game {
             // helper (stage scaled 0.5 — true downsample, not the quadrant).
             if (G.shockCapFrame !== this._pixiFrameToken) {
             try {
-                if (!this._pixiSceneCapture(G.rRt, [G.shockH, G.cloakH, G.fieldH, G.tripH])) return false;
+                if (!this._pixiSceneCapture(G.rRt, this._pixiRefractHidden())) return false;
                 G.shockCapFrame = this._pixiFrameToken;
             } catch (e) { return false; }
             }
@@ -48927,7 +49495,7 @@ class Game {
             // half-res helper (true downsample, not the quadrant).
             if (G.shockCapFrame !== this._pixiFrameToken && G.cloakCapFrame !== this._pixiFrameToken) {
             try {
-                if (!this._pixiSceneCapture(G.rRt, [G.cloakH, G.shockH, G.fieldH, G.tripH])) return false;
+                if (!this._pixiSceneCapture(G.rRt, this._pixiRefractHidden())) return false;
                 G.cloakCapFrame = this._pixiFrameToken;
             } catch (e) { return false; }
             }
@@ -49002,6 +49570,14 @@ class Game {
         return D;
     }
 
+    // Single manifest of every mesh that samples rRt: all refraction
+    // captures hide this set (feedback law). New rRt-sampling meshes
+    // register HERE, never in per-call literals.
+    _pixiRefractHidden() {
+        const G = this._pixiGpu || {};
+        return [G.shockH, G.cloakH, G.fieldH, G.tripH];
+    }
+
     // Shared settled-scene source for the rRt refraction family (shock,
     // cloak, field, trip): reuse any same-frame capture, else capture now
     // hiding EVERY rRt-sampling mesh (feedback law).
@@ -49009,7 +49585,7 @@ class Game {
         const G = this._pixiGpu;
         const tok = this._pixiFrameToken;
         if (G.shockCapFrame === tok || G.cloakCapFrame === tok || G.fieldCapFrame === tok || G.tripCapFrame === tok) return true;
-        if (!this._pixiSceneCapture(G.rRt, [G.shockH, G.cloakH, G.fieldH, G.tripH])) return false;
+        if (!this._pixiSceneCapture(G.rRt, this._pixiRefractHidden())) return false;
         G.fieldCapFrame = tok;
         return true;
     }
@@ -49368,6 +49944,7 @@ class Game {
             p.paintTrail = false;
             p.finalOpacity = 0.5;
             p.isGib = !!isGib;
+            p._trailX = undefined; p._trailY = undefined; // distance-gated gib trails re-anchor per life (see handlePermanentParticles)
         }
         return p;
     }
@@ -50514,7 +51091,7 @@ class Game {
         this.mapH = this.map.height;
         this.permanentMarks = [];
         this.casingMarks = [];   // JULY item 2: dedicated capped casing FIFO
-        if (this.groundTiles) this.groundTiles.clear(); if (this.deckTiles) this.deckTiles.clear(); // drop old decal tiles on new map
+        if (this.groundTiles) this.groundTiles.clear(); if (this.deckTiles) this.deckTiles.clear(); if (this.deckUnderTiles) this.deckUnderTiles.clear(); if (this.retiringMarks) this.retiringMarks.length = 0; // drop old decal tiles on new map
 
         // (HP-19: removed a write-only `this.friendlyFire = true` here --
         // the live field is friendlyFireMode, owned by setFriendlyFireMode.)
@@ -50722,13 +51299,14 @@ class Game {
         this.hurtDragRefractoryTimer = 0;
         this.blastMuffleTimer = 0;
         this.gloryKillTimer = 0;
+        this._timeScaleStack = [];
         this.heartbeatTimer = 0;
         this.heartbeatPhase = 0;
         this.heartbeatIntensity = 0;
         this.barriers = [];
         this.permanentMarks = [];
         this.casingMarks = [];   // JULY item 2: dedicated capped casing FIFO
-        if (this.groundTiles) this.groundTiles.clear(); if (this.deckTiles) this.deckTiles.clear(); // drop old decal tiles on reset
+        if (this.groundTiles) this.groundTiles.clear(); if (this.deckTiles) this.deckTiles.clear(); if (this.deckUnderTiles) this.deckUnderTiles.clear(); if (this.retiringMarks) this.retiringMarks.length = 0; // drop old decal tiles on reset
         this.explosiveBarrels = [];
         this.staticLights = [];
         this.pendingBarrelChains = []; // queued chain-reaction fuses (see ExplosiveBarrel.explode)
@@ -51452,8 +52030,21 @@ class Game {
                 if (!p.stopped && p.life > 0) {
                     let speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
                     if (speed > 20) {
-                        let trailAlpha = Math.min(0.25, speed / 600) * (p.life / p.maxLife);
-                        this._pushPermanentMark({ type: 'trail', x: p.x, y: p.y, r: p.size * 0.5, c: p.debrisColor, a: trailAlpha });
+                        // Distance-gated trails: stamp per px traveled, not
+                        // per frame — a fast gib no longer flushes a tile's
+                        // mark ring in ~2s. Dots merge at these radii.
+                        const step = (MARK_TILES.TRAIL_STEP || 6);
+                        const ax = (p._trailX === undefined ? p.x : p._trailX), ay = (p._trailY === undefined ? p.y : p._trailY);
+                        const dx = p.x - ax, dy = p.y - ay;
+                        if (p._trailX === undefined || dx * dx + dy * dy >= step * step) {
+                            // Fewer, stronger dots: the throttle cut stamp
+                            // count ~2-3x, so each dot carries more (bigger +
+                            // hotter) to read the same — stamp COUNT stays
+                            // throttled, visual density is restored.
+                            let trailAlpha = Math.min(0.32, speed / 600) * (p.life / p.maxLife);
+                            this._pushPermanentMark({ type: 'trail', x: p.x, y: p.y, r: p.size * 0.65, c: p.debrisColor, a: trailAlpha });
+                            p._trailX = p.x; p._trailY = p.y;
+                        }
                     }
                 }
                 if (p.stopped || p.life <= 0) {
@@ -52917,6 +53508,27 @@ class Game {
         }
     }
 
+    // Ground-marks eviction readout (dev-dashboard Resources tab): tile
+    // counts per layer, ring depth from the slider budget, lifetime
+    // counters. Render-only DOM write; safe before map exists. Lets a live
+    // session distinguish ring churn vs particle starvation at a glance.
+    devRefreshMarkStats() {
+        try {
+            const el = document.getElementById('dev-marks-stats');
+            if (!el) return;
+            const g = this.groundTiles ? this.groundTiles.size : 0;
+            const d = this.deckTiles ? this.deckTiles.size : 0;
+            const u = this.deckUnderTiles ? this.deckUnderTiles.size : 0;
+            let ring = 0, cap = 0;
+            try { ring = this._markRingDepth(); cap = this._decalCap(); } catch (e) {}
+            const st = this._markStats || { stamps: 0, rebakes: 0, retired: 0 };
+            const ret = this.retiringMarks ? this.retiringMarks.length : 0;
+            el.innerText = 'tiles g/d/u ' + g + '/' + d + '/' + u + ' (budget ' + cap + '/layer) | ring ' + ring +
+                ' | budget ' + (this.maxPermanentMarks || 0).toLocaleString() +
+                ' | stamps ' + st.stamps + ' rebakes ' + st.rebakes + ' retired ' + st.retired + ' dissolving ' + ret;
+        } catch (e) {}
+    }
+
     toggleDevDashboard() {
         const overlay = document.getElementById('dev-dashboard');
         if (!overlay) return;
@@ -52933,6 +53545,7 @@ class Game {
             }
             this.devUpdateForceMutatorHighlight();
             this.devUpdatePerkHighlight();
+            this.devRefreshMarkStats();
             // PERF (item 11b): handleDevMenuNavigation() now bails before
             // any DOM work on idle frames, so it no longer implicitly
             // establishes the initial focus highlight before the first
@@ -54438,14 +55051,20 @@ class Game {
                 // base as the true pre-slow-mo value.
                 if (this.gloryKillTimer > 0) {
                     this.gloryKillTimer = 0;
-                    this.timeScale = this.baseTimeScale;
+                    if (!this._timeScalePop('glory')) this.timeScale = this.baseTimeScale;
                 }
                 this._preDeathTimeScale = this.timeScale;
                 this.timeScale = Math.min(this.timeScale, 0.30); // never SPEED UP a slider set slower than the death slow-mo
                 this.announce(this.isTwoPlayer ? 'SQUAD ELIMINATED' : 'YOU WERE ELIMINATED', '#ff2a5f', 3.2,
                     'K.I.A. \u2014 WAVE ' + this.wave);
-                if (this.camera) this.camera.punchZoom(0.1);
-                if (this.camera2) this.camera2.punchZoom(0.1);
+                // P4 death ritual: viewport-isolated punch at the corpse
+                // (2P-fair — the surviving half keeps its frame), victim
+                // chromatic + bursts already below, then the linger hands
+                // to debrief. Fallback preserves the old both-punch.
+                try {
+                    const _dx = this.player ? this.player.x : 0, _dy = this.player ? this.player.y : 0;
+                    this.punchZoomAt(_dx, _dy, 0.12, 300);
+                } catch (e) { if (this.camera) this.camera.punchZoom(0.1); if (this.camera2) this.camera2.punchZoom(0.1); }
                 this.triggerChromaticAberration(0.5);
             }
             // dt here is pre-scaled by timeScale (see loop()), so divide it
@@ -59183,8 +59802,21 @@ class Game {
             if (target && !target.dead && e.cachedHasLOS) {
                 FX.moveTo(SX(e.x), SY(e.y)); FX.lineTo(SX(target.x), SY(target.y));
                 FX.stroke({ width: 1.2 * ez, color: 0xff2a5f, alpha: 0.45 });
+                // E5 sniper-laser tell endpoint (v==0 only).
+                try { if (v === 0) this._pixiLightSplat(target.x, target.y, 24, 0.008, '#ff8a9c'); } catch (e2) {}
             }
         }
+        // E5 enemy-tell trickles (v==0 only — one splat per frame, never
+        // per half; same visibility guards as the strokes above, no
+        // stamp/emis — night legibility without readability loss).
+        try {
+            if (v === 0) {
+                if (e.enragedTimer > 0) this._pixiLightSplat(e.x, e.y, 26, 0.008, '#ff2a5f');
+                else if (TACTICAL_TUNING.MEDIC_BOOST && e.wounded && g && !e.cachedMedicNear) this._pixiLightSplat(e.x, e.y, 22, 0.006, '#ff3b3b');
+                else if (e._commBuffTimer > 0 && e.type !== 'comm' && e.opacity > 0.05) this._pixiLightSplat(e.x, e.y, 20, 0.006, '#ffb700');
+                else if (e.type === 'comm' && e.opacity > 0.05) this._pixiLightSplat(e.x, e.y, 18, 0.006, '#ffd700');
+            }
+        } catch (e2) {}
         // Body (local rotated space): static shell rebuilds on key change,
         // dynamic subset re-triangulates per frame. Lean offset lands in the
         // screen frame on bodyC (was G.position inside _pixiEnemyBody —
@@ -59245,6 +59877,19 @@ class Game {
         if (e.chaosDraftShield && e.chaosDraftShield > 0) {
             FX.circle(SX(e.x), SY(e.y), ((e.r || 20) * 1.5 + Math.sin(Date.now() / 200) * 3) * ez);
             FX.stroke({ width: 3 * ez, color: 0x00e5ff });
+        }
+        // Firefight core: SUPPRESSING FIRE mark. The timer silenced their
+        // gun with zero visual — now a desat ring at the feet + a small
+        // down-chevron overhead, so the tactic board reads (push the quiet
+        // guns). Driven purely off the existing timer; expires with it, no
+        // fade bookkeeping, no new state. Restrained: 0.35 alpha, gray.
+        if (e.suppressedTimer > 0) {
+            const er = (e.r || 14) * ez;
+            FX.circle(SX(e.x), SY(e.y), er + 8 * ez);
+            FX.stroke({ width: Math.max(1, 1.5 * ez), color: 0xcfd8dc, alpha: 0.35 });
+            const chX = SX(e.x), chY = SY(e.y) - (er + 16 * ez), chS = 5 * ez;
+            FX.moveTo(chX - chS, chY); FX.lineTo(chX, chY + chS); FX.lineTo(chX + chS, chY);
+            FX.stroke({ width: Math.max(1, 2 * ez), color: 0xfff176, alpha: 0.8 });
         }
     }
 
@@ -59562,6 +60207,10 @@ class Game {
             H.led.position.set(lp[0], lp[1]);
             H.led.scale.set(10 / 32);
             H.led.alpha = ledB;
+            // E2 T3 LED: locked cams breathe into the buffer (v==0 only —
+            // one splat per frame, never per half). Idle cams stay dark
+            // (vector only) so frozen tableaux don't drift.
+            try { if (v === 0 && hasTargets) this._pixiLightSplat(c.x, c.y, 18, 0.006, '#ff2a5f'); } catch (e) {}
             // T3 laser (canvas: unrotated screen space — root-relative here).
             if (c.tier >= 3 && c.target && !c.target.dead) {
                 const lx0 = Math.cos(c.angle) * 8, ly0 = Math.sin(c.angle) * 8;
@@ -59570,6 +60219,10 @@ class Game {
                 B.stroke({ width: 2.0, color: 0xff2a5f, alpha: 0.60 });
                 B.moveTo(lx0, ly0); B.lineTo(lx1, ly1);
                 B.stroke({ width: 0.7, color: 0xffebeb, alpha: 0.80 });
+                // E2 T3 thermal endpoint: hot red dwell on the locked target
+                // (the beam itself reads through bloom luminance; no emis —
+                // keeps the thermal honest and restrained). Never truncated.
+                try { if (v === 0) this._pixiLightSplat(c.target.x, c.target.y, 26, 0.010, '#ff2a5f'); } catch (e) {}
             }
             if (c.hp < c.maxHp) {
                 const pct = Math.max(0, c.hp / c.maxHp);
@@ -59768,7 +60421,7 @@ class Game {
             const lAng = d.angle || 0;
             const lx0 = d.x + Math.cos(lAng) * 14, ly0 = d.y + Math.sin(lAng) * 14;
             let hitPt = null;
-            try { hitPt = g.getLaserEndPoint(lx0, ly0, lAng, 1400, g.map.walls); }
+            try { hitPt = (((g._laserOccMask || {}).spot !== false) ? g.getLaserOccludedEndPoint(lx0, ly0, lAng, 1400, g.map.walls, d) : g.getLaserEndPoint(lx0, ly0, lAng, 1400, g.map.walls)); }
             catch (e) { hitPt = { x: lx0 + Math.cos(lAng) * 1400, y: ly0 + Math.sin(lAng) * 1400 }; }
             const dist = Math.hypot(hitPt.x - lx0, hitPt.y - ly0);
             const distRatio = Math.min(1.0, dist / 1400);
@@ -59906,15 +60559,32 @@ class Game {
         if (!Bullet._tracerSprites) Bullet._tracerSprites = new Map();
         let sprite = Bullet._tracerSprites.get(color);
         if (!sprite) {
-            // Mirror of the Bullet.draw tracer bake (same shared map/art).
+            // Mirror of the Bullet.draw comet bake (same shared map/art).
             sprite = document.createElement('canvas');
-            sprite.width = 128; sprite.height = 4;
+            sprite.width = 128; sprite.height = 8;
             const sctx = sprite.getContext('2d');
             const grad = sctx.createLinearGradient(0, 0, 128, 0);
             grad.addColorStop(0, 'rgba(0,0,0,0)');
+            grad.addColorStop(0.72, color);
             grad.addColorStop(1, color);
             sctx.fillStyle = grad;
-            sctx.fillRect(0, 0, 128, 4);
+            sctx.fillRect(0, 0, 128, 8);
+            const hg = sctx.createLinearGradient(104, 0, 128, 0);
+            hg.addColorStop(0, 'rgba(255,255,255,0)');
+            hg.addColorStop(1, 'rgba(255,255,255,0.95)');
+            sctx.fillStyle = hg;
+            sctx.fillRect(104, 0, 24, 8);
+            sctx.fillStyle = 'rgba(255,255,255,0.85)';
+            sctx.fillRect(112, 3, 16, 2);
+            sctx.globalCompositeOperation = 'destination-in';
+            const vg = sctx.createLinearGradient(0, 0, 0, 8);
+            vg.addColorStop(0, 'rgba(0,0,0,0)');
+            vg.addColorStop(0.3, 'rgba(0,0,0,1)');
+            vg.addColorStop(0.7, 'rgba(0,0,0,1)');
+            vg.addColorStop(1, 'rgba(0,0,0,0)');
+            sctx.fillStyle = vg;
+            sctx.fillRect(0, 0, 128, 8);
+            sctx.globalCompositeOperation = 'source-over';
             Bullet._tracerSprites.set(color, sprite);
         }
         t = window.PIXI.Texture.from(sprite);
@@ -59960,7 +60630,7 @@ class Game {
         tr.x = ox + (b.x - cam.x + shX) * ez;
         tr.y = (b.y - cam.y + shY) * ez + (-0.75 + wob * 0.4 + TS.width / 2) * ez;
         tr.rotation = ang;
-        tr.scaleX = (tLen * ez) / 128; tr.scaleY = (TS.width * ez) / 4;
+        tr.scaleX = (tLen * ez) / 128; tr.scaleY = (TS.width * ez) / 8; // 8px comet bake
         tr.tint = 0xffffff;
         tr.alpha = TS.alpha;
         const hd = this._pixiPSpr(PH, this._pixiDotTex);
@@ -59970,6 +60640,42 @@ class Game {
         hd.scaleX = (3.5 * ez) / 8; hd.scaleY = (1 * ez) / 8;
         hd.tint = 0xffffff;
         hd.alpha = Math.min(1, TS.alpha + 0.15);
+    }
+
+    // Firefight core: supersonic whiz snaps. Near-miss bullets (same
+    // gate as the aberration tick) leave a faint streak along their path
+    // at the miss point — the flinch's caption. Restrained: one thin
+    // line, 90ms, no glow sprite, no shake. Capped array, gameTime-aged
+    // and pruned in-draw (render-only, zero RNG, sim untouched).
+    drawPixiWhiz(cam, isPlayer2) {
+        if (!this._pixiOverlayRenderer) return;
+        const S = this._whizStreaks;
+        if (!S || !S.length) return;
+        const v = (isPlayer2 && this.isTwoPlayer) ? 1 : 0;
+        const ez = cam.zoom + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
+        const ox = v ? this.width / 2 : 0;
+        const shX = cam._shX || 0, shY = cam._shY || 0;
+        if (!this._pixiWhizFx) this._pixiWhizFx = [null, null];
+        if (this._pixiWhizFrame === undefined) this._pixiWhizFrame = [-1, -1];
+        let G = this._pixiWhizFx[v];
+        if (!G) { G = new window.PIXI.Graphics(); this._pixiOverlayStage.addChild(G); this._pixiWhizFx[v] = G; }
+        if (this._pixiWhizFrame[v] !== this._pixiFrameToken) { G.clear(); this._pixiWhizFrame[v] = this._pixiFrameToken; }
+        G.mask = this._pixiHalfMask(v);
+        const now = this.gameTime || 0;
+        for (let i = S.length - 1; i >= 0; i--) {
+            const s = S[i];
+            const age = now - (s.t0 || 0);
+            if (age > 0.09) { S.splice(i, 1); continue; }
+            const a = 0.3 * (s.int || 0.5) * (1 - age / 0.09);
+            if (a <= 0.004) continue;
+            const len = (60 + 30 * (s.int || 0.5)) * ez;
+            const cx = ox + (s.x - cam.x + shX) * ez, cy = (s.y - cam.y + shY) * ez;
+            const dx = Math.cos(s.ang) * len, dy = Math.sin(s.ang) * len;
+            let col = 0xbff3ff;
+            try { if (typeof s.col === 'string' && s.col[0] === '#') col = parseInt(s.col.slice(1), 16) >>> 0; } catch (e) {}
+            G.moveTo(cx - dx / 2, cy - dy / 2); G.lineTo(cx + dx / 2, cy + dy / 2);
+            G.stroke({ width: Math.max(1, 1.5 * ez), color: col, alpha: Math.min(1, a) });
+        }
     }
 
     // PixiJS port L8b (2026-09-16): laser sight wedge + dot per player.
@@ -60016,7 +60722,9 @@ class Game {
         }
         const lt = this.laserTuning(p);
         const baseMaxLaserDist = p.isSprinting ? Math.min(AIM_WEIGHT.LOW_READY_LASER_MAX_DIST, lt.maxDist) : lt.maxDist;
-        const hitPt = this.getLaserEndPoint(lStartX, lStartY, laserAngle, baseMaxLaserDist, this.map.walls);
+        const hitPt = ((this._laserOccMask || {}).player !== false)
+            ? this.getLaserOccludedEndPoint(lStartX, lStartY, laserAngle, baseMaxLaserDist, this.map.walls, p)
+            : this.getLaserEndPoint(lStartX, lStartY, laserAngle, baseMaxLaserDist, this.map.walls);
         const pz = p.z || 0;
         const dist = Math.hypot(hitPt.x - lStartX, hitPt.y - lStartY);
         const startAlpha = lt.peakAlpha;
@@ -60132,6 +60840,11 @@ class Game {
                     EG2.fill({ color: 0xffffff, alpha: Math.min(1, dotAlpha * 0.8) * lEm2 });
                 }
             } catch (e) {}
+            // P2b laser phosphor: the dwell dot feeds the light buffer per
+            // frame at low intensity (equilibrium ~0.27, never saturates);
+            // a steady dwell phosphors, a sweep leaves a fading trace.
+            // Hit-flare frames kick harder (event, 0.08s).
+            try { this._pixiLightSplat(hitPt.x, hitPt.y - pz, 30, 0.012 + 0.05 * dotFlare, '#ffe9c9'); } catch (e) {}
         } else if (this._pixiLaserGlow[v]) this._pixiLaserGlow[v].visible = false;
         // GL + thumper charge ticks.
         if (p.glCharging) {
@@ -60606,6 +61319,9 @@ class Game {
         if (!m.armed) dotCol = Math.floor(m.t * 8) % 2 === 0 ? '#ffb700' : '#222222';
         else dotCol = Math.floor(m.t * 5) % 2 === 0 ? '#ff2a5f' : '#222222';
         B.circle(0, 0, 3); B.fill({ color: dotCol });
+        // E3 mine blink: lit phase feeds the buffer (v==0 only — one splat
+        // per frame, never per half). Unlit phase feeds nothing.
+        try { if (v === 0 && dotCol !== '#222222') this._pixiLightSplat(m.x, m.y, 22, 0.010, dotCol); } catch (e) {}
     }
 
     // PixiJS port Phase 6 (2026-09-16): GRENADES twin — in-flight ordnance.
@@ -60714,6 +61430,9 @@ class Game {
         B.circle(0, -g.z, g.r); B.stroke({ width: W(g instanceof Flashbang ? 1 : 1.5), color: 0xffffff });
         if ((g instanceof Flashbang) && Math.floor(g.fuse * 10) % 2 === 0) {
             B.circle(0, -g.z, 2); B.fill({ color: 0xff2a5f });
+            // E3 flashbang fuse strobe: lit phase only, v==0 only.
+            // (Shrapnel stays dark by design — no blink, no feed.)
+            try { if (v === 0) this._pixiLightSplat(g.x, g.y - (g.z || 0), 20, 0.010, '#ffffff'); } catch (e) {}
         }
     }
 
@@ -60748,13 +61467,26 @@ class Game {
         const F = H.flat; F.clear();
         const B = H.gfx; B.clear();
         const W = (w) => w / ez;
+        // P2b barrel flicker: the pilot light breathes (render-only shimmer,
+        // same 3Hz shape as the cloak envelope so barrel + wall pulse
+        // together). The registered night light radius rides it — walls near
+        // live barrels visibly breathe — plus a 0.5s buffer trickle
+        // (equilibrium ~0.2, never saturates).
+        const _bfl = 1 + 0.14 * Math.sin(now * 3 + (bar.rockOffset || 0));
+        try { if (bar._light) bar._light.r = 60 * _bfl; } catch (e) {}
+        try {
+            if ((this.gameTime || 0) - (bar._lightT || -9) > 0.5) {
+                bar._lightT = this.gameTime || 0;
+                this._pixiLightSplat(bar.x, bar.y, 60, 0.15, '#ff8800');
+            }
+        } catch (e) {}
         // Glow: VECTOR discs, not a sprite. Canvas shadowBlur is a tight
         // bright spill; a sprite halo both mismatches the falloff and
         // races headless readback on fresh textures (S38 muzzle lesson —
         // pooled-sprite textures read blank for seconds). Two normal-blend
         // discs approximate the spill deterministically.
-        B.circle(0, 0, bar.r + 8); B.fill({ color: 0xff5500, alpha: 0.13 });
-        B.circle(0, 0, bar.r + 3); B.fill({ color: 0xff5500, alpha: 0.30 });
+        B.circle(0, 0, bar.r + 8); B.fill({ color: 0xff5500, alpha: 0.13 * _bfl });
+        B.circle(0, 0, bar.r + 3); B.fill({ color: 0xff5500, alpha: 0.30 * _bfl });
         B.circle(0, 0, bar.r); B.fill({ color: 0x3a2410 });
         B.circle(0, 0, bar.r); B.stroke({ width: W(2), color: 0xff5500 });
         // Triangle BEFORE the rib stroke: suspected batcher state leak
@@ -61261,6 +61993,10 @@ class Game {
         if (d instanceof HostileMiniDrone) {
             H.spin.rotation = d.angle || 0;
             H.root.alpha = (d.armTimer > 0) ? (((Math.floor(now * 14) % 2) === 0) ? 1.0 : 0.35) : 1.0;
+            // E3 hostile arming blink: lit phase feeds the buffer (arming
+            // window only, v==0 only). BossDrone stays dark (measured
+            // sub-threshold discipline — untouched above).
+            try { if (v === 0 && d.armTimer > 0 && (Math.floor(now * 14) % 2) === 0) this._pixiLightSplat(d.x, d.y, 24, 0.010, '#ff2a5f'); } catch (e) {}
             B.moveTo(6.5, 0); B.lineTo(-5, -5); B.lineTo(-2.5, 0); B.lineTo(-5, 5); B.closePath();
             B.stroke({ width: W(2), color: 0xff1744 });
             B.fill({ color: 0x000000, alpha: 0.6 });
@@ -61854,6 +62590,9 @@ class Game {
         const FX = this._pixiBossFx(j, cam, isPlayer2);
         FX.circle(SX(j.x), SY(j.y), 500 * ez);
         FX.fill({ color: 0x39ff14, alpha: 0.04 * op });
+        // E5 jammer edge: cold dim breathe at the body (the 500px field
+        // itself is never fed). v==0 only.
+        try { if (v === 0) this._pixiLightSplat(j.x, j.y, 28, 0.006, '#64ffda'); } catch (e) {}
         this._pixiDashRing(FX, SX(j.x), SY(j.y), 500 * ez, 6 * ez, 10 * ez, (-gt * 12) / 500, 1.5 * ez, 0x39ff14, 0.12 * op);
         for (const je2 of (g.enemies || [])) {
             if (!je2 || je2.dead) continue;
@@ -63494,20 +64233,23 @@ class Game {
     // mirror). Textures re-upload when tile._pixiRev moves (additive bake
     // mutates the canvas). Fade-delete mirrored exactly (same order/values;
     // only one side runs). Deck pass supported (same call sites as canvas).
-    drawPixiMarks(cam, viewW, viewH, deckOnly) {
+    drawPixiMarks(cam, viewW, viewH, deckOnly, underOnly) {
         if (!this._pixiOverlayRenderer || !this.map) return;
         const R = window.PIXI;
         const hasPlat = !!(this.map && this.map.platforms && this.map.platforms.length);
-        if (deckOnly && !hasPlat) {
-            // No decks on this map: hide any deck pass left over from a
-            // previous platform map. Tile pools are keyed by dead tile
-            // objects, so the seen-sweep can't reach them — without this,
-            // old deck marks freeze viewport-stuck after pause/end/redeploy.
+        if ((deckOnly || underOnly) && !hasPlat) {
+            // No decks on this map: hide any deck/underlay pass left over
+            // from a previous platform map. Tile pools are keyed by dead
+            // tile objects, so the seen-sweep can't reach them — without
+            // this, old deck marks freeze viewport-stuck after
+            // pause/end/redeploy.
             try {
                 if (this._pixiMarksH) for (const M of this._pixiMarksH) {
-                    if (!M || !M.deckC) continue;
-                    M.deckC.visible = false;
-                    if (M.deckC.userData) for (const [, e] of M.deckC.userData.tileSp) { try { e.sp.visible = false; } catch (e2) {} }
+                    for (const k of ['deckC', 'underC']) {
+                        if (!M || !M[k]) continue;
+                        M[k].visible = false;
+                        if (M[k].userData) for (const [, e] of M[k].userData.tileSp) { try { e.sp.visible = false; } catch (e2) {} }
+                    }
                 }
             } catch (e) {}
             return;
@@ -63518,10 +64260,11 @@ class Game {
                 const c = new R.Container();
                 this._pixiOverlayStage.addChildAt(c, 0);
                 // Ground pass owns this container's gfx + tile pool (bottom,
-                // like canvas). Deck pass owns MH.deckC (appended later).
+                // like canvas). Deck pass owns MH.deckC (appended later);
+                // carve-rubble underlay owns MH.underC (below walls).
                 const gfx = new R.Graphics();
                 c.addChild(gfx);
-                return { c, gfx, tileSp: new Map(), grp: new Map(), seen: new Set(), deckC: null };
+                return { c, gfx, tileSp: new Map(), grp: new Map(), seen: new Set(), deckC: null, underC: null };
             });
         }
         const MH = this._pixiMarksH[h];
@@ -63568,20 +64311,47 @@ class Game {
             };
             if (this._pixiDressH) for (const DH of this._pixiDressH) { if (!DH) continue; wallUp(DH.solidC); wallUp(DH.sillC); }
         } catch (e) {}
-        const passC = deckOnly ? DC : MH.c;
+        // Carve-rubble underlay: own container pinned DIRECTLY below the
+        // lowest walls twin (above marks-ground and the mesa base by
+        // transitivity — walls sit above both). Deck-floor rubble blits
+        // here, so surviving stubs occlude it. Converges to no-op.
+        let UC = MH.underC;
+        if (!UC) {
+            UC = new R.Container();
+            this._pixiOverlayStage.addChild(UC);
+            UC.userData = { gfx: new R.Graphics(), tileSp: new Map(), grp: new Map(), seen: new Set() };
+            UC.addChild(UC.userData.gfx);
+            MH.underC = UC;
+        }
+        try {
+            const st = this._pixiOverlayStage;
+            const idx = (c) => { try { return (c && st.children.includes(c)) ? st.getChildIndex(c) : -1; } catch (e) { return -1; } };
+            const ui0 = idx(UC);
+            if (ui0 >= 0) {
+                let wallMin = -1;
+                if (this._pixiWallsH) for (const W2 of this._pixiWallsH) {
+                    const i = idx(W2 && W2.c); if (i >= 0 && (wallMin < 0 || i < wallMin)) wallMin = i;
+                }
+                if (wallMin >= 0) {
+                    if (ui0 > wallMin) st.addChildAt(UC, wallMin);
+                }
+            }
+        } catch (e) {}
+        const passC = underOnly ? UC : (deckOnly ? DC : MH.c);
         passC.position.copyFrom(MH.c.position);
         passC.scale.copyFrom(MH.c.scale);
         passC.visible = true;
         passC.mask = this._pixiHalfMask(h);
         if (deckOnly && !this.isTwoPlayer && this._pixiMarksH[1].deckC) this._pixiMarksH[1].deckC.visible = false;
+        if (underOnly && !this.isTwoPlayer && this._pixiMarksH[1].underC) this._pixiMarksH[1].underC.visible = false;
         // F3 deck-wipe fix: ground + deck passes need SEPARATE Graphics and
         // tile pools — the shared gfx.clear() erased the ground pass and the
         // shared seen-set hid its tiles every frame on platform maps.
         // F3b z-order: deck pair lives in the appended deckC (above twin
         // walls/floor, like canvas); ground pair stays in bottom MH.c.
-        const G = deckOnly ? DC.userData.gfx : MH.gfx;
+        const G = underOnly ? UC.userData.gfx : (deckOnly ? DC.userData.gfx : MH.gfx);
         G.clear();
-        if (this.casingMarks && this.casingMarks.length) {
+        if (!underOnly && this.casingMarks && this.casingMarks.length) {
             // P2: pooled per-pass Map (fully rebuilt below — pooling only
             // avoids per-frame GC; arrays stay short-lived by design).
             const groups = deckOnly ? DC.userData.grp : MH.grp;
@@ -63626,25 +64396,18 @@ class Game {
         // F3: per-pass pool (shared pool + shared seen-set hid the ground
         // pass every deck pass). Stale entries hide (sim-side LRU caps tiles,
         // so the pool is bounded without twin-side eviction).
-        const tiles = deckOnly ? this.deckTiles : this.groundTiles;
-        const pool = deckOnly ? DC.userData.tileSp : MH.tileSp;
+        const tiles = underOnly ? this.deckUnderTiles : (deckOnly ? this.deckTiles : this.groundTiles);
+        const pool = underOnly ? UC.userData.tileSp : (deckOnly ? DC.userData.tileSp : MH.tileSp);
         // P2: pooled per-pass Set (same reasoning as groups above).
-        const seen = deckOnly ? DC.userData.seen : MH.seen;
+        const seen = underOnly ? UC.userData.seen : (deckOnly ? DC.userData.seen : MH.seen);
         seen.clear();
         if (tiles && tiles.size) {
             const size = MARK_TILES.SIZE;
             const minWX = cam.x - size, maxWX = cam.x + viewW + size;
             const minWY = cam.y - size, maxWY = cam.y + viewH + size;
-            const nowT = (typeof this.gameTime === 'number' ? this.gameTime : 0);
-            const fadeS = (MARK_TILES.FADE_SEC || 0);
             for (const [tkey, tile] of tiles) {
                 if (tile.x + size < minWX || tile.x > maxWX || tile.y + size < minWY || tile.y > maxWY) continue;
-                let a = 1;
-                if (fadeS > 0) {
-                    a = 1 - (nowT - (tile.born === undefined ? nowT : tile.born)) / fadeS;
-                    if (a <= 0) { tiles.delete(tkey); continue; }
-                    if (a > 1) a = 1;
-                }
+                const a = 1;
                 let e = pool.get(tile);
                 const rev = tile._pixiRev || 0;
                 if (!e) {
@@ -63671,6 +64434,50 @@ class Game {
                 e.sp.alpha = a;
                 e.sp.visible = true;
                 seen.add(tile);
+            }
+        }
+        // RETIREMENT OVERLAY (Pixi twin): evicted paint dissolving into the
+        // pass Graphics — simple discs, alpha by remaining dissolve. A 2s
+        // ghost, not a lifetime; bounded list, one length check when empty.
+        if (this.retiringMarks && this.retiringMarks.length) {
+            const nowT = (typeof this.gameTime === 'number' ? this.gameTime : 0);
+            const sec = (MARK_TILES.RETIRE_SEC || 2);
+            const wantLayer = underOnly ? 'under' : (deckOnly ? 'deck' : 'ground');
+            const toNum = (col) => {
+                try {
+                    if (typeof col === 'string' && col[0] === '#') {
+                        let hx = col.slice(1);
+                        if (hx.length === 3) hx = hx[0] + hx[0] + hx[1] + hx[1] + hx[2] + hx[2];
+                        return parseInt(hx.slice(0, 6), 16) >>> 0;
+                    }
+                } catch (e) {}
+                return 0xffffff;
+            };
+            for (let i = this.retiringMarks.length - 1; i >= 0; i--) {
+                const m = this.retiringMarks[i];
+                const age = nowT - m.t0;
+                if (age >= sec) { this.retiringMarks[i] = this.retiringMarks[this.retiringMarks.length - 1]; this.retiringMarks.pop(); continue; }
+                if (m.layer !== wantLayer) continue;
+                const mr = (m.r || 0) + 48;
+                if (m.x + mr < cam.x - 8 || m.x - mr > cam.x + viewW + 8 || m.y + mr < cam.y - 8 || m.y - mr > cam.y + viewH + 8) continue;
+                const fade = 1 - age / sec;
+                if (m.type === 'scorch' && m.blotches) {
+                    for (const b of m.blotches) {
+                        G.circle(m.x + (b.ox || 0), m.y + (b.oy || 0), b.r);
+                        G.fill({ color: 0x0a0806, alpha: (m.a || 0.5) * fade });
+                    }
+                    G.circle(m.x, m.y, (m.r || 0) * 1.4);
+                    G.fill({ color: 0x140e08, alpha: (m.a || 0.5) * 0.35 * fade });
+                } else if (m.type === 'debris' && m.circs) {
+                    const col = toNum(m.c);
+                    for (const cc of m.circs) {
+                        G.circle(m.x + cc.ox, m.y + cc.oy, cc.r);
+                        G.fill({ color: col, alpha: (m.a || 0.5) * fade });
+                    }
+                } else {
+                    G.circle(m.x, m.y, m.r || 2);
+                    G.fill({ color: toNum(m.c), alpha: (m.type === 'blood' ? 0.3 : (m.a || 0.25)) * fade });
+                }
             }
         }
         for (const [tile, e] of pool) {
@@ -63956,6 +64763,25 @@ class Game {
     // Overlay-stack rule: per-draw re-slot below the screen vignette (canvas
     // draws dust under frame-end screen overlays; a setup-primed MarkC or a
     // re-created vig would otherwise strand dust above it).
+    // P3 cone gather: night-only brightness multiplier inside the hero
+    // cone — shafts via dust (the merged cut: no beam geometry, no march,
+    // ~15 flops). Day/veil = 1 (no noon beam, aura carries day). OFF when
+    // _shaftOn === false. Per-half hero in 2P.
+    _coneGather(x, y, h) {
+        try {
+            if (this._shaftOn === false || !this.nightMode) return 1;
+            const hp = (h === 1 && this.isTwoPlayer && this.player2) ? this.player2 : this.player;
+            if (!hp || hp.dead) return 1;
+            const dx = x - hp.x, dy = y - hp.y, d2 = dx * dx + dy * dy;
+            if (d2 >= 2560000 || d2 <= 1) return 1;
+            const dd = Math.sqrt(d2);
+            const ca = Math.cos(hp.angle || 0), sa = Math.sin(hp.angle || 0);
+            const al = (dx * ca + dy * sa) / dd;
+            if (al <= 0.9) return 1;
+            const w = al * al;
+            return 1 + 1.2 * w * w * (1 - dd / 1600);
+        } catch (e) { return 1; }
+    }
     drawPixiDust(cam, visibleW, visibleH) {
         if (!this._pixiOverlayRenderer || !this.map) return;
         const R = window.PIXI;
@@ -64000,7 +64826,7 @@ class Game {
                 const wy = m.y + (m.y - camCenterY) * px - (m.z || 0);
                 const spd = Math.sqrt(m.vx * m.vx + m.vy * m.vy);
                 const glint = Math.min(0.30, spd * 0.00085);
-                let a = ((m.baseOpacity || 0.08) + glint) * (0.7 + 0.3 * Math.sin(m.phase || 0));
+                let a = ((m.baseOpacity || 0.08) + glint) * (0.7 + 0.3 * Math.sin(m.phase || 0)) * this._coneGather(m.x, m.y, h);
                 a = a < 0.015 ? 0.015 : (a > 0.55 ? 0.55 : a);
                 const ci = m.colorIdx || 0;
                 // MOTE_STYLES consts (drawViewport): (180,215,255) /
@@ -64008,6 +64834,22 @@ class Game {
                 const col = ci === 0 ? 0xb4d7ff : (ci === 1 ? 0xd7ebff : 0xf0f8ff);
                 G.fill({ color: col, alpha: a });
                 G.circle(wx, wy, m.r);
+            }
+        }
+        // P3 junk render: same batch, same cull box, alpha capped 0.30.
+        // Ember bits (ci 3) burn orange; the rest ride the mote palette.
+        // Below walls/entities by construction (dust layer order) — never
+        // over tracers/HUD. OFF with the motes' own layer or _airVolOn.
+        const jk = this.junk;
+        if (jk && jk.length && this._airVolOn !== false) {
+            for (let i = 0; i < jk.length; i++) {
+                const j = jk[i];
+                if (j.x < minX || j.x > maxX || j.y < minY || j.y > maxY) continue;
+                const jsp = Math.sqrt(j.vx * j.vx + j.vy * j.vy);
+                let ja = (j.a + Math.min(0.2, jsp * 0.0006)) * (0.7 + 0.3 * Math.sin(j.ph || 0)) * this._coneGather(j.x, j.y, h);
+                if (ja > 0.30) ja = 0.30; else if (ja < 0.01) continue;
+                G.fill({ color: j.ci === 3 ? 0xff9100 : (j.ci === 0 ? 0xb4d7ff : (j.ci === 1 ? 0xd7ebff : 0xf0f8ff)), alpha: ja });
+                G.circle(j.x, j.y, j.r);
             }
         }
         if (this.map.templateId === 11 && typeof OP_BIOMES !== 'undefined') {
@@ -64259,6 +65101,22 @@ class Game {
                 s.alpha = Math.min(1, a);
             }
         }
+        // P4 desat wash (heavy-hit victim only): grey veil at low alpha —
+        // never monochrome, painted before win gold (capped-sum order:
+        // win > flash > damage > low; flash/low-HP suppress at the trigger).
+        {
+            const s = fw('des');
+            const _dt2 = p.desatTimer || 0, _dp2 = p.desatPeak || 0.20;
+            const _peak = (typeof FEEL_PUNCT !== 'undefined' && FEEL_PUNCT.DESAT_PEAK !== undefined) ? FEEL_PUNCT.DESAT_PEAK : 0.28;
+            const da = _dt2 > 0 ? _peak * (_dt2 / _dp2) : 0;
+            s.visible = da > 0.004;
+            if (s.visible) {
+                s.tint = 0x808890;
+                s.alpha = Math.min(1, da);
+                s.position.set(x, y);
+                s.scale.set(w, h);
+            }
+        }
         // §6 win gold wash.
         {
             const s = fw('win');
@@ -64281,6 +65139,9 @@ class Game {
             this._pixiWorldOrder();
             this._pixiScreenTop();
             this._pixiStageBackdrop();
+            // P2a light step BEFORE the bloom chain (the threshold samples
+            // the light front buffer). Own gates inside; idle = zero binds.
+            try { this._pixiLightStep(); } catch (e) {}
             // PHASE 3 Item 2: threshold bloom chain (always-on at night,
             // burst-gated by day; blit above night, below texts/chrome).
             try { this._pixiBloomPresent(); } catch (e) {}
@@ -64508,6 +65369,13 @@ class Game {
     // players < wall shadows), before the screen-top pass (which owns
     // night and above — untouched here). Deck marks stay above walls
     // (canvas draws the deck pass after map.draw).
+    // PILLAR ORDER LAW (gritty program): new world-space additives default
+    // BELOW night (like fluid/smoke) so darkness+holes shape them for free;
+    // above-night placement needs an operator-call comment. New screen-space
+    // effects default BELOW the flash container; above-flash needs an audit.
+    // Light buffer: additive present below night. Shafts/cone-mod: before
+    // night. Bulb splats: world pass. Desat wash: new fw('des') slot, painted
+    // before fw('win') so win gold keeps priority (capped-sum washes).
     _pixiWorldOrder() {
         try {
             const st = this._pixiOverlayStage;
@@ -64579,6 +65447,25 @@ class Game {
                     st.removeChild(WH.c);
                     const mi2 = idx(MH.c);
                     st.addChildAt(WH.c, mi2 < 0 ? st.children.length : mi2 + 1);
+                }
+            } catch (e) {}
+            // (a3) carve-rubble underlay directly below twin walls (per
+            // half, so a hidden half never drags the live one): surviving
+            // stubs occlude deck-floor rubble; the mesa base sits below by
+            // transitivity (walls above base). Runs after rigSweep, so
+            // sweep evictions can't strand it under the floor.
+            try {
+                for (let h = 0; h < 2; h++) {
+                    const MH = this._pixiMarksH && this._pixiMarksH[h];
+                    const WH = this._pixiWallsH && this._pixiWallsH[h];
+                    const UC = MH && MH.underC;
+                    if (!UC || !WH || !WH.c) continue;
+                    if (!st.children.includes(UC) || !st.children.includes(WH.c)) continue;
+                    const ui = idx(UC), wi = idx(WH.c);
+                    if (ui < 0 || wi < 0 || ui === wi - 1) continue;
+                    st.removeChild(UC);
+                    const wj = idx(WH.c);
+                    st.addChildAt(UC, wj < 0 ? st.children.length : wj);
                 }
             } catch (e) {}
             // (b) item roots below player rigs below shadow sprites
@@ -65041,7 +65928,9 @@ class Game {
                 const lt = this.laserTuning ? this.laserTuning(p) : { maxDist: 950 };
                 const beamMax = (p.isSprinting && lt.maxDist > 220) ? 220 : lt.maxDist;
                 const bx0 = p.x + Math.cos(p.angle) * 22, by0 = p.y + Math.sin(p.angle) * 22;
-                const hit = this.getLaserEndPoint(bx0, by0, p.angle, beamMax, this.map.walls);
+                const hit = (((this._laserOccMask || {}).night !== false)
+                    ? this.getLaserOccludedEndPoint(bx0, by0, p.angle, beamMax, this.map.walls, p)
+                    : this.getLaserEndPoint(bx0, by0, p.angle, beamMax, this.map.walls));
                 const blen = Math.hypot(hit.x - bx0, hit.y - by0);
                 if (blen > 60) {
                     // P2: explicit scalars (scratch aliasing would collapse
@@ -65147,7 +66036,11 @@ class Game {
         if (this.enemies) for (const e of this.enemies) {
             if (!e.dead && e.muzzleFlashTimer > 0) {
                 const pos = W2C(e.muzzleFlashX, e.muzzleFlashY - (e.z || 0));
-                const inten = Math.max(0, Math.min(1.0, e.muzzleFlashTimer / 0.04));
+                let inten = Math.max(0, Math.min(1.0, e.muzzleFlashTimer / 0.04));
+                // E6 cloak-vs-light: cloaked muzzles punch dimmer holes
+                // (stealth stays stealthy at night; the refraction rim
+                // carries the tell instead). Negative cost, no new light.
+                try { inten *= (1 - 0.7 * (e.cloak || 0)); } catch (ex) {}
                 this._pixiNightHole(h, T('muz', cachedMuzzleFlashLightCanvas), pos.x, pos.y, 140 * cz * 2, 0, inten);
             }
         }
@@ -66533,19 +67426,103 @@ class Game {
         return { x: startX + dx * nearestT, y: startY + dy * nearestT };
     }
 
+    // P5 laser occlusion (commit O): unit circles stop aim beams exactly
+    // where the shooter's bullets would stop (canHit-truth — the laser
+    // passes allies when bullets do, stops at barrels, honors FF modes).
+    // Ray-vs-circle over flat live lists, computed in draw from current
+    // state: no buckets (stale in draw), no DDA, zero alloc, pinned lens —
+    // strictly cheaper than the O(W) wall scan it follows. Cloaked units
+    // occlude (bullets hit them); the dot is the fair tell, never a decloak.
+    // OFF unless _laserOccOn === false (opt-out) +
+    // per-beam _laserOccMask {player,spot,night} (default all on).
+    _laserCanHit(shooter, ent) {
+        try {
+            if (!ent || ent.dead || ent.escaped) return false;
+            const owner = shooter ? (shooter.owner || shooter) : null;
+            if (ent === owner || ent === shooter) return false;
+            if (owner && ent.owner && ent.owner === owner) return false;
+            if ((ent.r || 0) <= 8) return false;
+            const isEnemy = (ent instanceof Enemy) || (ent instanceof ScavengerDog);
+            if (isEnemy) return !(ent.possessedBy || ent.boundTo);
+            const isAlly = (ent instanceof Player || ent instanceof AutoTurret || ent instanceof RobotDog || ent instanceof SecurityCamera || ent instanceof FPVDrone || ent instanceof MiniDrone || ent instanceof Hostage || ent instanceof EventideAnchor);
+            if (!isAlly) return false;
+            const ff = this.friendlyFireMode || 'off';
+            if (ff === 'off') return false;
+            if (ff === 'standard') return (owner instanceof Player) && (ent instanceof Player);
+            if (ff === 'hardcore') return true;
+            if (ff === 'pvp') { const tO = ent.owner || ent; return tO !== owner; }
+            return false;
+        } catch (e) { return false; }
+    }
+    _rayOccludeUnits(ox, oy, dx, dy, maxT, shooter) {
+        let bestT = maxT, best = null;
+        try {
+            const testHit = (e) => {
+                const r = e.r || 12;
+                const ex = e.x - ox, ey = e.y - oy;
+                // Origin inside the body: no meaningful entry (muzzle buried
+                // in the target). Tight test on r only — the old (sr+r)^2
+                // embrace from the muzzle blinded ~46px past the player.
+                if (ex * ex + ey * ey < r * r) return;
+                const tca = ex * dx + ey * dy;
+                if (tca < 2 || tca > bestT) return;
+                const d2 = ex * ex + ey * ey - tca * tca;
+                const r2 = r * r;
+                if (d2 > r2) return;
+                const t = tca - Math.sqrt(r2 - d2);
+                if (t < 2 || t > bestT) return;
+                bestT = t; best = e;
+            };
+            const en = this.enemies;
+            if (en) for (let i = 0, n = en.length; i < n; i++) { const e = en[i]; if (this._laserCanHit(shooter, e)) testHit(e); }
+            const sd = this.scavDogs;
+            if (sd) for (let i = 0, n = sd.length; i < n; i++) { const e = sd[i]; if (this._laserCanHit(shooter, e)) testHit(e); }
+            // Barrels always occlude (bullets detonate on them, any FF mode).
+            const eb = this.explosiveBarrels;
+            if (eb) for (let i = 0, n = eb.length; i < n; i++) { const b = eb[i]; if (!b || b.dead) continue; testHit(b); }
+            // Allied placeables + the other operator only matter when they
+            // are hittable (hardcore / PvP) — _laserCanHit decides per unit.
+            const ff = this.friendlyFireMode || 'off';
+            if (ff === 'hardcore' || ff === 'pvp') {
+                const ps = [this.player, this.player2];
+                for (let i = 0; i < ps.length; i++) { const q = ps[i]; if (q && this._laserCanHit(shooter, q)) testHit(q); }
+                const al = [this.turrets, this.dogs, this.securityCameras];
+                for (let a = 0; a < al.length; a++) {
+                    const arr = al[a];
+                    if (!arr) continue;
+                    for (let i = 0, n = arr.length; i < n; i++) { const q = arr[i]; if (this._laserCanHit(shooter, q)) testHit(q); }
+                }
+            }
+        } catch (e) {}
+        return best ? { t: bestT, ent: best } : null;
+    }
+    getLaserOccludedEndPoint(sx, sy, angle, maxDist, walls, shooter) {
+        const pt = this.getLaserEndPoint(sx, sy, angle, maxDist, walls);
+        try {
+            if (this._laserOccOn === false) return pt;
+            const dx = Math.cos(angle), dy = Math.sin(angle);
+            const wallT = Math.hypot(pt.x - sx, pt.y - sy);
+            const hit = this._rayOccludeUnits(sx, sy, dx, dy, wallT, shooter);
+            if (!hit || hit.t > wallT - 0.5) return pt;
+            return { x: sx + dx * hit.t, y: sy + dy * hit.t, occludedBy: hit.ent };
+        } catch (e) { return pt; }
+    }
+
     // Shared entry point for adding a blood/casing/trail/debris/scorch mark.
     // (Historical: this used to be the single choke point enforcing the
     // maxPermanentMarks count cap on the permanentMarks array via a bulk
     // splice-trim. The mark path now stamps into the tiled decal layer below,
-    // which sheds tiles by COUNT (LRU at the "Max Marks"-derived budget, see
-    // _decalCap) -- so maxPermanentMarks is meaningful again, and the only
-    // other count trim left is the casing FIFO.)
+    // which sheds by EVICTION only (per-tile mark rings replay out the
+    // oldest, cold whole tiles shed past the "Max Marks"-derived budget,
+    // see _markRingDepth / _decalCap) -- so maxPermanentMarks is meaningful
+    // again, and the only other count trim left is the casing FIFO.)
     // TILED DECAL LAYER (see MARK_TILES): stamps a permanent mark into the
     // offscreen tile(s) it overlaps, exactly once. drawPermanentMarks then
     // blits each live tile with a single drawImage -- no per-mark path
     // re-stroke, no O(all marks) cull-scan.
     _getGroundTiles() { if (!this.groundTiles) this.groundTiles = new Map(); return this.groundTiles; }
     _getDeckTiles() { if (!this.deckTiles) this.deckTiles = new Map(); return this.deckTiles; }
+    _getDeckUnderTiles() { if (!this.deckUnderTiles) this.deckUnderTiles = new Map(); return this.deckUnderTiles; }
     // Tile budget for a decal layer, derived from the player-facing "Max Marks"
     // setting so that slider actually governs gore/scorch persistence (before
     // this it only capped the shell-casing FIFO). Clamped to [MIN_TILES,
@@ -66571,25 +67548,66 @@ class Game {
     _makeTile(tx, ty) {
         const cv = document.createElement('canvas');
         cv.width = MARK_TILES.SIZE; cv.height = MARK_TILES.SIZE;
-        // born: game-time birth for the FADE_SEC age fade in
-        // drawPermanentMarks. Missing (pre-fade saves can't exist — tiles
-        // are per-run memory) reads as newborn at blit, never stillborn.
-        return { cv, tctx: cv.getContext('2d'), x: tx * MARK_TILES.SIZE, y: ty * MARK_TILES.SIZE, lastTouched: performance.now(), born: (typeof this.gameTime === 'number' ? this.gameTime : 0) };
+        // marks: per-tile ring of mark structs (eviction memory — the tile
+        // canvas is replayed from this list when the oldest is pushed out,
+        // see _stampMarkIntoTile). No lifetime timer anywhere.
+        return { cv, tctx: cv.getContext('2d'), x: tx * MARK_TILES.SIZE, y: ty * MARK_TILES.SIZE, lastTouched: this.gameTime || 0, marks: [] };
     }
-    _stampMarkIntoTile(tile, mark) {
-        const c = tile.tctx, lx = mark.x - tile.x, ly = mark.y - tile.y;
-        // L9b-3 revision counter (render-only): the Pixi tile twin re-uploads
-        // its texture when this moves. Deterministic (same stamps, same revs);
-        // lastTouched stays the wall-clock LRU key. Zero behavior change.
+    // Ring depth from the player-facing "Max Marks" budget: total marks ≈
+    // depth × tile budget ≈ slider value. Self-balancing across map sizes
+    // (no global counter needed); the clamp bounds replay cost + memory.
+    _markRingDepth() {
+        const m = this.maxPermanentMarks || 0;
+        const cap = Math.max(1, this._decalCap());
+        // Small-map ceiling: <=81 physical tiles (2200-class maps) replay
+        // 256-deep rings at 5-15ms per overflow; halve the ceiling there.
+        // Large maps keep RING_MAX (shallow rings, cheap replay).
+        const rmax = (cap <= 81) ? 128 : MARK_TILES.RING_MAX;
+        return Math.max(MARK_TILES.RING_MIN,
+            Math.min(rmax, Math.round(m / cap)));
+    }
+    // Evicted paint melts instead of popping: bounded transient list
+    // (cap RETIRE_CAP, swap-remove expiry, gameTime-based so pause
+    // freezes it). Drawn by both blit twins; zero cost when empty.
+    _retireMarks(list, layer) {
+        if (!list || !list.length) return;
+        if (!this.retiringMarks) this.retiringMarks = [];
+        const nowT = (typeof this.gameTime === 'number' ? this.gameTime : 0);
+        for (const m of list) {
+            if (this.retiringMarks.length >= (MARK_TILES.RETIRE_CAP || 64)) this.retiringMarks.shift();
+            this.retiringMarks.push({ type: m.type, x: m.x, y: m.y, r: m.r, c: m.c, a: m.a, circs: m.circs, blotches: m.blotches, layer, t0: nowT });
+            if (this._markStats) this._markStats.retired++;
+        }
+    }
+    // Replay a tile's canvas from its surviving ring (eviction rebake).
+    // Amortized: runs only on ring overflow, never in the frame path.
+    _rebakeTile(tile) {
+        const c = tile.tctx;
+        c.save();
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        c.clearRect(0, 0, MARK_TILES.SIZE, MARK_TILES.SIZE);
+        c.restore();
+        for (const m of tile.marks) this._paintMarkInto(tile, m, 1);
         tile._pixiRev = (tile._pixiRev || 0) + 1;
+        if (this._markStats) this._markStats.rebakes++;
+    }
+    // Single-mark painter (bake + rebake + retirement share it).
+    // alphaScale melts retiring paint; 1 everywhere else (identical pixels).
+    _paintMarkInto(tile, mark, alphaScale) {
+        const c = tile.tctx, lx = mark.x - tile.x, ly = mark.y - tile.y;
+        const k = (typeof alphaScale === 'number' ? alphaScale : 1);
         if (mark.type === 'blood') {
-            c.globalAlpha = 0.3; c.fillStyle = mark.c;
+            // Wet blood: dark venous edge + arterial core (2 arcs, no
+            // gradients — rebake-safe). Reads wet under light.
+            c.globalAlpha = 0.42 * k; c.fillStyle = '#5a0808';
             c.beginPath(); c.arc(lx, ly, mark.r, 0, Math.PI * 2); c.fill();
+            c.globalAlpha = 0.5 * k; c.fillStyle = mark.c;
+            c.beginPath(); c.arc(lx, ly, mark.r * 0.62, 0, Math.PI * 2); c.fill();
         } else if (mark.type === 'trail') {
-            c.globalAlpha = mark.a; c.fillStyle = mark.c;
+            c.globalAlpha = mark.a * k; c.fillStyle = mark.c;
             c.beginPath(); c.arc(lx, ly, mark.r, 0, Math.PI * 2); c.fill();
         } else if (mark.type === 'debris') {
-            c.globalAlpha = mark.a; c.fillStyle = mark.c;
+            c.globalAlpha = mark.a * k; c.fillStyle = mark.c;
             c.beginPath();
             for (let cc of mark.circs) { c.moveTo(lx + cc.ox + cc.r, ly + cc.oy); c.arc(lx + cc.ox, ly + cc.oy, cc.r, 0, Math.PI * 2); }
             c.fill();
@@ -66605,21 +67623,62 @@ class Game {
                 bg.addColorStop(0, 'rgba(10, 8, 6, 0.95)');
                 bg.addColorStop(0.55, 'rgba(10, 8, 6, 0.68)');
                 bg.addColorStop(1, 'rgba(10, 8, 6, 0)');
-                c.globalAlpha = mark.a; c.fillStyle = bg;
+                c.globalAlpha = mark.a * k; c.fillStyle = bg;
                 c.beginPath(); c.arc(bx, by, b.r, 0, Math.PI * 2); c.fill();
             }
             const g = c.createRadialGradient(lx, ly, 0, lx, ly, mark.r * 1.4);
             g.addColorStop(0, 'rgba(20, 14, 8, 0.8)');
             g.addColorStop(1, 'rgba(20, 14, 8, 0)');
-            c.globalAlpha = mark.a * 0.35; c.fillStyle = g;
+            c.globalAlpha = mark.a * 0.35 * k; c.fillStyle = g;
             c.beginPath(); c.arc(lx, ly, mark.r * 1.4, 0, Math.PI * 2); c.fill();
         }
         c.globalAlpha = 1;
     }
+    _stampMarkIntoTile(tile, mark) {
+        // L9b-3 revision counter (render-only): the Pixi tile twin re-uploads
+        // its texture when this moves. Deterministic (same stamps, same revs);
+        // lastTouched is the GAME-TIME LRU key (pause/idle never ages tiles).
+        tile._pixiRev = (tile._pixiRev || 0) + 1;
+        // Ring memory: the tile keeps its most recent marks; overflow pushes
+        // the oldest out (retired to the dissolve overlay) and replays the
+        // survivors. Hot tiles cycle instead of saturating; cold tiles keep
+        // everything. No timers — eviction only.
+        if (!tile.marks) tile.marks = [];
+        tile.marks.push({ type: mark.type, x: mark.x, y: mark.y, r: mark.r, c: mark.c, a: mark.a, circs: mark.circs, blotches: mark.blotches });
+        if (this._markStats) this._markStats.stamps++;
+        const depth = this._markRingDepthFor(mark.type);
+        if (tile.marks.length > depth) {
+            const out = tile.marks.splice(0, tile.marks.length - depth);
+            this._retireMarks(out, tile._layer || 'ground');
+            // Rebake budget: one replay per frame max (MARK_TILES.
+            // REBAKE_PER_FRAME). Past budget the ring is already trimmed and
+            // the retire overlay covers the gap; the canvas replays on the
+            // next frame's stamp. Bounds hot-tile hitch stacking.
+            const fr = this._pixiFrameToken || 0;
+            if (this._markRebakeFrame !== fr) {
+                this._markRebakeFrame = fr;
+                this._rebakeTile(tile);
+            }
+            return;
+        }
+        this._paintMarkInto(tile, mark, 1);
+    }
+    // Per-type ring depth: shared budget scaled by MARK_TYPE_DEPTH so one
+    // decal family can't starve the others. Floor 8 keeps tiny budgets alive.
+    _markRingDepthFor(type) {
+        let f = 1;
+        try { f = (MARK_TYPE_DEPTH && MARK_TYPE_DEPTH[type]) || 1; } catch (e) {}
+        return Math.max(8, Math.round(this._markRingDepth() * f));
+    }
     _stampMark(mark) {
         const hasPlat = !!(this.map && this.map.platforms && this.map.platforms.length);
         const isDeck = hasPlat && this.map.floorAt(mark.x, mark.y) === 2;
-        const map = isDeck ? this._getDeckTiles() : this._getGroundTiles();
+        // Carve rubble (mark.under, set ONLY by _spawnCarveDebris) bakes
+        // into the underlay layer: same deck footprint, but blitted BELOW
+        // surviving walls instead of above them. Everything else keeps its
+        // routing (deck blood/scorch stay above the floor, below units).
+        const map = (mark.under && isDeck) ? this._getDeckUnderTiles() : (isDeck ? this._getDeckTiles() : this._getGroundTiles());
+        const layer = (mark.under && isDeck) ? 'under' : (isDeck ? 'deck' : 'ground');
         const cap = this._decalCap(); // tile budget for this stamp (slider-driven, see _decalCap)
         // stamp into every tile the mark's bounding box overlaps (a small mark
         // lands in one; one straddling an edge lands in up to four, and each
@@ -66634,8 +67693,8 @@ class Game {
             for (let tx = x0; tx <= x1; tx++) {
                 const key = tx + '|' + ty;
                 let tile = map.get(key);
-                if (!tile) { tile = this._makeTile(tx, ty); map.set(key, tile); while (map.size > cap) this._evictColdest(map); }
-                tile.lastTouched = performance.now();
+                if (!tile) { tile = this._makeTile(tx, ty); tile._layer = layer; map.set(key, tile); while (map.size > cap) this._evictColdest(map); }
+                tile.lastTouched = this.gameTime || 0;
                 this._stampMarkIntoTile(tile, mark);
             }
         }
@@ -66648,10 +67707,11 @@ class Game {
     _pushPermanentMark(mark) {
         // JULY item 2 (casing clutter cap): shell casings keep their OWN small
         // FIFO (casingMarks, <=400) -- cheap enough to still cull-scan per frame
-        // in drawPermanentMarks. Blood / trail / debris / scorch now stamp into
-        // the count-capped tiled decal layer (MARK_TILES, LRU at the "Max Marks"
-        // budget, no time fade) instead of the old 30,000-mark pool, which is
-        // what made drawPermanentMarks O(all marks).
+        // in drawPermanentMarks. Blood / trail / debris / scorch stamp into
+        // the eviction-only tiled decal layer (MARK_TILES): per-tile mark
+        // rings (depth from the "Max Marks" budget, see _markRingDepth)
+        // replay out the oldest via rebake, cold whole tiles shed past the
+        // tile budget. No timers — paint persists until painted over.
         if (mark.type === 'casing') {
             if (!this.casingMarks) this.casingMarks = [];
             this.casingMarks.push(mark);
@@ -66672,9 +67732,9 @@ class Game {
     // nothing, which read as blood falling *through* the platform.
     // Costs nothing on maps without platforms: the deck pass returns
     // immediately and the ground pass skips the per-mark test entirely.
-    drawPermanentMarks(ctx, cam, viewW, viewH, deckOnly) {
+    drawPermanentMarks(ctx, cam, viewW, viewH, deckOnly, underOnly) {
         const hasPlat = !!(this.map && this.map.platforms && this.map.platforms.length);
-        if (deckOnly && !hasPlat) return;
+        if ((deckOnly || underOnly) && !hasPlat) return;
         const onDeck = (x, y) => this.map.floorAt(x, y) === 2;
         // PERF history (BUG-013 / fix P3): this pass once measured 5.48
         // ms/frame as marks accumulated (one beginPath/fill per mark). P3
@@ -66717,8 +67777,10 @@ class Game {
         // JULY item 2: casings live in their own capped array now (see
         // _pushPermanentMark) -- drawn first in the same ground pass, a
         // touch dimmer than before (0.5 vs 0.65) so brass reads as texture
-        // under loot rather than competing with it.
-        if (this.casingMarks && this.casingMarks.length) {
+        // under loot rather than competing with it. The underlay pass
+        // carries carve rubble only — casings already read in their own
+        // ground/deck pass, never duplicated here.
+        if (!underOnly && this.casingMarks && this.casingMarks.length) {
             for (let m of this.casingMarks) {
                 if (m.x < cam.x - 8 || m.x > cam.x + viewW + 8 || m.y < cam.y - 8 || m.y > cam.y + viewH + 8) continue;
                 if (hasPlat && onDeck(m.x, m.y) !== !!deckOnly) continue;
@@ -66729,30 +67791,45 @@ class Game {
         }
         // TILED DECAL LAYER: blit each visible live tile with a single
         // drawImage — no per-mark path re-stroke, no O(all marks) cull-scan.
-        // Lifetime is count/LRU (see MARK_TILES / _decalCap) PLUS age fade:
-        // a tile blits from full alpha to transparent over FADE_SEC after
-        // its birth, then drops. The fade is what keeps small maps (whose
-        // tile count never reaches the budget) cycling instead of baking
-        // alpha additively until fresh blood stops reading — and it frees
-        // the canvas as it goes. Deleting during Map iteration is safe.
+        // Lifetime is eviction-only (per-tile mark rings + cold-tile LRU):
+        // paint persists indefinitely until newer paint pushes it out, so a
+        // revisited battlefield still shows its old blood. Freshly evicted
+        // paint dissolves via the retirement overlay below instead of
+        // popping. Deleting during Map iteration is safe.
         // globalAlpha is pinned per-tile below so leftover state from the
         // casing pass above can't leak into the blits.
-        const tiles = deckOnly ? this.deckTiles : this.groundTiles;
+        const tiles = underOnly ? this.deckUnderTiles : (deckOnly ? this.deckTiles : this.groundTiles);
         if (tiles && tiles.size) {
             const size = MARK_TILES.SIZE;
             const minWX = cam.x - size, maxWX = cam.x + viewW + size;
             const minWY = cam.y - size, maxWY = cam.y + viewH + size;
-            const nowT = (typeof this.gameTime === 'number' ? this.gameTime : 0);
-            const fadeS = (MARK_TILES.FADE_SEC || 0);
             ctx.globalAlpha = 1;
             for (const [tkey, tile] of tiles) {
                 if (tile.x + size < minWX || tile.x > maxWX || tile.y + size < minWY || tile.y > maxWY) continue;
-                if (fadeS > 0) {
-                    const a = 1 - (nowT - (tile.born === undefined ? nowT : tile.born)) / fadeS;
-                    if (a <= 0) { tiles.delete(tkey); continue; }
-                    ctx.globalAlpha = a < 1 ? a : 1;
-                }
                 ctx.drawImage(tile.cv, tile.x - cam.x, tile.y - cam.y, size, size);
+            }
+        }
+        // RETIREMENT OVERLAY: evicted marks dissolving (bounded list, one
+        // length check when empty). Same painter as the tiles, alpha scaled
+        // by remaining dissolve; expired entries swap-removed.
+        if (this.retiringMarks && this.retiringMarks.length) {
+            const nowT = (typeof this.gameTime === 'number' ? this.gameTime : 0);
+            const sec = (MARK_TILES.RETIRE_SEC || 2);
+            const wantLayer = underOnly ? 'under' : (deckOnly ? 'deck' : 'ground');
+            const pad = 64;
+            for (let i = this.retiringMarks.length - 1; i >= 0; i--) {
+                const m = this.retiringMarks[i];
+                const age = nowT - m.t0;
+                if (age >= sec || m.layer !== wantLayer) {
+                    if (age >= sec) { this.retiringMarks[i] = this.retiringMarks[this.retiringMarks.length - 1]; this.retiringMarks.pop(); }
+                    continue;
+                }
+                const mr = (m.r || 0) + 48;
+                if (m.x + mr < cam.x - pad || m.x - mr > cam.x + viewW + pad || m.y + mr < cam.y - pad || m.y - mr > cam.y + viewH + pad) continue;
+                ctx.save();
+                ctx.translate(-cam.x, -cam.y);
+                this._paintMarkInto({ tctx: ctx, x: 0, y: 0 }, m, 1 - age / sec);
+                ctx.restore();
             }
         }
         ctx.globalAlpha = 1;
@@ -66801,6 +67878,10 @@ class Game {
         this.drawBarriers(cam, false, this.pixiLayer_objective, isPlayer2);
         this.drawDataCables(cam, false);
         this.map.draw(this.ctx, cam, viewportW, viewportH);
+        // Carve-rubble underlay (twin pass): deck-floor rubble that blits
+        // BELOW surviving walls (container pinned under the walls twin).
+        // Call order mirrors canvas (base → underlay → walls → deck).
+        this.drawPixiMarks(cam, visibleW, visibleH, false, true);
         // SIMULATED SECOND FLOOR: gore that landed on a deck is re-drawn
         // here, on top of the platform surface instead of washed out
         // beneath it. Then barriers standing on a deck, for the same reason
@@ -67010,6 +68091,8 @@ class Game {
             // L12 single-renderer: bullet twin only.
             this.drawPixiBullet(b, cam, isPlayer2);
         }
+        // Firefight core: whiz snap streaks ride the bullet pass.
+        try { this.drawPixiWhiz(cam, isPlayer2); } catch (e) {}
 
         
         // Barriers draw before walls (see above drawOperatorBiomeBands)
@@ -67451,6 +68534,7 @@ class Game {
                 for (const MH of this._pixiMarksH) {
                     MH.c.visible = showM;
                     if (MH.deckC) MH.deckC.visible = showM;
+                    if (MH.underC) MH.underC.visible = showM;
                 }
             }
             if (!this.pixiLayer_overlays) {
@@ -67630,7 +68714,7 @@ class Game {
             this.gloryKillTimer -= dt;
             if (this.gloryKillTimer <= 0) {
                 this.gloryKillTimer = 0;
-                this.timeScale = this.baseTimeScale;
+                if (!this._timeScalePop('glory')) this.timeScale = this.baseTimeScale;
             }
         }
 
