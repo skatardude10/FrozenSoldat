@@ -10533,8 +10533,9 @@ const CAMERA_LOW_READY = {
 // target can never jerk the view.
 const CAMERA_FOCUS_DRAG = {
     EXTRA_AIM_WEIGHT: 0.15,  // full-focus aim-weight delta: 0.35 -> 0.50 (plus the lock's 0.05, hard-capped at 0.60 in update)
-    BUILD_RATE: 2.0,         // per-second ease while focus builds (tracks the ~2s focus ramp; the settle starts as the laser begins whitening)
-    RELEASE_RATE: 4.0        // per-second ease while focus breaks (re-aim relaxes the view in ~0.25s)
+    BUILD_RATE: 2.0,         // retired from the build path (envelope is copied, see update); kept so stored presets don't orphan
+    RELEASE_RATE: 4.0,       // per-second ease while focus breaks (re-aim relaxes the view in ~0.25s)
+    PAN_SLEW: 1.2            // blend-units/sec cap on the build: L0's ~0.5/s ramp never touches it (baseline), L5's ~3/s ramp settles in ~0.8s instead of whipping out instantly
 };
 // Focus LOCK framing: the sustained "locked-on" state. Engages while
 // focusLevel >= AIM_WEIGHT.FOCUS_LOCK_THRESHOLD (read at RUNTIME -- that
@@ -10618,16 +10619,28 @@ class Camera {
         // where it stopped -- the blend never snaps, in or out.
         if (dt) {
             this.lowReadyBlend += ((lowReady ? 1 : 0) - this.lowReadyBlend) * dt * CAMERA_LOW_READY.SETTLE_RATE;
-            // Focus framing (see CAMERA_FOCUS_DRAG / CAMERA_FOCUS_LOCK): ease
-            // camera-side copies of the focus envelope. Asymmetric rates on
-            // the drag (slow build, faster release) because focusLevel snaps
-            // to 0 on re-aim -- the release ease is what keeps the pan from
-            // snapping back.
+            // Focus framing (see CAMERA_FOCUS_DRAG / CAMERA_FOCUS_LOCK): the
+            // gun's envelope is already per-level, HP-scaled, and TW-live.
+            // BUILD is slew-capped, not eased: slow ramps (L0 ~0.5/s) never
+            // touch the cap and track exactly; fast ramps (L5 ~3/s) settle
+            // in ~0.8s instead of whipping the pan out instantly. RELEASE
+            // keeps the fast fixed ease because focusLevel snaps to 0.
             let focusLevel = (player && player.focusLevel) || 0;
             let focusTarget = focusLevel;
-            this.focusAimBlend += (focusTarget - this.focusAimBlend) * dt * (focusTarget > this.focusAimBlend ? CAMERA_FOCUS_DRAG.BUILD_RATE : CAMERA_FOCUS_DRAG.RELEASE_RATE);
+            if (focusTarget > this.focusAimBlend) this.focusAimBlend = Math.min(focusTarget, this.focusAimBlend + dt * CAMERA_FOCUS_DRAG.PAN_SLEW);
+            else this.focusAimBlend += (focusTarget - this.focusAimBlend) * dt * CAMERA_FOCUS_DRAG.RELEASE_RATE;
             let locked = focusLevel >= AIM_WEIGHT.FOCUS_LOCK_THRESHOLD;
-            this.focusLockBlend += ((locked ? 1 : 0) - this.focusLockBlend) * dt * CAMERA_FOCUS_LOCK.RATE;
+            let holderFade = (player && player._focusFadeTime) || AIM_WEIGHT.IDLE_SWAY_FADE_TIME;
+            let holderFlash = Math.max(0.08, holderFade * AIM_WEIGHT.FOCUS_FLASH_FRAC);
+            // Top-end clamp: untiered k reaches ~18 at L5 and slams the
+            // tighten in jarringly fast. Capped at 12 (~1/3 off the top) --
+            // still lands inside the 0.17s beat, minus the snap. L0 (~3.0)
+            // and below ride the untiered rate as the baseline.
+            let kLockIn = Math.min(12, 3 / holderFlash);
+            let kLock = locked ? kLockIn : Math.max(kLockIn, CAMERA_FOCUS_DRAG.RELEASE_RATE);
+            // Hitch guard: kLockIn reaches ~18 at L5, so a lag spike must not
+            // overshoot the blend into oscillation.
+            this.focusLockBlend += ((locked ? 1 : 0) - this.focusLockBlend) * Math.min(1, dt * kLock);
             // WO-001 Phase 2: body clocks + landing edges (dt-scaled: freezes in hit-stop, slows in slow-mo — correct for a body).
             if (typeof CAMERA_BODY !== 'undefined') {
                 this.breathPhase = (this.breathPhase || 0) + dt * Math.PI * 2 * CAMERA_BODY.BREATH_HZ;
@@ -16754,12 +16767,13 @@ const AIM_WEIGHT = {
     // --- Idle sway: a continuous "held rifle breathing" wobble that is now
     // ALWAYS present at IDLE_SWAY_BASE_DEG -- whether the target angle is
     // actively being tracked or just sitting still -- rather than only ever
-    // ramping up from zero while idle. Baseline strengthened (was a flat
-    // 0.10 deg that only appeared once idle) specifically so Focus below has
-    // real amplitude to steady down FROM. Still deliberately small: even at
-    // the baseline this should read as "a little unsteady," never enough on
-    // its own to explain a miss.
-    IDLE_SWAY_BASE_DEG: 0.34,
+    // ramping up from zero while idle. Baseline set so the wobble actually
+    // reads on screen (1.2deg moves the tip ~10px at 500px, ~29px at full
+    // laser range) -- anything under ~1deg proved imperceptible against the
+    // thin beam, and Focus then erased it before it ever registered. Big
+    // enough to threaten a wall-corner hold at range; Focus exists to tame
+    // it, never to erase it (see the floor below).
+    IDLE_SWAY_BASE_DEG: 1.2,
     // Health scaling: the baseline above is a floor, not a fixed value --
     // it scales UP linearly as hp drops, reaching IDLE_SWAY_HEALTH_MAX_MULT
     // at 0 hp (1.0x at full hp, unaffected). Deliberately only applied to
@@ -16772,16 +16786,19 @@ const AIM_WEIGHT = {
     // not sprinting) for IDLE_SWAY_ENGAGE_DELAY seconds and the same
     // envelope that used to only feed the damage/speed bonus now ALSO
     // steadies the weapon -- sway amplitude interpolates down from the
-    // baseline above toward this floor as focus ramps in. Never fully zero;
-    // a held rifle never goes perfectly rigid, and keeping a faint residual
-    // wobble even at full focus keeps the reticle feeling alive.
-    IDLE_SWAY_FOCUSED_DEG: 0.06,
-    // Short engage delay: focus comes on fast enough to feel during a fight
-    // (was 0.7s -- combined with the fade time the total ramp is now ~2s).
-    IDLE_SWAY_ENGAGE_DELAY: 0.15,  // seconds of stillness before focus starts engaging
-    // Ramp duration -- with the 0.15s engage delay above the total 0->1 ramp
-    // is ~2s. (Was 2.2s + 0.7s delay = 2.9s, too slow to ever notice.)
-    IDLE_SWAY_FADE_TIME: 1.85,     // seconds for focus to ramp 0 -> 1 once engaged, at full health
+    // baseline above toward this floor as focus ramps in. Deliberately
+    // VISIBLE, not zero: a held rifle never goes perfectly rigid, and at
+    // ~0.15deg the residual still breathes ~1.3px at 500px on the thin beam.
+    IDLE_SWAY_FOCUSED_DEG: 0.15,
+    // Per-level start gate: the conditioning table's engage column holds
+    // stillness seconds per level (L0 2.0s of holding still, L5 0.5s) --
+    // the START of focus is trained, not just its speed. This constant is
+    // the L3 Infantry value (rows override in practice) and the fallback.
+    IDLE_SWAY_ENGAGE_DELAY: 0.75,  // seconds of stillness before focus starts engaging
+    // Ramp duration -- the TweakLab-tunable base; every conditioning level
+    // multiplies it by its focusFade (L0 2.7x, L5 0.45x), so one slider
+    // drives all six levels live. L3 == this value (0.75s).
+    IDLE_SWAY_FADE_TIME: 0.75,     // seconds for focus to ramp 0 -> 1 once engaged, at full health
     // Health scaling: same idea as IDLE_SWAY_HEALTH_MAX_MULT above, but for
     // TIME instead of amplitude -- steadying your aim takes longer the more
     // hurt you are (shaky hands), up to this multiplier on the fade time at
@@ -16801,11 +16818,15 @@ const AIM_WEIGHT = {
     // ramp above is sub-perceptual on the beam by itself (a sub-pixel beam
     // narrowed a bit more is invisible), so focus gets a DISCRETE cue: when
     // focusLevel first crosses FOCUS_LOCK_THRESHOLD upward, the laser fires a
-    // one-shot white flash (focusFlash spikes to 1, decays over FOCUS_FLASH_TIME
-    // s) and then holds a solid white core for as long as it stays above the
-    // threshold. Draw-only -- consumed by the laser block, no sim effect.
-    FOCUS_LOCK_THRESHOLD: 0.6,   // focusLevel at which the lock engages
-    FOCUS_FLASH_TIME: 0.25,      // seconds for the one-shot lock flash to decay
+    // one-shot white flash (focusFlash spikes to 1, decays over a fraction
+    // of the level's own fade -- see FOCUS_FLASH_FRAC) and then holds a
+    // solid white core for as long as it stays above the threshold.
+    // Draw-only -- consumed by the laser block, no sim effect. Threshold
+    // sits at 0.3 (was 0.6) so the cue announces the START of the lock,
+    // not its midpoint -- the beam has already begun narrowing/whitening
+    // by the time it fires.
+    FOCUS_LOCK_THRESHOLD: 0.3,   // focusLevel at which the lock cue + camera tighten engage
+    FOCUS_FLASH_FRAC: 0.5,       // flash decay = this fraction of the level's fade (L0 ~1s bloom, L5 ~0.2s snap; floored at 0.08s at the decay site)
 
     // --- Focus rewards: same envelope drives all three, so the payoff for
     // holding an angle reads as one coherent "steadying down the sights"
@@ -17225,6 +17246,9 @@ function buildTweakRegistry() {
     TW('Aim & Focus', 'AIM_WEIGHT.FOCUS_STILL_RATE_DEG_PER_SEC', AIM_WEIGHT, 'FOCUS_STILL_RATE_DEG_PER_SEC', 30, 300, 5);
     TW('Aim & Focus', 'AIM_WEIGHT.GUN_FREE_TURN_RATE_DEG_PER_SEC', AIM_WEIGHT, 'GUN_FREE_TURN_RATE_DEG_PER_SEC', 500, 4000, 50);
     TW('Aim & Focus', 'AIM_WEIGHT.GUN_SWING_LEAD_MULT', AIM_WEIGHT, 'GUN_SWING_LEAD_MULT', 1, 1.5, 0.01);
+    // Focus transition base: every conditioning level multiplies this by
+    // its focusFade, so one slider drives all six lock speeds live.
+    TW('Aim & Focus', 'AIM_WEIGHT.IDLE_SWAY_FADE_TIME', AIM_WEIGHT, 'IDLE_SWAY_FADE_TIME', 0.3, 4, 0.05);
     // --- Gunfire (per weapon; loop-registered, one line per feel axis) ---
     for (let wn of W) {
         TWN('Gunfire', 'KICKBACK.' + wn, (() => { let k = wn; return () => FIRE_TUNING.KICKBACK_FORCES[k]; })(), (() => { let k = wn; return (v) => { FIRE_TUNING.KICKBACK_FORCES[k] = v; }; })(), 0, 600, 5);
@@ -17470,7 +17494,7 @@ const PLAYER_GUN_GEOM = {
 const FIRE_TUNING = {
     KICKBACK_FORCES: { 'Pistol': 45, 'SMG': 65, 'Shotgun': 280, 'Sniper': 420, 'M1A': 190, 'LMG': 130, 'Abakan': 90, 'Thumper': 320, 'Mauler': 360, 'Judge': 520 },
     RECOIL_SPRITE_KICKS: { 'Pistol': 7.0, 'SMG': 6.0, 'M1A': 10.0, 'LMG': 11.0, 'Shotgun': 15.0, 'Sniper': 20.0, 'Abakan': 8.0, 'Thumper': 16.0, 'Mauler': 17.0, 'Judge': 24.0 },
-    ZOOM_PUNCHES: { 'Pistol': 0.006, 'SMG': 0.008, 'M1A': 0.016, 'LMG': 0.018, 'Shotgun': 0.028, 'Sniper': 0.042, 'Abakan': 0.014, 'Thumper': 0.030, 'Mauler': 0.034, 'Judge': 0.055 },
+    ZOOM_PUNCHES: { 'Pistol': 0.010, 'SMG': 0.012, 'M1A': 0.016, 'LMG': 0.018, 'Shotgun': 0.028, 'Sniper': 0.042, 'Abakan': 0.014, 'Thumper': 0.030, 'Mauler': 0.034, 'Judge': 0.055 },
     RECOIL_ZOOM_OUT: { 'Pistol': 0.010, 'SMG': 0.014, 'M1A': 0.030, 'LMG': 0.032, 'Shotgun': 0.055, 'Sniper': 0.080, 'Abakan': 0.026, 'Thumper': 0.058, 'Mauler': 0.062, 'Judge': 0.095 },
     GUNKICK_PX: { 'Pistol': 1.0, 'SMG': 1.2, 'M1A': 2.0, 'LMG': 2.0, 'Shotgun': 3.0, 'Sniper': 3.5, 'Abakan': 1.6, 'Thumper': 3.2, 'Mauler': 3.4, 'Judge': 4.2 }
 };
@@ -19933,10 +19957,14 @@ class Player extends Entity {
         // baseline/fade-time values below with no penalty.
         let hpFrac = this.maxHp > 0 ? MathUtils.clamp(this.hp / this.maxHp, 0, 1) : 1;
         let healthPenalty = 1 - hpFrac; // 0 at full health, 1 at 0 hp
-        // SOLDIER CONDITIONING: idle-base + fade absolutes (L0 0.60deg/2.6s
-        // loose-goose, L3 0.34/1.85s live, L5 0.22/1.4s mastered).
+        // SOLDIER CONDITIONING: idle-base absolute (L0 2.5deg loose-goose,
+        // L3 1.2 live, L5 0.5 mastered); fade is a MULT of the base so the
+        // TweakLab slider stays live across all levels; engage is an
+        // absolute stillness gate per level (L0 2.0s of holding still, L5
+        // 0.5s) -- the start of focus is trained, not just its speed.
         let scIdleBase = (scRowAW ? scRowAW.idleBase : AIM_WEIGHT.IDLE_SWAY_BASE_DEG);
-        let scFadeBase = (scRowAW ? scRowAW.focusFade : AIM_WEIGHT.IDLE_SWAY_FADE_TIME);
+        let scFadeBase = AIM_WEIGHT.IDLE_SWAY_FADE_TIME * (scRowAW ? scRowAW.focusFade : 1.0);
+        let scEngage = (scRowAW && scRowAW.engage !== undefined) ? scRowAW.engage : AIM_WEIGHT.IDLE_SWAY_ENGAGE_DELAY;
         let swayBaseDeg = scIdleBase *
             (1 + healthPenalty * (AIM_WEIGHT.IDLE_SWAY_HEALTH_MAX_MULT - 1));
         let swayFadeTime = scFadeBase *
@@ -19962,20 +19990,30 @@ class Player extends Entity {
             this.aimIdleStillTimer = 0;
         }
         let swayEnvelope = MathUtils.clamp(
-            (this.aimIdleStillTimer - AIM_WEIGHT.IDLE_SWAY_ENGAGE_DELAY) / swayFadeTime,
+            (this.aimIdleStillTimer - scEngage) / swayFadeTime,
             0, 1
         );
         // Focus: reuse the envelope directly -- zero extra per-frame cost.
         // Consumed at bullet-spawn time in Bullet.init() (speed/damage) and
         // in Player.fire() (spread tightening).
         this.focusLevel = swayEnvelope;
+        // Per-holder fade for the camera's tiered lock-in (Camera.update reads
+        // this, never the global row -- HP scaling included, 2P-correct).
+        this._focusFadeTime = swayFadeTime;
         // G1 lock cue (draw-only): edge-detect the upward crossing of the lock
-        // threshold -> spike focusFlash to 1; it decays over FOCUS_FLASH_TIME.
+        // threshold -> spike focusFlash to 1; it decays over a FRACTION of
+        // this level's own fade (FOCUS_FLASH_FRAC), so the beat tracks the
+        // ramp -- long bloom on a slow lock, snap on a fast one.
         // No gameplay effect -- purely the "you locked on" beat for the laser.
         let _focused = swayEnvelope >= AIM_WEIGHT.FOCUS_LOCK_THRESHOLD;
-        if (_focused && !this._wasFocused) this.focusFlash = 1;
+        // Flash peak scales INVERSE to fade: a slow lock earns a dimmer beat
+        // (L0 ~0.6 over ~1s = subtle bloom), a fast lock the full snap (L3+
+        // clamps at 1.0 -- live-identical). Uses swayFadeTime so hurt-penalty
+        // and the TweakLab slider compose automatically.
+        if (_focused && !this._wasFocused) this.focusFlash = Math.min(1, 0.35 + 0.65 * (AIM_WEIGHT.IDLE_SWAY_FADE_TIME / Math.max(1e-3, swayFadeTime)));
         this._wasFocused = _focused;
-        this.focusFlash = Math.max(0, this.focusFlash - dt / AIM_WEIGHT.FOCUS_FLASH_TIME);
+        let scFlashTime = Math.max(0.08, swayFadeTime * AIM_WEIGHT.FOCUS_FLASH_FRAC);
+        this.focusFlash = Math.max(0, this.focusFlash - dt / scFlashTime);
         // Sway amplitude interpolates DOWN from the (health-scaled) baseline
         // toward the fixed focused floor as swayEnvelope ramps 0 -> 1, so an
         // un-focused aim (moving, tracking, or just briefly still) always
@@ -36123,7 +36161,10 @@ const ARMORY_UPGRADES = [
 // Index = MA.soldierConditioning, clamped 0..5: 0 COUCH POTATO (loose-goose
 // default, WAY looser than live), 1 NOVICE, 2 RECRUIT, 3 INFANTRY (today's
 // live values exactly -- every taken-mult 1.0 and every absolute == its base
-// constant), 4 GREEN BERET, 5 SPEC OPS (tighter than live). Consumers read
+// constant), 4 GREEN BERET, 5 SPEC OPS (tighter than live). Two focus
+// columns: engage (ABSOLUTE stillness seconds before focus starts) and
+// focusFade (MULT of IDLE_SWAY_FADE_TIME -- the TweakLab slider stays live
+// because every row multiplies the same base). Consumers read
 // the row live (cardioConditioning model) and multiply the existing
 // expression, so TweakLab sliders and overclocks keep composing underneath.
 // Deliberately NOT touched here: SPRINGS stiffness/damping (session-global +
@@ -36138,7 +36179,7 @@ const SOLDIER_CONDITIONING_LEVELS = [
     // flinch, narrow cones, slow heavies, rocked camera, gassy stamina.
     { walkKick: 1.60, sprintSway: 1.25, recoil: 1.40, climb: 1.30, climbDecay: 2.6,
       hit: 1.50, whiz: 1.40, blast: 1.30, heart: 1.40,
-      idleBase: 0.60, idleFloor: 0.12, focusFade: 2.6, cone: 0.80, swing: 0.85,
+      idleBase: 2.50, idleFloor: 0.50, focusFade: 2.7, engage: 2.0, cone: 0.80, swing: 0.85,
       zoom: 1.60, kick: 1.50, dmgShake: 1.15,
       dragRate: 0.0020, accel: 0.827, align: 0.583, alignRate: 0.667,
       strafe: 0.76, backpedal: 0.50, pivot: 1.35, weightSlope: 0.0040,
@@ -36146,7 +36187,7 @@ const SOLDIER_CONDITIONING_LEVELS = [
     // L1 NOVICE -- first range weekend. Cheap relief, still loose.
     { walkKick: 1.30, sprintSway: 1.10, recoil: 1.20, climb: 1.15, climbDecay: 2.9,
       hit: 1.25, whiz: 1.20, blast: 1.15, heart: 1.20,
-      idleBase: 0.48, idleFloor: 0.09, focusFade: 2.2, cone: 0.90, swing: 0.92,
+      idleBase: 2.00, idleFloor: 0.35, focusFade: 2.0, engage: 1.5, cone: 0.90, swing: 0.92,
       zoom: 1.30, kick: 1.25, dmgShake: 1.08,
       dragRate: 0.0012, accel: 0.909, align: 0.75, alignRate: 0.833,
       strafe: 0.80, backpedal: 0.55, pivot: 1.15, weightSlope: 0.0032,
@@ -36154,17 +36195,18 @@ const SOLDIER_CONDITIONING_LEVELS = [
     // L2 RECRUIT -- basic grad. Almost today's tight, not quite.
     { walkKick: 1.15, sprintSway: 1.05, recoil: 1.10, climb: 1.05, climbDecay: 3.05,
       hit: 1.10, whiz: 1.10, blast: 1.05, heart: 1.10,
-      idleBase: 0.40, idleFloor: 0.075, focusFade: 2.0, cone: 0.95, swing: 0.96,
+      idleBase: 1.60, idleFloor: 0.25, focusFade: 1.5, engage: 1.0, cone: 0.95, swing: 0.96,
       zoom: 1.15, kick: 1.10, dmgShake: 1.03,
       dragRate: 0.0008, accel: 0.970, align: 0.867, alignRate: 0.917,
       strafe: 0.83, backpedal: 0.58, pivot: 1.05, weightSlope: 0.0028,
       cadenceWalk: 0.36, cadenceSprint: 0.23, drain: 1.02, regen: 0.97, shock: 0.525 },
     // L3 INFANTRY -- today's live values, exactly. walkKick 3.0, sprint 3.2,
-    // idle 0.34/0.06/1.85s, drag 0.0006, accel 1814, align 6.0/240, strafe
-    // 0.85/backpedal 0.60, pivot peak 2650, slope 0.0025, drain 23/regen base.
+    // idle 1.2/0.15, fade 1.0x0.75s, engage 0.75s, drag 0.0006, accel 1814,
+    // align 6.0/240, strafe 0.85/backpedal 0.60, pivot peak 2650,
+    // slope 0.0025, drain 23/regen base.
     { walkKick: 1.0, sprintSway: 1.0, recoil: 1.0, climb: 1.0, climbDecay: 3.2,
       hit: 1.0, whiz: 1.0, blast: 1.0, heart: 1.0,
-      idleBase: 0.34, idleFloor: 0.06, focusFade: 1.85, cone: 1.0, swing: 1.0,
+      idleBase: 1.20, idleFloor: 0.15, focusFade: 1.0, engage: 0.75, cone: 1.0, swing: 1.0,
       zoom: 1.0, kick: 1.0, dmgShake: 1.0,
       dragRate: 0.0006, accel: 1.0, align: 1.0, alignRate: 1.0,
       strafe: 0.85, backpedal: 0.60, pivot: 1.0, weightSlope: 0.0025,
@@ -36172,7 +36214,7 @@ const SOLDIER_CONDITIONING_LEVELS = [
     // L4 GREEN BERET -- tighter than live. Heavies start feeling like mids.
     { walkKick: 0.85, sprintSway: 0.90, recoil: 0.88, climb: 0.90, climbDecay: 3.6,
       hit: 0.85, whiz: 0.85, blast: 0.90, heart: 0.85,
-      idleBase: 0.28, idleFloor: 0.05, focusFade: 1.6, cone: 1.08, swing: 1.08,
+      idleBase: 0.80, idleFloor: 0.10, focusFade: 0.65, engage: 0.6, cone: 1.08, swing: 1.08,
       zoom: 0.85, kick: 0.88, dmgShake: 0.95,
       dragRate: 0.0005, accel: 1.036, align: 1.133, alignRate: 1.083,
       strafe: 0.87, backpedal: 0.63, pivot: 0.90, weightSlope: 0.0022,
@@ -36180,7 +36222,7 @@ const SOLDIER_CONDITIONING_LEVELS = [
     // L5 SPEC OPS -- the 18-year SF-type. Same top speed, everything else mastered.
     { walkKick: 0.70, sprintSway: 0.80, recoil: 0.78, climb: 0.82, climbDecay: 4.0,
       hit: 0.72, whiz: 0.75, blast: 0.80, heart: 0.75,
-      idleBase: 0.22, idleFloor: 0.04, focusFade: 1.4, cone: 1.15, swing: 1.15,
+      idleBase: 0.50, idleFloor: 0.05, focusFade: 0.45, engage: 0.5, cone: 1.15, swing: 1.15,
       zoom: 0.72, kick: 0.78, dmgShake: 0.90,
       dragRate: 0.00042, accel: 1.075, align: 1.25, alignRate: 1.167,
       strafe: 0.88, backpedal: 0.65, pivot: 0.82, weightSlope: 0.0020,
@@ -58527,7 +58569,9 @@ class Game {
                     ? SOLDIER_CONDITIONING_LEVELS[Math.max(0, Math.min(5, level))] : null;
                 const scRowN = (typeof SOLDIER_CONDITIONING_LEVELS !== 'undefined')
                     ? SOLDIER_CONDITIONING_LEVELS[Math.max(0, Math.min(5, level + 1))] : null;
-                const scFmt = (r, nm) => r ? `${nm} · Sway ${Math.round(r.walkKick * 100)}% · Recoil ${Math.round(r.recoil * 100)}% · Idle ${r.idleBase.toFixed(2)}°` : nm;
+                // Focus timing live-reads the base (BUG-002 lesson) so the TW slider can't desync the card.
+                const scFadeBase = (typeof AIM_WEIGHT !== 'undefined') ? AIM_WEIGHT.IDLE_SWAY_FADE_TIME : 0.75;
+                const scFmt = (r, nm) => r ? `${nm} · Sway ${Math.round(r.walkKick * 100)}% · Recoil ${Math.round(r.recoil * 100)}% · Idle ${r.idleBase.toFixed(2)}° · Focus ${r.engage.toFixed(1)}s+${(scFadeBase * r.focusFade).toFixed(2)}s` : nm;
                 const c = scFmt(scRowC, scNames[Math.max(0, Math.min(5, level))] || `L${level}`);
                 const n = scFmt(scRowN, scNames[Math.max(0, Math.min(5, level + 1))] || `L${level + 1}`);
                 return formatStat(c, n);
