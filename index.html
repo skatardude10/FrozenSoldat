@@ -16679,7 +16679,7 @@ const AIM_WEIGHT = {
         // continuously -- stiff/quick enough to read as a crisp per-step
         // "thud" rather than a mushy wobble, with just enough underdamping
         // to give each step a tiny rebound.
-        aimWalkSwayOffset:        { stiffness: 2200, damping: 0.28, maxDeg: 10 },
+        aimWalkSwayOffset:        { stiffness: 1200, damping: 0.28, maxDeg: 20 },
         // Heartbeat sync: kicked once per heartbeat while badly hurt (see
         // Player.updateHeartbeatSway()). Lower stiffness than a footstep --
         // a heartbeat is a slower, heavier thump than a boot hitting the
@@ -16834,7 +16834,7 @@ const AIM_WEIGHT = {
     // weight multiplier the Heavy Barrel Pivot already uses (AIM_WEIGHT.
     // PIVOT.WEIGHT_*) so a pistol barely bounces on footfalls while an LMG
     // bounces hard, with zero new tuning surface to maintain.
-    WALK_SWAY_KICK_DEG: 0.9,
+    WALK_SWAY_KICK_DEG: 3,
     // Sprinting doesn't just walk faster -- it should read as genuinely
     // losing control of the sight picture, per the "makes Focus feel like
     // a massive relief" goal.
@@ -37836,6 +37836,10 @@ class Game {
         } else {
             it = new Item(x, y, type);
         }
+        // E1 newest-on-top: monotonic render-only seq (never reset, like
+        // nextAiStaggerId — pool reuse must bump, never reuse stale).
+        this._itemSeq = (this._itemSeq || 0) + 1;
+        it._seq = this._itemSeq;
         return it;
     }
 
@@ -38760,6 +38764,52 @@ class Game {
     // Picks a validated edge spawn anchor for a whole squad (same edge-bias,
     // player-distance, and wall-overlap rules as the old faucet spawner) and
     // computes its compass bearing for the contact ping.
+    // WO-06 soft fuzzy base bias (deployables-only v1, tactical squads only).
+    // Score K unbiased anchors by Σ w·exp(-d²/2σ²) over live deployables;
+    // pick calmest, fallback to first-valid (never starve sealed pockets).
+    // Positional relief only — budget/cap/gap/composition untouched. Uses
+    // Math.random only (spawn stream, never map seeded streams). Scav,
+    // relocate fallback, boss, operator paths keep unbiased _pickSquadAnchor.
+    _baseDensity(x, y) {
+        let s = 0;
+        try {
+            const _sig2 = 2 * 400 * 400;
+            const _add = (px, py, w) => {
+                const dx = px - x, dy = py - y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 > 1600 * 1600) return;
+                s += w * Math.exp(-d2 / _sig2);
+            };
+            if (this.turrets) for (const t of this.turrets) if (t && !t.dead) _add(t.x, t.y, 1.0);
+            if (this.mines) for (const m of this.mines) if (m && !m.dead) _add(m.x, m.y, 0.8);
+            if (this.securityCameras) for (const c of this.securityCameras) if (c && !c.dead) _add(c.x, c.y, 0.7);
+            if (this.dogs) for (const d of this.dogs) if (d && !d.dead) _add(d.x, d.y, 0.6);
+            if (this.barriers) for (const b of this.barriers) {
+                if (!b) continue;
+                _add(((b.ax || 0) + (b.bx || 0)) / 2, ((b.ay || 0) + (b.by || 0)) / 2, 0.4);
+            }
+            if (this.map && this.map._playerWalls) for (const w of this.map._playerWalls) {
+                if (!w) continue;
+                _add((w.x || 0) + ((w.w || 0) / 2), (w.y || 0) + ((w.h || 0) / 2), 0.3);
+            }
+        } catch (e) {}
+        return s;
+    }
+    _pickSquadAnchorBiased() {
+        let best = null, bestS = Infinity;
+        try {
+            for (let k = 0; k < 8; k++) {
+                const a = this._pickSquadAnchor();
+                if (!a) continue;
+                if (!best) { best = a; }
+                let s = 0;
+                try { s = this._baseDensity(a.x, a.y); } catch (e) {}
+                if (s < bestS) { bestS = s; best = a; }
+                if (bestS <= 0.01) break;
+            }
+        } catch (e) {}
+        return best || this._pickSquadAnchor();
+    }
     _pickSquadAnchor() {
         const SPAWN_WALL_CHECK_R = 18;
         // PHASE 1 (extraction): the 7500px map makes edge spawns useless --
@@ -38971,7 +39021,7 @@ class Game {
         ss.staged = null;
         ss.plan = plan;
         ss.rolesAssigned = 0;
-        ss.anchor = this._pickSquadAnchor();
+        ss.anchor = this._pickSquadAnchorBiased();
         ss.memberTimer = 0; // first member releases this frame
 
         ss.isStrikeTeam = !!plan.isStrikeTeam;
@@ -40806,6 +40856,23 @@ class Game {
         // transform applied in draw() (see camera zoom fix). No center-pivot
         // term here: cam.x/cam.y already denote the world point that maps to
         // screen pixel 0, so world = cam + screenPixels / zoom.
+        // 2P mouse routing: P1's pointer is WINDOW pixels (0..width), but the
+        // code above always maps through P1's camera. With the cursor over
+        // P2's half the pointer must map through camera2 (offset by half
+        // width) or the gun aims at a phantom point ~a viewport off — the
+        // beam then renders "mirrored/continued" in the other half. Pad input
+        // (aimIntentActive, viewport-local mx) and all P2 input keep owner-cam
+        // routing; 1P and own-half pointers are unaffected (identical math).
+        if (this.isTwoPlayer && !player.isPlayer2 && !player.aimIntentActive && this.camera2) {
+            try {
+                const _hw = (this.width || 0) / 2;
+                if (input.mx >= _hw) {
+                    let wx2 = this.camera2.x + (input.mx - _hw) / this.camera2.zoom;
+                    let wy2 = this.camera2.y + input.my / this.camera2.zoom;
+                    return { x: wx2, y: wy2 };
+                }
+            } catch (e) {}
+        }
         let wx = cam.x + input.mx / cam.zoom;
         let wy = cam.y + input.my / cam.zoom;
         return { x: wx, y: wy };
@@ -47818,7 +47885,7 @@ class Game {
             }
         } catch (e) {}
         try { if (G.shockProg) G.shockProg.destroy(); } catch (e) {}
-        G.shockH = null; G.shockProg = null; G.shockCapFrame = -1;
+        G.shockH = null; G.shockProg = null; G.shockCapFrame = -1; G.shockCapHalf = -2;
         // Item 4: cloak meshes + program leave with the set.
         try {
             if (G.cloakH) for (const D of G.cloakH) {
@@ -47831,7 +47898,7 @@ class Game {
             }
         } catch (e) {}
         try { if (G.cloakProg) G.cloakProg.destroy(); } catch (e) {}
-        G.cloakH = null; G.cloakProg = null; G.cloakCapFrame = -1;
+        G.cloakH = null; G.cloakProg = null; G.cloakCapFrame = -1; G.cloakCapHalf = -2;
         // P2a light blit sprite dies with the set (its texture is gone).
         try {
             if (this._pixiLightSp) {
@@ -47841,6 +47908,7 @@ class Game {
         } catch (e) {}
         this._pixiLightSp = null;
         this._lightSplats = []; this._lightEnergy = 0;
+        this._lightFront = null; this._lightPing = null;
         // Rift/eventide/oracle passes + emissive guard die with the set.
         const _killH = (nm) => {
             try {
@@ -47858,8 +47926,8 @@ class Game {
         try { if (G.fieldProg) G.fieldProg.destroy(); } catch (e) {}
         try { if (G.tripProg) G.tripProg.destroy(); } catch (e) {}
         try { if (G._emisBlack) G._emisBlack.destroy(); } catch (e) {}
-        G.fieldH = null; G.fieldProg = null; G.fieldCapFrame = -1;
-        G.tripH = null; G.tripProg = null; G.tripAmt = null; G.tripLast = null; G.tripLastT = null;
+        G.fieldH = null; G.fieldProg = null; G.fieldCapFrame = -1; G.fieldCapHalf = -2;
+        G.tripH = null; G.tripProg = null; G.tripAmt = null; G.tripLast = null; G.tripLastT = null; G.tripCapFrame = -1; G.tripCapHalf = -2;
         // Item 2: bloom blit leaves the stage with the set.
         try {
             if (G.bloomSp) {
@@ -48782,6 +48850,12 @@ class Game {
             try { G.clear(); } catch (e) {}
             this._pixiEmisFrame[v] = this._pixiFrameToken;
         }
+        // Laser-hunt fix (mask-only, no look change): per-half clip mirroring
+        // _pixiLaserFx[v] (G.mask = halfMask(v)). EmisG carries ox-baked coords
+        // already, but without a mask its fullscreen eRt capture + blur + blit
+        // fringes across the divider, reading as a faint second beam per half.
+        // Null in 1P (halfMask returns null), same as the wedge.
+        try { G.mask = this._pixiHalfMask(v); } catch (e) {}
         return G;
     }
 
@@ -49074,11 +49148,15 @@ class Game {
             this._lightEnergy = energy;
             if (energy < 0.004 && !splats.length) { if (sp0) sp0.visible = false; return true; }
             if (!G.lightZeroed) {
-                // RTs aren't guaranteed clear — first write zeroes (the
-                // sampled front is our own output from here on).
+                // RTs aren't guaranteed clear — zero BOTH legs (the sampled
+                // front is our own output from here on; single-leg left the
+                // other leg garbage after a resize realloc).
                 if (!this._pixiGpuPass('lightA', this._pixiLightAccumFrag(),
                     { uPrev: G.lRtA.source, uDecay: 0, uC: [0, 0], uR: 1, uAspect: 1, uCol: [0, 0, 0], uI: 0 }, G.lRtB)) return false;
+                if (!this._pixiGpuPass('lightA', this._pixiLightAccumFrag(),
+                    { uPrev: G.lRtB.source, uDecay: 0, uC: [0, 0], uR: 1, uAspect: 1, uCol: [0, 0, 0], uI: 0 }, G.lRtA)) return false;
                 G.lightZeroed = true;
+                G.lightFed = false;
                 this._lightPing = true;
             }
             const W = this.width || 1, H = this.height || 1;
@@ -49090,6 +49168,7 @@ class Game {
             }
             let first = true;
             for (const s of queue) {
+                if (s.i > 0) G.lightFed = true;
                 const d = first ? decay : 1; first = false;
                 for (const h of halves) {
                     const cam = (h === 1) ? this.camera2 : this.camera;
@@ -49113,7 +49192,9 @@ class Game {
             this._lightFront = this._lightPing ? 'lRtB' : 'lRtA';
             const sp = this._pixiLightBlitEnsure();
             if (sp) {
-                sp.visible = true;
+                // Hide until the first real splat: a fresh realloc would
+                // otherwise blit uninitialized memory fullscreen.
+                sp.visible = !!G.lightFed;
                 try { sp.alpha = (this._pixiLightStrength === undefined ? 0.7 : this._pixiLightStrength); } catch (e) {}
             }
             return true;
@@ -49177,7 +49258,7 @@ class Game {
                     return false;
                 }
             }
-            if (!this._pixiBloomCapture()) return false;
+            if (!this._pixiBloomCapture()) { try { if (G.bloomSp) G.bloomSp.visible = false; } catch (e) {} return false; }
             const T = (typeof BLOOM_TUNING !== 'undefined') ? BLOOM_TUNING : { NIGHT_T: 0.45, VEIL_T: 0.62 };
             const base = (!this.nightMode && this.dayVeil) ? T.VEIL_T : T.NIGHT_T;
             const uT = base + (this._pixiBloomThAdj || 0);
@@ -49198,19 +49279,19 @@ class Game {
             // bloomT program was compiled WITHOUT uLight — reusing the key
             // would sample nothing, silently (SILENT SHADER law).
             const lFront = this._lightFront || 'lRtA';
-            const lSrc = (G[lFront] && G[lFront].source) ? G[lFront].source : G._emisBlack;
+            const lSrc = (G.lightFed && G[lFront] && G[lFront].source) ? G[lFront].source : G._emisBlack;
             const uLG = (this._pixiLightGain === undefined ? 0.8 : this._pixiLightGain);
             if (!this._pixiGpuPass('bloomT2', this._pixiBloomThreshFrag(),
-                { uSrc: G.sRt.source, uEmis: eSrc, uLight: lSrc, uT, uStrength: uS, uEmisGain: uEG, uLightGain: uLG }, G.bRt)) return false;
+                { uSrc: G.sRt.source, uEmis: eSrc, uLight: lSrc, uT, uStrength: uS, uEmisGain: uEG, uLightGain: uLG }, G.bRt)) { try { if (G.bloomSp) G.bloomSp.visible = false; } catch (e) {} return false; }
             // blur H: B_rt -> S_rt ; blur V: S_rt -> B_rt (S_rt is scratch
             // after threshold — the capture is consumed, no extra RT).
             const dx = 1 / Math.max(1, G.bRt.width), dy = 1 / Math.max(1, G.bRt.height);
             if (!this._pixiGpuPass('bloomB', this._pixiBloomBlurFrag(),
-                { uSrc: G.bRt.source, uDir: [dx, 0] }, G.sRt)) return false;
+                { uSrc: G.bRt.source, uDir: [dx, 0] }, G.sRt)) { try { if (G.bloomSp) G.bloomSp.visible = false; } catch (e) {} return false; }
             if (!this._pixiGpuPass('bloomB', this._pixiBloomBlurFrag(),
-                { uSrc: G.sRt.source, uDir: [0, dy] }, G.bRt)) return false;
+                { uSrc: G.sRt.source, uDir: [0, dy] }, G.bRt)) { try { if (G.bloomSp) G.bloomSp.visible = false; } catch (e) {} return false; }
             const sp = this._pixiBloomBlitEnsure();
-            if (!sp) return false;
+            if (!sp) { try { if (G.bloomSp) G.bloomSp.visible = false; } catch (e) {} return false; }
             sp.visible = true;
             // Fade the day-linger with its hold (0.5s tails decay); at night
             // the chain runs continuously, full strength — the capture is
@@ -49397,7 +49478,7 @@ class Game {
                     env = Math.pow(1 - tu, 1.6); ph = -1;
                 }
                 const sr = Math.max(1, rad * ez);
-                if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+                if ((sx - ox) < -sr * 2 || sy < -sr * 2 || (sx - ox) > vw + sr * 2 || sy > vh + sr * 2) continue;
                 env *= -u.str;
                 if (env <= 0.01) continue;
                 live.push({ sx, sy, sr, w: Math.max(3, sr * 0.22), env, rift: true, ph });
@@ -49406,7 +49487,7 @@ class Game {
             const tr = Math.min(1, t * spd);
             const rad = u.maxRadius * (1 - Math.pow(1 - tr, 3));
             const sr = Math.max(1, rad * ez);
-            if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+            if ((sx - ox) < -sr * 2 || sy < -sr * 2 || (sx - ox) > vw + sr * 2 || sy > vh + sr * 2) continue;
             const attack = Math.min(1, t / 0.15);
             const decay = 1 - Math.pow(Math.max(0, (t - 0.15) / 0.85), 1.5);
             const env = Math.max(0, Math.min(1, attack * decay)) * (u.str || 1);
@@ -49432,7 +49513,7 @@ class Game {
                 const Rw = (12 + u * 60) * 1.25;
                 const sx = ox + (tgt.x - cam.x + shX) * ez, sy = (tgt.y - cam.y + shY) * ez;
                 const sr = Math.max(1, Rw * ez);
-                if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+                if ((sx - ox) < -sr * 2 || sy < -sr * 2 || (sx - ox) > vw + sr * 2 || sy > vh + sr * 2) continue;
                 const breathe = 1 + 0.12 * Math.sin(now * 12.6);
                 const env = (0.18 + 0.42 * u) * breathe;
                 live.push({ sx, sy, sr, w: Math.max(3, sr * 0.3), env, rift: true, ph: 1 });
@@ -49442,7 +49523,7 @@ class Game {
                 if ((s.empTimer || 0) > 0 || (s._riftCooldown || 0) > 0) continue;
                 const sx = ox + (s.x - cam.x + shX) * ez, sy = (s.y - cam.y + shY) * ez;
                 const sr = Math.max(1, 54 * ez);
-                if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+                if ((sx - ox) < -sr * 2 || sy < -sr * 2 || (sx - ox) > vw + sr * 2 || sy > vh + sr * 2) continue;
                 const env = 0.14 + 0.05 * Math.sin(now * 2.1 + (s.x + s.y) * 0.01);
                 live.push({ sx, sy, sr, w: Math.max(3, sr * 0.35), env, rift: true, ph: 1 });
             }
@@ -49465,7 +49546,7 @@ class Game {
                     if (p._heatX === undefined || p._heatY === undefined) continue;
                     const sx = ox + (p._heatX - cam.x + shX) * ez, sy = (p._heatY - cam.y + shY) * ez;
                     const sr = Math.max(1, 34 * ez);
-                    if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+                    if ((sx - ox) < -sr * 2 || sy < -sr * 2 || (sx - ox) > vw + sr * 2 || sy > vh + sr * 2) continue;
                     const henv = Math.min(0.30, 0.22 * heat * (1 + 0.1 * Math.sin(hnow * 31 + p._heatX * 0.01)) * hamp);
                     if (henv <= 0.01) continue;
                     live.push({ sx, sy, sr, w: Math.max(3, sr * 0.3), env: henv });
@@ -49488,12 +49569,13 @@ class Game {
             const rings = this._pixiShockRings(cam, isPlayer2);
             if (!rings.length) { D.mesh.visible = false; return true; }
             // Capture the settled scene (with smoke + bloom) for refraction,
-            // once per frame (both halves share it) via the shared half-res
-            // helper (stage scaled 0.5 — true downsample, not the quadrant).
-            if (G.shockCapFrame !== this._pixiFrameToken) {
+            // once per half per frame (both halves share one rRt: h0 captures
+            // h0-posed stage, h1 recaptures with both halves posed — the mesh
+            // samples the same object so both halves read the fresh pixels).
+            if (G.shockCapFrame !== this._pixiFrameToken || G.shockCapHalf !== h) {
             try {
                 if (!this._pixiSceneCapture(G.rRt, this._pixiRefractHidden())) return false;
-                G.shockCapFrame = this._pixiFrameToken;
+                G.shockCapFrame = this._pixiFrameToken; G.shockCapHalf = h;
             } catch (e) { return false; }
             }
             try { D.mesh.mask = this.isTwoPlayer ? this._pixiHalfMask(h) : null; } catch (e) { try { D.mesh.mask = null; } catch (_e) {} }
@@ -49660,7 +49742,7 @@ class Game {
             const rw = b.radius || b.r || 28;
             const sx = ox + (b.x - cam.x + shX) * ez, sy = (b.y - cam.y + shY) * ez;
             const sr = Math.max(4, rw * ez);
-            if (sx < -sr * 2 || sy < -sr * 2 || sx > vw + sr * 2 || sy > vh + sr * 2) continue;
+            if ((sx - ox) < -sr * 2 || sy < -sr * 2 || (sx - ox) > vw + sr * 2 || sy > vh + sr * 2) continue;
             let shim = 1;
             try { shim = this._pixiFxEnvelope('cloak', 1, 1, (b.x || 0) + (b.y || 0)).shimmer; } catch (e) {}
             live.push({ sx, sy, sr, ck: b.cloak || 0, shim });
@@ -49680,13 +49762,13 @@ class Game {
             if (!on) { D.mesh.visible = false; return true; }
             const slots = this._pixiCloakCollect(cam, isPlayer2);
             if (!slots.length) { D.mesh.visible = false; return true; }
-            // Settled-scene source: shock's same-frame capture when live
+            // Settled-scene source: shock's same-half capture when live
             // (refract the shock too), else own capture via the shared
             // half-res helper (true downsample, not the quadrant).
-            if (G.shockCapFrame !== this._pixiFrameToken && G.cloakCapFrame !== this._pixiFrameToken) {
+            if (!((G.shockCapFrame === this._pixiFrameToken && G.shockCapHalf === h) || (G.cloakCapFrame === this._pixiFrameToken && G.cloakCapHalf === h))) {
             try {
                 if (!this._pixiSceneCapture(G.rRt, this._pixiRefractHidden())) return false;
-                G.cloakCapFrame = this._pixiFrameToken;
+                G.cloakCapFrame = this._pixiFrameToken; G.cloakCapHalf = h;
             } catch (e) { return false; }
             }
             try { D.mesh.mask = this.isTwoPlayer ? this._pixiHalfMask(h) : null; } catch (e) { try { D.mesh.mask = null; } catch (_e) {} }
@@ -49771,12 +49853,12 @@ class Game {
     // Shared settled-scene source for the rRt refraction family (shock,
     // cloak, field, trip): reuse any same-frame capture, else capture now
     // hiding EVERY rRt-sampling mesh (feedback law).
-    _pixiRefractSource() {
+    _pixiRefractSource(h) {
         const G = this._pixiGpu;
         const tok = this._pixiFrameToken;
-        if (G.shockCapFrame === tok || G.cloakCapFrame === tok || G.fieldCapFrame === tok || G.tripCapFrame === tok) return true;
+        if ((G.shockCapFrame === tok && G.shockCapHalf === h) || (G.cloakCapFrame === tok && G.cloakCapHalf === h) || (G.fieldCapFrame === tok && G.fieldCapHalf === h) || (G.tripCapFrame === tok && G.tripCapHalf === h)) return true;
         if (!this._pixiSceneCapture(G.rRt, this._pixiRefractHidden())) return false;
-        G.fieldCapFrame = tok;
+        G.fieldCapFrame = tok; G.fieldCapHalf = h;
         return true;
     }
 
@@ -49890,7 +49972,7 @@ class Game {
         const push = (wx, wy, wr, mode, jam, inten) => {
             if (!(wr > 8)) return;
             const sx = ox + (wx - cam.x + shX) * ez, sy = (wy - cam.y + shY) * ez, sr = wr * ez;
-            if (sx < -sr - 20 || sy < -sr - 20 || sx > vw + sr + 20 || sy > vh + sr + 20) return;
+            if ((sx - ox) < -sr - 20 || sy < -sr - 20 || (sx - ox) > vw + sr + 20 || sy > vh + sr + 20) return;
             const dc = Math.hypot(sx - ox - vw / 2, sy - vh / 2);
             const mi = mode === 'aegis' ? 1 : mode === 'horizon' ? 2 : mode === 'proj' ? 3 : 0;
             const col = COL[mode] || COL.tide;
@@ -49921,7 +50003,7 @@ class Game {
             if (!on) { D.mesh.visible = false; return true; }
             const slots = this._pixiFieldCollect(cam, isPlayer2);
             if (!slots.length) { D.mesh.visible = false; return true; }
-            if (!this._pixiRefractSource()) { D.mesh.visible = false; return false; }
+            if (!this._pixiRefractSource(h)) { D.mesh.visible = false; return false; }
             try { D.mesh.mask = this.isTwoPlayer ? this._pixiHalfMask(h) : null; } catch (e) { try { D.mesh.mask = null; } catch (_e) {} }
             const W = this.width || 1, H = this.height || 1;
             const pk = (i) => slots[i] || { f: [0, 0, 0, 0], k: [0, 0, 0, 0] };
@@ -50254,7 +50336,7 @@ class Game {
             const amt = cur + (target - cur) * k;
             G.tripAmt[h] = amt;
             if (amt <= 0.01) { G.tripAmt[h] = 0; D.mesh.visible = false; return true; }
-            if (!this._pixiRefractSource()) { D.mesh.visible = false; return false; }
+            if (!this._pixiRefractSource(h)) { D.mesh.visible = false; return false; }
             try { D.mesh.mask = this.isTwoPlayer ? this._pixiHalfMask(h) : null; } catch (e) { try { D.mesh.mask = null; } catch (_e) {} }
             const W = this.width || 1, H = this.height || 1;
             const ez = cam.zoom + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
@@ -51853,7 +51935,9 @@ class Game {
                 // actually been resolved, so simultaneous/duplicate calls to
                 // grantRandomPerk() (which uses a single shared
                 // perkSelectingPlayer slot) can't stomp on each other.
-                this._nowModePerkQueue = this._nowModePerkQueue || [];
+                // F-A: unconditional clear (was ||= — stale dead Player refs
+                // survived abandon-while-shop-pending and stacked on next run).
+                this._nowModePerkQueue = [];
                 for (let i = 0; i < NOW_MODE.FREE_PERK_COUNT; i++) {
                     this._nowModePerkQueue.push(this.player);
                     if (this.player2) this._nowModePerkQueue.push(this.player2);
@@ -52092,6 +52176,9 @@ class Game {
                 ? this.inactiveScavDogs.pop()
                 : new ScavengerDog(anchor.x, anchor.y);
             sd.init(anchor.x, anchor.y);
+            // WO-09: scav stagger is an intentional separate %30 domain (30-frame
+            // cadence only) — not from global nextAiStaggerId. Scavs never
+            // publish via spotKeyFor as targets, so no cache-key aliasing.
             sd._aiStaggerId = (this._scavStaggerNext = ((this._scavStaggerNext || 0) + 1) % 30);
             this.scavDogs.push(sd);
             audio.playScavBark(sd.x, sd.y);
@@ -53669,7 +53756,7 @@ class Game {
         }
         
         if (type === 'hollowPoint') {
-            let cost = Math.round(150 * Math.pow(1.5, oc.hollowPoint));
+            let cost = this._ocCost('hollowPoint', suffix);
             if (player.cash >= cost) {
                 player.cash -= cost;
                 oc.hollowPoint++;
@@ -53679,7 +53766,7 @@ class Game {
                 ));
             }
         } else if (type === 'exoServos') {
-            let cost = Math.round(100 * Math.pow(1.5, oc.exoServos));
+            let cost = this._ocCost('exoServos', suffix);
             if (player.cash >= cost) {
                 player.cash -= cost;
                 oc.exoServos++;
@@ -53694,12 +53781,12 @@ class Game {
             for (let k in oc.extMags) {
                 totalMagsLvl += oc.extMags[k];
             }
-            let cost = Math.round(200 * Math.pow(1.5, totalMagsLvl));
+            let cost = this._ocCost('extMags', suffix);
             if (player.cash >= cost && eligibleWeapons.length > 0) {
                 this._openExtMagsPicker(player, cost);
             }
         } else if (type === 'fireRate') {
-            let cost = Math.round(200 * Math.pow(1.5, oc.fireRate || 0));
+            let cost = this._ocCost('fireRate', suffix);
             if (player.cash >= cost) {
                 player.cash -= cost;
                 oc.fireRate = (oc.fireRate || 0) + 1;
@@ -53727,7 +53814,7 @@ class Game {
                 ));
             }
         } else if (type === 'maxHpOC') {
-            let cost = Math.round(175 * Math.pow(1.5, oc.maxHpOC || 0));
+            let cost = this._ocCost('maxHpOC', suffix);
             if (player.cash >= cost) {
                 player.cash -= cost;
                 oc.maxHpOC = (oc.maxHpOC || 0) + 1;
@@ -55850,12 +55937,14 @@ class Game {
         const allIds = ['hp', 'armor', 'speed', 'grenade', 'mine', 'medpack', 'boost',
             'barrier', 'barrier-upgrade', 'rubble', 'drone', 'drone-upgrade', 'fiber-optic',
             'turret', 'turret-mk2', 'dog', 'dog-upgrade', 'swarm-drone', 'swarm-pack',
+            'camera', 'repairgun', 'field-gen',
             'oracle', 'rift-seed', 'rift-station', 'riftlance',
-            'ammo-shotgun', 'ammo-smg-std', 'ammo-lmg-std', 'ammo-sniper-std', 'ammo-m1a-std',
+            'ammo-shotgun', 'ammo-shotgun-slug', 'ammo-smg-std', 'ammo-lmg-std', 'ammo-sniper-std', 'ammo-m1a-std',
             'ammo-smg-hp', 'ammo-lmg-ap', 'ammo-sniper-ap', 'ammo-pistol-hp', 'ammo-m1a-ap',
             'ammo-abakan-std', 'ammo-abakan-ap', 'ammo-thumper-he', 'ammo-thumper-hedp',
             'ammo-mauler-std', 'ammo-mauler-ap', 'ammo-judge-std', 'ammo-judge-ap',
-            'oc-hollow', 'oc-servos', 'oc-mags', 'oc-firerate', 'oc-maxhp'];
+            'oc-hollow', 'oc-servos', 'oc-mags', 'oc-firerate', 'oc-maxhp',
+            'oc-overpressure', 'oc-glassnerves', 'oc-coldbarrel'];
 
         for (let suffix of ['p1', 'p2']) {
             let p = (suffix === 'p1') ? this.player : this.player2;
@@ -55982,6 +56071,20 @@ class Game {
     // (drone_upgrade/dog_upgrade); MAXED/OWNED grey, never hide (receipt +
     // stable list); armory locks stay RED via _armoryGate; unowned-gun ammo
     // stays BUYABLE but dashed STASHABLE.
+    // WO-08 single-source OC 1.5^n costs (display + truth read one helper).
+    _ocCost(o, suffix) {
+        try {
+            const oc = this.runOverclocks && this.runOverclocks[suffix];
+            if (!oc) return null;
+            if (o === 'hollowPoint') return Math.round(150 * Math.pow(1.5, oc.hollowPoint || 0));
+            if (o === 'exoServos') return Math.round(100 * Math.pow(1.5, oc.exoServos || 0));
+            if (o === 'extMags') { let n = 0; for (const k in (oc.extMags || {})) n += oc.extMags[k]; return Math.round(200 * Math.pow(1.5, n)); }
+            if (o === 'fireRate') return Math.round(200 * Math.pow(1.5, oc.fireRate || 0));
+            if (o === 'maxHpOC') return Math.round(175 * Math.pow(1.5, oc.maxHpOC || 0));
+            if (typeof CORRUPTED_OVERCLOCKS !== 'undefined' && CORRUPTED_OVERCLOCKS[o]) return CORRUPTED_OVERCLOCKS[o].cost;
+        } catch (e) {}
+        return null;
+    }
     _shopPriceFor(typeKey, p, suffix) {
         try {
             if (!typeKey || !p) return null;
@@ -55996,8 +56099,8 @@ class Game {
                 ammo_pistol_hp: 80, ammo_m1a_std: 35, ammo_m1a_ap: 85,
                 ammo_abakan_std: 40, ammo_abakan_ap: 95, ammo_thumper_he: 60, ammo_thumper_hedp: 95,
                 ammo_mauler_std: 45, ammo_mauler_ap: 95, ammo_judge_std: 50, ammo_judge_ap: 95 };
+            // mine deliberately absent from FLAT (dynamic) — single live branch below.
             if (FLAT[typeKey] !== undefined) {
-                if (typeKey === 'mine') return this.mineShopCost();
                 return FLAT[typeKey];
             }
             if (typeKey === 'mine') return this.mineShopCost();
@@ -56006,16 +56109,8 @@ class Game {
                 return 300;
             }
             if (typeKey.indexOf('oc_') === 0) {
-                const oc = this.runOverclocks && this.runOverclocks[suffix];
-                if (!oc) return null;
                 const o = typeKey.substring(3);
-                if (o === 'hollowPoint') return Math.round(150 * Math.pow(1.5, oc.hollowPoint || 0));
-                if (o === 'exoServos') return Math.round(100 * Math.pow(1.5, oc.exoServos || 0));
-                if (o === 'extMags') { let n = 0; for (const k in (oc.extMags || {})) n += oc.extMags[k]; return Math.round(200 * Math.pow(1.5, n)); }
-                if (o === 'fireRate') return Math.round(200 * Math.pow(1.5, oc.fireRate || 0));
-                if (o === 'maxHpOC') return Math.round(175 * Math.pow(1.5, oc.maxHpOC || 0));
-                if (typeof CORRUPTED_OVERCLOCKS !== 'undefined' && CORRUPTED_OVERCLOCKS[o]) return CORRUPTED_OVERCLOCKS[o].cost;
-                return null;
+                return this._ocCost(o, suffix);
             }
             return null;
         } catch (e) { return null; }
@@ -56661,7 +56756,7 @@ class Game {
                     return false;
                 };
 
-                let costHollow = Math.round(150 * Math.pow(1.5, oc.hollowPoint));
+                let costHollow = this._ocCost('hollowPoint', suffix);
                 let btnHollow = document.getElementById('btn-buy-oc-hollow-' + suffix);
                 if (btnHollow && !lockStd(btnHollow, 'Hollow Point')) {
                     btnHollow.classList.remove('maxed');
@@ -56669,7 +56764,7 @@ class Game {
                     btnHollow.disabled = p.cash < costHollow;
                 }
 
-                let costServos = Math.round(100 * Math.pow(1.5, oc.exoServos));
+                let costServos = this._ocCost('exoServos', suffix);
                 let btnServos = document.getElementById('btn-buy-oc-servos-' + suffix);
                 if (btnServos && !lockStd(btnServos, 'Exo-Servos')) {
                     btnServos.classList.remove('maxed');
@@ -56681,7 +56776,7 @@ class Game {
                 for (let k in oc.extMags) {
                     totalMagsLvl += oc.extMags[k];
                 }
-                let costMags = Math.round(200 * Math.pow(1.5, totalMagsLvl));
+                let costMags = this._ocCost('extMags', suffix);
                 let btnMags = document.getElementById('btn-buy-oc-mags-' + suffix);
                 // Extended Mags needs the deeper unlock (lvl2).
                 if (btnMags && !this._armoryGate(btnMags, 'unlockOverclocks', 2, "Extended Mags (UNLOCK IN ARMORY)")) {
@@ -56692,7 +56787,7 @@ class Game {
                 }
 
                 // Fire Rate OC button
-                let costFireRate = Math.round(200 * Math.pow(1.5, oc.fireRate || 0));
+                let costFireRate = this._ocCost('fireRate', suffix);
                 let btnFireRate = document.getElementById('btn-buy-oc-firerate-' + suffix);
                 if (btnFireRate && !lockStd(btnFireRate, 'Fire Rate')) {
                     let lvl = oc.fireRate || 0;
@@ -56705,7 +56800,7 @@ class Game {
                 }
 
                 // Max HP OC button
-                let costMaxHpOC = Math.round(175 * Math.pow(1.5, oc.maxHpOC || 0));
+                let costMaxHpOC = this._ocCost('maxHpOC', suffix);
                 let btnMaxHpOC = document.getElementById('btn-buy-oc-maxhp-' + suffix);
                 if (btnMaxHpOC && !lockStd(btnMaxHpOC, 'Max HP')) {
                     btnMaxHpOC.classList.remove('maxed');
@@ -58698,6 +58793,7 @@ class Game {
 
     setMode(mode) {
         this.isTwoPlayer = (mode === 2);
+        try { this._pixiModeReset(); } catch (e) {}
         let btn1p = document.getElementById('btn-mode-1p');
         let btn2p = document.getElementById('btn-mode-2p');
         if (btn1p) btn1p.classList.toggle('active-mode', mode !== 2);
@@ -58712,6 +58808,132 @@ class Game {
         this.refreshMainMenuHighlight();
     }
 
+    // WO-04 solid 1P<->2P baseline: hide/clear all [1]/vh=1 singletons so a
+    // 2P->1P switch leaves no frozen lasers/shadows/washes/texts on the dead
+    // half. Render-only, no destroy (no hitch); masks rebuild lazily via key.
+    // Called from setMode + _applyCanvasSize (resize), never hot startNewGame.
+    _pixiModeReset() {
+        try {
+            const _hide1 = (o) => { try { if (o) o.visible = false; } catch (e) {} };
+            try {
+                for (const _m of [this._pixiLaserFx, this._pixiWhizFx, this._pixiLanceFx, this._pixiEnemyFx, this._pixiEvFx, this._pixiMuzzleFx]) {
+                    if (_m && _m[1]) { try { _m[1].clear(); } catch (e) {} _hide1(_m[1]); try { _m[1].mask = null; } catch (e) {}
+                    }
+                }
+                // LaserGlow is [half][shooter] (4 sprites): hide all.
+                try {
+                    if (this._pixiLaserGlow) for (const _row of this._pixiLaserGlow) {
+                        if (!_row) continue;
+                        const _ss = Array.isArray(_row) ? _row : [_row];
+                        for (const _s of _ss) { try { if (_s) { _s.visible = false; _s.mask = null; } } catch (e) {} }
+                    }
+                } catch (e) {}
+            } catch (e) {}
+            try {
+                if (this._pixiEmisG && this._pixiEmisG[1]) {
+                    try { this._pixiEmisG[1].clear(); } catch (e) {}
+                    _hide1(this._pixiEmisG[1]);
+                    try { this._pixiEmisG[1].mask = null; } catch (e) {}
+                }
+            } catch (e) {}
+            try {
+                if (this._pixiShadowSprites && this._pixiShadowSprites[1]) {
+                    _hide1(this._pixiShadowSprites[1]);
+                    try { this._pixiShadowSprites[1].mask = null; } catch (e) {}
+                }
+            } catch (e) {}
+            // Element-wise: pools are Arrays ([1] is an Array, not a sprite —
+            // _hide1(array) would be a no-op). Hide only, never splice.
+            try {
+                for (const _pool of [this._pixiMuzzlePool, this._pixiBloomPool]) {
+                    try {
+                        if (_pool && _pool[1]) for (const _s of _pool[1]) {
+                            try { if (_s) { _s.visible = false; _s.mask = null; } } catch (e) {}
+                        }
+                    } catch (e) {}
+                }
+            } catch (e) {}
+            // GPU per-half meshes: only the active half is touched per frame,
+            // so [1] survives a 2P->1P switch. Hide only (lazy Ensure rebuilds).
+            try {
+                const _G = this._pixiGpu;
+                if (_G) for (const _slot of [_G.dispH, _G.shockH, _G.cloakH, _G.fieldH, _G.tripH]) {
+                    try {
+                        const _D = _slot && _slot[1];
+                        if (_D && _D.mesh) { _D.mesh.visible = false; try { _D.mesh.mask = null; } catch (e) {} }
+                    } catch (e) {}
+                }
+            } catch (e) {}
+            // Objective markers + floating texts: per-half pools, tail-hide only
+            // touches the active half. Hide [1] only (never destroy/delete —
+            // sweep owns lifecycle). 1P only reads [0].
+            try {
+                if (this._pixiOvMarkPool && this._pixiOvMarkPool[1]) for (const _e of this._pixiOvMarkPool[1]) {
+                    try { if (_e) { if (_e.tri) _e.tri.visible = false; if (_e.glow) _e.glow.visible = false; if (_e.text) _e.text.visible = false; } } catch (e) {}
+                }
+            } catch (e) {}
+            try {
+                if (this._pixiTextMap) for (const _entry of this._pixiTextMap.values()) {
+                    try { const _t = _entry && _entry[1]; if (_t) _t.visible = false; } catch (e) {}
+                }
+            } catch (e) {}
+            try {
+                if (this._pixiOvVigC && this._pixiOvVigC.children && this._pixiOvVigC.children[1]) _hide1(this._pixiOvVigC.children[1]);
+                if (this._pixiOvArrowG && this._pixiOvArrowG[1]) { try { this._pixiOvArrowG[1].clear(); } catch (e) {} }
+                if (this._pixiOvFlashC) {
+                    for (const _n of ['low1', 'thr1', 'bldP1', 'fla1', 'dmg1', 'dir1', 'bld1', 'bldDir1', 'des1', 'win1']) {
+                        try { const _s = this._pixiOvFlashC[_n]; if (_s) { _s.visible = false; _s.mask = null; } } catch (e) {}
+                    }
+                }
+                if (this._pixiOvTexts) {
+                    for (const [_k, _e] of this._pixiOvTexts) {
+                        if (_k && _k.indexOf('a1:') === 0) {
+                            try { _e.main.visible = false; } catch (e) {}
+                            try { if (_e.sub) _e.sub.visible = false; } catch (e) {}
+                        }
+                    }
+                }
+            } catch (e) {}
+            try {
+                if (this._pixiAberReq) this._pixiAberReq = [];
+                if (this._pixiAber && this._pixiAber.g) for (const _sp of this._pixiAber.g) _hide1(_sp);
+                // WO-05: destroy aber RT so stale map pixels never survive a
+                // mode/resize swap (rebuilds lazily on next burst).
+                try {
+                    if (this._pixiAber && this._pixiAber.rt) {
+                        try { this._pixiAber.rt.destroy(true); } catch (e) {}
+                        this._pixiAber.rt = null; this._pixiAber.w = 0; this._pixiAber.h = 0;
+                    }
+                } catch (e) {}
+            } catch (e) {}
+            // Veil auras are per-half indexed: hide [1] or a 2P aura freezes on
+            // the dead half after 2P->1P (stale-hide only runs inside _veil).
+            try {
+                if (this._pixiAuraSprites && this._pixiAuraSprites[1]) _hide1(this._pixiAuraSprites[1]);
+            } catch (e) {}
+            // Light blit without realloc (same bw/bh): hide or one stale frame
+            // shows after a mode switch; the step re-shows on the next splat.
+            try { if (this._pixiLightSp) this._pixiLightSp.visible = false; } catch (e) {}
+            // Night shared pools self-heal per frame, but a mode/resize swap
+            // can strand one visible frame: reset counters + hide.
+            try {
+                if (this._pixiNight) {
+                    try { this._pixiNight.hi = 0; } catch (e) {}
+                    try { this._pixiNight.di = 0; } catch (e) {}
+                    try { for (const _s of (this._pixiNight.holes || [])) if (_s) _s.visible = false; } catch (e) {}
+                    try { for (const _s of (this._pixiNight.dyn || [])) if (_s) _s.visible = false; } catch (e) {}
+                }
+            } catch (e) {}
+            // Half-masks are stage children: null the cache so the next fetch
+            // mints fresh rects. Deliberately NO destroy here: live rigs and
+            // sprites still reference the old mask objects until their next
+            // per-draw/sweep reassign, and Pixi throws every present on a
+            // destroyed-but-referenced mask (black view + _gpuData spam).
+            // The orphaned pair per resize never renders (masks don't
+            // self-paint) — harmless leak, pre-existing behavior.
+            try { this._pixiHalfMasks = null; } catch (e) {}
+        } catch (e) {}
+    }
     getWizardSteps() {
         let steps = [1];
         if (this.gameMode !== 'operator') {
@@ -59563,6 +59785,8 @@ class Game {
                 try { this._pixiOverlayRenderer.resize(this.width, this.height); } catch (_e) {}
             }
         }
+        // WO-04: resize rebuilds half-masks lazily; clear stale [1] now.
+        try { this._pixiModeReset(); } catch (e) {}
     }
 
     // PixiJS port L1 (2026-09-16): TextureFactory spike — bake-only, zero draw swap.
@@ -60152,6 +60376,7 @@ class Game {
         let FX = this._pixiEnemyFx[v];
         if (!FX) { FX = new window.PIXI.Graphics(); this._pixiOverlayStage.addChild(FX); this._pixiEnemyFx[v] = FX; }
         if (this._pixiEnemyFxFrame[v] !== this._pixiFrameToken) { FX.clear(); this._pixiEnemyFxFrame[v] = this._pixiFrameToken; }
+        try { FX.mask = this._pixiHalfMask(v); } catch (e) {}
         // Blob (fog-scaled) + drop shadow + elite glow sprite.
         H.blob.visible = true;
         H.blob.position.set(0, e.r * 0.3);
@@ -60683,6 +60908,7 @@ class Game {
                 t.visible = true;
                 t.position.set(SX(ent.x), SY(ent.y) - (box + 2) * ez);
                 t.scale.set(ez); t.alpha = 1;
+                try { t.mask = this._pixiHalfMask(v); } catch (e) {}
                 si++;
             }
         }
@@ -60972,6 +61198,7 @@ class Game {
             wt.visible = true;
             wt.position.set(SX(d.waypoint.x), SY(d.waypoint.y) - (wr + 5) * ez);
             wt.scale.set(ez); wt.alpha = 1;
+            try { wt.mask = this._pixiHalfMask(v); } catch (e) {}
         }
     }
 
@@ -61121,7 +61348,16 @@ class Game {
             try {
                 const v = (isPlayer2 && this.isTwoPlayer) ? 1 : 0;
                 if (this._pixiLaserFx && this._pixiLaserFx[v]) this._pixiLaserFx[v].clear();
-                if (this._pixiLaserGlow && this._pixiLaserGlow[v]) this._pixiLaserGlow[v].visible = false;
+                // Hide only this shooter's glow slot (sibling's dot survives).
+                // G.clear() stays: P1-dead is always in the caller list so both
+                // halves wipe; P2-dead is filtered so the live P1 draw's
+                // token-clear wipes its stale wedge.
+                try {
+                    const s = p && p.isPlayer2 ? 1 : 0;
+                    const row = this._pixiLaserGlow && this._pixiLaserGlow[v];
+                    const gl0 = row ? (Array.isArray(row) ? row[s] : (s === 0 ? row : null)) : null;
+                    if (gl0) gl0.visible = false;
+                } catch (e) {}
             } catch (e) {}
             return;
         }
@@ -61137,7 +61373,7 @@ class Game {
         if (!G) { G = new window.PIXI.Graphics(); this._pixiOverlayStage.addChild(G); this._pixiLaserFx[v] = G; }
         if (this._pixiLaserFxFrame[v] !== this._pixiFrameToken) { G.clear(); this._pixiLaserFxFrame[v] = this._pixiFrameToken; }
         G.mask = this._pixiHalfMask(v);
-        if (!this._pixiLaserGlow) this._pixiLaserGlow = [null, null];
+        if (!this._pixiLaserGlow) this._pixiLaserGlow = [[null, null], [null, null]];
         const aimCoords = this.getWorldAimCoords(p);
         const lAngle = p.angle;
         const lRe = Math.min(14, p.gunRetractPx || 0);
@@ -61243,14 +61479,21 @@ class Game {
         if (dotAlpha > 0.01) {
             dotAlpha = Math.min(0.95, dotAlpha * (1 + 0.6 * dotFlare));
             const hx = SX(hitPt.x), hy = SY(hitPt.y - pz);
-            let gl = this._pixiLaserGlow[v];
+            // Per-shooter glow ([half][shooter]): the old single sprite per
+            // half let the second shooter overwrite the first's dot (or hide
+            // it when faded). Shooter index, not viewport index, tints it.
+            const s = p.isPlayer2 ? 1 : 0;
+            let _row = this._pixiLaserGlow[v];
+            if (!Array.isArray(_row)) { _row = [(_row || null), null]; this._pixiLaserGlow[v] = _row; }
+            let gl = _row[s];
             if (!gl) {
                 gl = new window.PIXI.Sprite(this._pixiGlowWhiteTex());
                 gl.anchor.set(0.5); gl.blendMode = 'add';
                 this._pixiOverlayStage.addChild(gl);
-                this._pixiLaserGlow[v] = gl;
+                _row[s] = gl;
             }
             gl.visible = true;
+            try { gl.mask = this._pixiHalfMask(v); } catch (e) {}
             gl.position.set(hx, hy);
             gl.scale.set((dotHalfWidth * 2 + 16) / 64);
             gl.tint = col;
@@ -61273,8 +61516,20 @@ class Game {
             // frame at low intensity (equilibrium ~0.27, never saturates);
             // a steady dwell phosphors, a sweep leaves a fading trace.
             // Hit-flare frames kick harder (event, 0.08s).
-            try { this._pixiLightSplat(hitPt.x, hitPt.y - pz, 30, 0.012 + 0.05 * dotFlare, '#ffe9c9'); } catch (e) {}
-        } else if (this._pixiLaserGlow[v]) this._pixiLaserGlow[v].visible = false;
+            // Dedupe: queue once (v==0 pass only) — the shared buffer stamps
+            // it into both halves, so an unguarded call double-doses 2P.
+            // Mode-dependent base (2P 0.024 == today's 2x0.012 stacked dose;
+            // 1P 0.012 untouched) keeps both modes' look identical.
+            if (v === 0) { try { this._pixiLightSplat(hitPt.x, hitPt.y - pz, 30, (this.isTwoPlayer ? 0.024 : 0.012) + 0.05 * dotFlare, '#ffe9c9'); } catch (e) {} }
+        } else {
+            // Faded dot: hide only this shooter's slot.
+            try {
+                const s2 = p.isPlayer2 ? 1 : 0;
+                const row2 = this._pixiLaserGlow && this._pixiLaserGlow[v];
+                const arr2 = Array.isArray(row2) ? row2 : [row2];
+                if (arr2[s2]) arr2[s2].visible = false;
+            } catch (e) {}
+        }
         // GL + thumper charge ticks.
         if (p.glCharging) {
             const markX = lStartX + Math.cos(laserAngle) * p.glChargeDist;
@@ -61421,7 +61676,16 @@ class Game {
         }
         H._frame = this._pixiFrameToken;
         H.root.visible = true;
-        H.root.position.set(ox + (it.x - cam.x + shX) * ez, (it.y - cam.y + shY) * ez);
+        // E1 anti-coincidence: deterministic pose-only micro-spread (±3px)
+        // from monotonic _seq so stacked ties never share identical centers.
+        // Sim x/y untouched (magnet/touch use real pos); zero RNG.
+        let _sx = 0, _sy = 0;
+        try {
+            const _sq = (it._seq || 0);
+            _sx = (((_sq * 2654435761) % 1000) / 1000 - 0.5) * 6;
+            _sy = (((_sq * 40503) % 1000) / 1000 - 0.5) * 6;
+        } catch (e) {}
+        H.root.position.set(ox + (it.x + _sx - cam.x + shX) * ez, (it.y + _sy - cam.y + shY) * ez);
         H.root.scale.set(ez);
         let lx = 4, ly = 12;
         try {
@@ -61904,7 +62168,7 @@ class Game {
         const _bfl = 1 + 0.14 * Math.sin(now * 3 + (bar.rockOffset || 0));
         try { if (bar._light) bar._light.r = 60 * _bfl; } catch (e) {}
         try {
-            if ((this.gameTime || 0) - (bar._lightT || -9) > 0.5) {
+            if (v === 0 && (this.gameTime || 0) - (bar._lightT || -9) > 0.5) {
                 bar._lightT = this.gameTime || 0;
                 this._pixiLightSplat(bar.x, bar.y, 60, 0.15, '#ff8800');
             }
@@ -62179,6 +62443,7 @@ class Game {
         let FX = this._pixiEvFx[v];
         if (!FX) { FX = new window.PIXI.Graphics(); this._pixiOverlayStage.addChild(FX); this._pixiEvFx[v] = FX; }
         FX.clear();
+        try { FX.mask = this._pixiHalfMask(v); } catch (e) {}
         const now = this.gameTime || 0;
         const vw = cam.w || 2400, vh = cam.h || 1600;
         let drew = false;
@@ -62222,6 +62487,7 @@ class Game {
         let FX = this._pixiLanceFx[v];
         if (!FX) { FX = new window.PIXI.Graphics(); this._pixiOverlayStage.addChild(FX); this._pixiLanceFx[v] = FX; }
         FX.clear();
+        try { FX.mask = this._pixiHalfMask(v); } catch (e) {}
         const T = (typeof RIFT_TUNING !== 'undefined') ? RIFT_TUNING : {};
         const MARK_S = T.LANCE_MARK_S || 0.8;
         const now = this.gameTime || 0;
@@ -62745,6 +63011,7 @@ class Game {
         let FX = this._pixiEnemyFx[v];
         if (!FX) { FX = new window.PIXI.Graphics(); this._pixiOverlayStage.addChild(FX); this._pixiEnemyFx[v] = FX; }
         if (this._pixiEnemyFxFrame[v] !== this._pixiFrameToken) { FX.clear(); this._pixiEnemyFxFrame[v] = this._pixiFrameToken; }
+        try { FX.mask = this._pixiHalfMask(v); } catch (e) {}
         return FX;
     }
     drawPixiBoss(b, cam, isPlayer2) {
@@ -64983,6 +65250,7 @@ class Game {
             try {
                 if (this._pixiHalfMasks) {
                     for (const m of this._pixiHalfMasks.masks) {
+                        try { this._pixiOverlayStage.removeChild(m); } catch (e) {}
                         try { if (m.texture) m.texture.destroy(true); } catch (e) {}
                         try { m.destroy(); } catch (e) {}
                     }
@@ -64996,7 +65264,9 @@ class Game {
                 // never self-render (probed + split-duo 2.33% green).
                 masks = [0, 1].map((h) => {
                     const m = new R.Graphics();
-                    m.rect(h === 0 ? 0 : Math.ceil(this.width / 2), 0, Math.floor(this.width / 2), this.height);
+                    // WO-04: h1 starts at floor(W/2) (not ceil) to cover the
+                    // odd-W 1px center gap; 1px overlap hidden under divider.
+                    m.rect(h === 0 ? 0 : Math.floor(this.width / 2), 0, Math.floor(this.width / 2) + (h === 1 && (this.width % 2) ? 1 : 0), this.height);
                     m.fill({ color: 0xffffff });
                     this._pixiOverlayStage.addChild(m);
                     return m;
@@ -65013,14 +65283,16 @@ class Game {
     _pixiFlagsSuspend() {
         const saved = {};
         try {
+            // WO-04: save full bool map (not truthy-only) so a pre-existing
+            // false restores to false instead of polluting to true.
             for (const k of Object.keys(this)) {
-                if (k.indexOf('pixiLayer_') === 0 && this[k]) { saved[k] = true; this[k] = false; }
+                if (k.indexOf('pixiLayer_') === 0) { saved[k] = !!this[k]; this[k] = false; }
             }
         } catch (e) {}
         return saved;
     }
     _pixiFlagsRestore(saved) {
-        try { for (const k of Object.keys(saved)) this[k] = true; } catch (e) {}
+        try { for (const k of Object.keys(saved)) this[k] = !!saved[k]; } catch (e) {}
     }
     // L10-2 PiP holes via GL scissor-clear (NOT Pixi masks: every mask
     // flavor self-renders on the screen path here; NOT CSS clip-path either
@@ -65665,6 +65937,10 @@ class Game {
             if (s.visible) {
                 s.tint = 0xff0000;
                 s.alpha = Math.min(1, a);
+                // WO-03: large Rr*3 glow spills without mask in 2P — clamp to half.
+                try { s.mask = this.isTwoPlayer ? this._pixiHalfMask(vh) : null; } catch (e) {}
+            } else {
+                try { if (s.mask) s.mask = null; } catch (e) {}
             }
         }
         // Blood splatter (victim-only): dark edge wash + directional veil.
@@ -65747,8 +66023,10 @@ class Game {
             if (s.visible) {
                 s.tint = 0x6e0b0b;
                 s.alpha = Math.min(1, a);
+                try { s.mask = this.isTwoPlayer ? this._pixiHalfMask(vh) : null; } catch (e) {}
             } else {
                 s.rotation = 0;
+                try { if (s.mask) s.mask = null; } catch (e) {}
             }
         }
         // P4 desat wash (heavy-hit victim only): grey veil at low alpha —
@@ -65948,7 +66226,11 @@ class Game {
             // all-halves-bursting replaces it. 1P always replaces (parity).
             let burstHalves = 0;
             try { const _sh = {}; for (const q of req) _sh[q.h ? 1 : 0] = true; burstHalves = Object.keys(_sh).length; } catch (e) {}
-            const overlayOnly = twoP && burstHalves < 2;
+            // 2P never blanks: any burst (single- or both-halves) overlays
+            // its masked ghosts on the live world. A shared blast hitting
+            // both players drove burstHalves==2 into the hide-world branch
+            // (both viewports black). 1P keeps replace (parity/punch).
+            const overlayOnly = !!twoP;
             const hid = A.hidden;
             hid.length = 0;
             if (overlayOnly) {
@@ -66083,11 +66365,19 @@ class Game {
                     return t;
                 };
                 if (this._pixiDressH) {
+                    // Perf: cache unitTop once per present (not per-c ×6).
+                    // Monotonic appends go stale low by ≤ moves done; index
+                    // guards converge after 1 extra frame — saves 5/6 scans.
+                    let _utCached = -2;
+                    const _utOnce = () => {
+                        if (_utCached === -2) _utCached = unitTop();
+                        return _utCached;
+                    };
                     for (const DH of this._pixiDressH) {
                         if (!DH) continue;
                         for (const c of [DH.solidC, DH.canopyC, DH.roofC]) {
                             if (!c) continue;
-                            const t = unitTop();
+                            const t = _utOnce();
                             const ci = idx(c);
                             if (ci < 0 || t < 0 || ci >= t) continue;
                             st.removeChild(c);
@@ -66160,23 +66450,84 @@ class Game {
                         }
                     }
                 } catch (e) {}
+                // (d) mid-tier ground assets below players (canvas 9-20 < 21:
+                // items < ... < turrets/cams/dogs/mines < players < bullets <
+                // barrierTop < activeDrone < shadows < solids). Operator call:
+                // barrier bodies + plates sink below players (readability over
+                // canvas parity for tops). Must run
+                // BEFORE (b)'s early return so no-item frames still order.
+                // OUT: bullets-PC/shadows/solids/muzzle/night.
+                // Drone filtered by activeDrone keys (same Map). Index-guarded,
+                // _frame-gated (stale hidden rigs don't churn), re-reads anchor
+                // after removal. Converges to no-op.
+                try {
+                    let pMin = -1;
+                    try {
+                        for (const R of (this._pixiPlayerRigs || new Map()).values()) {
+                            if (!R || !R.root) continue;
+                            if (R._frame !== undefined && this._pixiFrameToken !== undefined && R._frame !== this._pixiFrameToken) continue;
+                            const _pi = idx(R.root);
+                            if (_pi >= 0 && (pMin < 0 || _pi < pMin)) pMin = _pi;
+                        }
+                    } catch (e) {}
+                    if (pMin > 0) {
+                        const _ad1 = this.player && this.player.activeDrone;
+                        const _ad2 = this.player2 && this.player2.activeDrone;
+                        const _inMaps = [this._pixiEnemyRigs, this._pixiTurretRigs, this._pixiMineRigs, this._pixiDogRigs, this._pixiCamRigs, this._pixiGrenadeRigs, this._pixiBarrelRigs, this._pixiHostageRigs, this._pixiObjectiveRigs, this._pixiEventideRigs, this._pixiStationRigs, this._pixiDroneRigs, this._pixiBarrierTopRigs, this._pixiBarrierDeckRigs, this._pixiBarrierRigs];
+                        for (const _mm of _inMaps) {
+                            if (!_mm) continue;
+                            try {
+                                for (const [_kk, _RR] of _mm.entries()) {
+                                    if (!_RR) continue;
+                                    if (_mm === this._pixiDroneRigs && (_kk === _ad1 || _kk === _ad2)) continue;
+                                    const _hs = _RR.root ? [_RR] : [(_RR.a || null), (_RR.b || null)];
+                                    for (const _H of _hs) {
+                                        if (!_H || !_H.root) continue;
+                                        if (_H._frame !== undefined && this._pixiFrameToken !== undefined && _H._frame !== this._pixiFrameToken) continue;
+                                        const _ci = idx(_H.root);
+                                        if (_ci < 0 || _ci < pMin) continue;
+                                        st.removeChild(_H.root);
+                                        // Re-read pMin after removal (shifting top trap).
+                                        let _pj = -1;
+                                        try {
+                                            for (const _PR of (this._pixiPlayerRigs || new Map()).values()) {
+                                                if (!_PR || !_PR.root) continue;
+                                                const _qi = idx(_PR.root);
+                                                if (_qi >= 0 && (_pj < 0 || _qi < _pj)) _pj = _qi;
+                                            }
+                                        } catch (e) {}
+                                        if (_pj < 0) { st.addChild(_H.root); continue; }
+                                        st.addChildAt(_H.root, Math.max(0, _pj));
+                                        pMin = _pj;
+                                    }
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                } catch (e) {}
                 if (!above.length || !this._pixiItemRigs) return;
                 const items = [];
                 try {
-                    for (const R of this._pixiItemRigs.values()) {
+                    // E1 newest-on-top: stable sort by monotonic _seq (oldest
+                    // first) so reverse-insert leaves newest closest to
+                    // players (on top among items). Render-order only.
+                    for (const [it, R] of this._pixiItemRigs.entries()) {
                         if (!R) continue;
+                        const _sq = (it && it._seq) || 0;
                         for (const k of ['a', 'b']) {
                             const r = R[k] && R[k].root;
-                            if (r && idx(r) >= 0) items.push(r);
+                            if (r && idx(r) >= 0) items.push({ r, s: _sq });
                         }
-                        if (R.root && idx(R.root) >= 0) items.push(R.root);
+                        if (R.root && idx(R.root) >= 0) items.push({ r: R.root, s: _sq });
                     }
+                    items.sort((a, b) => a.s - b.s);
                 } catch (e) {}
                 for (let i = items.length - 1; i >= 0; i--) {
                     let m = -1;
                     for (const t of above) { const ti = idx(t); if (ti >= 0 && (m < 0 || ti < m)) m = ti; }
                     if (m < 0) break;
-                    st.addChildAt(items[i], m);
+                    const _rr = items[i] && items[i].r ? items[i].r : items[i];
+                    st.addChildAt(_rr, m);
                 }
             } catch (e) {}
         } catch (e) {}
@@ -66262,15 +66613,17 @@ class Game {
             if (!map) return;
             for (const [key, R] of map) {
                 if (R && (R.root || R.a || R.b)) {
-                    // Mask re-assert (folded here; 2P only — null in 1P).
-                    // Unconditional like the old second pass (mask objects
-                    // recreate on resize; roots would keep dead refs).
-                    if (twoP) {
-                        if (R.root) R.root.mask = R.half ? _M1 : _M0;
-                        else {
-                            if (R.a && R.a.root) R.a.root.mask = _M0;
-                            if (R.b && R.b.root) R.b.root.mask = _M1;
-                        }
+                    // Mask assign EVERY present (not 2P-only): a 2P session
+                    // stamps half-masks onto rigs and drawPixi* twins never
+                    // clear them per-draw — after 2P->1P the player kept a
+                    // stale left-half mask and was bisected/invisible right
+                    // of screen-center. In 1P this writes null (one store per
+                    // rig per frame, same visit). Mask objects recreate on
+                    // resize; roots must never keep dead refs.
+                    if (R.root) R.root.mask = twoP ? (R.half ? _M1 : _M0) : null;
+                    else {
+                        if (R.a && R.a.root) R.a.root.mask = twoP ? _M0 : null;
+                        if (R.b && R.b.root) R.b.root.mask = twoP ? _M1 : null;
                     }
                     // Stale = ALL EXISTING halves stale (old sa&&sb needed
                     // both — hideH(null) is always false, so the delete
@@ -66608,6 +66961,7 @@ class Game {
                     if (sp.texture !== tex) sp.texture = tex;
                     sp.visible = true;
                     sp.anchor.set(0, 0.5);
+                    try { sp.mask = this._pixiHalfMask(h); } catch (e) {}
                     sp.position.set(aX, aY);
                     sp.rotation = ang;
                     sp.scale.set(slen / tex.width, (hh * 2) / tex.height);
@@ -66866,28 +67220,29 @@ class Game {
             try {
                 if (!this._pixiAuraTex) this._pixiAuraTex = window.PIXI.Texture.from(getGlowSprite('#ffe9c4'));
                 if (!this._pixiAuraSprites) this._pixiAuraSprites = [null, null];
-                const heroes = [this.player];
-                if (this.isTwoPlayer && this.player2 && !this.player2.dead) heroes.push(this.player2);
-                const G = this._pixiOverlayGfx;
-                heroes.forEach((_h2, _ix) => {
-                    if (!_h2 || _h2.dead) return;
+                // Per-half hero (not hero-indexed): h==1 shows player2, h==0 shows
+                // player — so half-1 can never overwrite half-0's sprite.
+                const _h2 = this.isTwoPlayer ? (h === 1 ? this.player2 : this.player) : this.player;
+                if (_h2 && !_h2.dead) {
                     const _ar = VEIL_TUNING.AURA_R;
-                    if (_h2.x + _ar < cam.x || _h2.x - _ar > cam.x + vw / cam.zoom ||
-                        _h2.y + _ar < cam.y || _h2.y - _ar > cam.y + vh / cam.zoom) return;
-                    let sp = this._pixiAuraSprites[_ix];
+                    if (!(_h2.x + _ar < cam.x || _h2.x - _ar > cam.x + vw / cam.zoom ||
+                        _h2.y + _ar < cam.y || _h2.y - _ar > cam.y + vh / cam.zoom)) {
+                    let sp = this._pixiAuraSprites[h];
                     if (!sp) {
                         sp = new window.PIXI.Sprite(this._pixiAuraTex);
                         sp.blendMode = 'add'; sp.anchor.set(0.5);
                         // Above the night blit, below the text layer (canvas order).
                         this._pixiOverlayStage.addChildAt(sp, this._pixiOverlayStage.getChildIndex(this._pixiTextLayer));
-                        this._pixiAuraSprites[_ix] = sp;
+                        this._pixiAuraSprites[h] = sp;
                     }
                     sp.visible = true;
+                    try { sp.mask = this._pixiHalfMask(h); } catch (e) {}
                     sp.position.set(ox + (_h2.x - cam.x + shX) * ez, (_h2.y - cam.y + shY) * ez);
                     sp.scale.set((_ar * 2 * ez) / this._pixiAuraTex.width);
                     sp.alpha = VEIL_TUNING.AURA_ALPHA;
                     sp._pixiFrame = this._pixiFrameToken;
-                });
+                    }
+                }
                 for (const sp of this._pixiAuraSprites) {
                     if (sp && sp._pixiFrame !== this._pixiFrameToken) sp.visible = false;
                 }
@@ -66972,13 +67327,22 @@ class Game {
     }
 
     drawPixiMuzzle(cam, isPlayer2) {
-        const G = this._pixiOverlayGfx;
-        if (!G || !this._pixiOverlayRenderer) return;
+        if (!this._pixiOverlayRenderer) return;
         if (!this._pixiMuzzleTex) {
             this._pixiMuzzleTex = window.PIXI.Texture.from(cachedWarmMuzzleFlashCanvas);
             this._pixiMuzzlePool = [[], []];
         }
         const _mh = (isPlayer2 && this.isTwoPlayer) ? 1 : 0;
+        // Per-half vector Graphics (mirrors LaserFx): the old shared
+        // _pixiOverlayGfx singleton has one mask slot, so half-1's diamonds
+        // painted unclipped into half-0 (and vice versa). Shockwaves and
+        // deathbursts keep the shared object; muzzle owns this one.
+        if (!this._pixiMuzzleFx) this._pixiMuzzleFx = [null, null];
+        if (this._pixiMuzzleFxFrame === undefined) this._pixiMuzzleFxFrame = [-1, -1];
+        let G = this._pixiMuzzleFx[_mh];
+        if (!G) { G = new window.PIXI.Graphics(); G.blendMode = 'add'; this._pixiOverlayStage.addChild(G); this._pixiMuzzleFx[_mh] = G; }
+        if (this._pixiMuzzleFxFrame[_mh] !== this._pixiFrameToken) { G.clear(); this._pixiMuzzleFxFrame[_mh] = this._pixiFrameToken; }
+        try { G.mask = this._pixiHalfMask(_mh); } catch (e) {}
         const _mpool = this._pixiMuzzlePool[_mh];
         const ez = cam.zoom + (cam.zoomPunch || 0) + (cam.recoilZoom || 0);
         const ox = (isPlayer2 && this.isTwoPlayer) ? this.width / 2 : 0;
@@ -67011,12 +67375,25 @@ class Game {
             // Identical RNG consumption to canvas (see PORT LAW above).
             let flick = MUZZLE_TUNING.FLICK_MIN + Math.random() * MUZZLE_TUNING.FLICK_SPAN;
             flameLen *= flick; flameW *= (MUZZLE_TUNING.W_MULT_MIN + Math.random() * MUZZLE_TUNING.W_MULT_SPAN);
+            // Vent angles up front (same 2 calls, same order): the cull below
+            // must skip drawing without skipping RNG, or the shared stream
+            // desyncs the sim under a seeded harness.
+            let _sa0a = 0.72 + (Math.random() - 0.5) * MUZZLE_TUNING.VENT_JITTER;
+            let _sa0b = -0.72 + (Math.random() - 0.5) * MUZZLE_TUNING.VENT_JITTER;
             // Warm aura: pooled additive sprite over the baked muzzle canvas.
             // SHADER-ERA #2 ooze: radius mult + alpha lift + white-hot core
             // (no RNG here — PORT LAW consumption order/count unchanged).
             let glowCenterX = sx + Math.cos(angle) * (flameLen * 0.35);
             let glowCenterY = sy + Math.sin(angle) * (flameLen * 0.35);
             let glowR = flameLen * 0.9 * (typeof GLOW_OOZE !== 'undefined' ? GLOW_OOZE.R_MULT : 1.18);
+            // Viewport cull (world units vs visible world size): culled draws
+            // nothing but the RNG above already ran, so the stream is intact.
+            {
+                const _vw = (this.isTwoPlayer ? this.width / 2 : this.width) / ez;
+                const _vh = this.height / ez;
+                const _cr = flameLen * 1.12 + glowR * 1.6;
+                if (sx < -_cr || sy < -_cr || sx > _vw + _cr || sy > _vh + _cr) return;
+            }
             const sp = this._pixiMuzzleSprite(_mpool, mi++);
             sp.mask = this._pixiHalfMask(_mh);
             if (sp.texture !== this._pixiMuzzleTex) sp.texture = this._pixiMuzzleTex;
@@ -67044,9 +67421,11 @@ class Game {
                     core.alpha = Math.max(0, Math.min(1.0, (t - 0.55) / 0.45)) * alpha;
                 }
             }
-            // Shared bloom stamp (renderer-agnostic; called once per flash).
-            this.stampGlow(wx + Math.cos(angle) * (flameLen * 0.35), wy + Math.sin(angle) * (flameLen * 0.35), glowR * 1.6, '#ffb14e', alpha * 0.4);
-            // Diamonds: manual rotation (shared Graphics holds no transform).
+            // Shared bloom stamp — single enqueue (_mh==0 only); drawPixiBloom
+            // dual-projects it into both halves. Unconditional would stamp
+            // twice in 2P for ~2x halo brightness vs 1P.
+            if (_mh === 0) this.stampGlow(wx + Math.cos(angle) * (flameLen * 0.35), wy + Math.sin(angle) * (flameLen * 0.35), glowR * 1.6, '#ffb14e', alpha * 0.4);
+            // Diamonds: manual rotation (per-half Graphics holds no transform).
             const cosA = Math.cos(angle), sinA = Math.sin(angle);
             const PX = (lx, ly) => ox + (sx + lx * cosA - ly * sinA + shX) * ez;
             const PY = (lx, ly) => (sy + lx * sinA + ly * cosA + shY) * ez;
@@ -67060,8 +67439,7 @@ class Game {
             tri(0, -flameW * 0.65, flameLen * 1.12, 0, 0, flameW * 0.65, 0xff4400);
             tri(0, -flameW * 0.4, flameLen * 0.88, 0, 0, flameW * 0.4, 0xffee22);
             tri(-flameLen * 0.08, -flameW * 0.2, flameLen * 0.68, 0, -flameLen * 0.08, flameW * 0.2, 0xffffff);
-            for (let _sa0 of [0.72, -0.72]) {
-                let sa = _sa0 + (Math.random() - 0.5) * MUZZLE_TUNING.VENT_JITTER;
+            for (let sa of [_sa0a, _sa0b]) {
                 tri(0, 0, Math.cos(sa) * ventLen, Math.sin(sa) * ventLen,
                     Math.cos(sa) * (ventLen * 0.45), Math.sin(sa) * (ventLen * 0.22), 0xffcc00);
             }
@@ -67527,6 +67905,8 @@ class Game {
         this._chaosDraftAdvancing = false;
         this._chaosDraftQueue = [];
         try { toggleClass('chaos-draft-screen', 'hidden', true); } catch (e) {}
+        // F-A: NOW perk queue never survives run end (dead Player refs).
+        try { this._nowModePerkQueue = []; } catch (e) {}
         // EVENTIDE: hard-stop the field hum (update stops in debrief/menu).
         this._stopEventideHum();
         // ORACLE SPICE: trips never survive the debrief (comedown now, no convert).
@@ -68574,6 +68954,23 @@ class Game {
             }
             // L12 single-renderer: laser twin only (canvas limb deleted; zero RNG/clock inside).
             { for (let p of activePlayersForLaser) this.drawPixiLaser(p, cam, isPlayer2); }
+            // Hide glow slots no shooter stamped this frame in this half
+            // (a filtered dead shooter's dot would otherwise freeze at its
+            // death position — same stamp discipline as entity rigs).
+            try {
+                const _vv = (isPlayer2 && this.isTwoPlayer) ? 1 : 0;
+                const _row = this._pixiLaserGlow && this._pixiLaserGlow[_vv];
+                const _arr = Array.isArray(_row) ? _row : [_row];
+                const _live = {};
+                for (const _lp of activePlayersForLaser) {
+                    if (!_lp || _lp.dead) continue;
+                    _live[_lp.isPlayer2 ? 1 : 0] = true;
+                }
+                for (let _si = 0; _si < _arr.length; _si++) {
+                    const _gs = _arr[_si];
+                    if (_gs && !_live[_si] && _gs._frame !== this._pixiFrameToken) _gs.visible = false;
+                }
+            } catch (e) {}
         }
 
         for (let i of this.items) {
