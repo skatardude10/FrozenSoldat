@@ -899,6 +899,7 @@
         border-color: var(--red) !important; color: var(--red) !important;
         cursor: not-allowed; background: transparent !important;
     }
+    button.armory-buy-btn.armory-refund-btn { margin-top: 4px; opacity: 0.75; }
 
     #tab-guide::-webkit-scrollbar { width: 6px; }
     #tab-guide::-webkit-scrollbar-track { background: rgba(0, 229, 255, 0.05); border-radius: 3px; }
@@ -16295,8 +16296,17 @@ class Entity {
         // much weaker drag, so momentum carries (see CRYO_TUNING math note).
         // customDragRate (dives etc.) still wins while set; props/bullets
         // and every non-cryo run are byte-identical.
+        // SOLDIER CONDITIONING: holder's drag base (L0 0.0020 floaty-fat,
+        // L3 0.0006 live, L5 0.00042 planted). Players only -- enemies/props
+        // stay 0.0006. customDragRate (dives) and cryo still win while set.
+        let scDragBase = 0.0006;
+        try {
+            if (this.maxStamina !== undefined && (typeof soldierConditioningRow !== 'undefined')) {
+                scDragBase = soldierConditioningRow((typeof game !== 'undefined') ? game : null).dragRate;
+            }
+        } catch (e) {}
         let dragRate = (this.customDragRate !== undefined) ? this.customDragRate
-            : ((typeof game !== 'undefined' && game && game._cryoActive && (this.maxStamina !== undefined || this instanceof Enemy)) ? CRYO_TUNING.DRAG : 0.0006);
+            : ((typeof game !== 'undefined' && game && game._cryoActive && (this.maxStamina !== undefined || this instanceof Enemy)) ? CRYO_TUNING.DRAG : scDragBase);
         this.vx *= Math.pow(dragRate, dt);
         this.vy *= Math.pow(dragRate, dt);
         
@@ -16676,10 +16686,12 @@ const AIM_WEIGHT = {
         aimWhizFlinchOffset:      { stiffness: 4200, damping: 0.22, maxDeg: 6 },
         // Locomotive sway: kicked once per real footfall (see the
         // footstepTimer reset in applySprintStaminaAndMove()), not driven
-        // continuously -- stiff/quick enough to read as a crisp per-step
-        // "thud" rather than a mushy wobble, with just enough underdamping
-        // to give each step a tiny rebound.
-        aimWalkSwayOffset:        { stiffness: 1200, damping: 0.28, maxDeg: 20 },
+        // continuously -- soft enough to roll step-to-step as a weighty sway
+        // rather than snap-wagging: stiffness sits WELL below the ~4.5Hz
+        // footstep rate (a 1200-stiffness spring rings at ~5.5Hz and
+        // re-excites every stride), damping kills the multi-ring tail after
+        // one small overshoot. Kick magnitude (WALK_SWAY_KICK_DEG) untouched.
+        aimWalkSwayOffset:        { stiffness: 700, damping: 0.42, maxDeg: 20 },
         // Heartbeat sync: kicked once per heartbeat while badly hurt (see
         // Player.updateHeartbeatSway()). Lower stiffness than a footstep --
         // a heartbeat is a slower, heavier thump than a boot hitting the
@@ -17116,6 +17128,7 @@ const LOOT_TUNING = { HALO_ALPHA: 0.55 };
 const GLOW_OOZE = { R_MULT: 1.18, AURA_LIFT: 1.0, CORE_T: 0.55, CORE_R: 0.45, BLOOM_R: 1.12, PULSE_RANGE: 420, PULSE_AMT: 0.30 }; // SHADER-ERA #2: pooled-glow ooze (bake stays baked; radii/alpha/pulse only)
 const FLUID_TUNING = { CELL: 40, MAXCELLS: 24000, JACOBI: 8, VEL_DISS: 0.5, DENS_DISS: 0.55, EPS: 0.0008, MAXV: 900, RENDER_CAP: 96, SMOKE_TINT: 0x91a7c3, BUOY: 30 }; // SHADER-ERA fluid v1 (CPU Stam grid; square cells under a cell budget)
 const BLOOM_TUNING = { NIGHT_T: 0.45, VEIL_T: 0.62, DIM: 0.5 }; // SHADER-ERA #3: selective-bloom gate (hot passes, wash dims; veil tightens)
+const EXPO_TUNING = { STRENGTH: 1.0, TAU_UP: 1.2, TAU_DOWN: 0.10, MAX_T: 0.22, HOLD: 0.35 }; // EYE-ADAPTATION v1: analytic light-adaptation (CPU scalar, zero passes). Consumed as uT = base + ThAdj + expoV * MAX_T * STRENGTH. Shipped defaults frozen; presets live in frozensoldat.tweaks.v1.
 // PHASE 3 Item 3: heavy-gun muzzle refraction rings (UV-only — no vector ring, glow, blast or gameplay). radius px / life s / strength. Absent = none.
 const MUZZLE_SHOCK = { Shotgun: { r: 60, t: 0.15, s: 0.9 }, Sniper: { r: 70, t: 0.18, s: 1.0 }, LMG: { r: 36, t: 0.12, s: 0.6 }, M1A: { r: 40, t: 0.12, s: 0.7 }, Abakan: { r: 36, t: 0.12, s: 0.6 }, Thumper: { r: 80, t: 0.2, s: 1.0 } };
 const WORLD_BREATHE = { CANOPY_PX: 3.0, BUSH_PX: 1.5, RIM_A: 0.03, BAND_A: 0.025, HAZE_STD: 0.02, HAZE_OP: 0.04, HAZE_R: 0.03 };
@@ -17246,6 +17259,11 @@ function buildTweakRegistry() {
     TW('Lighting', 'BLOB_TUNING.LEAN_PX', BLOB_TUNING, 'LEAN_PX', 0, 20, 0.5);
     TW('Lighting', 'VEIL_TUNING.AURA_ALPHA', VEIL_TUNING, 'AURA_ALPHA', 0, 0.25, 0.01);
     TW('Lighting', 'VEIL_TUNING.AURA_R', VEIL_TUNING, 'AURA_R', 100, 500, 10);
+    TW('Lighting', 'EXPO_TUNING.STRENGTH', EXPO_TUNING, 'STRENGTH', 0, 2, 0.05);
+    TW('Lighting', 'EXPO_TUNING.TAU_UP', EXPO_TUNING, 'TAU_UP', 0.2, 3, 0.05);
+    TW('Lighting', 'EXPO_TUNING.TAU_DOWN', EXPO_TUNING, 'TAU_DOWN', 0.02, 0.5, 0.01);
+    TW('Lighting', 'EXPO_TUNING.MAX_T', EXPO_TUNING, 'MAX_T', 0, 0.4, 0.01);
+    TW('Lighting', 'EXPO_TUNING.HOLD', EXPO_TUNING, 'HOLD', 0, 0.5, 0.01);
     // --- World breathe ---
     TW('World', 'WORLD_BREATHE.CANOPY_PX', WORLD_BREATHE, 'CANOPY_PX', 0, 6, 0.1);
     TW('World', 'WORLD_BREATHE.BUSH_PX', WORLD_BREATHE, 'BUSH_PX', 0, 3, 0.1);
@@ -18114,7 +18132,14 @@ class Player extends Entity {
     }
 
     get speedPenalty() {
-        return Math.max(0.75, 1.0 - this.weight * 0.0025);
+        // SOLDIER CONDITIONING: kit-weight slope (L0 0.0040 fat tax, L3 0.0025 live, L5 0.0020 fit).
+        let scSlope = 0.0025;
+        try {
+            if (typeof soldierConditioningRow !== 'undefined') {
+                scSlope = soldierConditioningRow((typeof game !== 'undefined') ? game : null).weightSlope;
+            }
+        } catch (e) {}
+        return Math.max(0.75, 1.0 - this.weight * scSlope);
     }
 
     update(dt, input, walls, gameTime, gp = null) {
@@ -19355,6 +19380,9 @@ class Player extends Entity {
         // 2. Stamina consumption and recovery calculations (including Meta upgrades)
         let MA = game && game.saveData ? game.saveData.metaUpgrades : null;
         let cardioLvl = MA ? (MA.cardioConditioning || 0) : 0;
+        // SOLDIER CONDITIONING: tiny stamina overlap only (drain/regen a few
+        // %/level, L3 = 1.0) -- Cardio stays the stamina track.
+        let scRow = soldierConditioningRow(game);
         
         // Stamina drain slowed and regen sped up across the board -- sprint
         // was draining the full bar in ~3s with a much slower refill, which
@@ -19362,7 +19390,7 @@ class Player extends Entity {
         // actually sustain themselves." Getting hit still costs stamina at
         // the same rate as before (see takeDamage's shock penalty below) --
         // only movement drain/regen changed here.
-        let regenRate = (26.4 / 3.0) * 1.6 * (1 + cardioLvl * 0.12); // ~60% faster base regen
+        let regenRate = (26.4 / 3.0) * 1.6 * (1 + cardioLvl * 0.12) * scRow.regen; // ~60% faster base regen
         // Walking/jogging is no longer a stamina drain -- a light,
         // comfortable pace is genuinely refreshing rather than tiring, per
         // feedback. Gains a small trickle instead, at a fraction of the
@@ -19371,7 +19399,7 @@ class Player extends Entity {
         // rather than a separate constant so cardio/energy-drink bonuses
         // that already scale regenRate carry over here automatically.
         let walkRegenRate = regenRate * 0.2;
-        let runDrainRate = 23.0 * (1 - cardioLvl * 0.08);    // was 27.0 (originally 38.0) -- running/sprinting drains quickly, just not THAT quickly
+        let runDrainRate = 23.0 * (1 - cardioLvl * 0.08) * scRow.drain;    // was 27.0 (originally 38.0) -- running/sprinting drains quickly, just not THAT quickly
 
         // FPV OPERATOR MODE: running is a deliberate last resort (spec
         // section 4 -- "low stamina modifier so it's hard to effectively
@@ -19467,14 +19495,17 @@ class Player extends Entity {
         // Directional movement scaling (see AIM_WEIGHT.MOVE_*_MULT):
         // 1.0 forward -> STRAFE at 90deg -> BACKPEDAL at 180deg, piecewise
         // linear on the dot of move direction vs body facing.
+        // SOLDIER CONDITIONING: strafe/backpedal absolutes from the row
+        // (L3 = 0.85/0.60 = today's live).
         let directionalMult = 1.0;
         if (moveX !== 0 || moveY !== 0) {
             let alignDot = moveX * Math.cos(this.moveFacingAngle) + moveY * Math.sin(this.moveFacingAngle);
+            let scStrafe = scRow.strafe, scBack = scRow.backpedal;
             directionalMult = alignDot >= 0
-                ? AIM_WEIGHT.MOVE_STRAFE_MULT + (1.0 - AIM_WEIGHT.MOVE_STRAFE_MULT) * alignDot
-                : AIM_WEIGHT.MOVE_STRAFE_MULT + (AIM_WEIGHT.MOVE_STRAFE_MULT - AIM_WEIGHT.MOVE_BACKPEDAL_MULT) * alignDot;
+                ? scStrafe + (1.0 - scStrafe) * alignDot
+                : scStrafe + (scStrafe - scBack) * alignDot;
         }
-        let curAccel = this.accel * directionalMult * (1.0 + Math.min(2, this.speedUpgrades) * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff * exoServosAccelMulti * weaponMoveSpeedMult;
+        let curAccel = this.accel * scRow.accel * directionalMult * (1.0 + Math.min(2, this.speedUpgrades) * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff * exoServosAccelMulti * weaponMoveSpeedMult;
         // PHASE 4 (CRYO): force scaled down so equilibrium top speed stays
         // ~unchanged while the weak ice drag stretches stop/turn inertia.
         if (game && game._cryoActive) curAccel *= CRYO_TUNING.FORCE_MULT;
@@ -19523,7 +19554,7 @@ class Player extends Entity {
         let omega = this.moveFacingAngularVelocity || 0;
         let omegaRatio = Math.abs(omega) / AIM_WEIGHT.PIVOT.OMEGA_REF;
         let pivotAccel = -Math.sign(omega) * AIM_WEIGHT.PIVOT.PEAK_ACCEL *
-            Math.pow(omegaRatio, AIM_WEIGHT.PIVOT.SPEED_EXPONENT) * pivotWeightMult;
+            Math.pow(omegaRatio, AIM_WEIGHT.PIVOT.SPEED_EXPONENT) * pivotWeightMult * scRow.pivot;
         let pivotRightX = -Math.sin(this.angle);
         let pivotRightY = Math.cos(this.angle);
         this.vx += pivotRightX * pivotAccel * dt;
@@ -19534,7 +19565,9 @@ class Player extends Entity {
             this.footstepTimer -= dt;
             if (this.footstepTimer <= 0) {
                 audio.playFootstep(0.4, this);
-                this.footstepTimer = (isSprinting && !this.isExhausted) ? 0.22 : 0.35;
+                // SOLDIER CONDITIONING: labored L0 cadence → crisp L5 stride
+                // (L3 = 0.22/0.35 = today's live).
+                this.footstepTimer = (isSprinting && !this.isExhausted) ? scRow.cadenceSprint : scRow.cadenceWalk;
 
                 // Locomotive Sway: kick the gun at the exact moment a real
                 // footfall lands (same event that just triggered the
@@ -19554,10 +19587,11 @@ class Player extends Entity {
                     AIM_WEIGHT.PIVOT.WEIGHT_MIN_MULT,
                     AIM_WEIGHT.PIVOT.WEIGHT_MAX_MULT
                 );
-                let swaySprintMult = (isSprinting && !this.isExhausted) ? AIM_WEIGHT.WALK_SWAY_SPRINT_MULT : 1.0;
+                let swaySprintMult = (isSprinting && !this.isExhausted) ? AIM_WEIGHT.WALK_SWAY_SPRINT_MULT * scRow.sprintSway : 1.0;
                 this._walkSwaySide = -this._walkSwaySide;
+                // SOLDIER CONDITIONING: walkKick taken-mult (L3 = 1.0 = 3.0deg live).
                 this.kickAim('aimWalkSwayOffset',
-                    AIM_WEIGHT.WALK_SWAY_KICK_DEG * swayWeightMult * swaySprintMult,
+                    AIM_WEIGHT.WALK_SWAY_KICK_DEG * scRow.walkKick * swayWeightMult * swaySprintMult,
                     this._walkSwaySide, true);
                 // FELLPASS item 5 (footstep camera bob): kick the player's
                 // OWN camera (P2 -> camera2) on the same footfall event that
@@ -19635,6 +19669,12 @@ class Player extends Entity {
     // moved) so each tracks its own previous-frame |diff| independently.
     _coneEngagement(targetAngle, channel) {
         let coneDeg = AIM_WEIGHT.WEAPON_DEADZONE_CONE_DEG[this.weapon.name] || 25;
+        // SOLDIER CONDITIONING: cone-width mult (L0 narrow 0.80, L3 1.0 live,
+        // L5 wide 1.15). Both gun + body test it, so one hook covers both.
+        try {
+            let scRowCone = (typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow((typeof game !== 'undefined') ? game : null) : null;
+            if (scRowCone) coneDeg *= scRowCone.cone;
+        } catch (e) {}
         let coneRad = coneDeg * Math.PI / 180;
         let diff = MathUtils.angleDifference(targetAngle, this.moveFacingAngle);
         let absDiff = Math.abs(diff);
@@ -19691,6 +19731,9 @@ class Player extends Entity {
     // position was already continuous. Blending both is what actually
     // removes the "mechanical" snap at the edge.
     updateMoveFacing(dt, targetAngle) {
+        // SOLDIER CONDITIONING: per-holder row (L3 = 1.0 = live). Falls back
+        // to L0 couch-potato when no save is loaded.
+        let scRowMF = (typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow((typeof game !== 'undefined') ? game : null) : null;
         let { coneRad, diff, engagement } = this._coneEngagement(targetAngle, 'body');
 
         // At engagement==0 this reduces exactly to the old "hold position"
@@ -19710,6 +19753,9 @@ class Player extends Entity {
         // ramps up smoothly through the buffer instead of jumping straight
         // to full swingRate the instant it's needed.
         let swingRate = AIM_WEIGHT.WEAPON_SWING_RATE_DEG_PER_SEC[this.weapon.name] || AIM_WEIGHT.WEAPON_SWING_RATE_DEG_PER_SEC_DEFAULT;
+        // SOLDIER CONDITIONING: heavies only (Sniper/LMG/Thumper/Mauler swing
+        // slower at L0, faster at L5); lights fixed. Judge stays.
+        if (scRowMF && (this.weapon.name === 'Sniper' || this.weapon.name === 'LMG' || this.weapon.name === 'Thumper' || this.weapon.name === 'Mauler')) swingRate *= scRowMF.swing;
         let maxStep = (swingRate * engagement * Math.PI / 180) * dt;
         let bodyDiff = MathUtils.angleDifference(bodyTarget, this.moveFacingAngle);
         let appliedStep = (Math.abs(bodyDiff) <= maxStep) ? bodyDiff : Math.sign(bodyDiff) * maxStep;
@@ -19752,8 +19798,11 @@ class Player extends Entity {
             if (!wallPinned && travelSpeed > AIM_WEIGHT.BODY_ALIGN_MIN_SPEED && engagement < 1) {
                 let moveAngle = Math.atan2(this.vy, this.vx);
                 let alignDiff = MathUtils.angleDifference(moveAngle, this.moveFacingAngle);
-                let alignCap = (AIM_WEIGHT.BODY_ALIGN_RATE_DEG_PER_SEC * Math.PI / 180) * dt;
-                let alignStep = MathUtils.clamp(alignDiff * AIM_WEIGHT.BODY_ALIGN_SPRING * dt, -alignCap, alignCap);
+                // SOLDIER CONDITIONING: align absolutes (L3 = 240/6.0 = live).
+                let scAlignRate = scRowMF ? (AIM_WEIGHT.BODY_ALIGN_RATE_DEG_PER_SEC * scRowMF.alignRate) : AIM_WEIGHT.BODY_ALIGN_RATE_DEG_PER_SEC;
+                let scAlignSpring = scRowMF ? (AIM_WEIGHT.BODY_ALIGN_SPRING * scRowMF.align) : AIM_WEIGHT.BODY_ALIGN_SPRING;
+                let alignCap = (scAlignRate * Math.PI / 180) * dt;
+                let alignStep = MathUtils.clamp(alignDiff * scAlignSpring * dt, -alignCap, alignCap);
                 alignStep *= (1 - engagement);
                 let newBody = this.moveFacingAngle + alignStep;
                 // Aim-priority clamp: never rotate the body far enough to
@@ -19798,6 +19847,9 @@ class Player extends Entity {
     // aim_weight_design.md and the AIM_WEIGHT config block above the class
     // for the full rationale and tuning notes.
     updateAimWeight(dt, targetAngle) {
+        // SOLDIER CONDITIONING: per-holder row (L3 = live). Drives swing,
+        // climb decay, and idle/focus absolutes below.
+        let scRowAW = (typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow((typeof game !== 'undefined') ? game : null) : null;
         // 1) Cone-gated chase toward the target angle.
         // Free-Aim Cone System v2 (flagged departure from the original
         // Phase 6 handoff, done on request after playtesting showed every
@@ -19819,6 +19871,9 @@ class Player extends Entity {
         // the kind of mechanical snap the buffer exists to remove.
         let { engagement } = this._coneEngagement(targetAngle, 'gun');
         let swingRate = AIM_WEIGHT.WEAPON_SWING_RATE_DEG_PER_SEC[this.weapon.name] || AIM_WEIGHT.WEAPON_SWING_RATE_DEG_PER_SEC_DEFAULT;
+        // SOLDIER CONDITIONING: heavies only (Sniper/LMG/Thumper/Mauler);
+        // lights fixed. Judge stays.
+        if (scRowAW && (this.weapon.name === 'Sniper' || this.weapon.name === 'LMG' || this.weapon.name === 'Thumper' || this.weapon.name === 'Mauler')) swingRate *= scRowAW.swing;
         let heavyRate = swingRate * AIM_WEIGHT.GUN_SWING_LEAD_MULT;
         let gunRateDegPerSec = AIM_WEIGHT.GUN_FREE_TURN_RATE_DEG_PER_SEC +
             engagement * (heavyRate - AIM_WEIGHT.GUN_FREE_TURN_RATE_DEG_PER_SEC);
@@ -19859,7 +19914,9 @@ class Player extends Entity {
         // 2b) Recoil climb: a simple monotonic drift (not spring physics --
         // see the config comment for why) that relaxes back to zero once you
         // stop firing.
-        this.aimRecoilClimb *= Math.exp(-AIM_WEIGHT.RECOIL_CLIMB_DECAY_RATE * dt);
+        // SOLDIER CONDITIONING: climb-decay absolute (L0 2.6 wallows, L3 3.2 live, L5 4.0 masters).
+        let scClimbDecay = (scRowAW ? scRowAW.climbDecay : AIM_WEIGHT.RECOIL_CLIMB_DECAY_RATE);
+        this.aimRecoilClimb *= Math.exp(-scClimbDecay * dt);
         if (Math.abs(this.aimRecoilClimb) < AIM_WEIGHT.NEGLIGIBLE_OFFSET_RAD) this.aimRecoilClimb = 0;
 
         // 3) Idle sway: a continuous baseline "breathing" wobble that's
@@ -19876,9 +19933,13 @@ class Player extends Entity {
         // baseline/fade-time values below with no penalty.
         let hpFrac = this.maxHp > 0 ? MathUtils.clamp(this.hp / this.maxHp, 0, 1) : 1;
         let healthPenalty = 1 - hpFrac; // 0 at full health, 1 at 0 hp
-        let swayBaseDeg = AIM_WEIGHT.IDLE_SWAY_BASE_DEG *
+        // SOLDIER CONDITIONING: idle-base + fade absolutes (L0 0.60deg/2.6s
+        // loose-goose, L3 0.34/1.85s live, L5 0.22/1.4s mastered).
+        let scIdleBase = (scRowAW ? scRowAW.idleBase : AIM_WEIGHT.IDLE_SWAY_BASE_DEG);
+        let scFadeBase = (scRowAW ? scRowAW.focusFade : AIM_WEIGHT.IDLE_SWAY_FADE_TIME);
+        let swayBaseDeg = scIdleBase *
             (1 + healthPenalty * (AIM_WEIGHT.IDLE_SWAY_HEALTH_MAX_MULT - 1));
-        let swayFadeTime = AIM_WEIGHT.IDLE_SWAY_FADE_TIME *
+        let swayFadeTime = scFadeBase *
             (1 + healthPenalty * (AIM_WEIGHT.IDLE_SWAY_HEALTH_FADE_MAX_MULT - 1));
 
         // Framerate-independent "still" gate: compare the aim's angular RATE
@@ -19921,8 +19982,11 @@ class Player extends Entity {
         // carries the full baseline wobble for its current health, and
         // Focus is what steadies it -- more dramatically so the worse hurt
         // you are.
+        // SOLDIER CONDITIONING: focused-floor absolute (L0 0.12deg never
+        // settles, L3 0.06 live, L5 0.04 alive-but-mastered).
+        let scIdleFloor = (scRowAW ? scRowAW.idleFloor : AIM_WEIGHT.IDLE_SWAY_FOCUSED_DEG);
         let swayAmpDeg = swayBaseDeg
-            - (swayBaseDeg - AIM_WEIGHT.IDLE_SWAY_FOCUSED_DEG) * swayEnvelope;
+            - (swayBaseDeg - scIdleFloor) * swayEnvelope;
         let swayAmp = swayAmpDeg * Math.PI / 180;
         let t = (game ? game.gameTime : 0);
         let swayOffset = swayAmp * (Math.sin(t * 1.3) * 0.7 + Math.sin(t * 2.9 + 1.3) * 0.3);
@@ -20093,7 +20157,10 @@ class Player extends Entity {
         // New beat started this frame == phase wrapped back near 0.
         if (this._gunHeartbeatPhase < prevPhase) {
             let intensity = MathUtils.clamp(1 - healthPct / AIM_WEIGHT.HEARTBEAT_HP_THRESHOLD, 0, 1);
-            this.kickAim('aimHeartbeatOffset', AIM_WEIGHT.HEARTBEAT_KICK_DEG * (0.35 + 0.65 * intensity));
+            // SOLDIER CONDITIONING: heartbeat taken (L3 = 1.0 = live).
+            let scHeart = 1.0;
+            try { scHeart = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow((typeof game !== 'undefined') ? game : null).heart : 1.0); } catch (e) {}
+            this.kickAim('aimHeartbeatOffset', AIM_WEIGHT.HEARTBEAT_KICK_DEG * (0.35 + 0.65 * intensity) * scHeart);
         }
     }
     
@@ -20650,11 +20717,16 @@ class Player extends Entity {
         recoilForce *= (1 - 0.06 * handlingLvl); // Phase 4 handling ranks
         if (corrupted && corrupted.overpressure) recoilForce *= 1.40; // PHASE 3: the cost of +25% dmg
         recoilForce *= _recoilMult; // ABAKAN finisher: one combined impulse
+        // SOLDIER CONDITIONING: camera taken-mults (L3 = 1.0 = live). Row is
+        // defined here so both the fire shake below and the recoil/zoom
+        // block after share it.
+        let scRowFireEarly = (typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game) : null;
+        let scKickEarly = scRowFireEarly ? scRowFireEarly.kick : 1.0;
         if (!_supp) {
         this.vx -= Math.cos(this.angle) * recoilForce;
         this.vy -= Math.sin(this.angle) * recoilForce;
         if (this.camera) {
-            this.camera.screenShake = Math.max(this.camera.screenShake, this.weapon.name === 'Sniper' ? 18 : this.weapon.name === 'Judge' ? 20 : this.weapon.name === 'Thumper' ? 14 : this.weapon.name === 'Mauler' ? 14 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : this.weapon.name === 'Abakan' ? 8 : 5);
+            this.camera.screenShake = Math.max(this.camera.screenShake, (this.weapon.name === 'Sniper' ? 18 : this.weapon.name === 'Judge' ? 20 : this.weapon.name === 'Thumper' ? 14 : this.weapon.name === 'Mauler' ? 14 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : this.weapon.name === 'Abakan' ? 8 : 5) * scKickEarly);
         }
         }
         // Aim Weight: every shot nudges the reticle two ways. A spring
@@ -20671,14 +20743,19 @@ class Player extends Entity {
             this.aimRecoilBiasDir = Math.random() < 0.5 ? -1 : 1;
         }
         this.aimLastFireForBiasTime = game.gameTime;
+        // SOLDIER CONDITIONING: recoil/climb taken-mults (L3 = 1.0 = live).
+        // Reuses the row from the kickback block above.
+        let scRowFire = scRowFireEarly;
+        let scRecoil = scRowFire ? scRowFire.recoil : 1.0;
+        let scClimb = scRowFire ? scRowFire.climb : 1.0;
         if (!_supp) {
         this.kickAim('aimRecoilOffset',
             (AIM_WEIGHT.RECOIL_KICK_DEG[this.weapon.name] || AIM_WEIGHT.RECOIL_KICK_DEG_DEFAULT) *
-            (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult,
+            (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scRecoil,
             this.aimRecoilBiasDir);
         let climbCapRad = AIM_WEIGHT.RECOIL_CLIMB_MAX_DEG * Math.PI / 180;
         this.aimRecoilClimb = MathUtils.clamp(
-            this.aimRecoilClimb + this.aimRecoilBiasDir * AIM_WEIGHT.RECOIL_CLIMB_DEG_PER_SHOT * Math.PI / 180,
+            this.aimRecoilClimb + this.aimRecoilBiasDir * AIM_WEIGHT.RECOIL_CLIMB_DEG_PER_SHOT * scClimb * Math.PI / 180,
             -climbCapRad, climbCapRad
         );
         }
@@ -20746,7 +20823,10 @@ class Player extends Entity {
         }
 
         const KICKBACK_FORCES = FIRE_TUNING.KICKBACK_FORCES;
-        let kickForce = (KICKBACK_FORCES[this.weapon.name] || 50) * _recoilMult;
+        // SOLDIER CONDITIONING: camera kick taken (L3 = 1.0 = live).
+        let scKick = scRowFire ? scRowFire.kick : 1.0;
+        let scZoom = scRowFire ? scRowFire.zoom : 1.0;
+        let kickForce = (KICKBACK_FORCES[this.weapon.name] || 50) * _recoilMult * scKick;
         if (!_supp) {
         const kickCam = this.camera;
         if (kickForce && kickCam) kickCam.applyKickback(this.angle, kickForce);
@@ -20764,7 +20844,8 @@ class Player extends Entity {
         // Camera optic zoom punch (concussive pressure wave)
         const ZOOM_PUNCHES = FIRE_TUNING.ZOOM_PUNCHES;
         // FELLPASS item 8: fresh trigger pull bites harder (FX only).
-        let zp = (ZOOM_PUNCHES[this.weapon.name] || 0.008) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult;
+        // SOLDIER CONDITIONING: zoom-punch taken (L0 1.6 rocked, L3 1.0 live, L5 0.72 firm).
+        let zp = (ZOOM_PUNCHES[this.weapon.name] || 0.008) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scZoom;
         if (!_supp) {
         if (this.camera) this.camera.punchZoom(zp);
         }
@@ -20776,7 +20857,7 @@ class Player extends Entity {
         // settle in the same breath. Full-auto saturates the channel, so a
         // spray holds a sustained ~2-3% wider framing.
         const RECOIL_ZOOM_OUT = FIRE_TUNING.RECOIL_ZOOM_OUT;
-        let rzo = (RECOIL_ZOOM_OUT[this.weapon.name] || 0.010) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult;
+        let rzo = (RECOIL_ZOOM_OUT[this.weapon.name] || 0.010) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scZoom;
         if (!_supp) {
         if (this.camera) this.camera.punchRecoilZoom(rzo);
         }
@@ -20930,7 +21011,7 @@ class Player extends Entity {
         if (game && game.extractionMode && this.dead && (this.carriedIntel || 0) > 0) {
             game.dropIntelCache(this);
         }
-        this.stamina = Math.max(0, this.stamina - amt * 0.5); // Shock takes away stamina instantly
+        this.stamina = Math.max(0, this.stamina - amt * ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).shock : 0.5)); // Shock takes away stamina instantly (SOLDIER CONDITIONING: L0 0.65 gasses, L3 0.5 live, L5 0.41 trained)
         this.damageFlashIntensity = 1.0; // Trigger damage flash
         // Blood splatter (victim-only screen wash): armor/shield-only hits
         // lose no HP so net is 0 and never bleed; direction needs a finite
@@ -20961,7 +21042,10 @@ class Player extends Entity {
             // Bounded damage shake: was `10 + amt*1.5` (unbounded) -- a 250-dmg
             // barrel at point-blank shook the screen for ~15s. Capped at 28
             // (<=1.1s) with a gentler slope so light hits stay snappy.
-            this.camera.screenShake = Math.max(this.camera.screenShake, Math.min(28, 6 + amt * 0.8));
+            // SOLDIER CONDITIONING: damage-shake taken (L0 1.15 still matters, L5 0.90 shrugs).
+            let scDmgShake = 1.0;
+            try { scDmgShake = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).dmgShake : 1.0); } catch (e) {}
+            this.camera.screenShake = Math.max(this.camera.screenShake, Math.min(28, 6 + amt * 0.8) * scDmgShake);
         }
         if (amt > 0) {
             // Aim Weight: getting shot knocks the reticle off briefly, right
@@ -20974,6 +21058,11 @@ class Player extends Entity {
             // WIFE MODE: softer bink -- the reticle still reads the hit, it
             // just doesn't leave the screen.
             if (this.wifeMode) flinchDeg *= WIFE_TUNING.FLINCH_MULT;
+            // SOLDIER CONDITIONING: hit-flinch taken (L0 1.5 loose, L3 1.0 live, L5 0.72 operator).
+            try {
+                let scHit = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).hit : 1.0);
+                flinchDeg *= scHit;
+            } catch (e) {}
             this.kickAim('aimHitFlinchOffset', flinchDeg);
         }
         if (amt > 0 && game) {
@@ -28469,17 +28558,27 @@ class Bullet {
                                     AIM_WEIGHT.WHIZ_FLINCH_SPEED_MIN_MULT, AIM_WEIGHT.WHIZ_FLINCH_SPEED_MAX_MULT
                                 );
                                 let whizKickDeg = AIM_WEIGHT.WHIZ_FLINCH_MAX_DEG * intensity * whizSpeedMult;
+                                // SOLDIER CONDITIONING: whiz taken (L3 = 1.0 = live).
+                                try {
+                                    let scWhiz = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).whiz : 1.0);
+                                    whizKickDeg *= scWhiz;
+                                } catch (e) {}
                                 let whizBiasDir = pan >= 0 ? -1 : 1;
                                 player.kickAim('aimWhizFlinchOffset', whizKickDeg, whizBiasDir, true);
                             }
 
                             // Subtle screen shake for close passes (intensity > 0.25)
+                            // SOLDIER CONDITIONING: rides the kick taken-mult (L3 = 1.0 = live).
                             if (intensity > 0.25) {
                                 let calculatedShake = 3.0 + intensity * 5.0; // scales from 3.0 to 8.0 to ensure visibility
                                 if (this.weaponName === 'Sniper') {
                                     calculatedShake += 2.0; // Sniper is even more punchy!
                                 }
                                 calculatedShake = Math.min(8.0, calculatedShake);
+                                try {
+                                    let scWhizShake = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).kick : 1.0);
+                                    calculatedShake *= scWhizShake;
+                                } catch (e) {}
                                 let cam = player.isPlayer2 ? game.camera2 : game.camera;
                                 if (cam) {
                                     cam.screenShake = Math.max(cam.screenShake, calculatedShake);
@@ -35815,51 +35914,54 @@ const MAG_META_UPGRADES = {
 // and resetArmoryUpgrades all read THIS. Adding an upgrade = one entry.
 const ARMORY_UPGRADES = [
     { key: 'magneticGear', name: 'MAGNETIC GEAR', maxLevel: 5,
-      costPerLevel: [50, 100, 200, 350, 500],
+      costPerLevel: [25, 50, 90, 160, 220],
       desc: 'Increases item pickup radius. +15px/level.' },
     // JULY item 8: the Magnetic Gear capstone -- the moment a wave clears,
     // every dollar still on the ground sweeps itself into your account.
     // Kills the "stall on the last enemy to vacuum the map" anti-pattern.
     { key: 'greedyHands', name: 'GREEDY HANDS', maxLevel: 1,
-      costPerLevel: [800],
+      costPerLevel: [200],
       desc: 'Magnetic Gear capstone: the instant a wave is cleared, ALL cash left on the ground is auto-collected. Never leave a dollar behind — never stall on the last hostile again.' },
     { key: 'offshoreAccount', name: 'OFFSHORE ACCOUNT', maxLevel: 5,
-      costPerLevel: [75, 150, 250, 400, 600],
-      desc: 'Retain 20% more cash per level when downed.' },
+      costPerLevel: [25, 45, 70, 100, 110],
+      desc: 'Retain 20% more cash per level when you die (co-op: paid as INSURANCE next wave; solo deaths end the run).' },
     { key: 'kevlarWeave', name: 'KEVLAR WEAVE', maxLevel: 5,
-      costPerLevel: [80, 160, 280, 450, 650],
+      costPerLevel: [35, 60, 100, 150, 220],
       desc: 'Base Max Armor +10% per level. (Base: 50)' },
     { key: 'firstAidTraining', name: 'FIRST AID TRAINING', maxLevel: 5,
-      costPerLevel: [80, 160, 280, 450, 650],
+      costPerLevel: [35, 60, 100, 150, 220],
       desc: 'Base Max HP +8% per level. (Base: 100)' },
     { key: 'cardioConditioning', name: 'CARDIO CONDITIONING', maxLevel: 5,
-      costPerLevel: [60, 120, 220, 380, 550],
+      costPerLevel: [30, 55, 95, 150, 210],
       desc: 'Sprint drain -8% & static regen +12% per level.' },
+    { key: 'soldierConditioning', name: 'SOLDIER CONDITIONING', maxLevel: 5,
+      costPerLevel: [10, 15, 25, 100, 150],
+      desc: 'Field craft from couch potato to operator: steadier gun, harder body. L1 Novice steadies you; L3 Infantry is today\'s tight; L4-L5 exceed it.' },
     // ---- PHASE 3: magazine upgrades ----
     { key: 'magSmg', name: 'SMG DRUM FEED', maxLevel: 3,
-      costPerLevel: [100, 200, 350],
+      costPerLevel: [25, 55, 95],
       desc: 'SMG reserve +60 rounds per level. (Base: 360)' },
     { key: 'magM1a', name: 'M1A BANDOLEER', maxLevel: 3,
-      costPerLevel: [100, 200, 350],
+      costPerLevel: [25, 55, 95],
       desc: 'M1A reserve +20 rounds per level. (Base: 60)' },
     { key: 'magShotgun', name: 'SHELL CARRIER', maxLevel: 3,
-      costPerLevel: [100, 200, 350],
+      costPerLevel: [25, 55, 95],
       desc: 'Shotgun reserve +12 shells per level. (Base: 48)' },
     { key: 'magAbakan', name: 'ABAKAN SPOOL', maxLevel: 3,
-      costPerLevel: [100, 200, 350],
+      costPerLevel: [25, 55, 95],
       desc: 'Abakan reserve +40 rounds per level. (Base: 180)' },
     { key: 'magThumper', name: 'THUMPER RACK', maxLevel: 3,
-      costPerLevel: [100, 200, 350],
+      costPerLevel: [25, 55, 95],
       desc: 'Thumper reserve +8 shells per level. (Base: 24)' },
     { key: 'magMauler', name: 'MAULER DRUM', maxLevel: 3,
-      costPerLevel: [100, 200, 350],
+      costPerLevel: [25, 55, 95],
       desc: 'Mauler reserve +10 shells per level. (Base: 36)' },
     { key: 'magJudge', name: 'JUDGE SPEEDLOADER', maxLevel: 3,
-      costPerLevel: [100, 200, 350],
+      costPerLevel: [25, 55, 95],
       desc: 'Judge reserve +8 rounds per level. (Base: 24)' },
     // ---- PHASE 3: attachments ----
     { key: 'laserSight', name: 'LASER SIGHT ARRAY', maxLevel: 3,
-      costPerLevel: [150, 300, 500],
+      costPerLevel: [150, 250, 500],
       desc: 'Lvl1: collimator servo (tighter beam, faster refocus). Lvl2: long-throw emitter (+range). Lvl3: prism array (precision + custom colors).',
       levelDescs: ['Collimator Servo (tighter beam, faster refocus)', 'Long-Throw Emitter (+range)', 'Prism Array (precision + custom colors)'] },
     { key: 'operatorPaint', name: 'OPERATOR PAINT SHOP', maxLevel: 1,
@@ -35875,7 +35977,7 @@ const ARMORY_UPGRADES = [
     // Rubble cost always equals hp (conservation of matter): a heavier tier
     // is the SAME banked hp packed denser, not a discount or a tax.
     { key: 'manipulatorHardening', name: 'DENSE MATTER', maxLevel: 3,
-      costPerLevel: [40, 85, 160],
+      costPerLevel: [30, 60, 110],
       desc: 'Matter Manipulator blocks build at heavier wall tiers. Rubble cost scales with toughness (same matter, packed denser) — pick your working tier below once owned.',
       levelDescs: [
           'COMPOSITE BLOCKS — build LIGHT-tier walls (115 HP/cell, ~2× stock)',
@@ -35883,7 +35985,7 @@ const ARMORY_UPGRADES = [
           'FORTIFIED BLOCKS — 520 HP/cell (~9.5× stock); bunker-grade, anchor-wall toughness'
       ] },
     { key: 'manipulatorRig', name: 'MINING RIG', maxLevel: 3,
-      costPerLevel: [30, 60, 100],
+      costPerLevel: [25, 50, 85],
       desc: 'Overhauls the Matter Manipulator drill: +50% grind speed per level, and map walls yield bonus rubble (+20% per level). Your own placed blocks always recycle 1:1 — no perpetual-matter machines.',
       levelDescs: [
           'HARDENED BIT — drill 1.5× faster, +20% rubble from map walls',
@@ -35897,30 +35999,30 @@ const ARMORY_UPGRADES = [
     // ricochet rounds; the bounce is an opts.restitution on the SAME
     // ShrapnelGrenade class (its wall-bounce physics were already there).
     { key: 'underbarrelLauncher', name: 'UNDERBARREL LAUNCHER', maxLevel: 2,
-      costPerLevel: [600, 350],
+      costPerLevel: [300, 500],
       desc: 'Lvl1: grenades fire from an underbarrel tube — flat, fast, short-fused. +1 max grenades (4). Lvl2: ARC SIGHTS — hold [F] to walk a range marker out (2× reach); release to lob the round dead onto it, clean over cover. +3 max grenades (6).',
       levelDescs: ['Underbarrel Grenade Tube (flat, fast, short-fused)', 'ARC SIGHTS (precision distance walker)'] },
     // ---- PHASE 4: operator kit unlocks (selection lives in the menu) ----
     { key: 'kitBreacher', name: 'KIT: BREACHER', maxLevel: 1,
-      costPerLevel: [350],
+      costPerLevel: [150],
       desc: 'Start: combat shotgun + 16 shells + 2 grenades. Passive: +15% grenade blast radius. Requisition: 20% cash back on ordnance.' },
     { key: 'kitGhost', name: 'KIT: GHOST', maxLevel: 1,
-      costPerLevel: [450],
+      costPerLevel: [100],
       desc: 'Start: +2 energy drinks. Passive: your weapon noise -35% (stacks with Cold Barrel). Requisition: 20% cash back on ammunition.' },
     { key: 'kitTechnician', name: 'KIT: TECHNICIAN', maxLevel: 1,
-      costPerLevel: [450],
+      costPerLevel: [250],
       desc: 'Start: 1 auto turret + 1 barrier. Passive: +30% uplink hack speed. Requisition: 20% cash back on gadgets.' },
     { key: 'kitMedic', name: 'KIT: MEDIC', maxLevel: 1,
-      costPerLevel: [350],
+      costPerLevel: [150],
       desc: 'Start: 2 medpacks + 1 energy drink. Passive: +25 Max HP. Requisition: 20% cash back on medical supplies & armor.' },
     { key: 'kitPathfinder', name: 'KIT: PATHFINDER', maxLevel: 1,
-      costPerLevel: [450],
+      costPerLevel: [150],
       desc: 'Start: M1A semi-auto rifle + 24 rounds. Passive: +15% movement speed (accel). Requisition: 20% cash back on ammo.' },
     { key: 'kitVanguard', name: 'KIT: VANGUARD', maxLevel: 1,
-      costPerLevel: [400],
+      costPerLevel: [200],
       desc: 'Start: SMG + 120 rounds + 1 trip mine. Passive: +50 Max Armor. Requisition: 20% cash back on ordnance.' },
     { key: 'kitHeavy', name: 'KIT: HEAVY', maxLevel: 1,
-      costPerLevel: [450],
+      costPerLevel: [200],
       desc: 'Start: LMG + 150 rounds + 1 grenade. Passive: +75 Max Armor, +40 Max Stamina, -30% speed (accel). Requisition: 20% cash back on LMG ammo & armor.' },
     // ---- PHASE B: in-run shop capability unlocks. Owning a level here makes
     // the corresponding buy-menu item(s) purchasable during a run. Global to
@@ -35995,7 +36097,7 @@ const ARMORY_UPGRADES = [
     // (500 intel) unlocks the $20,000 shop item under Top Secret Tech.
     // maxLevel stays 1 -- the L2 device gets its own entry when designed.
     { key: 'topSecretAnchor', name: 'TOP SECRET: EVENTIDE ANCHOR', maxLevel: 1,
-      costPerLevel: [500],
+      costPerLevel: [300],
       desc: 'Declassifies the EVENTIDE ANCHOR in the Shop (Top Secret Tech): a deployable pylon projecting a 500px time-dilation field, slowing everything inside down to ~1000:1 at the device. Symmetric -- your own time slows too. $20,000 per deployment.',
       levelDescs: ['Eventide Anchor available in the Shop (Top Secret Tech)'] },
     // TOP SECRET track (L2): ORACLE SPICE — DON MAZATL RESERVE. Own entry;
@@ -36016,6 +36118,88 @@ const ARMORY_UPGRADES = [
       desc: 'Declassifies the RIFT NETWORK in the Shop (Top Secret Tech): Rift Seeds (left throwable, $300, carry 3) grow a collapsing field that teleports victims to your Rift Station ring (right pylon, $12k, carry 1); the Riftlance beam gun ($9k, rechargeable) teleports one painted hostile the same way. Fortify around the station.',
       levelDescs: ['Rift Network available in the Shop (Top Secret Tech)'] }
 ];
+
+// SOLDIER CONDITIONING ('soldierConditioning' armory track) feel table.
+// Index = MA.soldierConditioning, clamped 0..5: 0 COUCH POTATO (loose-goose
+// default, WAY looser than live), 1 NOVICE, 2 RECRUIT, 3 INFANTRY (today's
+// live values exactly -- every taken-mult 1.0 and every absolute == its base
+// constant), 4 GREEN BERET, 5 SPEC OPS (tighter than live). Consumers read
+// the row live (cardioConditioning model) and multiply the existing
+// expression, so TweakLab sliders and overclocks keep composing underneath.
+// Deliberately NOT touched here: SPRINGS stiffness/damping (session-global +
+// cached on the shared config -- per-player shape is a future override, not
+// this track; novice wallow emerges from bigger kicks through the same
+// spring), all maxDeg caps (L0 authentically clips into overwhelm),
+// GUN_FREE_TURN_RATE, FOCUS_STILL_RATE, FIRST_SHOT_BITE_MULT, damage/spread,
+// collimation (owned by the laserSight track).
+const SOLDIER_CONDITIONING_LEVELS = [
+    // L0 COUCH POTATO -- fat, loose, organic, playable. High mass (floaty
+    // drag, sluggish accel), loud gun (big kicks, slow climb decay), heavy
+    // flinch, narrow cones, slow heavies, rocked camera, gassy stamina.
+    { walkKick: 1.60, sprintSway: 1.25, recoil: 1.40, climb: 1.30, climbDecay: 2.6,
+      hit: 1.50, whiz: 1.40, blast: 1.30, heart: 1.40,
+      idleBase: 0.60, idleFloor: 0.12, focusFade: 2.6, cone: 0.80, swing: 0.85,
+      zoom: 1.60, kick: 1.50, dmgShake: 1.15,
+      dragRate: 0.0020, accel: 0.827, align: 0.583, alignRate: 0.667,
+      strafe: 0.76, backpedal: 0.50, pivot: 1.35, weightSlope: 0.0040,
+      cadenceWalk: 0.40, cadenceSprint: 0.25, drain: 1.12, regen: 0.88, shock: 0.65 },
+    // L1 NOVICE -- first range weekend. Cheap relief, still loose.
+    { walkKick: 1.30, sprintSway: 1.10, recoil: 1.20, climb: 1.15, climbDecay: 2.9,
+      hit: 1.25, whiz: 1.20, blast: 1.15, heart: 1.20,
+      idleBase: 0.48, idleFloor: 0.09, focusFade: 2.2, cone: 0.90, swing: 0.92,
+      zoom: 1.30, kick: 1.25, dmgShake: 1.08,
+      dragRate: 0.0012, accel: 0.909, align: 0.75, alignRate: 0.833,
+      strafe: 0.80, backpedal: 0.55, pivot: 1.15, weightSlope: 0.0032,
+      cadenceWalk: 0.38, cadenceSprint: 0.24, drain: 1.06, regen: 0.94, shock: 0.575 },
+    // L2 RECRUIT -- basic grad. Almost today's tight, not quite.
+    { walkKick: 1.15, sprintSway: 1.05, recoil: 1.10, climb: 1.05, climbDecay: 3.05,
+      hit: 1.10, whiz: 1.10, blast: 1.05, heart: 1.10,
+      idleBase: 0.40, idleFloor: 0.075, focusFade: 2.0, cone: 0.95, swing: 0.96,
+      zoom: 1.15, kick: 1.10, dmgShake: 1.03,
+      dragRate: 0.0008, accel: 0.970, align: 0.867, alignRate: 0.917,
+      strafe: 0.83, backpedal: 0.58, pivot: 1.05, weightSlope: 0.0028,
+      cadenceWalk: 0.36, cadenceSprint: 0.23, drain: 1.02, regen: 0.97, shock: 0.525 },
+    // L3 INFANTRY -- today's live values, exactly. walkKick 3.0, sprint 3.2,
+    // idle 0.34/0.06/1.85s, drag 0.0006, accel 1814, align 6.0/240, strafe
+    // 0.85/backpedal 0.60, pivot peak 2650, slope 0.0025, drain 23/regen base.
+    { walkKick: 1.0, sprintSway: 1.0, recoil: 1.0, climb: 1.0, climbDecay: 3.2,
+      hit: 1.0, whiz: 1.0, blast: 1.0, heart: 1.0,
+      idleBase: 0.34, idleFloor: 0.06, focusFade: 1.85, cone: 1.0, swing: 1.0,
+      zoom: 1.0, kick: 1.0, dmgShake: 1.0,
+      dragRate: 0.0006, accel: 1.0, align: 1.0, alignRate: 1.0,
+      strafe: 0.85, backpedal: 0.60, pivot: 1.0, weightSlope: 0.0025,
+      cadenceWalk: 0.35, cadenceSprint: 0.22, drain: 1.0, regen: 1.0, shock: 0.5 },
+    // L4 GREEN BERET -- tighter than live. Heavies start feeling like mids.
+    { walkKick: 0.85, sprintSway: 0.90, recoil: 0.88, climb: 0.90, climbDecay: 3.6,
+      hit: 0.85, whiz: 0.85, blast: 0.90, heart: 0.85,
+      idleBase: 0.28, idleFloor: 0.05, focusFade: 1.6, cone: 1.08, swing: 1.08,
+      zoom: 0.85, kick: 0.88, dmgShake: 0.95,
+      dragRate: 0.0005, accel: 1.036, align: 1.133, alignRate: 1.083,
+      strafe: 0.87, backpedal: 0.63, pivot: 0.90, weightSlope: 0.0022,
+      cadenceWalk: 0.34, cadenceSprint: 0.215, drain: 0.97, regen: 1.03, shock: 0.45 },
+    // L5 SPEC OPS -- the 18-year SF-type. Same top speed, everything else mastered.
+    { walkKick: 0.70, sprintSway: 0.80, recoil: 0.78, climb: 0.82, climbDecay: 4.0,
+      hit: 0.72, whiz: 0.75, blast: 0.80, heart: 0.75,
+      idleBase: 0.22, idleFloor: 0.04, focusFade: 1.4, cone: 1.15, swing: 1.15,
+      zoom: 0.72, kick: 0.78, dmgShake: 0.90,
+      dragRate: 0.00042, accel: 1.075, align: 1.25, alignRate: 1.167,
+      strafe: 0.88, backpedal: 0.65, pivot: 0.82, weightSlope: 0.0020,
+      cadenceWalk: 0.33, cadenceSprint: 0.21, drain: 0.94, regen: 1.06, shock: 0.41 },
+];
+
+// Live-read accessor (cardioConditioning model): returns the row for the
+// machine's current SOLDIER CONDITIONING level. Takes anything with
+// .saveData.metaUpgrades (Game, or the global game). Never throws --
+// unknown/partial saves fall back to the L0 couch-potato row.
+function soldierConditioningRow(game) {
+    let lvl = 0;
+    try {
+        const MA = game && game.saveData ? game.saveData.metaUpgrades : null;
+        lvl = MA ? (MA.soldierConditioning || 0) : 0;
+    } catch (e) { lvl = 0; }
+    lvl = Math.max(0, Math.min(5, lvl | 0));
+    return SOLDIER_CONDITIONING_LEVELS[lvl];
+}
 
 // GL_ARC: Underbarrel Launcher Lvl2 ARC SIGHTS tuning (replaces the old
 // RICOCHET FUSE restitution branch). Holding the grenade-launcher trigger
@@ -37315,6 +37499,9 @@ class Game {
         this._rawDt = 0;
         this.flashMuffleTimer = 0;
         this.blastMuffleTimer = 0;
+        // EYE-ADAPTATION v1: frame scalar state (runtime-only, never
+        // persisted). Reset per run in startNewGame like the FX timers above.
+        this._expoV = 0; this._expoHold = 0; this._expoM = 0; this._expoQ = 0;
         this.currentShopBuyer = null;
         this.roundWinDelay = 0;
         this.winFlashIntensity = 0;
@@ -37329,7 +37516,11 @@ class Game {
             nightMode: false,
             
             // NEW — Meta-Progression
-            intel: 0,                        // Persistent currency, never wiped
+            // Fresh-save starter intel (250): conditioning through Green
+            // Beret (150) + mineTech L1-L3 (60) + two requisition gates
+            // (40). Factory default only -- existing saves keep their
+            // balance via the load-tail below (undefined -> 0, never 250).
+            intel: 250,                      // Persistent currency, never wiped
             metaUpgrades: {
                 magneticGear:    0,            // 0–5  | Item pull radius +15px/level
                 offshoreAccount: 0,            // 0–5  | Cash retention on death 20%/level
@@ -39514,8 +39705,12 @@ class Game {
             // Aim Weight: nearby explosions also flinch the reticle, scaled by
             // the same proximity falloff as the screen shake above so both
             // read as one coherent moment instead of two uncoordinated effects.
+            // SOLDIER CONDITIONING: blast taken (L3 = 1.0 = live). Shake itself
+            // stays a world event -- only the holder's flinch scales.
             if (factor > 0 && this.player.kickAim) {
-                this.player.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor);
+                let scBlast = 1.0;
+                try { scBlast = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(this).blast : 1.0); } catch (e) {}
+                this.player.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor * scBlast);
             }
         }
         
@@ -39534,7 +39729,9 @@ class Game {
                 this.blastMuffleTimer = Math.max(this.blastMuffleTimer || 0, 0.9 * factor);
             }
             if (factor > 0 && this.player2.kickAim) {
-                this.player2.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor);
+                let scBlast2 = 1.0;
+                try { scBlast2 = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(this).blast : 1.0); } catch (e) {}
+                this.player2.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor * scBlast2);
             }
         }
     }
@@ -49099,6 +49296,19 @@ class Game {
             if (this._pixiLightOn === false) return;
             if (!(x > -1e5 && x < 1e5 && y > -1e5 && y < 1e5)) return;
             if (!(rPx > 0) || !(intensity > 0)) return;
+            // EYE-ADAPTATION v1: blast never enters the adaptation target and
+            // freezes it. Stamped HERE (not in _pixiExpoStep) because
+            // _pixiLightStep drains the queue before expo runs. Filtered meter
+            // accumulates sub-blast arrivals only; drained per-frame in expo.
+            try {
+                const _eH = (typeof EXPO_TUNING !== 'undefined' && EXPO_TUNING.HOLD !== undefined) ? EXPO_TUNING.HOLD : 0.35;
+                const _eHold = (this._pixiExpoHold === undefined ? _eH : this._pixiExpoHold);
+                if (intensity >= 1.0) this._expoHold = _eHold;
+                else {
+                    this._expoM = Math.min(1.5, (this._expoM || 0) + Math.min(intensity, 1.5));
+                    this._expoQ = Math.min(10, (this._expoQ || 0) + 1);
+                }
+            } catch (e) {}
             let r = 1, g = 0.6, b = 0.3;
             try {
                 if (typeof hex === 'string' && hex.charAt(0) === '#' && hex.length >= 7) {
@@ -49200,6 +49410,78 @@ class Game {
             return true;
         } catch (e) { return false; }
     }
+    // EYE-ADAPTATION v1: analytic integrator (CPU scalar, zero passes, zero
+    // readbacks, zero RNG, no allocation — loop-local scalars only). Called in
+    // presentPixiOverlay between _pixiLightStep() and _pixiBloomPresent():
+    // fresh _lightEnergy, before the threshold consumes it. Target = static
+    // baseline (backdrop luminance + veil/night branch, so empty scenes still
+    // adapt) + dynamic (filtered sub-blast meter + queue + bloom heat).
+    // Asymmetric chase on wall-clock _rawDt (slow brighten TAU_UP, fast
+    // darken TAU_DOWN); frozen on pause and while _expoHold ticks down.
+    // Single scalar expoV (no per-half state in v1). ON unless
+    // _pixiExpoOn === false. Knobs: dual-source Expo_TUNING + _pixiExpo*.
+    _pixiExpoStep() {
+        try {
+            if (this._pixiExpoOn === false) return true;
+            if (this.state !== 'playing' || this.isPaused) return true;
+            const E = (typeof EXPO_TUNING !== 'undefined') ? EXPO_TUNING : { STRENGTH: 1.0, TAU_UP: 1.2, TAU_DOWN: 0.10, MAX_T: 0.22, HOLD: 0.35 };
+            const STRENGTH = (this._pixiExpoStrength === undefined ? E.STRENGTH : this._pixiExpoStrength);
+            const TAU_UP = (this._pixiExpoTauUp === undefined ? E.TAU_UP : this._pixiExpoTauUp);
+            const TAU_DOWN = (this._pixiExpoTauDown === undefined ? E.TAU_DOWN : this._pixiExpoTauDown);
+            const HOLD = (this._pixiExpoHold === undefined ? E.HOLD : this._pixiExpoHold);
+            const dt = (this._rawDt > 0 && this._rawDt < 0.25) ? this._rawDt : 0.016;
+            // Live shock envelope: blast/rift (±1.0) freeze the integrator.
+            // Pool scan (12 slots, no projection, no RNG) — heat shimmer has
+            // no pool slot (env <= 0.30 by construction) so it never trips.
+            try {
+                const pool = this._uvShocks || [];
+                for (let i = 0; i < pool.length; i++) {
+                    const u = pool[i];
+                    if (u && u.active && (u.life || 0) > 0 && Math.abs(u.str || 0) >= 1.0) { this._expoHold = HOLD; break; }
+                }
+            } catch (e) {}
+            if ((this._expoHold || 0) > 0) { this._expoHold = Math.max(0, (this._expoHold || 0) - dt); return true; }
+            // Filtered meter decay (same tau as the light buffer) + per-frame
+            // queue drain (emit-at-splat in _pixiLightSplat, consume here —
+            // the _glowCount discipline: both 2P halves share the stamps).
+            this._expoM = (this._expoM || 0) * Math.exp(-dt / 0.25);
+            const Qf = Math.min(10, (this._expoQ || 0)); this._expoQ = 0;
+            let Hf = 0;
+            try { Hf = this._pixiBloomHot() ? 1 : 0; } catch (e) {}
+            // Static baseline, cached per map (backdrop never changes after
+            // generation). Parse mirrors _pixiStageBackdrop + _bloomGate.
+            if (this._expoBase === undefined || this._expoBaseMap !== this.map) {
+                let lum = 0.02;
+                try {
+                    let fill = '#01050e';
+                    try { fill = this.map ? this.map.backdropColor() : '#01050e'; } catch (e) {}
+                    let r = 1, g = 5, b = 14;
+                    try {
+                        if (fill.charAt(0) === '#') { r = parseInt(fill.slice(1, 3), 16); g = parseInt(fill.slice(3, 5), 16); b = parseInt(fill.slice(5, 7), 16); }
+                        else { const m = fill.match(/(\d+)[^\d]+(\d+)[^\d]+(\d+)/); if (m) { r = +m[1]; g = +m[2]; b = +m[3]; } }
+                    } catch (e) {}
+                    if (!(r >= 0 && r <= 255)) r = 16; if (!(g >= 0 && g <= 255)) g = 16; if (!(b >= 0 && b <= 255)) b = 16;
+                    lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                } catch (e) {}
+                const veil = (!this.nightMode && this.dayVeil) ? 1 : 0;
+                const lumNorm = Math.min(1, Math.max(0, (lum - 0.057) / 0.037));
+                // LADDER 2026-09-22: static leg was starved (old 0.5/0.5 blend
+                // capped plain-day at 0.5, and the 0.45 blend weight held
+                // static lift to ~1/3 smoothstep window — headed invisible).
+                // Full-span baseline + stronger blend: palest veil ≈ 1 window.
+                this._expoBase = Math.min(1, Math.max(0, lumNorm * 0.75 + veil * 0.45));
+                this._expoBaseMap = this.map;
+            }
+            const dyn = 0.65 * (1 - Math.exp(-(this._expoM || 0) / 0.35)) + 0.25 * (Qf / 4) + 0.10 * Hf;
+            let target = 0.65 * (this._expoBase || 0) + 0.65 * dyn;
+            target = Math.min(1, Math.max(0, target));
+            if (!(STRENGTH > 0)) { this._expoV = 0; return true; }
+            const tau = (target > (this._expoV || 0)) ? TAU_UP : TAU_DOWN;
+            const k = 1 - Math.exp(-dt / Math.max(1e-3, tau));
+            this._expoV = (this._expoV || 0) + (target - (this._expoV || 0)) * k;
+            return true;
+        } catch (e) { return false; }
+    }
     // Additive sprite of the front buffer, pinned at nightBlit+1 (light
     // punches through darkness — operator call, same as the bloom blit).
     // Both blits are additive so their relative order is irrelevant.
@@ -49261,7 +49543,13 @@ class Game {
             if (!this._pixiBloomCapture()) { try { if (G.bloomSp) G.bloomSp.visible = false; } catch (e) {} return false; }
             const T = (typeof BLOOM_TUNING !== 'undefined') ? BLOOM_TUNING : { NIGHT_T: 0.45, VEIL_T: 0.62 };
             const base = (!this.nightMode && this.dayVeil) ? T.VEIL_T : T.NIGHT_T;
-            const uT = base + (this._pixiBloomThAdj || 0);
+            // EYE-ADAPTATION v1: bias the existing uT (value only — same
+            // bloomT2 program key, no SILENT SHADER re-key). _pixiExpoOn ===
+            // false bypasses to uT = base (today's behavior, byte-identical).
+            const _eT = (typeof EXPO_TUNING !== 'undefined') ? EXPO_TUNING : { MAX_T: 0.22, STRENGTH: 1.0 };
+            const _eMaxT = (this._pixiExpoMaxT === undefined ? _eT.MAX_T : this._pixiExpoMaxT);
+            const _eStr = (this._pixiExpoStrength === undefined ? _eT.STRENGTH : this._pixiExpoStrength);
+            const uT = base + (this._pixiBloomThAdj || 0) + ((this._pixiExpoOn === false) ? 0 : (this._expoV || 0) * _eMaxT * _eStr);
             const uS = (this._pixiBloomStrength === undefined ? 0.7 : this._pixiBloomStrength);
             // threshold (+emissive bypass): S_rt + eRt -> B_rt. eRt missing
             // (pre-realloc) falls back to threshold-only via a black 1px
@@ -51773,6 +52061,9 @@ class Game {
         this.hurtDragRefractoryTimer = 0;
         this.blastMuffleTimer = 0;
         this.gloryKillTimer = 0;
+        // EYE-ADAPTATION v1: a bright-adapted run must never leak its dark
+        // threshold into wave 1 of the next run. Same block as the FX timers.
+        this._expoV = 0; this._expoHold = 0; this._expoM = 0; this._expoQ = 0;
         this._timeScaleStack = [];
         this.heartbeatTimer = 0;
         this.heartbeatPhase = 0;
@@ -57672,6 +57963,12 @@ class Game {
                 if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
                 if (typeof sd.metaUpgrades.magMauler !== 'number') sd.metaUpgrades.magMauler = 0;
                 if (typeof sd.metaUpgrades.magJudge !== 'number') sd.metaUpgrades.magJudge = 0;
+            }},
+            // v23 (SOLDIER CONDITIONING): body + gun-handling mega-track.
+            // Additive only — never edit an older step.
+            { to: 23, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.soldierConditioning !== 'number') sd.metaUpgrades.soldierConditioning = 0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -57734,6 +58031,8 @@ class Game {
         // v22: MAULER + JUDGE magazine tracks (mirrors the v22 migration).
         if (MA.magMauler === undefined) MA.magMauler = 0;
         if (MA.magJudge === undefined) MA.magJudge = 0;
+        // v23: SOLDIER CONDITIONING mega-track (mirrors the v23 migration).
+        if (MA.soldierConditioning === undefined) MA.soldierConditioning = 0;
         if (typeof this.saveData.buildTier !== 'string') this.saveData.buildTier = '';
         if (typeof this.saveData.hasSeenArmoryTutorial !== 'boolean') this.saveData.hasSeenArmoryTutorial = false;
         if (typeof this.saveData.touchFireHintDone !== 'boolean') this.saveData.touchFireHintDone = false;
@@ -58220,6 +58519,19 @@ class Game {
                 const nDrain = Math.round((level + 1) * 8);
                 return formatStat(`Regen +${cReg}% / Drain -${cDrain}%`, `Regen +${nReg}% / Drain -${nDrain}%`);
             }
+            case 'soldierConditioning': {
+                // Live-reads SOLDIER_CONDITIONING_LEVELS (BUG-002 lesson) --
+                // display-only, never feeds the live stat.
+                const scNames = ['COUCH POTATO', 'NOVICE', 'RECRUIT', 'INFANTRY', 'GREEN BERET', 'SPEC OPS'];
+                const scRowC = (typeof SOLDIER_CONDITIONING_LEVELS !== 'undefined')
+                    ? SOLDIER_CONDITIONING_LEVELS[Math.max(0, Math.min(5, level))] : null;
+                const scRowN = (typeof SOLDIER_CONDITIONING_LEVELS !== 'undefined')
+                    ? SOLDIER_CONDITIONING_LEVELS[Math.max(0, Math.min(5, level + 1))] : null;
+                const scFmt = (r, nm) => r ? `${nm} · Sway ${Math.round(r.walkKick * 100)}% · Recoil ${Math.round(r.recoil * 100)}% · Idle ${r.idleBase.toFixed(2)}°` : nm;
+                const c = scFmt(scRowC, scNames[Math.max(0, Math.min(5, level))] || `L${level}`);
+                const n = scFmt(scRowN, scNames[Math.max(0, Math.min(5, level + 1))] || `L${level + 1}`);
+                return formatStat(c, n);
+            }
             case 'magSmg':
             case 'magM1a':
             case 'magShotgun':
@@ -58374,7 +58686,12 @@ class Game {
                         ${isMaxed || !canAfford ? 'disabled' : ''}
                         onclick="game.buyArmoryUpgrade('${upg.key}')">
                         ${btnText}
-                    </button>${extraHTML}
+                    </button>${currentLevel > 0 ? `
+                    <button id="armory-refund-${upg.key}" class="armory-buy-btn armory-refund-btn"
+                        title="Sell back the most recent level for a full refund"
+                        onclick="game.refundArmoryUpgrade('${upg.key}')">
+                        REFUND LAST [+${upg.costPerLevel[currentLevel - 1]} INTEL]
+                    </button>` : ''}${extraHTML}
                 </div>`;
         }
         // PHASE D: prestige call-to-action lives under the grid/reset button.
@@ -58458,8 +58775,33 @@ class Game {
         if (audio) audio.playPickup('money');
     }
 
-    resetArmoryUpgrades() {
-        const MA = this.saveData.metaUpgrades;
+    // Per-item sell-back: refunds the MOST RECENT level only (full price of
+    // that level), so builds can be tinkered one click at a time; N clicks =
+    // a whole-item reset. Cosmetic degradation needs no code: paint setters
+    // are ownership-gated, buildTier clamps at read, laserTuning reads the
+    // live level. Stat/kit tracks apply at run setup, so a mid-run refund
+    // takes effect next run.
+    refundArmoryUpgrade(key) {
+        const MA  = this.saveData.metaUpgrades;
+        const upg = ARMORY_UPGRADES.find(u => u.key === key);
+        if (!upg) return;
+        const owned = MA[key] || 0;
+        if (owned <= 0) return;
+
+        const refund = upg.costPerLevel[owned - 1];
+        MA[key] = owned - 1;
+        this.saveData.intel = (this.saveData.intel || 0) + refund;
+        // A refunded kit must not stay selected (mirrors resetArmoryUpgrades;
+        // buildRunConfig validates too -- belt and suspenders).
+        if (!this._kitOwned(this.saveData.kitP1)) this.saveData.kitP1 = 'standard';
+        if (!this._kitOwned(this.saveData.kitP2)) this.saveData.kitP2 = 'standard';
+        this.saveGameData();
+        this.renderArmoryTab();
+        this.renderKitSelector();
+        if (audio) audio.playPickup('money');
+    }
+
+    resetArmoryUpgrades() {        const MA = this.saveData.metaUpgrades;
         let refundedIntel = 0;
         for (const upg of ARMORY_UPGRADES) {
             const currentLevel = Math.min(MA[upg.key] || 0, upg.maxLevel);
@@ -61382,7 +61724,13 @@ class Game {
         let laserAngle;
         if (this.isPaused) laserAngle = lAngle;
         else {
-            const aimDist = Math.hypot(aimCoords.x - p.x, aimCoords.y - p.y) || 500;
+            // Point-blank floor: the parallax recompute below divides by
+            // aimDist, so a cursor sitting on the player (aimDist -> 0)
+            // swings the beam wildly -- even backwards through the body --
+            // while the rate-capped gun hasn't moved. aimDist 150 caps the
+            // deviation at ~atan(21/150) ~= 8deg; beyond that the beam is
+            // pixel-identical to before. The gun (p.angle) stays the truth.
+            const aimDist = Math.max(150, Math.hypot(aimCoords.x - p.x, aimCoords.y - p.y) || 500);
             laserAngle = Math.atan2(p.y + Math.sin(lAngle) * aimDist - lStartY, p.x + Math.cos(lAngle) * aimDist - lStartX);
         }
         const lt = this.laserTuning(p);
@@ -66081,6 +66429,9 @@ class Game {
             // P2a light step BEFORE the bloom chain (the threshold samples
             // the light front buffer). Own gates inside; idle = zero binds.
             try { this._pixiLightStep(); } catch (e) {}
+            // EYE-ADAPTATION v1: analytic step on fresh _lightEnergy, before
+            // the threshold consumes it. Own gates inside; CPU scalar only.
+            try { this._pixiExpoStep(); } catch (e) {}
             // PHASE 3 Item 2: threshold bloom chain (always-on at night,
             // burst-gated by day; blit above night, below texts/chrome).
             try { this._pixiBloomPresent(); } catch (e) {}
