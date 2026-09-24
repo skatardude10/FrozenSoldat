@@ -1569,12 +1569,12 @@
                         <div class="card-title">CHAOS DRAFT</div>
                         <div class="card-desc">Volatile protocol. Draft random combat perks each wave instead of shopping.</div>
                     </div>
-                    <!-- Action Now -->
+                    <!-- Horde -->
                     <div class="tactical-card mode-half" id="btn-gm-now" onclick="game.setGameMode('now'); game.nextStep();">
                         <div class="card-icon">
                             <svg viewBox="0 0 64 64" class="wizard-svg" style="stroke: #ff2a5f;"><path d="M38 6 L18 34 H32 L26 58 L50 26 H32 Z" /></svg>
                         </div>
-                        <div class="card-title">ACTION NOW</div>
+                        <div class="card-title">HORDE</div>
                         <div class="card-desc">Drop straight into hot territory at wave 5 with a big budget.</div>
                     </div>
                     <!-- FPV Operator -->
@@ -2233,7 +2233,7 @@
                     <h3 style="color: #00e5ff; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">MODES: PICK YOUR WAR</h3>
                     <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.6;">
                         <li><b>NORMAL</b> — waves, elites, 5 bosses, shop, extract. The main event.</li>
-                        <li><b>ACTION NOW</b> — $10k budget, Shotgun/LMG/M1A in hand, a wave-5 swarm the moment you hit READY, 2 free perks. No buildup, all contact.</li>
+                        <li><b>HORDE</b> — $10k budget, Shotgun/LMG/M1A in hand, a wave-5 swarm the moment you hit READY, 2 free perks. No buildup, all contact.</li>
                         <li><b>EXTRACTION</b> — a 7500×7500 zone with uplink and hostage objectives under a Heat director. Get loud, get hunted. Reach the dustoff.</li>
                         <li><b>FPV OPERATOR</b> — sealed in the bunker. No rifle — only drones, turrets, and Spot on the feed.</li>
                         <li><b>CHAOS DRAFT</b> — no shop. Draft 1 of 3 after every wave; mutated bosses at 5/10/15/20. The <b>Black Market</b> takes surplus cash: reroll, take-two, launder into Intel, Blood Wager, contraband slots.</li>
@@ -9701,7 +9701,7 @@ const OP_TUNING = {
     CANOPY_HIDDEN_ALPHA: 0.35
 };
 
-// ==== ACTION NOW MODE: config ====
+// ==== HORDE MODE: config ====
 // The deliberate opposite number to FPV Operator's slow, paranoid burn --
 // skip the wave grind entirely, hand the player a fixed arsenal budget and
 // the shop immediately, then throw a wave-5-sized swarm at them the moment
@@ -9751,7 +9751,7 @@ const PVP_TUNING = {
 // release in SQUADS from a shared spawn point with real gaps between squads.
 // The gap is the tactical game (reposition, deploy, pick an ambush angle);
 // the cap frees budget for tougher squad COMPOSITION at higher waves instead
-// of more bodies. Applies ONLY to the standard wave mode: ACTION NOW keeps
+// of more bodies. Applies ONLY to the standard wave mode: HORDE keeps
 // its 20/sec faucet (that mode IS the horde fantasy -- see NOW_MODE),
 // Operator mode has its own pack system (OP_TUNING), sandbox unaffected.
 const TACTICAL_TUNING = {
@@ -17687,6 +17687,7 @@ class Player extends Entity {
         // startNewGame (and re-synced live in update, so a mid-run toggle
         // applies without a restart). Fully legit runs -- never taints.
         this.wifeMode = false;
+        this._wifeSmartGranted = false; // true iff Smart came from wife auto-grant (revocable on toggle OFF)
         this._wifeTarget = null;   // current magnet lock (validated per frame)
         this._wifeRetargetT = 0;   // 10Hz retarget throttle
         this._wifeLosOk = true;
@@ -18204,73 +18205,28 @@ class Player extends Entity {
         }
         this.aimTargetAngle = targetAngle;
 
-        // WIFE MODE (aim magnet): gently bend the RAW intent toward the
-        // nearest hostile -- aimTargetAngle above stays the player's own (the
-        // focus comparison + P2 fallback read it), only the value fed to
-        // moveFacing/updateAimWeight is shaped, so springs, recoil, focus,
-        // and flinch all keep working underneath. 10Hz lock refresh; the
-        // per-frame pull scales with closeness (full inside MAGNET_CLOSE,
-        // gone at MAGNET_RADIUS) and dt so it converges instead of snapping.
-        // Also re-syncs the flag live so a mid-run toggle applies at once.
+        // WIFE MODE (cozy assist, no aim magnet 2026-09-24): magnet removed —
+        // normal aim only. Smart Munitions is granted at run start instead.
+        // Live-sync preserved so a mid-run toggle applies at once (incl. while
+        // dead — the old block only synced while wifeMode was already true).
+        // Dead magnet state (_wifeTarget/_wifeLock/_wifeRetargetT/_wifeLosOk)
+        // intentionally left in ctor — prune in doc-loop pass (BACKLOG).
         this._wifeLock = null;
-        if (this.wifeMode && !this.dead && typeof game !== 'undefined' && game) {
+        if (!this.dead && typeof game !== 'undefined' && game) {
             try {
                 this._wifeSyncT = (this._wifeSyncT === undefined ? 0 : this._wifeSyncT) - dt;
                 if (this._wifeSyncT <= 0) {
                     this._wifeSyncT = 1.0;
-                    this.wifeMode = !!((this.isPlayer2 ? game.saveData.wifeModeP2 : game.saveData.wifeModeP1));
-                }
-                if (this.wifeMode) {
-                    this._wifeRetargetT -= dt;
-                    if (this._wifeRetargetT <= 0) {
-                        this._wifeRetargetT = WIFE_TUNING.RETARGET;
-                        this._wifeTarget = null;
-                        this._wifeLosOk = true;
-                        const pool = game.getHostilesFor ? game.getHostilesFor(this) : game.enemies;
-                        if (pool) {
-                            let bd = WIFE_TUNING.MAGNET_RADIUS;
-                            for (let i = 0; i < pool.length; i++) {
-                                const e = pool[i];
-                                if (!e || e.dead || (typeof Player !== 'undefined' && e instanceof Player)) continue;
-                                if ((e.hp !== undefined && e.hp <= 0)) continue;
-                                const d = Math.hypot(e.x - this.x, e.y - this.y);
-                                if (d < bd) { bd = d; this._wifeTarget = e; }
-                            }
+                    const _wantWife = !!((this.isPlayer2 ? game.saveData.wifeModeP2 : game.saveData.wifeModeP1));
+                    if (_wantWife !== this.wifeMode) {
+                        this.wifeMode = _wantWife;
+                        if (_wantWife) {
+                            this.perkSmartMunitions = true;
+                            this._wifeSmartGranted = true;
+                        } else if (this._wifeSmartGranted) {
+                            this.perkSmartMunitions = false;
+                            this._wifeSmartGranted = false;
                         }
-                        // One LOS raycast per retarget (laser-sight cost
-                        // class), so the magnet + auto-fire never hose a wall.
-                        if (this._wifeTarget && game.map && game.map.getWallsAlongSegment && typeof MathUtils !== 'undefined') {
-                            const t = this._wifeTarget;
-                            const segs = game.map.getWallsAlongSegment(this.x, this.y, t.x, t.y);
-                            this._wifeLosOk = !segs.some(w => MathUtils.lineIntersectAABB(this.x, this.y, t.x, t.y, w));
-                        }
-                    }
-                    const lt = this._wifeTarget;
-                    if (lt && !lt.dead && !(lt.hp !== undefined && lt.hp <= 0)) {
-                        const ld = Math.hypot(lt.x - this.x, lt.y - this.y);
-                        if (ld < WIFE_TUNING.MAGNET_RADIUS && this._wifeLosOk) {
-                            const want = Math.atan2(lt.y - this.y, lt.x - this.x);
-                            let diff = want - targetAngle;
-                            while (diff > Math.PI) diff -= Math.PI * 2;
-                            while (diff < -Math.PI) diff += Math.PI * 2;
-                            const closeness = Math.min(1, Math.max(0, (WIFE_TUNING.MAGNET_RADIUS - ld) / (WIFE_TUNING.MAGNET_RADIUS - WIFE_TUNING.MAGNET_CLOSE)));
-                            const pull = Math.min(1, WIFE_TUNING.MAGNET_GAIN * closeness * dt * 60);
-                            targetAngle += diff * pull;
-                            // Hard lock read for the fire system below. Gated
-                            // on the GUN's residual error (last frame's
-                            // this.angle -- updateAimWeight runs after this
-                            // block), not the raw input error: the magnet
-                            // bends intent, but only a barrel truly on target
-                            // may invite the trigger finger.
-                            let gdiff = want - this.angle;
-                            while (gdiff > Math.PI) gdiff -= Math.PI * 2;
-                            while (gdiff < -Math.PI) gdiff += Math.PI * 2;
-                            if (ld < WIFE_TUNING.LOCK_CLOSE && Math.abs(gdiff) < WIFE_TUNING.LOCK_ANGLE) this._wifeLock = lt;
-                        } else if (ld >= WIFE_TUNING.MAGNET_RADIUS) {
-                            this._wifeTarget = null;
-                        }
-                    } else {
-                        this._wifeTarget = null;
                     }
                 }
             } catch (e) { this._wifeLock = null; }
@@ -18612,15 +18568,9 @@ class Player extends Entity {
             if (rtPressed) isFiring = true;
         }
 
-        // WIFE MODE (helpful trigger finger): on a hard magnet lock, hold the
-        // trigger in bursts (0.25s on / 0.45s off) so semi weapons re-fire
-        // per burst and autos breathe. Placed before the drone/trip guards
-        // so piloting and trips still win. Never fires without a lock.
-        if (this.wifeMode && this._wifeLock && !this._wifeLock.dead) {
-            const _cyc = WIFE_TUNING.AUTOFIRE_BURST + WIFE_TUNING.AUTOFIRE_GAP;
-            const _ph = ((gameTime % _cyc) + _cyc) % _cyc;
-            if (_ph < WIFE_TUNING.AUTOFIRE_BURST) isFiring = true;
-        }
+        // WIFE MODE: magnet + burst autofire removed 2026-09-24 (normal aim;
+        // Smart Munitions granted at run start). Block deleted, drone/trip
+        // guards below unchanged and still win.
 
         // Lock weapons firing if player is actively piloting drone
         if (this.activeDrone && this.activeDrone.isPiloted && !this.activeDrone.dead) {
@@ -38419,7 +38369,7 @@ class Game {
             if (!stageFound && !o.isComplete(this)) {
                 // JULY item 11 (evac redesign): a waveGated objective (the
                 // mid-match dustoff) stays OFFLINE until the incursion
-                // actually begins -- otherwise the 15s (2s ACTION NOW) prep
+                // actually begins -- otherwise the 15s (2s HORDE) prep
                 // window let you channel out enemy-free and the whole
                 // hold-out tension evaporated. _updateObjectives calls this
                 // every tick, so activation flips automatically the frame
@@ -38638,7 +38588,7 @@ class Game {
                     : '&#9742; EVAC INBOUND' + sub('Next wave: reach the green zone once the fight starts and HOLD it to extract');
             } else {
                 btn.disabled = false;
-                // EVAC STAKE FIX: on stake runs (ACTION NOW's fixed budget)
+                // EVAC STAKE FIX: on stake runs (HORDE's fixed budget)
                 // the terms change, so the button must say so BEFORE the
                 // player commits -- a silent 0-Intel debrief reads as a bug.
                 // Gated on ledger eligibility so ineligible slider-cash runs
@@ -38688,7 +38638,7 @@ class Game {
             // it was never earned, so it never converts. Only net profit
             // above the run's snapshotted startingCash stake cashes out
             // (remaining - stake === earned - spent, so no spend/earn
-            // sequence can beat it). This closes the ACTION NOW exploit
+            // sequence can beat it). This closes the HORDE exploit
             // ("insert with the fixed $10k, extract immediately, bank 100
             // free Intel") at the PAYOUT instead of gating the evac button:
             // the choice to leave early stays real, the free Intel is gone.
@@ -40742,6 +40692,15 @@ class Game {
             if ((playerNum === 1 && !p.isPlayer2) || (playerNum === 2 && p.isPlayer2)) {
                 p.wifeMode = !!on;
                 if (!on) p._wifeTarget = null;
+                // Smart Munitions follows the toggle (2026-09-24): ON grants,
+                // OFF revokes only if wife granted it (never steals earned perk).
+                if (on) {
+                    p.perkSmartMunitions = true;
+                    p._wifeSmartGranted = true;
+                } else if (p._wifeSmartGranted) {
+                    p.perkSmartMunitions = false;
+                    p._wifeSmartGranted = false;
+                }
             }
         }
     }
@@ -41275,7 +41234,7 @@ class Game {
         // menu (perk / ext-mags / chaos, all intercepted earlier), and
         // _safeUnpause() intentionally leaves it set while state === 'shop'.
         // If isPaused is ever left true with NO pause screen showing (e.g.
-        // Action Now's opening shop once the free-perk queue drains), routing
+        // Horde's opening shop once the free-perk queue drains), routing
         // on isPaused alone shoves the pad into the HIDDEN pause menu -- where
         // a stray confirm lands on ABANDON MISSION and instantly kills the
         // run. The pause screen's own visibility can't drift out of sync,
@@ -51206,7 +51165,7 @@ class Game {
     // seed + template) plus the wall payload; the player then chooses mode /
     // roster / options through the normal wizard and hits deploy. The staged
     // walls are stamped in by startNewGame (see the _pendingCustomMap block
-    // there), so a map built in solo peaceful can be replayed 2P Action Now,
+    // there), so a map built in solo peaceful can be replayed 2P Horde,
     // Chaos Draft, or anything else. Mirrors how a challenge link stages a seed
     // and then rides the normal start flow.
     selectCustomMap(id) {
@@ -51420,10 +51379,10 @@ class Game {
             friendlyFireMode: this.friendlyFireMode,
             startingCash: this.nowMode ? NOW_MODE.STARTING_CASH : this.startingCash,
             // START AT WAVE slider. 0 == OFF: each mode opens on its natural
-            // wave (ACTION NOW -> 5 via NOW_MODE.START_WAVE, everything else ->
+            // wave (HORDE -> 5 via NOW_MODE.START_WAVE, everything else ->
             // 1) exactly as before the slider existed. A value >= 1 overrides
             // that opening wave for EVERY wave-based mode -- normal, chaos
-            // draft, ACTION NOW, operator, and sandbox all seed this.wave from
+            // draft, HORDE, operator, and sandbox all seed this.wave from
             // it and scale their spawn/difficulty formulas off it. Extraction is
             // the sole exception: its wave counter is parked at 1 by design
             // (heat, not waves, is the difficulty axis), so the slider is inert
@@ -51563,6 +51522,11 @@ class Game {
         p.vx = 0; p.vy = 0;
         // Restore correct maxHp/maxArmor from Armory, then fill.
         if (this._applyMetaStatsToPlayer) this._applyMetaStatsToPlayer(p);
+        // WIFE MODE 2026-09-24: reset wiped Smart — re-grant if wife-armed.
+        if (p.wifeMode) {
+            p.perkSmartMunitions = true;
+            p._wifeSmartGranted = true;
+        }
         p.hp = Math.max(1, Math.round((p.maxHp || 100) * PVP_TUNING.RESPAWN_HP_FRAC));
         p.armor = p.maxArmor || 0;
         if (p.maxStamina !== undefined) p.stamina = p.maxStamina;
@@ -51753,7 +51717,7 @@ class Game {
         // taint: taint() alone routes Intel to intelDenied (see
         // RunLedger.addIntel) AND excludes the run from saveHighScore (see
         // endRun). Keyed off the slider being ACTIVE (debugStartWave >= 1), not
-        // the resolved wave, so overriding ACTION NOW down to 1 still taints.
+        // the resolved wave, so overriding HORDE down to 1 still taints.
         // Extraction is exempt because the slider is inert there (see
         // buildRunConfig) -- an inert setting shouldn't penalize the run.
         if (!this.extractionMode && this.debugStartWave >= 1) {
@@ -51949,8 +51913,17 @@ class Game {
         // WIFE MODE: arm per-player assist flags from save (fresh Players
         // ctor false, so a forgotten reset can't leak across runs; the live
         // update sync also picks up mid-run toggles).
+        // 2026-09-24: no magnet/autofire — Smart Munitions granted instead.
         if (this.player) this.player.wifeMode = !!(this.saveData && this.saveData.wifeModeP1);
         if (this.player2) this.player2.wifeMode = !!(this.saveData && this.saveData.wifeModeP2);
+        for (const _wp of [this.player, this.player2]) {
+            if (!_wp) continue;
+            _wp._wifeSmartGranted = false;
+            if (_wp.wifeMode) {
+                _wp.perkSmartMunitions = true;
+                _wp._wifeSmartGranted = true;
+            }
+        }
 
         // PHASE 4: operator kits -- post-meta, pre-mode (see method comment).
         this._applyOperatorKit(this.player);
@@ -52216,7 +52189,7 @@ class Game {
                 this.items.push(it);
             });
         } else if (this.nowMode) {
-            // ACTION NOW: fixed arsenal budget, replacing (not stacking on)
+            // HORDE: fixed arsenal budget, replacing (not stacking on)
             // the normal startingCash slider -- no ground weapon pile like
             // Sandbox, since the shop the player is about to land in already
             // covers that.
@@ -52249,11 +52222,49 @@ class Game {
         }
         
         // runConfig.startWave already encodes the right opening wave per mode
-        // (ACTION NOW -> 5, extraction/operator/sandbox -> 1, standard -> the
+        // (HORDE -> 5, extraction/operator/sandbox -> 1, standard -> the
         // START AT WAVE slider), resolved once at snapshot in buildRunConfig.
         this.wave = this.runConfig.startWave;
         this.waveStarted = false;
         this.isPaused = false;
+
+        // 2026-09-24: opening gun drop — normal + chaos draft only (HORDE
+        // already grants 5 guns to inventory; sandbox/peaceful/extraction/
+        // operator excluded). One random bullet-gun per live player, IN FRONT
+        // (110px along facing, never on-top so it needs a walk-to-pickup),
+        // wall-safe via _findSafeSpawnNear, same-floor guarded. Wave-aged
+        // (isSandbox=false default) so it rots in 3 waves — no accumulation.
+        if (!this.isTestingMode && !this.nowMode && !this.operatorMode && !this.peacefulMode && !this.extractionMode && (this.gameMode === 'normal' || this.chaosDraftMode)) {
+            const _gunPool = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a', 'abakan', 'mauler', 'judge'];
+            const _dropGunFor = (p) => {
+                if (!p || p.dead) return;
+                const _pick = _gunPool[(Math.random() * _gunPool.length) | 0];
+                const _ang = (typeof p.angle === 'number' && isFinite(p.angle)) ? p.angle : 0;
+                let _cx = p.x + Math.cos(_ang) * 110;
+                let _cy = p.y + Math.sin(_ang) * 110;
+                let _spot = null;
+                try {
+                    _spot = this._findSafeSpawnNear(_cx, _cy, 22);
+                } catch (e) { _spot = null; }
+                if (!_spot) return;
+                // Same-floor guard: roof drop won't magnet/touch (floorSeparated
+                // gates both). Fall back near-player if the nudge crossed floors.
+                try {
+                    if (this.map && this.map.floorSeparated && this.map.floorSeparated(p.x, p.y, _spot.x, _spot.y)) {
+                        _spot = this._findSafeSpawnNear(p.x + 70, p.y, 22);
+                        if (this.map.floorSeparated(p.x, p.y, _spot.x, _spot.y)) return;
+                    }
+                } catch (e) {}
+                // Wall-between guard: endpoint clear isn't enough — a thin wall
+                // between player and gun forces a walk-around anyway, but avoid
+                // spawning behind glass the magnet can't pull through cleanly.
+                // Keep the nudge (walk-around is fine), just ensure in-bounds.
+                const _it = this.spawnItem(_spot.x, _spot.y, _pick);
+                this.items.push(_it);
+            };
+            _dropGunFor(this.player);
+            if (this.isTwoPlayer && this.player2) _dropGunFor(this.player2);
+        }
         
         if (this.extractionMode) {
             this.state = 'playing';
@@ -52294,7 +52305,7 @@ class Game {
         // Force-clear isPaused here: grantRandomPerk() sets it true and
         // _safeUnpause() deliberately won't clear it while state === 'shop'
         // (so closing a perk pop-up mid-shop doesn't resume live gameplay
-        // early). Action Now's free-perk queue is the first caller that
+        // early). Horde's free-perk queue is the first caller that
         // ever triggers a perk grant while still in the shop, so without
         // this, isPaused stayed stuck true forever once READY was clicked --
         // the update() loop gates its entire gameplay tick on isPaused, so
@@ -52346,10 +52357,17 @@ class Game {
             }
         }
         
-        // ACTION NOW: near-instant incursion timer every wave (not just the
+        // HORDE: near-instant incursion timer every wave (not just the
         // first) -- the whole point of the mode is skipping the calm
         // between fights, not just the initial grind up to a loadout.
         this.prepTimer = this.nowMode ? NOW_MODE.PREP_TIME : (this.chaosDraftMode ? 5.0 : 15.0);
+        // 2026-09-24: first-wave grace for normal Instant Deploy — 3s instead
+        // of 15s so deploy feels instant but readable (banner 3/2/1). Placed
+        // here before peaceful-zero + vengeance-half so those still win.
+        // Chaos stays 5.0, HORDE 1.5, extraction/operator/peaceful excluded.
+        if (isFirst && this.wave === 1 && !this.nowMode && !this.chaosDraftMode && !this.extractionMode && !this.peacefulMode && !this.operatorMode && !this.isTestingMode) {
+            this.prepTimer = 3.0;
+        }
         
         this.enemiesToSpawn = 5 + this.wave * 4;
         // ORACLE SPICE sample debt: the dealer's +1 per sample buy.
@@ -53051,20 +53069,20 @@ class Game {
         return pickedUp;
     }
 
-    // ACTION NOW: grantRandomPerk()/selectPerk() only support one pending
+    // HORDE: grantRandomPerk()/selectPerk() only support one pending
     // choice screen at a time (single shared perkSelectingPlayer slot) --
     // calling grantRandomPerk() again while one is already up would just
     // silently overwrite it before the player ever saw it. This queue lets
-    // Action Now hand out multiple free perks (possibly across two players)
+    // Horde hand out multiple free perks (possibly across two players)
     // safely: each call only fires once the previous one has actually been
     // resolved, from selectPerk()'s advance hook (or from
     // grantRandomPerk()'s own already-maxed-out branch, which never opens a
     // screen at all). No-op whenever the queue is empty, i.e. always, for
-    // every mode except Action Now.
+    // every mode except Horde.
     _advanceNowModePerkQueue() {
         if (!this._nowModePerkQueue || this._nowModePerkQueue.length === 0) {
             // Queue drained: every free perk has been chosen and we're now
-            // sitting in Action Now's opening shop. Each grantRandomPerk()
+            // sitting in Horde's opening shop. Each grantRandomPerk()
             // set isPaused = true to show its perk pop-up, and _safeUnpause()
             // deliberately won't clear isPaused while state === 'shop' -- so
             // without this, the NOW-mode shop is left stuck paused. Touch
@@ -54856,7 +54874,7 @@ class Game {
             this._updateOperatorSpawning(dt);
         } else if (!this.nowMode && this.prepTimer <= 0 && this.enemiesToSpawn > 0) {
             // TACTICAL WAVES: standard wave mode uses squad releases gated by
-            // a live-enemy cap (see TACTICAL_TUNING). ACTION NOW mode keeps
+            // a live-enemy cap (see TACTICAL_TUNING). HORDE mode keeps
             // the original faucet below -- the flood IS that mode's identity.
             // Squad pacing follows the slowest live player's clock (see
             // _spawnPacingF) -- member/gap timers are this function's only
@@ -55000,7 +55018,7 @@ class Game {
                 
                 this.enemies.push(enemy);
                 this.enemiesToSpawn--;
-                // ACTION NOW: ~20 enemies/sec instead of the stock trickle --
+                // HORDE: ~20 enemies/sec instead of the stock trickle --
                 // this is the entire point of the mode, so it applies to
                 // every wave for the whole run, not just the kickoff wave.
                 this.spawnTimer = this.nowMode ? NOW_MODE.SPAWN_INTERVAL : Math.max(0.2, 1.6 - this.wave*0.12);
@@ -55969,6 +55987,11 @@ class Game {
 
             // RE-APPLY META STATS: restores correct maxHp and maxArmor from Armory upgrades.
             this._applyMetaStatsToPlayer(p);
+            // WIFE MODE 2026-09-24: reset wiped Smart — re-grant if wife-armed.
+            if (p.wifeMode) {
+                p.perkSmartMunitions = true;
+                p._wifeSmartGranted = true;
+            }
 
             // Apply the hardcore HP penalty on top of the restored maxHp
             p.hp = Math.min(70, p.maxHp);
@@ -56621,7 +56644,7 @@ class Game {
         // write path). Rates live on RunConfig.rewardRules, not inline here.
         // Sandbox/god/dev-tainted runs earn 0 by construction (ledger gate).
         // waveStarted guard: openShopInterface() also runs on the INITIAL
-        // shop of Sandbox/ACTION NOW (before any wave) -- the old inline code
+        // shop of Sandbox/HORDE (before any wave) -- the old inline code
         // leaked +2 Intel for that no-op "wave". Fixed here.
         // HP-05: buyItem/buyOverclock/_cancelExtMags tail-call this method to
         // re-render, so the grant is once-per-wave (not once-per-render).
@@ -59420,7 +59443,7 @@ class Game {
                             normal: 'Standard',
                             extraction: 'Extraction',
                             chaos_draft: 'Chaos',
-                            now: 'Action',
+                            now: 'Horde',
                             operator: 'FPV',
                             sandbox: 'Testing',
                             peaceful: 'No Enemies'
@@ -59977,11 +60000,11 @@ class Game {
             if (coopBtn) { coopBtn.disabled = false; coopBtn.style.opacity = '1'; }
             // Only reset off the forced operator map: leaving operator mode
             // snaps a forced 11 back to Random, but a player-CHOSEN 11
-            // survives mode switches (Instant Deploy + Action Now included).
+            // survives mode switches (Instant Deploy + Horde included).
             if (this.selectedMapId === 11 && prevMode === 'operator') this.setMap(-1);
         }
 
-        // ACTION NOW replaces the Starting Funds slider outright with a
+        // HORDE replaces the Starting Funds slider outright with a
         // fixed budget (see NOW_MODE.STARTING_CASH) -- map/friendly-fire/
         // 1P-2P are all left exactly as the player already had them (this
         // mode is meant to drop into whatever setup they were already
@@ -60115,14 +60138,14 @@ class Game {
     }
 
     // Testing aid: begin a run at an arbitrary wave, reusing the exact
-    // mechanism ACTION NOW uses to open at wave 5 (see NOW_MODE.START_WAVE) --
+    // mechanism HORDE uses to open at wave 5 (see NOW_MODE.START_WAVE) --
     // this.wave is seeded from runConfig.startWave and every mode's enemy-count /
     // difficulty formula keys off it (normal: 5+wave*4; operator: OP_TUNING
     // curve), so wave N spawns a wave-N-appropriate fight with no separate
     // curve. Value 0 == OFF: each mode falls back to its natural opening wave
-    // (ACTION NOW -> 5, everything else -> 1), i.e. byte-for-byte the behavior
+    // (HORDE -> 5, everything else -> 1), i.e. byte-for-byte the behavior
     // from before this slider existed. Any value >= 1 is an explicit override
-    // applied to normal / chaos draft / ACTION NOW / operator / sandbox
+    // applied to normal / chaos draft / HORDE / operator / sandbox
     // (extraction is exempt -- heat, not waves, is its axis) and DISQUALIFIES
     // the run from Intel + the leaderboard (enforced in startNewGame via a
     // ledger taint), since a hand-picked start is a sandbox convenience, not an
@@ -68412,7 +68435,8 @@ class Game {
             titleEl.style.textShadow = '0 0 15px ' + meta.color;
         }
         if (subEl) {
-            const modeName = (L.config && L.config.modeId ? String(L.config.modeId) : 'run').toUpperCase();
+            const _rawMode = (L.config && L.config.modeId ? String(L.config.modeId) : 'run');
+            const modeName = (_rawMode === 'now' ? 'HORDE' : _rawMode).toUpperCase();
             // PHASE 1: extraction has no wave counter -- report the op, not
             // a parked "WAVE 1". PHASE 2: report WHICH op.
             const missionName = (L.config && L.config.missionId && MISSIONS[L.config.missionId])
