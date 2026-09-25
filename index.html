@@ -47018,12 +47018,61 @@ class Game {
     // T5 baked HUD labels (rift rule: Pixi.Text bold-monospace advances ~10%
     // wide — bake via the same canvas fillText call). Middle-baseline anchor
     // from measured x-height (same rasterizer, exact by construction).
+    _pixiHudLabelBake(key, str, font, fillStyle, W, Hh, base, pad, adv) {
+        const cv = document.createElement('canvas');
+        cv.width = W; cv.height = Hh;
+        const cx = cv.getContext('2d');
+        cx.font = font; cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
+        cx.fillStyle = fillStyle; cx.fillText(str, pad, base);
+        // mid needs x-height: recompute cheaply (bake path only).
+        let mid = base - 4;
+        try {
+            const m = cx.measureText('x');
+            mid = base - Math.ceil(m.actualBoundingBoxAscent || 8) / 2;
+        } catch (e) {}
+        const e = { tex: window.PIXI.Texture.from(cv), cv, cx, w: W, adv, pad, base, mid };
+        this._pixiHudLabelTex.set(key, e);
+        return e;
+    }
+
+    _pixiHudLabelSteal(key, str, font, fillStyle, W, Hh, base, pad, adv) {
+        // Repaint the stalest entry whose canvas fits (no resize: resizing
+        // a canvas reallocates + drops the upload binding on some builds).
+        // Same texture object re-uploaded via source.update() — the managed
+        // entry count never grows past warmup.
+        for (const [k, e] of this._pixiHudLabelTex) {
+            if (!e || !e.cv || e.cv.width < W || e.cv.height < Hh) continue;
+            try {
+                this._pixiHudLabelTex.delete(k);
+                e.cx.clearRect(0, 0, e.cv.width, e.cv.height);
+                e.cx.font = font; e.cx.textAlign = 'left'; e.cx.textBaseline = 'alphabetic';
+                e.cx.fillStyle = fillStyle; e.cx.fillText(str, pad, base);
+                let mid = base - 4;
+                try {
+                    const m = e.cx.measureText('x');
+                    mid = base - Math.ceil(m.actualBoundingBoxAscent || 8) / 2;
+                } catch (err) {}
+                e.w = W; e.adv = adv; e.pad = pad; e.base = base; e.mid = mid;
+                try { if (e.tex && e.tex.source && e.tex.source.update) e.tex.source.update(); } catch (err) {}
+                this._pixiHudLabelTex.set(key, e);
+                return e;
+            } catch (err) { try { this._pixiHudLabelTex.delete(key); } catch (e2) {} return null; }
+        }
+        return null;
+    }
+
     _pixiHudLabel(H, ez, font, fillStyle, str, sx, sy, align, baseline) {
         if (!this._pixiHudLabelTex) this._pixiHudLabelTex = new Map();
         const key = font + '|' + fillStyle + '|' + str;
         let e = this._pixiHudLabelTex.get(key);
+        if (e) {
+            // LRU refresh: re-insert so steal-oldest below takes the
+            // stalest entry, not a hot one.
+            this._pixiHudLabelTex.delete(key);
+            this._pixiHudLabelTex.set(key, e);
+        }
         if (!e) {
-            if (this._pixiHudLabelTex.size > 128) this._pixiHudLabelTex.clear();
+            // Measure first (same math as the bake path below).
             const mc = document.createElement('canvas').getContext('2d');
             mc.font = font;
             const adv = mc.measureText(str).width;
@@ -47033,13 +47082,17 @@ class Game {
             let xh = asc * 0.5;
             try { xh = Math.ceil(mc.measureText('x').actualBoundingBoxAscent || xh); } catch (err) {}
             const pad = 2, W = w + pad * 2, base = pad + asc, Hh = base + desc + pad;
-            const cv = document.createElement('canvas');
-            cv.width = W; cv.height = Hh;
-            const cx = cv.getContext('2d');
-            cx.font = font; cx.textAlign = 'left'; cx.textBaseline = 'alphabetic';
-            cx.fillStyle = fillStyle; cx.fillText(str, pad, base);
-            e = { tex: window.PIXI.Texture.from(cv), w, adv, pad, base, mid: base - xh / 2 };
-            this._pixiHudLabelTex.set(key, e);
+            // HITCH-FIX (label-texture churn): keys carry live numbers
+            // (RF:123m, CUT CABLE: 47%), so unique strings never stop.
+            // The old 128-cap clear() orphaned every texture (destroy never
+            // releases managed entries). Steal the stalest entry whose
+            // canvas fits and repaint it in place: same texture object,
+            // re-upload, zero new managed entries after warmup.
+            if (this._pixiHudLabelTex.size > 128) {
+                const ok = this._pixiHudLabelSteal(key, str, font, fillStyle, W, Hh, base, pad, adv);
+                if (ok) e = ok;
+            }
+            if (!e) e = this._pixiHudLabelBake(key, str, font, fillStyle, W, Hh, base, pad, adv);
         }
         let s = H.labels[H.n];
         if (!s) {
@@ -48475,6 +48528,13 @@ class Game {
         // set — no orphan GL state across resize/map-swap reallocs.
         try { if (G.maskTex) G.maskTex.destroy(true); } catch (e) {}
         try { if (G.quad) G.quad.destroy(); } catch (e) {}
+        // HITCH-FIX: release the shared pass mesh's render group back to
+        // the pool (its batcher entry is keyed by instructionSet uid —
+        // dropping the mesh without disabling orphans the group and
+        // fossilizes the entry; see _pixiGpuPass).
+        try { if (G.passMesh && G.passMesh.disableRenderGroup) G.passMesh.disableRenderGroup(); } catch (e) {}
+        try { if (G.passMesh) G.passMesh.destroy(); } catch (e) {}
+        G.passMesh = null;
         // Item 1b: display meshes leave the stage with the set (visible
         // rigs must never outlive their GL programs).
         try {
@@ -48653,9 +48713,23 @@ class Game {
             const ug = new R.UniformGroup(structs);
             res.uGpu = ug;
             const sh = new R.Shader({ glProgram: glp, resources: res });
-            const mesh = new R.Mesh({ geometry: G.quad, shader: sh });
+            // HITCH-FIX (batcher fossil leak): ONE persistent pass mesh.
+            // Was: fresh Mesh per run. rend.render() enables a render group
+            // on the container, whose instructionSet uid permanently
+            // fossilizes a batcher (+GPU buffers) in the batch pipe's
+            // _batchersByInstructionSet — and a destroyed mesh never
+            // disables its group, so every pass of every frame leaked one
+            // (~600/s, GB-scale heap in minutes, major-GC hitches). The
+            // shared mesh forms its group once; only the per-run shader
+            // is fresh (never mutated live, per the note above).
+            let mesh = G.passMesh;
+            if (!mesh || mesh.destroyed) {
+                mesh = new R.Mesh({ geometry: G.quad, shader: sh });
+                G.passMesh = mesh;
+            } else {
+                mesh.shader = sh;
+            }
             rend.render({ container: mesh, target });
-            try { mesh.destroy(); } catch (e) {}
             try { sh.destroy(); } catch (e) {}
             try { ug.destroy(); } catch (e) {}
             return true;
@@ -67701,8 +67775,10 @@ class Game {
                         try {
                             for (const t of entry) {
                                 if (!t) continue;
-                                try { if (t.parent) t.parent.removeChild(t); } catch (e) {}
-                                try { t.destroy(); } catch (e) {}
+                                // HITCH-FIX: recycle into the twin pool (or
+                                // fully destroy past cap) — never bare destroy,
+                                // which orphaned the GL texture (the leak).
+                                try { this._pixiTextRelease(t); } catch (e) {}
                             }
             } catch (e) {}
             // (a2) T2a dressing depths (canvas: floor < base < walls <
@@ -68281,6 +68357,50 @@ class Game {
     // only (no per-frame texture regen); per frame only position/scale/alpha.
     // Scale (not fontSize) carries the zoom so textures never rebuild. No RNG,
     // no cull — mirrors the canvas path exactly (same reads, same order).
+    // HITCH-FIX (text-texture leak): floating-text twins are pooled, never
+    // minted per event. Each PIXI.Text owns a canvas + GPU texture; the old
+    // code minted one per damage number and the sweep's bare t.destroy()
+    // never freed the texture (~1.8 managedTextures/s, GB-scale heap in
+    // minutes, major-GC hitches). Checkout reuses a freed twin (text/color
+    // reset re-rasters the SAME texture in place); evict recycles into the
+    // free list (cap) or destroys texture + baseTexture properly.
+    _pixiTextAlloc(text, color) {
+        const free = this._pixiTextFree || (this._pixiTextFree = []);
+        let t = null;
+        if (free.length) {
+            t = free.pop();
+            if (t.text !== text) t.text = text;
+            if (t._ftColor !== color) { t.style.fill = color; t._ftColor = color; }
+            return t;
+        }
+        t = new window.PIXI.Text({ text: text, style: {
+            fontFamily: '"Courier New", Courier, monospace',
+            fontSize: 12, fontWeight: 'bold', fill: color,
+            stroke: { color: '#000000', width: 3 }, align: 'center',
+        } });
+        t.anchor.set(0.5, 0.8); // canvas alphabetic-baseline match
+        t._ftColor = color;
+        return t;
+    }
+
+    _pixiTextRelease(t) {
+        if (!t) return;
+        try { if (t.parent) t.parent.removeChild(t); } catch (e) {}
+        const free = this._pixiTextFree || (this._pixiTextFree = []);
+        // POOL_CAP 64: steady-state damage text fits; beyond cap the twin
+        // is fully destroyed (texture + baseTexture — the call the old
+        // sweep was missing, which leaked every evicted twin's GL texture).
+        if (free.length < 64) {
+            try { t.visible = false; } catch (e) {}
+            free.push(t);
+            return;
+        }
+        // Passing the options object is harmless on builds whose destroy()
+        // takes no args; the fallback covers throws.
+        try { t.destroy({ texture: true, baseTexture: true }); }
+        catch (e) { try { t.destroy(); } catch (e2) {} }
+    }
+
     drawPixiTexts(cam, isPlayer2) {
         if (!this._pixiOverlayRenderer) return;
         if (!this._pixiTextMap) this._pixiTextMap = new Map();
@@ -68298,12 +68418,7 @@ class Game {
             if (!entry) { entry = [null, null]; this._pixiTextMap.set(ft, entry); }
             let t = entry[v];
             if (!t) {
-                t = new window.PIXI.Text({ text: ft.text, style: {
-                    fontFamily: '"Courier New", Courier, monospace',
-                    fontSize: 12, fontWeight: 'bold', fill: ft.color,
-                    stroke: { color: '#000000', width: 3 }, align: 'center',
-                } });
-                t.anchor.set(0.5, 0.8); // canvas alphabetic-baseline match
+                t = this._pixiTextAlloc(ft.text, ft.color);
                 (this._pixiTextHome || this._pixiOverlayStage).addChild(t);
                 entry[v] = t;
             } else {
@@ -70254,8 +70369,9 @@ class Game {
         if (this.nightMode || _veil) this.drawPixiNight(cam, isPlayer2);
 
         if (this.floatingTexts) {
-            // L12 single-renderer: floating-text twin only.
-            this.drawPixiTexts(cam, isPlayer2);
+            // L12 single-renderer: floating-text twin only. pixiLayer_text
+            // is the kill-switch (false skips the twin entirely).
+            if (this.pixiLayer_text !== false) this.drawPixiTexts(cam, isPlayer2);
         }
 
         // DATA LINK (Phase 3): C4ISR Sensor Fusion Tactical HUD Overlay
