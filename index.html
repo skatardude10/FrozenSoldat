@@ -2266,7 +2266,7 @@
                         <li><b>DRILL &amp; BUILD</b> — hold F on a wall to grind it into banked rubble; hold F in open ground to spend rubble raising fresh walls. Forts, breaches, mayhem. <b>WALL READ:</b> <span style="color:#ff2a5f;">■</span> red = chewable cover · <span style="color:#00e5ff;">▬</span> cyan glass band + sill = low window, shoot OVER it · <span style="color:#ffb700;">■</span> amber ticks = your built walls · grey mass = solid, don't bother.</li>
                         <li><b>DATA LINK</b> — spool fiber between deployables with the Repair Gun. The linked net shares vision and focuses fire. Set doctrines; mind the heat.</li>
                         <li><b style="color:#ff2a5f;">SCAVENGER DOG</b> — hostile thief bot. It steals ground loot and bolts at wave-clear. Drop it on sight.</li>
-                        <li><b style="color:#b0bec5;">ABAKAN</b> — hyperburst rifle: every pull fires two rounds at ~1100rpm with one shove after. Tap rhythm, not spray. <b style="color:#c0ca33;">THUMPER</b> — hold-to-range arc-launcher: press shows the marker at max range, holding walks it in, release lobs the fused shell over cover. Tap = instant far lob. Your own splash is halved, not gone. <b style="color:#ff9100;">MAULER</b> — full-auto shotgun: hold the trigger, 7-pellet cone, hungry and loud. <b style="color:#ff8a80;">JUDGE</b> — .50 hand cannon: absurd alpha between M1A and Sniper, semi latch, shoulder-mounted regret.</li>
+                        <li><b style="color:#b0bec5;">ABAKAN</b> — hyperburst rifle: every pull fires two rounds at ~1100rpm with one shove after. Tap rhythm, not spray. <b style="color:#c0ca33;">THUMPER</b> — hold-to-range arc-launcher: press shows the marker at max range, holding walks it in, release lobs the fused shell over cover. Tap = instant far lob. Your own splash is halved, not gone. <b style="color:#ff9100;">MAULER</b> — full-auto shotgun: hold the trigger, 14-pellet birdshot cone, hungry and loud. <b style="color:#ff8a80;">JUDGE</b> — .50 hand cannon: absurd alpha between M1A and Sniper, semi latch, shoulder-mounted regret.</li>
                         <li><b>KITS, OVERCLOCKS, ESCALATIONS</b> — 8 Armory-unlocked kits (Breacher, Ghost, Technician…) for loadout + passive + shop rebate. Clean overclocks upgrade; Corrupted ones (Overpressure, Glass Nerves, Cold Barrel) charge a price. Escalations (Bloodhound, Ironclad, Exposed) crank extraction risk for bonus Intel.</li>
                     </ul>
                 </div>
@@ -2297,10 +2297,10 @@
                 <div id="guide-sec-after" class="guide-card" style="border-color: rgba(255, 42, 95, 0.35);">
                     <h3 style="color: #ff2a5f; font-size: 13px; margin: 0 0 6px; letter-spacing: 1px;">AFTER-ACTION: HOW INTEL PAYS</h3>
                     <ul style="font-size: 11px; color: #e0f7fa; padding-left: 18px; margin: 0; line-height: 1.6;">
-                        <li><b>WAVES</b> — each clear pays 2 + 1 per 5 waves + 4 per elite killed. Elites also carry chips ~10% of the time.</li>
+                        <li><b>WAVES</b> — each clear pays base 2 + 1 per 2 waves deep + 4 per elite killed. Elites also carry chips ~10% of the time.</li>
                         <li><b>BOSSES</b> — every boss drops 2 intel chips on top of the cash bounty. Crack the black box, grab the chips.</li>
                         <li><b>EXTRACTION</b> — the rich path: uplink hacks (20–35), hostage rescue (50), completion bonus (up to 80), and every elite drops a chip.</li>
-                        <li><b>EVAC</b> — REQUEST EVAC converts all remaining cash to Intel ($100 → 1), but only if you survive the dustoff.</li>
+                        <li><b>EVAC</b> — REQUEST EVAC converts all remaining cash to Intel ($100 → 1 x a wave mult: 1x at wave 5, up to 3x by wave 15 — the shop button shows the live rate), but only if you survive the dustoff.</li>
                         <li><b>MULTIPLIERS</b> — difficulty, night ops, and escalations scale every payout. Chaos Draft pays through the Black Market, not waves.</li>
                         <li><b>ZERO-INTEL RUNS</b> — sandbox, peaceful, testing, starting-cash bonus, and dev-tainted runs bank nothing (banner shows it). Custom maps in normal modes pay full — builders earn.</li>
                     </ul>
@@ -2327,6 +2327,7 @@
             <div style="font-size: 18px; color: var(--green); font-weight: bold; margin-bottom: 15px; letter-spacing: 1px;">
                 AVAILABLE FUNDS: $<span id="shop-cash-p1">0</span>
             </div>
+            <div id="shop-intel-p1" style="font-size: 12px; color: #39ff14; letter-spacing: 1px; margin-bottom: 10px;"></div>
             <div id="operator-resupply-notice-p1" style="display:none; font-size: 11px; color: #ff5555; letter-spacing: 1px; margin-bottom: 10px; border: 1px solid #ff5555; padding: 6px; text-align: center;">
                 ⚠ OUTSIDE BASE PERIMETER -- RETURN TO BASE TO RESUPPLY
             </div>
@@ -2454,6 +2455,7 @@
             <div style="font-size: 18px; color: var(--green); font-weight: bold; margin-bottom: 15px; letter-spacing: 1px;">
                 AVAILABLE FUNDS: $<span id="shop-cash-p2">0</span>
             </div>
+            <div id="shop-intel-p2" style="font-size: 12px; color: #39ff14; letter-spacing: 1px; margin-bottom: 10px;"></div>
             <div id="operator-resupply-notice-p2" style="display:none; font-size: 11px; color: #ff5555; letter-spacing: 1px; margin-bottom: 10px; border: 1px solid #ff5555; padding: 6px; text-align: center;">
                 ⚠ OUTSIDE BASE PERIMETER -- RETURN TO BASE TO RESUPPLY
             </div>
@@ -9395,10 +9397,10 @@ const Weapons = {
      // class); the trigger path only fires it fallback-instant when no
      // charge is in progress. Standard random-drop pool.
      thumper: { name: 'Thumper', dmg: 0, fireRate: 0.5, speed: 0, drag: 0, spread: 0, mag: 0, weight: 22, color: '#c0ca33', type: 'pump', maxZoom: 0.12, gamepadAimDist: 200, openBoltDelay: 0 },
-     // MAULER: stock auto-shotgun (close sustain vs pump alpha). Hold-trigger
-      // room broom: 7-pellet cone, fast falloff, heavy per-second kick and
-     // ammo hunger. Standard random-drop pool (see WEAPON_ITEM_FORMS).
-     mauler: { name: 'Mauler', dmg: 8, fireRate: 0.25, speed: 2000, drag: 0.24, spread: 0.23, mag: 0, weight: 20, color: '#ff9100', type: 'auto', pellets: 7, maxZoom: 0.10, gamepadAimDist: 140, openBoltDelay: 0 },
+      // MAULER: stock auto-shotgun (close sustain vs pump alpha). Hold-trigger
+       // room broom: 14-pellet birdshot cone, fast falloff, heavy per-second kick and
+      // ammo hunger. Standard random-drop pool (see WEAPON_ITEM_FORMS).
+      mauler: { name: 'Mauler', dmg: 8, fireRate: 0.25, speed: 2000, drag: 0.24, spread: 0.46, mag: 0, weight: 20, color: '#ff9100', type: 'auto', pellets: 14, maxZoom: 0.10, gamepadAimDist: 140, openBoltDelay: 0 },
      // JUDGE: stock heavy revolver (.50 hand cannon). Absurd per-click alpha
      // between M1A and Sniper, gated by semi latch + insane kick + tiny
      // reserve + heat. Standard random-drop pool (see WEAPON_ITEM_FORMS).
@@ -9585,7 +9587,7 @@ const Weapons = {
                            // skittish standoff -- the pilot's resting position
                            // IS its firing position, so the band has to include
                            // it or it can never deploy from where it stands.
-       dmgResist: 0.8,    // damage multiplier while rooted (UNPACK/PILOTING)
+       dmgResist: 1.0,    // SIM-REFINE: no rooted bonus (was 0.8 — punished catching it vulnerable)
       dronesMin: 3,      // drones per pilot, wave-scaled up to dronesMax
       dronesMax: 5,
        drone: { hp: 40, r: 9, speed: 330, life: 25, blastRadius: 150, blastDmg: 110 },
@@ -9596,10 +9598,10 @@ const Weapons = {
  */
 const EnemyTypes = {
     grunt: { hp: 45, speed: 170, color: '#00e5ff', type: 'grunt', score: 10, size: 12, weapon: 'pistol' },
-    swarmer: { hp: 25, speed: 275, color: '#ff6600', type: 'swarmer', score: 15, size: 9, weapon: 'melee' },
-    enforcer: { hp: 125, speed: 105, color: '#d500f9', type: 'enforcer', score: 30, size: 15, weapon: 'heavy_pistol' },
+    swarmer: { hp: 25, speed: 275, color: '#ff6600', type: 'swarmer', score: 15, size: 11, weapon: 'melee' },
+    enforcer: { hp: 120, speed: 105, color: '#d500f9', type: 'enforcer', score: 30, size: 14, weapon: 'heavy_pistol' },
     shotgun_grunt: { hp: 70, speed: 160, color: '#ff5722', type: 'shotgun_grunt', score: 25, size: 13, weapon: 'shotgun' },
-    sniper_grunt: { hp: 55, speed: 130, color: '#f50057', type: 'sniper_grunt', score: 35, size: 12, weapon: 'sniper' },
+    sniper_grunt: { hp: 48, speed: 130, color: '#f50057', type: 'sniper_grunt', score: 35, size: 12, weapon: 'sniper' },
     sapper: { hp: 35, speed: 210, color: '#ffea00', type: 'sapper', score: 20, weapon: 'melee', size: 11 },
     // ---- NEW ENEMY TYPES (support/specialist tier) ----
     // drone_op: skittish pilot; launches OVERLAPPING bursts of 1-3
@@ -9632,10 +9634,10 @@ const EnemyTypes = {
     drone_op:   { hp: 55,  speed: 140, color: '#39ff14', type: 'drone_op',   score: 40, size: 12, weapon: 'pistol' },
     bombardier: { hp: 45,  speed: 95,  color: '#b388ff', type: 'bombardier', score: 40, size: 12, weapon: 'melee' },
         shield: { hp: 240, speed: 115, color: '#90a4ae', type: 'shield', score: 35, size: 14, weapon: 'heavy_pistol', shieldArc: 40 * Math.PI / 180, shieldHp: 300 },
-    comm:       { hp: 60,  speed: 150, color: '#ffffff', type: 'comm',       score: 60, size: 12, weapon: 'melee' },
-    jammer:     { hp: 110, speed: 100, color: '#64ffda', type: 'jammer',     score: 45, size: 13, weapon: 'pistol' },
+    comm:       { hp: 45,  speed: 150, color: '#ffffff', type: 'comm',       score: 60, size: 12, weapon: 'melee' },
+    jammer:     { hp: 50, speed: 100, color: '#64ffda', type: 'jammer',     score: 45, size: 13, weapon: 'pistol' },
     medic:      { hp: 34,  speed: 135, color: '#111111', type: 'medic',      score: 30, size: 11, weapon: 'melee' },
-    fpv_pilot:  { hp: 70,  speed: 95,  color: '#448aff', type: 'fpv_pilot',  score: 70, size: 15, weapon: 'pistol' }
+    fpv_pilot:  { hp: 50,  speed: 95,  color: '#448aff', type: 'fpv_pilot',  score: 70, size: 14, weapon: 'pistol' }
 };
 
 // ---- Boss registry ----
@@ -9789,6 +9791,12 @@ const TACTICAL_TUNING = {
     SWARM_CAP_MULT: 2.25,        // Swarm mutator keeps its flood identity (1-hp swarmers); 2.25x lets the tight 0.5-2s cadence actually field a wall
     SQUAD_GAP_MIN: 4.0,          // seconds between squad releases
     SQUAD_GAP_MAX: 8.0,
+    // SIM-REFINE early-wave band (w<=6): shorter gaps so cadence/HP cuts
+    // don't turn small budgets into dead air. Branch-only; shared band above
+    // drives every other wave/mode. Wave 1 stays clean via RUN_MIN_WAVE.
+    SQUAD_GAP_MIN_W16: 2.5,
+    SQUAD_GAP_MAX_W16: 5.0,
+    SQUAD_MEMBER_INTERVAL_W16: 0.25, // tighter squad fill early (shared 0.35 holds w7+)
     // Swarm mutator: relentless cadence, branch-only (never edit the shared
     // band above -- it drives every other mode's squad rhythm).
     SWARM_SQUAD_GAP_MIN: 0.5,
@@ -9834,7 +9842,8 @@ const TACTICAL_TUNING = {
     SUPPRESS_PIN_TIME: 0.5,      // pin-only suppression: no HP, just focus + speed pressure
     SUPPRESS_PIN_SPEED: 0.85,    // player accel while pinned
     SUPPRESS_PIN_FOCUS: 0.6,     // player focusLevel while pinned
-    SNIPER_WINDUP: 0.8           // sniper_grunt pre-shot tell (windup-only redline, no damage change)
+    SNIPER_WINDUP: 0.8,          // sniper_grunt + op marksman pre-shot tell (windup-only redline, no damage change)
+    PUMP_WINDUP: 0.45            // op grenadier/breacher pump tell (short amber pulse, no damage change)
 };
 
 // ==== STRIKE TEAM: tuning & coordination constants ====
@@ -9912,7 +9921,7 @@ const OPERATIVE_ROLES = {
     pointman: {
         key: 'pointman', name: 'Pointman',
         minWave: 6,
-        hp: 280, speed: 438, size: 9, color: '#5c6b7a', tracerColor: '#00e5ff', score: 150,
+        hp: 280, speed: 438, size: 11, color: '#5c6b7a', tracerColor: '#00e5ff', score: 150,
         type: 'op_pointman',
         weapon: 'smg',
         shieldArc: 25 * Math.PI / 180,  // 25-degree HALF-arc = 50-degree total forward shield (was 60-degree half / 120-degree total); hit test + arc draw both read this, so visual == hitbox
@@ -9925,7 +9934,7 @@ const OPERATIVE_ROLES = {
     rifleman: {
         key: 'rifleman', name: 'Rifleman',
         minWave: 6,
-        hp: 110, speed: 413, size: 9, color: '#546273', tracerColor: '#29b6f6', score: 120,
+        hp: 110, speed: 413, size: 11, color: '#546273', tracerColor: '#29b6f6', score: 120,
         type: 'op_rifleman',
         weapon: 'pistol',
         offset: { fwd: -40, side: 70 },
@@ -9936,7 +9945,7 @@ const OPERATIVE_ROLES = {
     gunner: {
         key: 'gunner', name: 'Gunner',
         minWave: 8,
-        hp: 160, speed: 338, size: 9, color: '#5f5a6b', tracerColor: '#ff9100', score: 200,
+        hp: 160, speed: 338, size: 11, color: '#5f5a6b', tracerColor: '#ff9100', score: 200,
         type: 'op_gunner',
         weapon: 'lmg',
         offset: { fwd: -110, side: 50 },
@@ -9947,7 +9956,7 @@ const OPERATIVE_ROLES = {
     medic: {
         key: 'medic', name: 'Medic',
         minWave: 10,
-        hp: 95, speed: 425, size: 9, color: '#4f6a5b', tracerColor: '#00e676', score: 250,
+        hp: 95, speed: 425, size: 11, color: '#4f6a5b', tracerColor: '#00e676', score: 250,
         type: 'op_medic',
         weapon: 'pistol',
         offset: { fwd: -130, side: -40 },
@@ -9958,7 +9967,7 @@ const OPERATIVE_ROLES = {
     grenadier: {
         key: 'grenadier', name: 'Grenadier',
         minWave: 12,
-        hp: 125, speed: 388, size: 9, color: '#6b5a52', tracerColor: '#ff5722', score: 180,
+        hp: 125, speed: 388, size: 11, color: '#6b5a52', tracerColor: '#ff5722', score: 180,
         type: 'op_grenadier',
         weapon: 'shotgun',
         offset: { fwd: -90, side: 90 },
@@ -9969,7 +9978,7 @@ const OPERATIVE_ROLES = {
     marksman: {
         key: 'marksman', name: 'Marksman',
         minWave: 14,
-        hp: 90, speed: 363, size: 9, color: '#585f70', tracerColor: '#e040fb', score: 220,
+        hp: 90, speed: 363, size: 11, color: '#585f70', tracerColor: '#e040fb', score: 220,
         type: 'op_marksman',
         weapon: 'sniper',
         offset: { fwd: -260, side: 120 },
@@ -9980,7 +9989,7 @@ const OPERATIVE_ROLES = {
     breacher: {
         key: 'breacher', name: 'Breacher',
         minWave: 16,
-        hp: 140, speed: 450, size: 9, color: '#6b664f', tracerColor: '#ffd600', score: 190,
+        hp: 140, speed: 450, size: 11, color: '#6b664f', tracerColor: '#ffd600', score: 190,
         type: 'op_breacher',
         weapon: 'shotgun',
         offset: { fwd: -30, side: 60 },
@@ -9991,7 +10000,7 @@ const OPERATIVE_ROLES = {
     signalman: {
         key: 'signalman', name: 'Signalman',
         minWave: 18,
-        hp: 105, speed: 350, size: 9, color: '#6a5a64', tracerColor: '#ffab00', score: 280,
+        hp: 105, speed: 350, size: 11, color: '#6a5a64', tracerColor: '#ffab00', score: 280,
         type: 'comm', // Reuses comm type deliberately for skittish standoff, aura broadcast & amber halo
         weapon: 'pistol',
         offset: { fwd: -200, side: -80 },
@@ -22008,6 +22017,7 @@ class Enemy extends Entity {
         this._wasRunning = false; // AI REVITALIZE run hysteresis (pool-reset: never inherit sprint)
         this._wasMoonwalking = false; // FIN slice moonwalk latch (pool-reset)
         this._sniperWindup = 0; // AI REVITALIZE sniper tell (pool-reset: never inherit windup)
+        this._pumpWindup = 0; // SIM-REFINE pump tell (pool-reset: grenadier/breacher pre-shot)
         // PHASE 2 (tactical AI foundations) -- ALL pool-reset, per the
         // Phase 1 gotcha about fields leaking across Enemy reuse:
         // - reactionDelay: this body's innate sluggishness, rolled once.
@@ -23396,18 +23406,28 @@ class Enemy extends Entity {
                 * ((game && game.gameTime < (this._oracleConfuseUntil || 0)) ? 1.6 : 1);
             if (inEngagementRange && gameTime - this.lastFire > fireInterval && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact
                 && (this.cachedHasLOS || this.cachedWindowLOS) && this.cachedTarget
-                && this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
-                // AI REVITALIZE (atomic): sniper_grunt windup-only redline.
-                // First trigger starts SNIPER_WINDUP tell, shot leaves on second
-                // trigger. No damage/rate change, just dodgeable intent.
-                if (TACTICAL_TUNING.AI_REVITALIZE && this.type === 'sniper_grunt') {
-                    if ((this._sniperWindup || 0) <= 0) {
-                        this._sniperWindup = TACTICAL_TUNING.SNIPER_WINDUP;
+                && this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)
+                && !(TACTICAL_TUNING.AI_REVITALIZE && ((this._stockBurstLeft || 0) > 0 || (this._stockBurstCooldown || 0) > 0))
+                && !(TACTICAL_TUNING.AI_REVITALIZE && this.type === 'shotgun_grunt' && (this._stockBurstCooldown || 0) <= 0 &&
+                    this.cachedHasLOS && !this.cachedRunFromDrone && this.suppressedTimer <= 0 && this.fireHoldTimer <= 0 &&
+                    ((this.cachedDistToTarget || 9999) < 700))) {
+                // AI REVITALIZE (atomic): sniper windup-only redline + SIM-REFINE
+                // pump tell. roleKey (never type/weapon — signalman precedent):
+                // sniper_grunt + op marksman share SNIPER_WINDUP; op grenadier/
+                // breacher share short PUMP_WINDUP. First trigger starts the
+                // tell, shot leaves on second trigger. No damage/rate change.
+                const _isSniperTell = (this.type === 'sniper_grunt' || this.roleKey === 'marksman');
+                const _isPumpTell = (this.roleKey === 'grenadier' || this.roleKey === 'breacher');
+                if (TACTICAL_TUNING.AI_REVITALIZE && (_isSniperTell || _isPumpTell)) {
+                    const _wField = _isPumpTell ? '_pumpWindup' : '_sniperWindup';
+                    const _wDur = _isPumpTell ? TACTICAL_TUNING.PUMP_WINDUP : TACTICAL_TUNING.SNIPER_WINDUP;
+                    if ((this[_wField] || 0) <= 0) {
+                        this[_wField] = _wDur;
                         try { audio.playTelegraphTick(0.1, this.x, this.y); } catch (e) {}
                     } else {
-                        this._sniperWindup -= dt;
-                        if (this._sniperWindup <= 0) {
-                            this._sniperWindup = 0;
+                        this[_wField] -= dt;
+                        if (this[_wField] <= 0) {
+                            this[_wField] = 0;
                             this.fire(game);
                             this.lastFire = gameTime;
                         }
@@ -23426,40 +23446,47 @@ class Enemy extends Entity {
                     }
                 }
             }
-            // BRAINS SLICE: stock burst rhythm (enforcer/shotgun_grunt 3+pause).
+            // BRAINS SLICE: stock burst rhythm (shotgun_grunt 3+pause; enforcer
+            // stock-only per sim-refinement — low-RoF SMG feel, no double-dip).
             // Operative gunner idiom ported down: per-shot abort on suppressed/
             // hold/LOS, no new state beyond the pooled triple above.
+            // SIM-REFINE rate fix: burst REPLACES stock rhythm — re-arm gated
+            // on the same fireInterval (else 1.2s Cd re-arms faster than the
+            // 1.5-2.2s stock and the burst becomes additive: measured 2.05
+            // pulls/s, 12 pellets/s). Cd 1.2→2.0: 3 shots per ~2.4s ≈ pump.
             if (TACTICAL_TUNING.AI_REVITALIZE && !(this instanceof Operative) && !(this instanceof Boss) &&
-                (this.type === 'enforcer' || this.type === 'shotgun_grunt') && game && !game.operatorMode) {
-                if ((this._stockBurstCooldown || 0) > 0) this._stockBurstCooldown -= dt;
+                (this.type === 'shotgun_grunt') && game && !game.operatorMode) {
+                if ((this._stockBurstLeft || 0) <= 0 && (this._stockBurstCooldown || 0) > 0) this._stockBurstCooldown -= dt;
                 if ((this._stockBurstLeft || 0) > 0) {
                     this._stockBurstTimer -= dt;
                     if (this._stockBurstTimer <= 0) {
                         if (this.suppressedTimer > 0 || this.fireHoldTimer > 0 || !this.cachedHasLOS || this.cachedRunFromDrone ||
                             !this.cachedTarget || !this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
                             this._stockBurstLeft = 0;
-                            this._stockBurstCooldown = 1.2;
+                            this._stockBurstCooldown = 2.0;
                         } else {
                             this.fire(game);
                             this._stockBurstLeft--;
                             this._stockBurstTimer = 0.12;
                             this.lastFire = gameTime;
-                            if (this._stockBurstLeft <= 0) this._stockBurstCooldown = 1.2;
+                            if (this._stockBurstLeft <= 0) this._stockBurstCooldown = 2.0;
                         }
                     }
                 } else if ((this._stockBurstCooldown || 0) <= 0 && this.cachedHasLOS && !this.cachedRunFromDrone &&
                     this.suppressedTimer <= 0 && this.fireHoldTimer <= 0 &&
                     (this.cachedDistToTarget || 9999) < 700 && this.cachedTarget &&
+                    (gameTime - this.lastFire > fireInterval) &&
                     this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
                     this._stockBurstLeft = 3;
                     this._stockBurstTimer = 0;
-                    this.lastFire = gameTime;
                 }
             }
-            // Sniper windup decays when gate fails (lost LOS/range).
-            if (TACTICAL_TUNING.AI_REVITALIZE && this.type === 'sniper_grunt' &&
-                (!(this.cachedHasLOS || this.cachedWindowLOS) || !inEngagementRange)) {
+            // Sniper/pump windup decays when gate fails (lost LOS/range or
+            // suppressed/held/fleeing — else tells pre-charge through control loss).
+            if (TACTICAL_TUNING.AI_REVITALIZE && (this.type === 'sniper_grunt' || this.roleKey === 'marksman' || this.roleKey === 'grenadier' || this.roleKey === 'breacher') &&
+                (!(this.cachedHasLOS || this.cachedWindowLOS) || !inEngagementRange || this.suppressedTimer > 0 || this.fireHoldTimer > 0 || this.cachedRunFromDrone || this.patrolUntilContact)) {
                 this._sniperWindup = 0;
+                this._pumpWindup = 0;
             }
         }
 
@@ -23794,6 +23821,21 @@ class Enemy extends Entity {
     //  - It runs on the 30-frame AI stagger, not per frame. Keep it cheap
     //    and do not allocate per call beyond the single returned object.
     _tacticalMoveTarget(targetX, targetY, distToTarget, hasLOS, target, runFromDrone) {
+        // SIM-REFINE: null-role last-enemy rush — 1v1 with no runner/martyr/
+        // bounty role closes instead of stalling. Path-routed (return point,
+        // never raw velocity) so A* + floorSeparated hold; yields to
+        // finalKillRole/drone-flee via the !finalKillRole/!runFromDrone gates.
+        // Healthy guns only; supports/snipers hold identity; standard modes
+        // only; never latches _intentionalHold (stuck valve must stay armed).
+        if (TACTICAL_TUNING.AI_REVITALIZE && game && game._finalKill && game._finalKill.enemy === this &&
+            !this.finalKillRole && !game._finalKill.role && !this.wounded && !this.patrolUntilContact && !runFromDrone &&
+            !game.operatorMode && !game.nowMode && !game.extractionMode && !game.isBossWave && (game.wave || 1) >= 3 &&
+            !(this instanceof Boss) && !(this instanceof Operative) && hasLOS && (distToTarget || 0) > TACTICAL_TUNING.RUN_EXIT) {
+            const _rt = this.type;
+            if (_rt === 'grunt' || _rt === 'enforcer' || _rt === 'shotgun_grunt' || _rt === 'shield' || _rt === 'jammer' || _rt === 'drone_op') {
+                return { x: targetX, y: targetY };
+            }
+        }
         // WI-4 (A): wounded standard-wave grunts break toward derived cover.
         // Operative overrides this hook entirely (its own ladder); Boss never
         // reaches the base AI tick; every flag/mode gate is checked so the
@@ -24344,7 +24386,10 @@ class Enemy extends Entity {
             // convert is living (and woundable via traitor-tax), so without
             // this the medic anchors on, rushes to, and HEALS your convert
             // with enemy charges. Possessed hosts likewise excluded.
-            if (e === this || e.dead || e.possessedBy || e.boundTo) continue;
+            // SIM-REFINE: medics never target medics — breaks the trio
+            // cross-heal loop (A→B→C→A, 24 charges) while preserving
+            // medic→grunt healing.
+            if (e === this || e.dead || e.possessedBy || e.boundTo || e.type === 'medic') continue;
             const dx = e.x - this.x, dy = e.y - this.y;
             const d2 = dx * dx + dy * dy;
             const tier = this._medicTier(e);
@@ -25706,6 +25751,8 @@ class Operative extends Enemy {
         this._burstLeft = 0;
         this._burstCooldown = 0;
         this._burstTimer = 0;
+        this._sniperWindup = 0; // SIM-REFINE tell reset (pool-reset: marksman pre-shot)
+        this._pumpWindup = 0; // SIM-REFINE tell reset (pool-reset: grenadier/breacher pre-shot)
         this._sharedPathOk = true;
         // The Signalman deliberately reuses type 'comm' to inherit the aura
         // broadcast and comm identity art -- but Enemy.init() also derives
@@ -25933,7 +25980,7 @@ class Operative extends Enemy {
             if (TACTICAL_TUNING.MEDIC_BOOST && game.enemies) {
                 const PRSq = STRIKE_TEAM.MEDIC_PATIENT_HOLD * STRIKE_TEAM.MEDIC_PATIENT_HOLD;
                 for (const e of game.enemies) {
-                    if (e === this || e.dead || !e.wounded) continue;
+                    if (e === this || e.dead || !e.wounded || e.type === 'medic') continue;
                     const pdx = e.x - this.x, pdy = e.y - this.y;
                     if (pdx * pdx + pdy * pdy <= PRSq) { this._patientNear = true; break; }
                 }
@@ -25963,7 +26010,7 @@ class Operative extends Enemy {
                 const FR = STRIKE_TEAM.MEDIC_FALLBACK_RANGE;
                 let worst = 0.6; // only worth moving for someone actually hurt
                 for (const e of game.enemies) {
-                    if (e === this || e.dead || !e.wounded) continue;
+                    if (e === this || e.dead || !e.wounded || e.type === 'medic' || e.possessedBy || e.boundTo) continue;
                     const frac = e.hp / e.maxHp;
                     if (frac >= worst) continue;
                     const dx = e.x - this.x, dy = e.y - this.y;
@@ -26071,6 +26118,35 @@ class Operative extends Enemy {
                 this.lastFire = gameTime; // suppress the stock cadence while bursting
             }
         }
+        // SIM-REFINE: op pointman/rifleman 3-round bursts with jittered silence
+        // (gunner idiom, smaller magazine). Medic/signalman deferred — they
+        // kite/channel and bursting them raises support threat. Per-shot abort
+        // verbatim; clean end rand(1.5,2.5), abort fixed 1.2; lockout below.
+        if ((this.roleKey === 'pointman' || this.roleKey === 'rifleman') && typeof game !== 'undefined' && game) {
+            if (this._burstCooldown > 0) this._burstCooldown -= dt;
+            if (this._burstLeft > 0) {
+                this._burstTimer = (this._burstTimer || 0) - dt;
+                if (this._burstTimer <= 0) {
+                    if (this.suppressedTimer > 0 || this.fireHoldTimer > 0 || !this.cachedHasLOS || this.cachedRunFromDrone
+                        || !this.cachedTarget || !this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
+                        this._burstLeft = 0;
+                        this._burstCooldown = 1.2;
+                    } else {
+                        this.fire(game);
+                        this._burstLeft--;
+                        this._burstTimer = 0.09;
+                        if (this._burstLeft <= 0) this._burstCooldown = MathUtils.rand(1.5, 2.5);
+                    }
+                }
+            } else if (this._burstCooldown <= 0 && this.cachedHasLOS && !this.cachedRunFromDrone &&
+                       this.suppressedTimer <= 0 && this.fireHoldTimer <= 0 &&
+                       this.cachedDistToTarget < 900 && this.cachedTarget
+                       && this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
+                this._burstLeft = 3;
+                this._burstTimer = 0;
+                this.lastFire = gameTime;
+            }
+        }
 
         // ---- Speed modifiers ----
         // Stacked onto this.speed for the duration of super.update() and
@@ -26101,7 +26177,7 @@ class Operative extends Enemy {
             game && (game.wave || 1) >= TACTICAL_TUNING.RUN_MIN_WAVE && !this.cachedRunFromDrone) {
             this.speed *= TACTICAL_TUNING.RUN_MULT;
         }
-        if (this.roleKey === 'gunner' && (this._burstLeft > 0 || this._burstCooldown > 0)) {
+        if ((this.roleKey === 'gunner' || this.roleKey === 'pointman' || this.roleKey === 'rifleman') && (this._burstLeft > 0 || this._burstCooldown > 0)) {
             // The burst loop owns the Gunner's trigger for the whole cycle:
             // during the burst AND through the recovery window. Suppressing
             // only during the burst let the stock cadence resume the instant
@@ -26194,7 +26270,7 @@ class Operative extends Enemy {
         // this.angle (cachedAimAngle) -- which is exactly where the round
         // will go. Length is clamped so a long open sightline can't stretch
         // the tell across the whole map.
-        if (this.roleKey === 'marksman' && this.cachedHasLOS && this.cachedTarget && !this.cachedTarget.dead) {
+        if (this.roleKey === 'marksman' && this.cachedHasLOS && this.cachedTarget && !this.cachedTarget.dead && !((this._sniperWindup || 0) > 0)) {
             ctx.save();
             ctx.strokeStyle = 'rgba(224, 64, 251, 0.75)';
             ctx.lineWidth = 1.5;
@@ -26202,6 +26278,19 @@ class Operative extends Enemy {
             ctx.beginPath();
             ctx.moveTo(this.r + 15, 0);
             ctx.lineTo(Math.min(this.cachedDistToTarget || 400, 1400), 0);
+            ctx.stroke();
+            ctx.restore();
+        }
+        // SIM-REFINE pump tell: short amber pulse while _pumpWindup runs
+        // (grenadier/breacher only; fixed ~350px cone, no long laser).
+        if ((this.roleKey === 'grenadier' || this.roleKey === 'breacher') && (this._pumpWindup || 0) > 0 && this.cachedTarget && !this.cachedTarget.dead) {
+            const _pp = 1 - Math.max(0, Math.min(1, this._pumpWindup / TACTICAL_TUNING.PUMP_WINDUP));
+            ctx.save();
+            ctx.strokeStyle = `rgba(255, 145, 0, ${0.35 + _pp * 0.5})`;
+            ctx.lineWidth = 1.0 + _pp * 1.2;
+            ctx.beginPath();
+            ctx.moveTo(this.r + 15, 0);
+            ctx.lineTo(this.r + 15 + 350, 0);
             ctx.stroke();
             ctx.restore();
         }
@@ -27997,7 +28086,7 @@ class EnemyFPVDrone {
 // either a wall or a striker.
 class SpotBoss extends Boss {
     setup() {
-        this.r = 32;
+        this.r = 27; // SIM-REFINE: hunter not car (was 32 — drones carry threat, not hull)
         this.hp = 1400;
         this.speed = 155;
         this.fireCooldown = MathUtils.rand(0.5, 1.0);
@@ -36828,7 +36917,7 @@ const SHOP_ITEMS = {
         owned: (p, g, sfx) => ({ have: !!(g && g.runOverclocks && g.runOverclocks[sfx] && g.runOverclocks[sfx].corrupted && g.runOverclocks[sfx].corrupted.coldBarrel), max: null, note: '' }) },
     call_evac: { name: 'REQUEST EVAC', icon: 'oc', color: '#ffb700', strip: false,
         flavor: 'Dustoff.',
-        mech: 'Extract next wave: converts ALL remaining cash to Intel for the Armory — but only if you survive the dustoff. $100 → 1 intel.',
+        mech: 'Extract next wave: converts ALL remaining cash to Intel for the Armory — but only if you survive the dustoff. $100 → 1 intel x a wave-depth mult (1x at wave 5, up to 3x by wave 15 — the EVAC button shows the live rate).',
         owned: null },
     ready: { name: 'READY', icon: 'oc', color: '#39ff14', strip: false,
         flavor: 'Kick the door.',
@@ -37461,6 +37550,7 @@ class RunLedger {
         this.damageTaken = 0;
         this.intelEarned = 0;          // actually committed to the bank
         this.intelDenied = 0;          // would-have-earned on ineligible/tainted runs
+        this.intelDepthBonus = 0;      // awarded wave-depth portion of wave-clear pay (info row on the debrief)
         this.shotsFired = 0;           // PHASE 1: player-fired shots (wired in Game.spawnBullet)
         this.shotsHit = 0;             // PHASE 1: player shots that struck an enemy
         this.carriedIntelBanked = 0;   // PHASE 1: carried intel banked by a successful evac
@@ -38774,8 +38864,9 @@ class Game {
     // arbiter all work unmodified because that pipeline was already
     // mode-agnostic. Ground modes get a REACH_ZONE; operator mode (you're
     // bunkered -- there is nowhere to run TO) gets a hold-the-bunker
-    // countdown instead. Cash converts at $100 = 1 intel on completion,
-    // scaled by the run's intelMult -- see completeExtraction().
+    // countdown instead. Cash converts at $100 = 1 intel x the wave-depth
+    // mult (1x ≤w5 → 3x ≥w15, capped), scaled by the run's intelMult -- see
+    // completeExtraction().
     requestEvac(playerNum) {
         if (this.evacCalled) return;
         // Extraction mode has its own evac pipeline. SANDBOX is allowed so
@@ -38786,7 +38877,7 @@ class Game {
         audio.playTadah();
         this.floatingTexts.push(this.spawnFloatingText(
             this.mapW / 2, this.mapH / 2 - 60,
-            'EVAC CALLED \u2014 DUSTOFF ARRIVES NEXT WAVE', '#ffb700', 3.0, 0, 0, 120, false));
+            'EVAC CALLED \u2014 DUSTOFF ARRIVES NEXT WAVE (@ x' + this.evacWaveMult(this.wave || 1).toFixed(1) + ' CASH RATE)', '#ffb700', 3.0, 0, 0, 120, false));
         // EVAC STAKE FIX: on stake runs (see completeExtraction) the payout
         // terms are non-obvious, so restate them in the notification stream
         // at the moment of commitment, not just in shop fine print.
@@ -38867,16 +38958,29 @@ class Game {
                 // banner already covers those).
                 const stake = ((this.runConfig && this.runConfig.startingCash) || 0);
                 const stakeLive = stake > 0 && this.runLedger && this.runLedger.eligible;
+                // Live wave-depth rate (1x ≤w5 → 3x ≥w15) so the button never
+                // lies about the $100 base. Same helper as completeExtraction.
+                const evacMultNow = this.evacWaveMult(this.wave || 1);
+                const evacRateTag = ' ($100 &rarr; 1 INTEL x' + evacMultNow.toFixed(1) + ')';
                 const payout = this.isTestingMode
                     ? 'SANDBOX: no Intel payout \u2014 mechanic test only'
                     : stakeLive
-                    ? 'Converts cash earned ABOVE your $' + stake.toLocaleString() + ' insertion budget \u2014 issued funds don\u2019t convert. And only if you survive the dustoff; fail, and the extract team regroups for a wave.'
-                    : 'Converts ALL remaining cash to Intel for the Armory \u2014 but only if you survive the dustoff. Fail, and the extract team regroups for a wave.';
+                    ? 'Converts cash earned ABOVE your $' + stake.toLocaleString() + ' insertion budget \u2014 issued funds don\u2019t convert. Rate rises with wave (up to 3x by wave 15, now x' + evacMultNow.toFixed(1) + '). And only if you survive the dustoff; fail, and the extract team regroups for a wave.'
+                    : 'Converts ALL remaining cash to Intel for the Armory \u2014 rate rises with wave (up to 3x by wave 15, now x' + evacMultNow.toFixed(1) + '). But only if you survive the dustoff. Fail, and the extract team regroups for a wave.';
                 btn.innerHTML = (this.operatorMode
-                    ? '&#9742; REQUEST EVAC \u2014 HOLD OUT NEXT WAVE ($100 &rarr; 1 INTEL)'
-                    : '&#9742; REQUEST EVAC \u2014 EXTRACT NEXT WAVE ($100 &rarr; 1 INTEL)') + sub(payout);
+                    ? '&#9742; REQUEST EVAC \u2014 HOLD OUT NEXT WAVE' + evacRateTag
+                    : '&#9742; REQUEST EVAC \u2014 EXTRACT NEXT WAVE' + evacRateTag) + sub(payout);
             }
         }
+    }
+
+    // WAVE-DEPTH EVAC MULT: 1x at wave 5 and below, 2x at wave 10, 3x at
+    // wave 15+, capped. Smooth every wave (+0.2/wave). Applied to the
+    // cash→intel conversion AFTER the stake is subtracted, BEFORE the
+    // ledger's difficulty mult (which stacks on top inside addIntel).
+    evacWaveMult(wave) {
+        const w = wave || 1;
+        return Math.min(3, Math.max(1, 1 + (w - 5) / 5));
     }
 
     completeExtraction() {
@@ -38920,10 +39024,13 @@ class Game {
             const stake = ((this.runConfig && this.runConfig.startingCash) || 0)
                         * ((this.runConfig && this.runConfig.isTwoPlayer) ? 2 : 1);
             const convertible = Math.max(0, totalCash - stake);
-            const rawIntel = Math.floor(convertible / 100);
+            // WAVE-DEPTH RATE: deep extracts convert better (1x ≤w5 → 3x ≥w15,
+            // capped). Stake is subtracted FIRST so issued funds never benefit.
+            const evacMult = this.evacWaveMult(this.wave);
+            const rawIntel = Math.floor(convertible * evacMult / 100);
             const converted = rawIntel > 0 ? this.runLedger.addIntel(rawIntel, 'evac_cash') : 0;
             this.runLedger.cashConverted = { cash: convertible, intel: converted,
-                stakeWithheld: Math.min(totalCash, stake) };
+                stakeWithheld: Math.min(totalCash, stake), rateMult: evacMult, wave: this.wave };
             this.intelEarnedThisRun = this.runLedger.intelEarned;
         }
         this.endRun(RUN_OUTCOMES.EXTRACTION);
@@ -39126,8 +39233,9 @@ class Game {
             (this._medicSquadsThisWave || 0) < 1) {
             const liveMedicSquads = (this._strikeTeams || []).filter(s => s.isMedicSquad).length;
             if (liveMedicSquads < STRIKE_TEAM.MEDIC_SQUAD_MAX) {
-                // 1-2 medics early, 2-3 once the wave can afford the body count.
-                const size = w < 5 ? (Math.random() < 0.5 ? 2 : 1) : (Math.random() < 0.5 ? 3 : 2);
+                // SIM-REFINE shifted down/right: solo early (no medic-medic loop),
+                // duo mid, trio late-loose. 1, then 1-2, then 2-3 loosely.
+                const size = w < 6 ? 1 : w <= 10 ? (Math.random() < 0.7 ? 1 : 2) : (Math.random() < 0.3 ? 3 : 2);
                 if (size <= this.enemiesToSpawn) {
                     const plan = new Array(size).fill('op_medic');
                     plan.isStrikeTeam = true;   // reuses the op_* release path
@@ -39450,7 +39558,7 @@ class Game {
                     }
                 }
                 ss.rolesAssigned = (ss.rolesAssigned || 0) + 1;
-                ss.memberTimer = TACTICAL_TUNING.SQUAD_MEMBER_INTERVAL;
+                ss.memberTimer = (TACTICAL_TUNING.AI_REVITALIZE && (this._spawnIntensityWave() || 1) <= 6) ? TACTICAL_TUNING.SQUAD_MEMBER_INTERVAL_W16 : TACTICAL_TUNING.SQUAD_MEMBER_INTERVAL;
             }
             if (this.enemiesToSpawn <= 0) ss.plan.length = 0;
             return;
@@ -39514,7 +39622,13 @@ class Game {
             // 4-8s band. Branch-only; shared band untouched.
             ss.gapTimer = MathUtils.rand(TACTICAL_TUNING.SWARM_SQUAD_GAP_MIN, TACTICAL_TUNING.SWARM_SQUAD_GAP_MAX);
         } else {
-            ss.gapTimer = MathUtils.rand(TACTICAL_TUNING.SQUAD_GAP_MIN, TACTICAL_TUNING.SQUAD_GAP_MAX);
+            // SIM-REFINE: early band w<=6 keeps small budgets flowing
+            // (flag-first: off-path identical). Other modes untouched.
+            if (TACTICAL_TUNING.AI_REVITALIZE && (this._spawnIntensityWave() || 99) <= 6 && !this.extractionMode && !this.isBossWave) {
+                ss.gapTimer = MathUtils.rand(TACTICAL_TUNING.SQUAD_GAP_MIN_W16, TACTICAL_TUNING.SQUAD_GAP_MAX_W16);
+            } else {
+                ss.gapTimer = MathUtils.rand(TACTICAL_TUNING.SQUAD_GAP_MIN, TACTICAL_TUNING.SQUAD_GAP_MAX);
+            }
         }
         // WI-4 (D): hold the slot open for the medical element. While a
         // medic squad is still pending this wave, the next roll waits
@@ -39526,7 +39640,7 @@ class Game {
         // stretch would pin every gap to MEDIC_SPAWN_DELAY as pure dead air.
         if (this.activeMutator !== 'swarm' && this._medicDelayArmed && TACTICAL_TUNING.MEDIC_BOOST && !this.isBossWave &&
             this._spawnIntensityWave() >= STRIKE_TEAM.MEDIC_SQUAD_MIN_WAVE &&
-            (this._medicSquadsThisWave || 0) < 1) {
+            (this._medicSquadsThisWave || 0) < 1 && (this._spawnIntensityWave() || 99) > 6) {
             ss.gapTimer = Math.max(ss.gapTimer, STRIKE_TEAM.MEDIC_SPAWN_DELAY);
         }
 
@@ -48749,7 +48863,16 @@ class Game {
         if (G.maskTex && G.fwallsVer === wv && G.maskCpu === (cpu ? 1 : 0)) return G.maskTex;
         try {
             const W = G.fw, H = G.fh;
-            const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+            // HITCH-FIX (mask-texture churn): the old path minted a fresh
+            // canvas + Texture.from per version bump (wallsVer ticks on
+            // every bullet-wall hit, ~1/s even idle) and destroy() never
+            // releases managed entries — steady managedTextures growth.
+            // One persistent canvas + texture, repainted in place and
+            // re-uploaded; realloc only when dimensions actually change
+            // (map/resize kills the whole set anyway).
+            let cv = G.maskCv;
+            if (!cv) { cv = document.createElement('canvas'); G.maskCv = cv; }
+            if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
             const cx = cv.getContext('2d');
             const img = cx.createImageData(W, H);
             const px = img.data;
@@ -48763,9 +48886,12 @@ class Game {
                 for (let k = 0, n = W * H; k < n; k++) px[k * 4 + 3] = 255;
             }
             cx.putImageData(img, 0, 0);
-            try { if (G.maskTex) G.maskTex.destroy(true); } catch (e) {}
-            G.maskTex = R.Texture.from(cv);
-            try { if (G.maskTex.source) { G.maskTex.source.scaleMode = 'nearest'; G.maskTex.source.wrapMode = 'clamp-to-edge'; } } catch (e) {}
+            if (!G.maskTex) {
+                G.maskTex = R.Texture.from(cv);
+                try { if (G.maskTex.source) { G.maskTex.source.scaleMode = 'nearest'; G.maskTex.source.wrapMode = 'clamp-to-edge'; } } catch (e) {}
+            } else {
+                try { if (G.maskTex.source && G.maskTex.source.update) G.maskTex.source.update(); } catch (e) {}
+            }
             G.fwallsVer = wv; G.maskCpu = cpu ? 1 : 0;
             return G.maskTex;
         } catch (e) { return null; }
@@ -52339,6 +52465,7 @@ class Game {
         this._manualShopActive = false;
         this._shopIntelPaidWave = null;
         this._elitesKilledThisWave = 0; // BUG-020: elite credit is wave-scoped; a mid-wave death/abandon must not pay it into the next run
+        this._lastWaveClear = null; // wave-clear breakdown display is run-scoped too
         this.winFlashIntensity = 0;
         this.roundWinDelay = 0;
         toggleClass('start-screen', 'hidden', true);
@@ -57161,11 +57288,34 @@ class Game {
             this._shopIntelPaidWave = this.wave;
             this.runLedger.recordWaveCleared();
             const rr = (this.runConfig && this.runConfig.rewardRules) || { intelPerWave: 2, intelPerElite: 4 };
-            // Deep runs pay for being deep: +1 base per 5 waves cleared.
-            const intelGained = rr.intelPerWave + Math.floor((this.wave || 0) / 5) + (this._elitesKilledThisWave || 0) * rr.intelPerElite;
-            this.runLedger.addIntel(intelGained, 'wave_clear');
+            // Deep runs pay for being deep: +1 per 2 waves cleared (additive
+            // depth on top of the base + elite pay — wave 1 pays base, wave 10
+            // pays +4, wave 20 pays +9).
+            const waveBase = rr.intelPerWave;
+            const waveDepth = Math.floor(((this.wave || 1) - 1) / 2);
+            const waveEliteN = (this._elitesKilledThisWave || 0);
+            const waveElite = waveEliteN * rr.intelPerElite;
+            const intelGained = waveBase + waveDepth + waveElite;
+            const awarded = this.runLedger.addIntel(intelGained, 'wave_clear');
             this.intelEarnedThisRun = this.runLedger.intelEarned; // legacy mirror
             this._elitesKilledThisWave = 0;
+            // Breakdown for the shop line + floater + debrief row. The awarded
+            // split is pro-rata so it sums to what the ledger actually banked
+            // (mult/denial live inside addIntel — never re-derive them here).
+            let awardedDepth = 0;
+            if (intelGained > 0 && awarded > 0) {
+                awardedDepth = Math.round(awarded * waveDepth / intelGained);
+                this.runLedger.intelDepthBonus = (this.runLedger.intelDepthBonus || 0) + awardedDepth;
+            }
+            this._lastWaveClear = { wave: this.wave, base: waveBase, depth: waveDepth,
+                eliteN: waveEliteN, elite: waveElite, total: intelGained, awarded: awarded,
+                awardedDepth: awardedDepth };
+            if (awarded > 0 && this.player) {
+                this.floatingTexts.push(this.spawnFloatingText(
+                    this.player.x, this.player.y - 56,
+                    'WAVE CLEAR +' + awarded + ' INTEL (' + waveBase + '+' + waveDepth + '+' + waveElite + ')',
+                    '#39ff14', 2.4, 0, -30, 200, true));
+            }
         }
 
         if (this.player && this.player.activeDrone) {
@@ -57267,6 +57417,16 @@ class Game {
             this._shopRef = this._shopRef || {};
             this._shopRef[suffix] = p;
             setHtml('shop-cash-' + suffix, p.cash);
+            // WAVE-DEPTH PAY LINE: the last wave-clear breakdown (base+depth
+            // +elite = banked). Cleared on manual/dev shops that paid nothing.
+            if (this._lastWaveClear && this._lastWaveClear.wave === this.wave && !this._manualShopActive && !this.isDevShopActive) {
+                const lc = this._lastWaveClear;
+                setHtml('shop-intel-' + suffix, lc.awarded > 0
+                    ? 'WAVE ' + lc.wave + ' CLEAR +' + lc.awarded + ' INTEL (' + lc.base + '+' + lc.depth + '+' + lc.elite + ')'
+                    : 'WAVE ' + lc.wave + ' CLEAR +0 INTEL \u2014 LOCKED (no-intel run)');
+            } else {
+                setHtml('shop-intel-' + suffix, '');
+            }
             setHtml('shop-stat-hp-' + suffix, Math.ceil(p.hp));
             setHtml('shop-stat-maxhp-' + suffix, p.maxHp);
             setHtml('shop-stat-armor-' + suffix, Math.ceil(p.armor));
@@ -64297,7 +64457,7 @@ class Game {
             B.arc(-r * 0.2, 0, r * 0.9, Math.PI * 0.6, Math.PI * 1.4);
             B.stroke({ width: W(2), color: 0xffd600 });
         }
-        if (op.roleKey === 'marksman' && op.cachedHasLOS && op.cachedTarget && !op.cachedTarget.dead) {
+        if (op.roleKey === 'marksman' && op.cachedHasLOS && op.cachedTarget && !op.cachedTarget.dead && !((op._sniperWindup || 0) > 0)) {
             const len = Math.min(op.cachedDistToTarget || 400, 1400);
             for (let s = 0; s < len; s += 12) {
                 const d0 = s, d1 = Math.min(s + 8, len);
@@ -64306,6 +64466,11 @@ class Game {
                     B.stroke({ width: W(1.5), color: 0xe040fb, alpha: 0.75 });
                 }
             }
+        }
+        if ((op.roleKey === 'grenadier' || op.roleKey === 'breacher') && (op._pumpWindup || 0) > 0 && op.cachedTarget && !op.cachedTarget.dead) {
+            const _pp = 1 - Math.max(0, Math.min(1, op._pumpWindup / TACTICAL_TUNING.PUMP_WINDUP));
+            B.moveTo(r + 15, 0); B.lineTo(r + 15 + 350, 0);
+            B.stroke({ width: W(1.0 + _pp * 1.2), color: 0xff9100, alpha: 0.35 + _pp * 0.5 });
         }
         if (op.wounded) {
             B.circle(0, 0, r + 3); B.stroke({ width: W(2), color: 0xff2a5f });
@@ -66853,9 +67018,12 @@ class Game {
                 }
             }
         }
-        // FIN slice off-screen threat chevrons (OQ-032): mortar + boss, cap 2.
+        // FIN slice off-screen threat chevrons (OQ-032): mortar + boss + last-enemy, cap 3.
         // Reuses the teammate ellipse math above; same per-half Graphics G.
         // No sim change -- viewport off-screen test only, urgency color.
+        // SIM-REFINE: last unbound hostile joins as third entry, role-colored
+        // (runner red / martyr orange / bounty gold / plain red) — fixes blind
+        // hunt; ring alone is on-screen only. Priority mortar > boss > last.
         if (TACTICAL_TUNING.AI_REVITALIZE) {
             try {
                 const _cam = (p === this.player) ? this.camera : this.camera2;
@@ -66865,17 +67033,33 @@ class Game {
                     const _list = [];
                     if (game && game.grenades) {
                         for (const _g of game.grenades) {
-                            if (_list.length >= 2) break;
+                            if (_list.length >= 3) break;
                             if (!_g || _g.dead || !(typeof MortarMarker !== 'undefined' && _g instanceof MortarMarker)) continue;
                             if (_g.x < _cam.x || _g.x > _cam.x + _vw || _g.y < _cam.y || _g.y > _cam.y + _vh) {
                                 _list.push({ x: _g.x, y: _g.y, c: 0xffd600 });
                             }
                         }
                     }
-                    if (_list.length < 2 && game && game.activeBoss && !game.activeBoss.dead) {
+                    if (_list.length < 3 && game && game.activeBoss && !game.activeBoss.dead) {
                         const _b = game.activeBoss;
                         if (_b.x < _cam.x || _b.x > _cam.x + _vw || _b.y < _cam.y || _b.y > _cam.y + _vh) {
                             _list.push({ x: _b.x, y: _b.y, c: 0xff2a5f });
+                        }
+                    }
+                    if (_list.length < 3 && game && game.enemiesToSpawn === 0 && game.enemies) {
+                        let _le = null, _ln = 0;
+                        for (let _li = 0; _li < game.enemies.length; _li++) {
+                            const _e = game.enemies[_li];
+                            if (!_e || _e.dead || _e.possessedBy || _e.boundTo) continue;
+                            _ln++; _le = _e;
+                        }
+                        if (_ln === 1 && _le && (_le.x < _cam.x || _le.x > _cam.x + _vw || _le.y < _cam.y || _le.y > _cam.y + _vh)) {
+                            let _lc = 0xff2a5f;
+                            try {
+                                if (_le.finalKillRole === 'martyr') _lc = 0xff7a00;
+                                else if (_le.finalKillRole === 'bounty') _lc = 0xffcc00;
+                            } catch (e7) {}
+                            _list.push({ x: _le.x, y: _le.y, c: _lc });
                         }
                     }
                     const _ccx = x + w / 2, _ccy = y + h / 2;
@@ -69202,9 +69386,15 @@ class Game {
         if (L.carriedIntelLost > 0)   rows.push(['INTEL LOST IN FIELD', L.carriedIntelLost]);
         // JULY item 11: mid-match evac cash-out gets its own boom row --
         // it rides the same staggered reveal + intel count-up payoff.
+        // The wave-depth rate rides along so the mult is checkable.
         if (L.cashConverted && L.cashConverted.cash > 0) {
-            rows.push(['CASH CONVERTED', '$' + L.cashConverted.cash + ' \u2192 +' + L.cashConverted.intel + ' INTEL']);
+            const ccRate = (L.cashConverted.rateMult && L.cashConverted.wave)
+                ? ' (@ x' + Number(L.cashConverted.rateMult).toFixed(1) + ' W' + L.cashConverted.wave + ')' : '';
+            rows.push(['CASH CONVERTED', '$' + L.cashConverted.cash + ' \u2192 +' + L.cashConverted.intel + ' INTEL' + ccRate]);
         }
+        // Wave-depth pay: the awarded deep-wave portion across this run.
+        // Informational — the total already count-ups above.
+        if (L.intelDepthBonus > 0) rows.push(['DEPTH BONUS (DEEP WAVES)', '+' + L.intelDepthBonus + ' INTEL']);
         // EVAC STAKE FIX: mode-issued starting cash never converts (see
         // completeExtraction) -- show the withheld stake so a lean payout
         // reads as policy, not as a bug. Renders even when nothing
