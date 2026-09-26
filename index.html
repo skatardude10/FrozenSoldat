@@ -2944,6 +2944,12 @@
                     <span style="font-size: 11px; color: #e0f7fa;">God Mode</span>
                     <button class="neon-btn" id="btn-dev-godmode" onclick="game.devToggleGodMode()" style="margin: 0; font-size: 10px; padding: 4px 10px; border-color: var(--red); color: var(--red);">DISABLED</button>
                 </div>
+                <!-- RESTED-DEBUG-START render-only rested debug shapes (easy delete: this block + flag + methods) -->
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 11px; color: #e0f7fa;">Rested Debug</span>
+                    <button class="neon-btn" id="btn-dev-rested-debug" onclick="game.devToggleRestedDebug()" style="margin: 0; font-size: 10px; padding: 4px 10px; border-color: var(--red); color: var(--red);">DISABLED</button>
+                </div>
+                <!-- RESTED-DEBUG-END -->
                 <!-- Cash -->
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
                     <span style="font-size: 11px; color: #e0f7fa;">Cash ($)</span>
@@ -17102,6 +17108,74 @@ const AIM_WEIGHT = {
     }
 };
 
+// ==== RESTED-GUN SUPPORT (sandbag / wall-lean / corner-edge) ====
+// Rested aim dampening that blends 0->FULL via player.restedBlend.
+// L1 barriers and MKII barriers share the same benefit (sandbags for fire
+// positions, strongest). Walls lean weaker, corners weakest. All values are
+// MULTIPLIERS applied at existing kick inputs (value = base * lerp(1, mult,
+// blend)), never edits to SPRINGS stiffness/damping, cone, pivot, laser.
+// Muzzle stays gun-local always: bullets/laser/casing always leave the
+// visual barrel tip (GUN_MOUNT_OFFSET + PLAYER_GUN_GEOM - gunRetractPx).
+const RESTED_TUNING = {
+    ENABLED: true,            // master kill for the whole rested path (TweakLab-live)
+    DWELL: 0.15,              // seconds of support before attack starts
+    ATTACK: 0.25,             // 0->1 eased attack after dwell
+    RELEASE: 0.10,            // 1->0 fast release on move / loss of support
+    // Body-gap distances (px beyond the player's r=12 torso circle).
+    // CAPTURE (REST_DIST) is wide and forgiving; HOLD (HOLD_GAP) is tight to
+    // the cover face so the body sits ON it, not floating. BREAK_DIST is the
+    // red-ring release boundary (~2x the lime ring): cross it and the lock
+    // drains. Engage = body in capture + muzzle over + creep; maintain = body
+    // in break ring only (tip ignored, walk pace allowed).
+    REST_DIST: 10,            // capture when center-to-edge <= 22 (wide, confident)
+    HOLD_GAP: 2,              // hold at center-to-edge 14 (2px air, tight to the wall)
+    BREAK_DIST: 20,           // release when center-to-edge > 32 (red ring tight:
+                              // the HARD contact holds you, not a balloon aura)
+    HAND_SENSE: 60,           // hand side reads cover this far out (pre-swaps on approach)
+    // Look-away gate (deg half-angles around the player->cover direction).
+    // Full lock inside FULL, zero past HARD, smoothstep between: look away
+    // or off to the side and the lock fades, getaway gets easier. Barriers
+    // demand aiming over the top; walls tolerate parallel lean; corners are
+    // most forgiving (pivot play aims around the point, not at it).
+    GATE_FULL: { barrier: 80, wall: 90, corner: 100 },
+    GATE_HARD: { barrier: 100, wall: 110, corner: 120 },
+    TIP_MAX: 34,              // muzzle tip must be within this of the edge (overhang check)
+    ENGAGE_MAX_SPEED: 140,    // px/s: engage only below creep speed (run-through = no stick)
+    BREAK_SPEED: 280,         // px/s: instant break above this (walk/run past never grabs)
+    // Per-kind full-rest multipliers (blend=1). L1==MKII barrier strongest.
+    // physical: body slide + camera pan/shake/zoom + sprite slam. True lock:
+    // the rest ABSORBS the shot (barrier eats ~3/4), so recoil never becomes
+    // displacement and there is nothing to float back from.
+    MULT_BARRIER: {
+        recoil: 0.35, climbPerShot: 0.38, climbMax: 0.36, climbDecayMult: 1.44,
+        bite: 0.69, hit: 0.40, whiz: 0.50, blast: 0.55, physical: 0.25,
+        walk: 0.30, idleBase: 0.35, heart: 0.50, engage: 0.60, fade: 0.67
+    },
+    MULT_WALL: {
+        recoil: 0.55, climbPerShot: 0.60, climbMax: 0.56, climbDecayMult: 1.25,
+        bite: 0.78, hit: 0.60, whiz: 0.65, blast: 0.70, physical: 0.40,
+        walk: 0.50, idleBase: 0.55, heart: 0.65, engage: 0.73, fade: 0.80
+    },
+    MULT_CORNER: {
+        recoil: 0.65, climbPerShot: 0.70, climbMax: 0.66, climbDecayMult: 1.16,
+        bite: 0.84, hit: 0.70, whiz: 0.75, blast: 0.80, physical: 0.50,
+        walk: 0.60, idleBase: 0.70, heart: 0.75, engage: 0.80, fade: 0.87
+    }
+};
+
+// Loose magnetic attractor around the foregrip pivot. Servos pivot DISTANCE
+// only, never angle: rotation stays free so the body swings easily, never
+// locked. Tangent along barrier = slight velocity drag only. Normal fore/aft
+// = gentle spring reusing walk-sway shape K700/D0.42 (weighty roll, off the
+// ~4.5Hz stride rate so it never snap-wags).
+const RESTED_ATTRACTOR_TUNING = {
+    RETARGET: 0.10,           // 10Hz candidate scan (wife-magnet pattern, pattern only)
+    TANGENT_DRAG: 0.10,       // velocity-only drag along barrier (slight, per operator call)
+    NORMAL_K: 700,            // fore/aft spring stiffness (matches walk sway, deliberate)
+    NORMAL_D: 0.42,           // fore/aft spring damping ratio (one small overshoot)
+    NORMAL_MAX_PX_S: 220      // clamp on servo velocity so it can never yank
+};
+
 // --- Combat Dive ("dive"/dodge roll) config ---
 // See Player.checkDiveTrigger()/startDive()/updateDivePhysics() and the
 // z/vz dodge check in Bullet.update()'s entity-hit loop. Reuses the exact
@@ -17299,6 +17373,14 @@ function buildTweakRegistry() {
     // Focus transition base: every conditioning level multiplies this by
     // its focusFade, so one slider drives all six lock speeds live.
     TW('Aim & Focus', 'AIM_WEIGHT.IDLE_SWAY_FADE_TIME', AIM_WEIGHT, 'IDLE_SWAY_FADE_TIME', 0.3, 4, 0.05);
+    // RESTED-DEBUG-START rested-gun live tuning (part of the paired debug block set)
+    TW('Aim & Focus', 'RESTED_TUNING.REST_DIST', RESTED_TUNING, 'REST_DIST', 0, 16, 1);
+    TW('Aim & Focus', 'RESTED_TUNING.BREAK_DIST', RESTED_TUNING, 'BREAK_DIST', 4, 120, 1);
+    TW('Aim & Focus', 'RESTED_TUNING.HOLD_GAP', RESTED_TUNING, 'HOLD_GAP', 0, 8, 1);
+    TW('Aim & Focus', 'RESTED_TUNING.DWELL', RESTED_TUNING, 'DWELL', 0, 0.4, 0.01);
+    TW('Aim & Focus', 'RESTED_TUNING.ATTACK', RESTED_TUNING, 'ATTACK', 0.05, 0.6, 0.01);
+    TWN('Aim & Focus', 'RESTED_DEBUG', () => ((typeof game !== 'undefined') && game && game.RESTED_DEBUG) ? 1 : 0, (v) => { if ((typeof game !== 'undefined') && game && game.devSetRestedDebug) game.devSetRestedDebug(!!v); }, 0, 1, 1);
+    // RESTED-DEBUG-END
     // --- Gunfire (per weapon; loop-registered, one line per feel axis) ---
     for (let wn of W) {
         TWN('Gunfire', 'KICKBACK.' + wn, (() => { let k = wn; return () => FIRE_TUNING.KICKBACK_FORCES[k]; })(), (() => { let k = wn; return (v) => { FIRE_TUNING.KICKBACK_FORCES[k] = v; }; })(), 0, 600, 5);
@@ -17901,6 +17983,47 @@ class Player extends Entity {
         // this frame (see updateHeartbeatSway()).
         this._gunHeartbeatTimer = 0;
         this._gunHeartbeatPhase = 0;
+        // ==== RESTED-GUN SUPPORT (sandbag / wall-lean / corner-edge) ====
+        // All run-scoped for free (Player is reconstructed in startNewGame).
+        // Muzzle stays gun-local always: bullets/laser/casing leave the visual
+        // barrel tip (GUN_MOUNT_OFFSET + PLAYER_GUN_GEOM - gunRetractPx).
+        // restedBlend 0->1 eased (DWELL/ATTACK/RELEASE in RESTED_TUNING).
+        // _restedKind: null | 'barrier' | 'wall' | 'corner' (barrier = L1/MKII same, strongest).
+        this.restedBlend = 0;
+        this._restedTimer = 0;
+        this._restedReleaseT = 0;
+        this._restedKind = null;
+        this._restEdgeRef = null;
+        // Loose foregrip pivot cache (world px, scalars only, zero alloc).
+        // _restPx/_restPy = pivot to servo, _restNx/_restNy = edge normal,
+        // _restTx/_restTy = barrier tangent (walls: tangent along edge).
+        this._restPx = 0;
+        this._restPy = 0;
+        this._restNx = 0;
+        this._restNy = 0;
+        this._restTx = 1;
+        this._restTy = 0;
+        this._restEx = 0;
+        this._restEy = 0;
+        this._restTipX = 0;
+        this._restTipY = 0;
+        // Lock-anchor: world pos where walk input planted you (latched as the
+        // lock engages). Recoil impulses can never move it — only sustained
+        // walk input re-plants it. The servo tugs the body back to it.
+        this._restAx = 0;
+        this._restAy = 0;
+        this._restAnchored = false;
+        this._restMoveT = 0;
+        this._restAimGateV = 1;
+        this._handCand = 0;
+        this._handCandT = 0;
+        this._restScanT = 0;
+        this._restBarrier = null;
+        // Gun handedness: +1 right (live default, preserves side=6), -1 left.
+        // handTarget flips with hysteresis, handBlend eases ~0.50s (slow blend).
+        this.handSide = 1;
+        this.handTarget = 1;
+        this.handBlend = 1;
 
         // --- Open Bolt Delay (see Weapons.*.openBoltDelay + the fire-
         // trigger block in update()) ---
@@ -18363,6 +18486,14 @@ class Player extends Entity {
         this.gunKickPx += -this.gunKickPx * Math.min(1, dt * 20);
         if (this.gunKickPx < 0.04) this.gunKickPx = 0;
 
+        // RESTED-GUN: loose foregrip-pivot detection + blend + hand easing +
+        // gentle servo (velocity nudges only). Runs after the muzzle-retract
+        // guard (needs gunRetractPx) and before the chase target is chosen.
+        // Never writes this.angle/aimTargetAngle/moveFacingAngle directly.
+        // input/gp ride along so deliberate walk input (never recoil) can
+        // re-plant the lock-anchor.
+        try { this._updateRestedSupport(dt, game, input, gp); } catch (e) {}
+
         let chaseTargetAngle = targetAngle;
         if (this.isSprinting) {
             // Anchored to moveFacingAngle, NOT this.aimChaseAngle. This
@@ -18377,8 +18508,13 @@ class Player extends Entity {
             // the player is generally aiming/facing, and swings smoothly
             // with them if they turn mid-sprint, without ever chasing
             // itself.
+            // RESTED-GUN: LOW_READY_SIDE_SIGN becomes per-hand (slow blend).
+            // Default right (handMix +1) preserves live -40deg; swapped left
+            // mirrors to +40deg through center (no pop mid-blend).
+            let _lrMix = (((this.handBlend === undefined ? 1 : this.handBlend) * 2 - 1) || 0);
+            if (!isFinite(_lrMix)) _lrMix = 1;
             chaseTargetAngle = this.moveFacingAngle +
-                AIM_WEIGHT.LOW_READY_SIDE_SIGN * AIM_WEIGHT.LOW_READY_OFFSET_DEG * Math.PI / 180;
+                AIM_WEIGHT.LOW_READY_SIDE_SIGN * _lrMix * AIM_WEIGHT.LOW_READY_OFFSET_DEG * Math.PI / 180;
         }
 
         // Turn-rate-capped chase + recoil/flinch/sway perturbations.
@@ -19623,8 +19759,11 @@ class Player extends Entity {
                 let swaySprintMult = (isSprinting && !this.isExhausted) ? AIM_WEIGHT.WALK_SWAY_SPRINT_MULT * scRow.sprintSway : 1.0;
                 this._walkSwaySide = -this._walkSwaySide;
                 // SOLDIER CONDITIONING: walkKick taken-mult (L3 = 1.0 = 3.0deg live).
+                // RESTED-GUN: sandbag settles gait (kick input only, spring shape untouched).
+                let _rstWalk = 1;
+                try { _rstWalk = this._restedChannelMult('walk'); } catch (e) {}
                 this.kickAim('aimWalkSwayOffset',
-                    AIM_WEIGHT.WALK_SWAY_KICK_DEG * scRow.walkKick * swayWeightMult * swaySprintMult,
+                    AIM_WEIGHT.WALK_SWAY_KICK_DEG * scRow.walkKick * swayWeightMult * swaySprintMult * _rstWalk,
                     this._walkSwaySide, true);
                 // FELLPASS item 5 (footstep camera bob): kick the player's
                 // OWN camera (P2 -> camera2) on the same footfall event that
@@ -19948,7 +20087,14 @@ class Player extends Entity {
         // see the config comment for why) that relaxes back to zero once you
         // stop firing.
         // SOLDIER CONDITIONING: climb-decay absolute (L0 2.6 wallows, L3 3.2 live, L5 4.0 masters).
+        // RESTED-GUN: solid rest settles climb faster (decay rate up, never shape).
         let scClimbDecay = (scRowAW ? scRowAW.climbDecay : AIM_WEIGHT.RECOIL_CLIMB_DECAY_RATE);
+        try {
+            let _rstDec = this._restedChannelMult('climbDecayMult');
+            // climbDecayMult channel lerps 1->1.44/1.25/1.16; helper returns lerp directly.
+            // _restedChannelMult looks up MULT.*.climbDecayMult; fall back to 1 if missing.
+            if (_rstDec && isFinite(_rstDec)) scClimbDecay *= _rstDec;
+        } catch (e) {}
         this.aimRecoilClimb *= Math.exp(-scClimbDecay * dt);
         if (Math.abs(this.aimRecoilClimb) < AIM_WEIGHT.NEGLIGIBLE_OFFSET_RAD) this.aimRecoilClimb = 0;
 
@@ -19974,6 +20120,13 @@ class Player extends Entity {
         let scIdleBase = (scRowAW ? scRowAW.idleBase : AIM_WEIGHT.IDLE_SWAY_BASE_DEG);
         let scFadeBase = AIM_WEIGHT.IDLE_SWAY_FADE_TIME * (scRowAW ? scRowAW.focusFade : 1.0);
         let scEngage = (scRowAW && scRowAW.engage !== undefined) ? scRowAW.engage : AIM_WEIGHT.IDLE_SWAY_ENGAGE_DELAY;
+        // RESTED-GUN: solid rest steadies breathing + quickens focus (times only,
+        // never thresholds). Barrier strongest (sandbag weight-down).
+        try {
+            scEngage *= this._restedChannelMult('engage');
+            scFadeBase *= this._restedChannelMult('fade');
+            scIdleBase *= this._restedChannelMult('idleBase');
+        } catch (e) {}
         let swayBaseDeg = scIdleBase *
             (1 + healthPenalty * (AIM_WEIGHT.IDLE_SWAY_HEALTH_MAX_MULT - 1));
         let swayFadeTime = scFadeBase *
@@ -20178,6 +20331,506 @@ class Player extends Entity {
         this[velKey] = (this[velKey] || 0) + dir * kickRad * cfg.__omega0 / cfg.__peakRatio;
     }
 
+    // ==== RESTED-GUN SUPPORT (sandbag / wall-lean / corner-edge) ====
+    // Blend + detection helpers. Muzzle stays gun-local always (see fire()).
+    // _restedChannelMult(channel): 1 when free, lerp(1, kindMult, blend) at full.
+    _restedChannelMult(channel) {
+        try {
+            if (typeof RESTED_TUNING === 'undefined' || !RESTED_TUNING || RESTED_TUNING.ENABLED === false) return 1;
+            let b = this._restEff();
+            if (b <= 0 || !this._restedKind) return 1;
+            let M = null;
+            if (this._restedKind === 'barrier') M = RESTED_TUNING.MULT_BARRIER;
+            else if (this._restedKind === 'wall') M = RESTED_TUNING.MULT_WALL;
+            else if (this._restedKind === 'corner') M = RESTED_TUNING.MULT_CORNER;
+            if (!M) return 1;
+            let m = (M[channel] !== undefined) ? M[channel] : 1;
+            return 1 - b + b * m;
+        } catch (e) { return 1; }
+    }
+    // Foregrip pivot in world px (retract only, never draw kicks), written to
+    // _restPx/_restPy for the debug draw. Muzzle tip likewise to
+    // _restTipX/_restTipY (overhang check). Returns nothing (zero alloc).
+    // Look-away gate 0..1 (eased): 1 = aiming at the cover, 0 = looked away.
+    _restAimGate() {
+        try {
+            let g = (this._restAimGateV !== undefined) ? this._restAimGateV : 1;
+            return (isFinite(g) ? g : 1);
+        } catch (e) { return 1; }
+    }
+    // Effective lock = blend × aim gate. All dampening + servo read this, so
+    // looking away fades the whole lock instead of silently holding it.
+    _restEff() {
+        try {
+            return (this.restedBlend || 0) * this._restAimGate();
+        } catch (e) { return (this.restedBlend || 0); }
+    }
+    // Forward-clearance probe for a candidate gun side (+1 right / -1 left):
+    // raycast 50px along the aim from the PROPOSED barrel position using
+    // combat truth (lineIntersectAABB, opaque at windows). Used as a veto so
+    // a swap never puts the muzzle into a wall instead of down the lane.
+    // Runs only on hand-commit frames (rare), never per-frame.
+    _restedSideClear(side) {
+        try {
+            let gameRef = (typeof game !== 'undefined') ? game : null;
+            if (!gameRef || !gameRef.map) return true;
+            let G = null;
+            try { G = (typeof PLAYER_GUN_GEOM !== 'undefined') ? (PLAYER_GUN_GEOM[this.weapon.name] || PLAYER_GUN_GEOM.SMG) : null; } catch (e) {}
+            let recX = G ? (G.recX || 0) : 0, blen = G ? (G.barrelLen || 17) : 17;
+            let mount = (typeof GUN_MOUNT_OFFSET !== 'undefined') ? GUN_MOUNT_OFFSET : 10;
+            let retract = this.gunRetractPx || 0;
+            let fwd = mount + recX + blen - retract, off = 6 * side;
+            let ca = Math.cos(this.angle), sa = Math.sin(this.angle);
+            let bx = this.x + ca * fwd - sa * off, by = this.y + sa * fwd + ca * off;
+            let ex = bx + ca * 50, ey = by + sa * 50;
+            let walls = null;
+            try { walls = gameRef.map.getWallsNear ? gameRef.map.getWallsNear(bx, by) : gameRef.map.walls; } catch (e) {}
+            if (!walls) return true;
+            for (let i = 0; i < walls.length; i++) {
+                let w = walls[i];
+                if (!w) continue;
+                try {
+                    if (MathUtils.lineIntersectAABB(bx, by, ex, ey, w)) {
+                        // Ignore walls behind the muzzle start (touching overlap).
+                        let cpx = MathUtils.clamp(bx, w.x, w.x + w.w);
+                        let cpy = MathUtils.clamp(by, w.y, w.y + w.h);
+                        if (Math.hypot(bx - cpx, by - cpy) > 4) return false;
+                    }
+                } catch (e) { continue; }
+            }
+            return true;
+        } catch (e) { return true; }
+    }
+    _restedForePivot() {
+        try {
+            let G = null;
+            try { G = (typeof PLAYER_GUN_GEOM !== 'undefined') ? (PLAYER_GUN_GEOM[this.weapon.name] || PLAYER_GUN_GEOM.SMG) : null; } catch (e) {}
+            let recX = G ? (G.recX || 0) : 0;
+            let foreX = 12, barrelLen = 17;
+            if (G) { foreX = (G.fore == null ? (G.grip || 12) : G.fore); barrelLen = G.barrelLen || 17; }
+            let retract = this.gunRetractPx || 0;
+            let mount = (typeof GUN_MOUNT_OFFSET !== 'undefined') ? GUN_MOUNT_OFFSET : 10;
+            let handMix = ((this.handBlend === undefined ? 1 : this.handBlend) * 2 - 1);
+            let side = 6 * handMix;
+            let ca = Math.cos(this.angle), sa = Math.sin(this.angle);
+            let fwd = mount + recX + foreX - retract;
+            this._restPx = this.x + ca * fwd - sa * side;
+            this._restPy = this.y + sa * fwd + ca * side;
+            let fwdT = mount + recX + barrelLen - retract;
+            this._restTipX = this.x + ca * fwdT - sa * side;
+            this._restTipY = this.y + sa * fwdT + ca * side;
+        } catch (e) {}
+    }
+    // Per-frame rested detection + blend + hand easing + gentle servo.
+    // Called in update() after the muzzle-retract guard, before chaseTarget.
+    // Servo nudges vx/vy only (like PIVOT), never angle/position directly.
+    // input/gp distinguish deliberate walk input from recoil velocity so only
+    // walk input re-plants the lock-anchor.
+    _updateRestedSupport(dt, game, input, gp) {
+        try {
+            if (this.handBlend === undefined) this.handBlend = 1;
+            if (this.handTarget === undefined) this.handTarget = 1;
+            if (this.handSide === undefined) this.handSide = 1;
+            if (this.restedBlend === undefined) this.restedBlend = 0;
+            if (this._restedTimer === undefined) this._restedTimer = 0;
+            if (this._restedReleaseT === undefined) this._restedReleaseT = 0;
+            let T = (typeof RESTED_TUNING !== 'undefined') ? RESTED_TUNING : null;
+            let AT = (typeof RESTED_ATTRACTOR_TUNING !== 'undefined') ? RESTED_ATTRACTOR_TUNING : null;
+            if (!T || T.ENABLED === false || this.dead || !game || !game.map) {
+                this.restedBlend = Math.max(0, (this.restedBlend || 0) - dt / (T ? T.RELEASE : 0.10));
+                if (this.restedBlend === 0) { this._restedKind = null; this._restEdgeRef = null; }
+                this.handTarget = 1;
+                let want0 = (this.handTarget === 1) ? 1 : 0;
+                this.handBlend += (want0 - this.handBlend) * Math.min(1, dt * 8.0);
+                this.handSide = (this.handBlend >= 0.5) ? 1 : -1;
+                return;
+            }
+            dt = Math.min(Math.max(dt, 0), 0.1);
+            this._restedForePivot();
+            let fx = this._restPx, fy = this._restPy;
+            let spd = Math.hypot(this.vx || 0, this.vy || 0);
+            // Run-through: no stick at all at speed. Instant break, gun home right.
+            if (spd >= T.BREAK_SPEED) {
+                this._restedTimer = 0;
+                this._restedReleaseT = (this._restedReleaseT || 0) + dt;
+                this._restedKind = null;
+                this._restEdgeRef = null;
+                this.handTarget = 1;
+                this._handCand = 1; this._handCandT = 0;
+                this.restedBlend = Math.max(0, (this.restedBlend || 0) - dt / T.RELEASE);
+            } else {
+                // v2 body-contact scheme: engage = BODY pressed to the cover face
+                // (center-to-edge <= 12 + REST_DIST gap) AND muzzle tip near the
+                // edge (overhang check, TIP_MAX). The barrel then hangs over the
+                // sandbag instead of parking 40px back with the muzzle short.
+                let bestBodyD = Infinity, bestTipD = Infinity, bestKind = null;
+                let bestPx = 0, bestPy = 0, bestNx = 0, bestNy = 0, bestTx = 1, bestTy = 0;
+                let bestT = -1, bestLen = 0;
+                // Gun-aware scoring: body gap + half gun gap (fore/tip samples),
+                // incumbent edge bonus. The barrel ON cover counts even when
+                // the body sits a few px further out; the incumbent bonus stops
+                // 1px winner flips between adjacent walls.
+                let bestScore = Infinity, bestGunD = Infinity, bestEdgeRef = null;
+                let tipx = (this._restTipX !== undefined) ? this._restTipX : fx;
+                let tipy = (this._restTipY !== undefined) ? this._restTipY : fy;
+                // Hand side tracking (body-referenced, NOT foregrip: measuring
+                // from fx would feed the swap back into itself and ping-pong).
+                // y-DOWN: lat>0 = cover on the shooter's RIGHT.
+                let hca = Math.cos(this.angle), hsa = Math.sin(this.angle);
+                let senseR = T.HAND_SENSE || 60;
+                let bestLeft = Infinity, bestRight = Infinity;
+                // Barriers: closest point on capsule (owner-agnostic, L1==MKII).
+                try {
+                    let bars = game.barriers;
+                    if (bars && bars.length) {
+                        for (let i = 0; i < bars.length; i++) {
+                            let bar = bars[i];
+                            if (!bar) continue;
+                            let cp = null;
+                            try { cp = MathUtils.closestPointOnSegment(this.x, this.y, bar.ax, bar.ay, bar.bx, bar.by); } catch (e) { continue; }
+                            if (!cp) continue;
+                            let cpx = cp.x, cpy = cp.y;
+                            let bdx = this.x - cpx, bdy = this.y - cpy;
+                            let bodyD = Math.hypot(bdx, bdy) - ((bar.r !== undefined) ? bar.r : 8);
+                            let tipD = Math.hypot(tipx - cpx, tipy - cpy);
+                            let gunD = Math.min(Math.hypot(fx - cpx, fy - cpy), tipD);
+                            // Side tracking for corridor detect (needs its own
+                            // floor check; the winner check below has another).
+                            try {
+                                let latB0 = -hsa * (cpx - this.x) + hca * (cpy - this.y);
+                                if (bodyD <= senseR) {
+                                    let fsS = false;
+                                    try { fsS = game.map.floorSeparated ? game.map.floorSeparated(this.x, this.y, cpx, cpy) : false; } catch (eS) {}
+                                    if (!fsS) {
+                                        if (latB0 >= 0) { if (bodyD < bestRight) bestRight = bodyD; }
+                                        else { if (bodyD < bestLeft) bestLeft = bodyD; }
+                                    }
+                                }
+                            } catch (e) {}
+                            let bScore = bodyD + 0.5 * gunD;
+                            if (bar === this._restEdgeRef) bScore -= 10;
+                            if (bScore < bestScore) {
+                                let fs = false;
+                                try { fs = game.map.floorSeparated ? game.map.floorSeparated(this.x, this.y, cpx, cpy) : false; } catch (e) {}
+                                if (fs) continue;
+                                bestScore = bScore;
+                                bestBodyD = bodyD; bestTipD = tipD; bestGunD = gunD; bestKind = 'barrier';
+                                bestEdgeRef = bar;
+                                bestPx = cpx; bestPy = cpy;
+                                let bl = Math.hypot((bar.bx - bar.ax), (bar.by - bar.ay)) || 1;
+                                bestTx = (bar.bx - bar.ax) / bl; bestTy = (bar.by - bar.ay) / bl;
+                                // Segment param of the body projection (end-stop springs).
+                                let _bt = ((this.x - bar.ax) * (bar.bx - bar.ax) + (this.y - bar.ay) * (bar.by - bar.ay)) / (bl * bl);
+                                bestT = MathUtils.clamp(_bt, 0, 1); bestLen = bl;
+                                let bd = Math.hypot(bdx, bdy);
+                                if (bd > 0.001) { bestNx = bdx / bd; bestNy = bdy / bd; }
+                                else { bestNx = -bestTy; bestNy = bestTx; }
+                            }
+                        }
+                    }
+                } catch (e) {}
+                // Walls: closest point on AABB from BODY CENTER via getWallsNear
+                // (sync consume, never retain). Body contact, not foregrip.
+                try {
+                    let near = game.map.getWallsNear ? game.map.getWallsNear(this.x, this.y) : game.map.walls;
+                    if (near) {
+                        for (let i = 0; i < near.length; i++) {
+                            let w = near[i];
+                            if (!w || w.seeThrough) continue;
+                            if (w.hp !== undefined && w.hp <= 0) continue;
+                            let cpx = MathUtils.clamp(this.x, w.x, w.x + w.w);
+                            let cpy = MathUtils.clamp(this.y, w.y, w.y + w.h);
+                            let bdx = this.x - cpx, bdy = this.y - cpy;
+                            let bodyD = Math.hypot(bdx, bdy);
+                            let tipD = Math.hypot(tipx - cpx, tipy - cpy);
+                            let gunD = Math.min(Math.hypot(fx - cpx, fy - cpy), tipD);
+                            // Side tracking for corridor detect (own floor check).
+                            try {
+                                let latW0 = -hsa * (cpx - this.x) + hca * (cpy - this.y);
+                                if (bodyD <= senseR) {
+                                    let fsW = false;
+                                    try { fsW = game.map.floorSeparated ? game.map.floorSeparated(this.x, this.y, cpx, cpy) : false; } catch (eW) {}
+                                    if (!fsW) {
+                                        if (latW0 >= 0) { if (bodyD < bestRight) bestRight = bodyD; }
+                                        else { if (bodyD < bestLeft) bestLeft = bodyD; }
+                                    }
+                                }
+                            } catch (e) {}
+                            // Corner test: body offset on both axes (peeking an edge).
+                            let isCorner = (Math.abs(this.x - cpx) > 0.5 && Math.abs(this.y - cpy) > 0.5);
+                            let kind = isCorner ? 'corner' : 'wall';
+                            // Gun-aware score with sandbag priority + incumbent
+                            // bonus: a new edge must beat the held one by a
+                            // margin, so 1px steps stop flipping the lock.
+                            let wScore = bodyD + 0.5 * gunD;
+                            if (bestKind === 'barrier') wScore += 4;
+                            if (w === this._restEdgeRef) wScore -= 10;
+                            if (wScore < bestScore) {
+                                let fs2 = false;
+                                try { fs2 = game.map.floorSeparated ? game.map.floorSeparated(this.x, this.y, cpx, cpy) : false; } catch (e2) {}
+                                if (fs2) continue;
+                                bestScore = wScore;
+                                bestBodyD = bodyD; bestTipD = tipD; bestGunD = gunD; bestKind = kind;
+                                bestEdgeRef = w;
+                                bestPx = cpx; bestPy = cpy;
+                                let bd = Math.hypot(bdx, bdy);
+                                if (bd > 0.001) { bestNx = bdx / bd; bestNy = bdy / bd; }
+                                else { bestNx = 0; bestNy = 0; }
+                                if (w.w >= w.h) { bestTx = 1; bestTy = 0; } else { bestTx = 0; bestTy = 1; }
+                            }
+                        }
+                    }
+                } catch (e) {}
+                // Look-away gate: ease toward 1 inside the full cone, 0 past the
+                // hard cone (per-kind), smoothstep between. Aiming off/away
+                // fades the lock so getaway is easier; the mults + servo read
+                // the effective blend, never raw restedBlend.
+                try {
+                    if (bestKind && (Math.hypot(bestNx, bestNy) > 0.001)) {
+                        let GF = RESTED_TUNING.GATE_FULL, GH = RESTED_TUNING.GATE_HARD;
+                        let full = (GF && GF[bestKind] !== undefined) ? GF[bestKind] : 90;
+                        let hard = (GH && GH[bestKind] !== undefined) ? GH[bestKind] : 110;
+                        let coverDir = Math.atan2(-bestNy, -bestNx);
+                        let align = Math.abs(MathUtils.angleDifference(this.angle, coverDir)) * 180 / Math.PI;
+                        let tgt = 1;
+                        if (align >= hard) tgt = 0;
+                        else if (align > full) {
+                            let u = (align - full) / Math.max(1e-3, hard - full);
+                            tgt = 1 - (u * u * (3 - 2 * u));
+                        }
+                        let gv = (this._restAimGateV === undefined ? 1 : this._restAimGateV);
+                        this._restAimGateV = gv + (tgt - gv) * Math.min(1, dt * 8);
+                    }
+                } catch (e) {}
+                // Acquire vs maintain hysteresis. ACQUIRE (free): body within the
+                // wide capture ring + tip over the edge + creep speed. MAINTAIN
+                // (locked): body within the break ring only — tip ignored (a
+                // heavy volley aimed elsewhere never silently drops the lock)
+                // and walking pace allowed (walk along the wall; sprint still
+                // breaks via BREAK_SPEED). Locks inspire confidence: sticky stay.
+                let locked = (this._restEff() > 0.2 && this._restedKind);
+                let gapLim = locked ? (12 + T.BREAK_DIST) : (12 + T.REST_DIST);
+                // Gun-touch gate on acquire: fore or tip within 30px of the
+                // edge (the barrel ON cover counts); ignored while locked.
+                let gunLim = locked ? 1e9 : 30;
+                let slowEnough = locked ? (spd < T.BREAK_SPEED) : (spd <= T.ENGAGE_MAX_SPEED);
+                if (bestKind && bestBodyD <= gapLim && bestGunD <= gunLim && slowEnough) {
+                    // Kind latch: barrier > wall > corner; re-latch when free or stronger appears.
+                    let rank = { barrier: 3, wall: 2, corner: 1 };
+                    if (!this._restedKind || (this.restedBlend || 0) === 0 || (rank[bestKind] || 0) >= (rank[this._restedKind] || 0)) {
+                        this._restedKind = bestKind;
+                        this._restEdgeRef = bestEdgeRef;
+                    }
+                    this._restedTimer = (this._restedTimer || 0) + dt;
+                    this._restedReleaseT = 0;
+                    this._restNx = bestNx; this._restNy = bestNy;
+                    this._restTx = bestTx; this._restTy = bestTy;
+                    this._restEx = bestPx; this._restEy = bestPy;
+                    if (this._restedTimer >= T.DWELL) {
+                        this.restedBlend = Math.min(1, (this.restedBlend || 0) + dt / T.ATTACK);
+                    }
+                } else {
+                    // Forgiving capture: wiggling at the edge decays dwell
+                    // progress instead of wiping it (no rub-to-register grind).
+                    this._restedTimer = Math.max(0, (this._restedTimer || 0) - dt * 3);
+                    this._restedReleaseT = (this._restedReleaseT || 0) + dt;
+                    if (this._restedReleaseT >= T.RELEASE) {
+                        this.restedBlend = Math.max(0, (this.restedBlend || 0) - dt / T.RELEASE);
+                        if (this.restedBlend === 0) { this._restedKind = null; this._restEdgeRef = null; }
+                    }
+                    // (Hand homing lives in the unified determination below, with
+                    // candidate reset, so flips can't bypass the dwell.)
+                    // Cache last edge for debug draw even while releasing.
+                    if (bestKind && bestBodyD <= (12 + T.BREAK_DIST + 30)) {
+                        this._restNx = bestNx; this._restNy = bestNy;
+                        this._restTx = bestTx; this._restTy = bestTy;
+                        this._restEx = bestPx; this._restEy = bestPy;
+                    }
+                }
+                // Hand determination (unified, body-referenced). y-DOWN screen:
+                // lat>0 = cover on the shooter's RIGHT, side +6 = RIGHT hand,
+                // so wall-right -> gun LEFT (-1): opposite side, gun-first pie.
+                // Corridor (cover both sides in sense) -> default right, never
+                // swap: swapping in a lane only oscillates. Deadband (|lat|>10
+                // to propose, holds inside) + 0.25s dwell stop aim-jitter
+                // flicker; a forward-clearance veto stops swaps that would put
+                // the muzzle into a wall instead of down the lane.
+                try {
+                    let sense = T.HAND_SENSE || 60;
+                    let corridor = (bestLeft <= sense && bestRight <= sense);
+                    if (!bestKind || bestBodyD > sense || corridor) {
+                        // Gun defaults right: truly clear, or corridor (no good
+                        // side). Blend rates below make the home trip quick.
+                        if (this.handTarget !== 1) {
+                            this.handTarget = 1;
+                            this._handCand = 1; this._handCandT = 0;
+                        }
+                    } else {
+                        let latW = -hsa * (bestPx - this.x) + hca * (bestPy - this.y);
+                        let enterB = (bestKind === 'barrier') ? 20 : 10;
+                        let desired = this.handTarget;
+                        if (Math.abs(latW) > enterB) desired = (latW > 0) ? -1 : 1;
+                        if (desired !== this.handTarget) {
+                            if (this._handCand !== desired) { this._handCand = desired; this._handCandT = 0; }
+                            this._handCandT = (this._handCandT || 0) + dt;
+                            if (this._handCandT > 0.25) {
+                                // Clearance veto: raycast 50px along aim from
+                                // the PROPOSED barrel; if blocked while the
+                                // current side is clear, stay (lane protection:
+                                // never swap the muzzle into a wall).
+                                let ok = true;
+                                try {
+                                    let clearT = this._restedSideClear(desired);
+                                    let clearC = this._restedSideClear(this.handTarget);
+                                    ok = clearT || !clearC;
+                                } catch (e) { ok = true; }
+                                if (ok) this.handTarget = desired;
+                                this._handCandT = 0;
+                            }
+                        } else { this._handCand = desired; this._handCandT = 0; }
+                    }
+                } catch (e) {}
+                // Gravity-well servo on BODY offset (velocity nudges only).
+                // Guides ENTRY: once the lock-anchor holds the planted point,
+                // the well steps aside (no line-vs-point fight) and only the
+                // anchor tug + tangent rules below run. Driving input frees
+                // tangential motion so repositioning never fights the stick.
+                try {
+                    let b = this._restEff();
+                    if (b > 0 && AT && this._restedKind) {
+                        let driving = false;
+                        try {
+                            let dvx = 0, dvy = 0;
+                            if (input && input.keys) {
+                                let dk = input.keys;
+                                dvx += (dk['d'] || dk['arrowright'] ? 1 : 0) - (dk['a'] || dk['arrowleft'] ? 1 : 0);
+                                dvy += (dk['s'] || dk['arrowdown'] ? 1 : 0) - (dk['w'] || dk['arrowup'] ? 1 : 0);
+                            }
+                            if (gp && gp.axes && gp.axes.length >= 2) {
+                                let dgx = gp.axes[0] || 0, dgy = gp.axes[1] || 0;
+                                if (Math.hypot(dgx, dgy) > 0.18) { dvx += dgx; dvy += dgy; }
+                            }
+                            driving = Math.hypot(dvx, dvy) > 0.18;
+                        } catch (e) {}
+                        let wellGate = this._restAnchored ? 0 : 1;
+                        let holdGap = 12 + (T.HOLD_GAP !== undefined ? T.HOLD_GAP : 2);
+                        let wellR = Math.max(1, (12 + T.BREAK_DIST) - holdGap);
+                        let off = bestBodyD - holdGap;
+                        let prox = MathUtils.clamp(1 - Math.abs(off) / wellR, 0, 1);
+                        let K = 20 + 120 * prox * b;
+                        let MX = 150 + 700 * prox * b;
+                        let push = MathUtils.clamp(-off * K, -MX, MX) * b * dt * wellGate;
+                        let pl = Math.hypot(this._restNx, this._restNy);
+                        if (pl > 0.001) {
+                            let nx = this._restNx / pl, ny = this._restNy / pl;
+                            this.vx = (this.vx || 0) + nx * push;
+                            this.vy = (this.vy || 0) + ny * push;
+                            // Anchor damping on normal velocity: eats knockback
+                            // impulses at center, loose at rim. Driving input
+                            // softens it (walk out freely); hands-off holds.
+                            // Sustained walk accel still overcomes it.
+                            let vn = (this.vx || 0) * nx + (this.vy || 0) * ny;
+                            let ndamp = Math.min(0.9, 20 * b * prox * dt) * wellGate * (driving ? 0.2 : 1);
+                            this.vx -= nx * vn * ndamp;
+                            this.vy -= ny * vn * ndamp;
+                            // Tangent per kind. WALL: slight drag only — walk along
+                            // freely. BARRIER: sticky slide (strong drag eats
+                            // fire-induced slip) + end-stop springs so angled
+                            // volleys can't walk you off the end completely.
+                            // CORNER: point-stick (strongest) — body stays on
+                            // the point while aim pivots freely around it.
+                            let tx = this._restTx || 1, ty = this._restTy || 0;
+                            let tl = Math.hypot(tx, ty) || 1;
+                            tx /= tl; ty /= tl;
+                            let vt = (this.vx || 0) * tx + (this.vy || 0) * ty;
+                            let kind2 = this._restedKind;
+                            let tdamp = (kind2 === 'corner') ? 6.0 : (kind2 === 'barrier' ? 4.0 : 0.6);
+                            // Driving frees the tangent (reposition while held);
+                            // hands-off keeps the sticky slide / point-stick.
+                            if (driving) tdamp *= 0.15;
+                            let damp = Math.min(0.9, tdamp * b * dt);
+                            this.vx -= tx * vt * damp;
+                            this.vy -= ty * vt * damp;
+                            if (kind2 === 'barrier' && bestT >= 0 && bestLen > 1 && !driving) {
+                                let endD = Math.min(bestT, 1 - bestT) * bestLen;
+                                if (endD < 18) {
+                                    let toMid = (bestT < 0.5) ? 1 : -1;
+                                    let epush = MathUtils.clamp((18 - endD) * 10, 0, 220) * b * dt;
+                                    this.vx += tx * toMid * epush;
+                                    this.vy += ty * toMid * epush;
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
+            }
+            // Lock-anchor: where walk input planted you. Latches on the first
+            // supported frame (no well-only pre-latch window); recoil and
+            // knockback velocity can never move it. Driving input re-plants it
+            // every frame (locomotion-matched deadband), so corner nudges land
+            // where you put them. Hands off: the tug below holds the bias.
+            try {
+                let bA = this._restEff();
+                if (bA <= 0) { this._restAnchored = false; }
+                else {
+                    if (!this._restAnchored && this._restedKind && (this._restedTimer || 0) > 0) {
+                        this._restAx = this.x; this._restAy = this.y;
+                        this._restAnchored = true;
+                    }
+                    if (this._restAnchored) {
+                        let mvx = 0, mvy = 0;
+                        try {
+                            if (input && input.keys) {
+                                let k = input.keys;
+                                mvx += (k['d'] || k['arrowright'] ? 1 : 0) - (k['a'] || k['arrowleft'] ? 1 : 0);
+                                mvy += (k['s'] || k['arrowdown'] ? 1 : 0) - (k['w'] || k['arrowup'] ? 1 : 0);
+                            }
+                            if (gp && gp.axes && gp.axes.length >= 2) {
+                                let gx = gp.axes[0] || 0, gy = gp.axes[1] || 0;
+                                if (Math.hypot(gx, gy) > 0.18) { mvx += gx; mvy += gy; }
+                            }
+                        } catch (e) {}
+                        if (Math.hypot(mvx, mvy) > 0.18) {
+                            this._restAx = this.x; this._restAy = this.y;
+                        }
+                        // Settle-latch: slow + close + hands off + no recent fire
+                        // → absorb the micro drift (last tad-pull gone). After
+                        // a volley the position instead HOLDS via the tug, so
+                        // sustained fire can never silently walk the lock away.
+                        let anx0 = (this._restAx || 0) - this.x, any0 = (this._restAy || 0) - this.y;
+                        let ad0 = Math.hypot(anx0, any0);
+                        let spdA = Math.hypot(this.vx || 0, this.vy || 0);
+                        let sinceFire = 99;
+                        try { sinceFire = game.gameTime - (this._restLastFireT || -99); } catch (e) {}
+                        let handsOff = Math.hypot(mvx, mvy) <= 0.18;
+                        if (handsOff && spdA < 40 && ad0 < 6 && ad0 > 0.01 && sinceFire > 0.5) {
+                            this._restAx = this.x; this._restAy = this.y;
+                        }
+                        // Tug back to the planted bias: stiff + heavily damped
+                        // (near-critical, no visible float or overshoot). With
+                        // physical absorption above, residual displacement per
+                        // shot is ~1px — held, not returned-from-afar.
+                        let anx = (this._restAx || 0) - this.x, any = (this._restAy || 0) - this.y;
+                        let ad = Math.hypot(anx, any);
+                        if (ad > 0.5) {
+                            let aw = MathUtils.clamp((ad - 0.5) / 6, 0, 1);
+                            let apush = MathUtils.clamp(ad * 80, 0, 800) * bA * dt * aw;
+                            this.vx = (this.vx || 0) + (anx / ad) * apush;
+                            this.vy = (this.vy || 0) + (any / ad) * apush;
+                        }
+                    }
+                }
+            } catch (e) {}
+            // Hand blend: slow out to the support side (tau ~0.50s, never snap),
+            // quick home to the right default (tau ~0.12s) the moment cover ends.
+            let want = (this.handTarget === 1) ? 1 : 0;
+            let hrate = (want === 1) ? 8.0 : 2.0;
+            this.handBlend += (want - this.handBlend) * Math.min(1, dt * hrate);
+            if (Math.abs(this.handBlend - want) < 0.002) this.handBlend = want;
+            this.handSide = (this.handBlend >= 0.5) ? 1 : -1;
+        } catch (e) {}
+    }
+
     // Biological Sync: kicks the gun once per heartbeat while badly hurt,
     // reusing the same kickAim()/spring machinery as recoil and flinch.
     // Deliberately keyed only off this player's OWN health, not the
@@ -20209,7 +20862,10 @@ class Player extends Entity {
             // SOLDIER CONDITIONING: heartbeat taken (L3 = 1.0 = live).
             let scHeart = 1.0;
             try { scHeart = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow((typeof game !== 'undefined') ? game : null).heart : 1.0); } catch (e) {}
-            this.kickAim('aimHeartbeatOffset', AIM_WEIGHT.HEARTBEAT_KICK_DEG * (0.35 + 0.65 * intensity) * scHeart);
+            // RESTED-GUN: weight steadies heartbeat (kick input only).
+            let _rstHeart = 1;
+            try { _rstHeart = this._restedChannelMult('heart'); } catch (e) {}
+            this.kickAim('aimHeartbeatOffset', AIM_WEIGHT.HEARTBEAT_KICK_DEG * (0.35 + 0.65 * intensity) * scHeart * _rstHeart);
         }
     }
     
@@ -20749,8 +21405,12 @@ class Player extends Entity {
         // muzzle -- never inside the wall the player is hugging.
         let _gunRe = this.gunRetractPx || 0;
         let ejectAngle = this.angle - Math.PI*0.6;
-        let caseX = this.x + Math.cos(this.angle)*(4 + GUN_MOUNT_OFFSET - _gunRe) - Math.sin(this.angle)*6;
-        let caseY = this.y + Math.sin(this.angle)*(4 + GUN_MOUNT_OFFSET - _gunRe) + Math.cos(this.angle)*6;
+        // RESTED-GUN: side mirrors handBlend (default right +6 preserves live).
+        // Muzzle stays gun-local: retract only, never draw kicks.
+        let _handMixC = (((this.handBlend === undefined ? 1 : this.handBlend) * 2 - 1) || 0);
+        if (!isFinite(_handMixC)) _handMixC = 1;
+        let caseX = this.x + Math.cos(this.angle)*(4 + GUN_MOUNT_OFFSET - _gunRe) - Math.sin(this.angle)*6*_handMixC;
+        let caseY = this.y + Math.sin(this.angle)*(4 + GUN_MOUNT_OFFSET - _gunRe) + Math.cos(this.angle)*6*_handMixC;
         this.weapon.name === 'Sniper' ? game.spawnCasing(caseX, caseY, ejectAngle, '#e10') : game.spawnCasing(caseX, caseY, ejectAngle);
         
         // Weapon kickback (physical push on the player, separate from the
@@ -20766,6 +21426,11 @@ class Player extends Entity {
         recoilForce *= (1 - 0.06 * handlingLvl); // Phase 4 handling ranks
         if (corrupted && corrupted.overpressure) recoilForce *= 1.40; // PHASE 3: the cost of +25% dmg
         recoilForce *= _recoilMult; // ABAKAN finisher: one combined impulse
+        // RESTED-GUN: braced body absorbs the shove (roughly half at full
+        // barrier rest). Gated to high blend by the lerp itself (1 when free).
+        let _rstPhysEarly = 1;
+        try { _rstPhysEarly = this._restedChannelMult('physical'); } catch (e) {}
+        recoilForce *= _rstPhysEarly;
         // SOLDIER CONDITIONING: camera taken-mults (L3 = 1.0 = live). Row is
         // defined here so both the fire shake below and the recoil/zoom
         // block after share it.
@@ -20775,7 +21440,7 @@ class Player extends Entity {
         this.vx -= Math.cos(this.angle) * recoilForce;
         this.vy -= Math.sin(this.angle) * recoilForce;
         if (this.camera) {
-            this.camera.screenShake = Math.max(this.camera.screenShake, (this.weapon.name === 'Sniper' ? 18 : this.weapon.name === 'Judge' ? 20 : this.weapon.name === 'Thumper' ? 14 : this.weapon.name === 'Mauler' ? 14 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : this.weapon.name === 'Abakan' ? 8 : 5) * scKickEarly);
+            this.camera.screenShake = Math.max(this.camera.screenShake, (this.weapon.name === 'Sniper' ? 18 : this.weapon.name === 'Judge' ? 20 : this.weapon.name === 'Thumper' ? 14 : this.weapon.name === 'Mauler' ? 14 : this.weapon.name === 'Shotgun' ? 12 : this.weapon.name === 'M1A' ? 10 : this.weapon.name === 'Abakan' ? 8 : 5) * scKickEarly * _rstPhysEarly);
         }
         }
         // Aim Weight: every shot nudges the reticle two ways. A spring
@@ -20792,19 +21457,31 @@ class Player extends Entity {
             this.aimRecoilBiasDir = Math.random() < 0.5 ? -1 : 1;
         }
         this.aimLastFireForBiasTime = game.gameTime;
+        // RESTED-GUN: stamp last shot so the lock settle-latch can tell
+        // post-volley micro position (hold) from genuine slow drift (absorb).
+        try { this._restLastFireT = game.gameTime; } catch (e) {}
         // SOLDIER CONDITIONING: recoil/climb taken-mults (L3 = 1.0 = live).
         // Reuses the row from the kickback block above.
         let scRowFire = scRowFireEarly;
         let scRecoil = scRowFire ? scRowFire.recoil : 1.0;
         let scClimb = scRowFire ? scRowFire.climb : 1.0;
+        // RESTED-GUN: dampen kick inputs only (never spring shape). Barrier
+        // strongest, wall lean, corner weakest. Muzzle stays gun-local.
+        let _rstRecoil = 1, _rstBiteM = 1, _rstClimb = 1, _rstClimbMaxM = 1;
+        try {
+            _rstRecoil = this._restedChannelMult('recoil');
+            _rstBiteM = this._restedChannelMult('bite');
+            _rstClimb = this._restedChannelMult('climbPerShot');
+            _rstClimbMaxM = this._restedChannelMult('climbMax');
+        } catch (e) {}
         if (!_supp) {
         this.kickAim('aimRecoilOffset',
             (AIM_WEIGHT.RECOIL_KICK_DEG[this.weapon.name] || AIM_WEIGHT.RECOIL_KICK_DEG_DEFAULT) *
-            (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scRecoil,
+            (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT * _rstBiteM : 1) * _recoilMult * scRecoil * _rstRecoil,
             this.aimRecoilBiasDir);
-        let climbCapRad = AIM_WEIGHT.RECOIL_CLIMB_MAX_DEG * Math.PI / 180;
+        let climbCapRad = AIM_WEIGHT.RECOIL_CLIMB_MAX_DEG * _rstClimbMaxM * Math.PI / 180;
         this.aimRecoilClimb = MathUtils.clamp(
-            this.aimRecoilClimb + this.aimRecoilBiasDir * AIM_WEIGHT.RECOIL_CLIMB_DEG_PER_SHOT * scClimb * Math.PI / 180,
+            this.aimRecoilClimb + this.aimRecoilBiasDir * AIM_WEIGHT.RECOIL_CLIMB_DEG_PER_SHOT * _rstClimb * scClimb * Math.PI / 180,
             -climbCapRad, climbCapRad
         );
         }
@@ -20813,7 +21490,11 @@ class Player extends Entity {
         const G = (this.weapon && PLAYER_GUN_GEOM[this.weapon.name]) ? PLAYER_GUN_GEOM[this.weapon.name] : PLAYER_GUN_GEOM.SMG;
         let barrelOffset = G ? (G.recX + G.barrelLen) : 22;
         let fwd = GUN_MOUNT_OFFSET + barrelOffset - _gunRe;
-        let side = 6;
+        // RESTED-GUN: side mirrors handBlend (default right +6 preserves live).
+        // Bullet always leaves the visual barrel tip (gun-local, retract only).
+        let _handMixB = (((this.handBlend === undefined ? 1 : this.handBlend) * 2 - 1) || 0);
+        if (!isFinite(_handMixB)) _handMixB = 1;
+        let side = 6 * _handMixB;
         let barrelX = this.x + Math.cos(this.angle) * fwd - Math.sin(this.angle) * side;
         let barrelY = this.y + Math.sin(this.angle) * fwd + Math.cos(this.angle) * side;
         this.muzzleFlashTimer = 0.07;
@@ -20875,7 +21556,7 @@ class Player extends Entity {
         // SOLDIER CONDITIONING: camera kick taken (L3 = 1.0 = live).
         let scKick = scRowFire ? scRowFire.kick : 1.0;
         let scZoom = scRowFire ? scRowFire.zoom : 1.0;
-        let kickForce = (KICKBACK_FORCES[this.weapon.name] || 50) * _recoilMult * scKick;
+        let kickForce = (KICKBACK_FORCES[this.weapon.name] || 50) * _recoilMult * scKick * _rstPhysEarly;
         if (!_supp) {
         const kickCam = this.camera;
         if (kickForce && kickCam) kickCam.applyKickback(this.angle, kickForce);
@@ -20884,17 +21565,17 @@ class Player extends Entity {
         // Mechanical sprite recoil kick (arms/gun slam back into chest)
         const RECOIL_SPRITE_KICKS = FIRE_TUNING.RECOIL_SPRITE_KICKS;
         if (!_supp) {
-        this.gunRecoilKickPx = (RECOIL_SPRITE_KICKS[this.weapon.name] || 7.0) * _recoilMult;
+        this.gunRecoilKickPx = (RECOIL_SPRITE_KICKS[this.weapon.name] || 7.0) * _recoilMult * _rstPhysEarly;
         // WO-001 Phase 3: render-only personality kick — small additive slam,
         // draw translate only (never angle/barrel math in fire()).
-        this.gunKickPx = (FIRE_TUNING.GUNKICK_PX[this.weapon.name] || 1.2) * _recoilMult;
+        this.gunKickPx = (FIRE_TUNING.GUNKICK_PX[this.weapon.name] || 1.2) * _recoilMult * _rstPhysEarly;
         }
 
         // Camera optic zoom punch (concussive pressure wave)
         const ZOOM_PUNCHES = FIRE_TUNING.ZOOM_PUNCHES;
         // FELLPASS item 8: fresh trigger pull bites harder (FX only).
         // SOLDIER CONDITIONING: zoom-punch taken (L0 1.6 rocked, L3 1.0 live, L5 0.72 firm).
-        let zp = (ZOOM_PUNCHES[this.weapon.name] || 0.008) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scZoom;
+        let zp = (ZOOM_PUNCHES[this.weapon.name] || 0.008) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scZoom * _rstPhysEarly;
         if (!_supp) {
         if (this.camera) this.camera.punchZoom(zp);
         }
@@ -20906,7 +21587,7 @@ class Player extends Entity {
         // settle in the same breath. Full-auto saturates the channel, so a
         // spray holds a sustained ~2-3% wider framing.
         const RECOIL_ZOOM_OUT = FIRE_TUNING.RECOIL_ZOOM_OUT;
-        let rzo = (RECOIL_ZOOM_OUT[this.weapon.name] || 0.010) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scZoom;
+        let rzo = (RECOIL_ZOOM_OUT[this.weapon.name] || 0.010) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scZoom * _rstPhysEarly;
         if (!_supp) {
         if (this.camera) this.camera.punchRecoilZoom(rzo);
         }
@@ -21112,6 +21793,8 @@ class Player extends Entity {
                 let scHit = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).hit : 1.0);
                 flinchDeg *= scHit;
             } catch (e) {}
+            // RESTED-GUN: weight holds you (barrier strongest). Kick input only.
+            try { flinchDeg *= this._restedChannelMult('hit'); } catch (e) {}
             this.kickAim('aimHitFlinchOffset', flinchDeg);
         }
         if (amt > 0 && game) {
@@ -21384,12 +22067,18 @@ class Player extends Entity {
             _meleeShovePx = Math.sin(Math.PI * Math.min(1, Math.max(0, _mt))) * MELEE_TUNING.SHOVE_PX;
         }
         ctx.translate(GUN_MOUNT_OFFSET - ((this.gunRetractPx || 0) + (this.gunRecoilKickPx || 0) + (this.gunKickPx || 0)), 0); // WO-001 Phase 3: render-only personality kick (never angle/barrel)
+        // RESTED-GUN: hand mirror (default right +1 preserves live). Rigid
+        // slide: gun+hands translate across (no flatten/blur); positional Ys
+        // below ride _handMixD. Draw-only: spawn stays barrel math.
+        let _handMixD = (((this.handBlend === undefined ? 1 : this.handBlend) * 2 - 1) || 0);
+        if (!isFinite(_handMixD)) _handMixD = 1;
+        if (_handMixD === 0) _handMixD = 0.001;
 
         // Per-weapon silhouette + grip (see PLAYER_GUN_GEOM). Gun centered on
-        // y=6, x forward along the aim axis.
+        // y=6*handMix, x forward along the aim axis (right default preserves live).
         const G = PLAYER_GUN_GEOM[this.weapon.name] || PLAYER_GUN_GEOM.SMG;
-        const baseY = 6;
-        const foreY = (G.foreY !== undefined) ? G.foreY : 5;
+        const baseY = 6 * _handMixD;
+        const foreY = ((G.foreY !== undefined) ? G.foreY : 5) * _handMixD;
 
         // Arms (drawn first, under the gun). Rear/trigger arm bends at the
         // elbow so it hangs out from the body instead of being a stiff stub;
@@ -21407,26 +22096,28 @@ class Player extends Entity {
         // At rest (_sh=0) the math collapses to the original (grip-3, 14)
         // point, so the idle stance is unchanged.
         {
-            const _sx = -2, _sy = 9;
-            const _uel = Math.hypot((G.grip - 3) - _sx, 14 - _sy);        // upper-arm length (const)
-            const _ua = Math.atan2(14 - _sy, (G.grip - 3) - _sx)
+            const _sx = -2, _sy = 9 * _handMixD;
+            const _uel = Math.hypot((G.grip - 3) - _sx, 14 * _handMixD - _sy);        // upper-arm length (const)
+            const _ua = Math.atan2(14 * _handMixD - _sy, (G.grip - 3) - _sx)
                      - (_sh / MELEE_TUNING.SHOVE_PX) * 0.55;              // tuck ~31 deg at full shove
             ctx.beginPath();
             ctx.moveTo(_sx, _sy);
             ctx.lineTo(_sx + Math.cos(_ua) * _uel, _sy + Math.sin(_ua) * _uel);
-            ctx.lineTo(G.grip + _sh, 7);        // trigger hand rides the grip forward
+            ctx.lineTo(G.grip + _sh, 7 * _handMixD);        // trigger hand rides the grip forward
             ctx.stroke();
         }
         ctx.beginPath();
-        if (G.fore !== null) { ctx.moveTo(0, -6); ctx.lineTo(G.fore + _sh, foreY - 3); }
-        else { ctx.moveTo(0, -4); ctx.lineTo(G.grip + 2 + _sh, 5); }
+        if (G.fore !== null) { ctx.moveTo(0, -6 * _handMixD); ctx.lineTo(G.fore + _sh, foreY - 3 * _handMixD); }
+        else { ctx.moveTo(0, -4 * _handMixD); ctx.lineTo(G.grip + 2 + _sh, 5 * _handMixD); }
         ctx.stroke();
 
         // Gun + hands: the ONLY parts that lunge on the melee shove -- the
         // arms above already reach to their shoved positions, so the
         // shoulders stay welded to the body (no field amputations).
+        // RESTED-GUN: mid-swap dip (rigid swing read, no flatten).
         ctx.save();
-        ctx.translate(_sh, 0);
+        let _handDipC = (1 - Math.abs(_handMixD)) * 3;
+        ctx.translate(_sh, _handDipC);
         // LMG drum/ammo drawn UNDER the gun (before the barrel so the gun
         // sits on top and it peeks out the bottom). Drab tone in the LMG's
         // own colorway.
@@ -21455,11 +22146,11 @@ class Player extends Entity {
         ctx.strokeStyle = '#a855f7';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(G.grip, 7, 3.1, -0.3, 2.6);
+        ctx.arc(G.grip, 7 * _handMixD, 3.1, -0.3, 2.6);
         ctx.stroke();
         ctx.beginPath();
         if (G.fore !== null) ctx.arc(G.fore, foreY, 2.7, -0.3, 2.6);
-        else ctx.arc(G.grip + 3, 7, 2.7, -0.3, 2.6);
+        else ctx.arc(G.grip + 3, 7 * _handMixD, 2.7, -0.3, 2.6);
         ctx.stroke();
 
         ctx.restore(); // gun + hands shove
@@ -28908,6 +29599,8 @@ class Bullet {
                                     let scWhiz = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).whiz : 1.0);
                                     whizKickDeg *= scWhiz;
                                 } catch (e) {}
+                                // RESTED-GUN: weight steadies startle (kick input only).
+                                try { whizKickDeg *= player._restedChannelMult('whiz'); } catch (e) {}
                                 let whizBiasDir = pan >= 0 ? -1 : 1;
                                 player.kickAim('aimWhizFlinchOffset', whizKickDeg, whizBiasDir, true);
                             }
@@ -37812,6 +38505,8 @@ class Game {
         // Developer debugging flags
         this.devGodMode = false;
         this.devModeEnabled = false;
+        // RESTED-DEBUG-START master kill; render-only, never taints (1P truth, 2P halves read same bool)
+        this.RESTED_DEBUG = false;
         this.forcedMutator = null;
         this.forcedBossKey = null;
         this.isDevShopActive = false;
@@ -40100,7 +40795,10 @@ class Game {
             if (factor > 0 && this.player.kickAim) {
                 let scBlast = 1.0;
                 try { scBlast = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(this).blast : 1.0); } catch (e) {}
-                this.player.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor * scBlast);
+                // RESTED-GUN: weight steadies blast (kick input only, shake untouched).
+                let _rstBlast = 1;
+                try { _rstBlast = this.player._restedChannelMult('blast'); } catch (e) {}
+                this.player.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor * scBlast * _rstBlast);
             }
         }
         
@@ -40121,7 +40819,10 @@ class Game {
             if (factor > 0 && this.player2.kickAim) {
                 let scBlast2 = 1.0;
                 try { scBlast2 = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(this).blast : 1.0); } catch (e) {}
-                this.player2.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor * scBlast2);
+                // RESTED-GUN: P2 same (kick input only).
+                let _rstBlast2 = 1;
+                try { _rstBlast2 = this.player2._restedChannelMult('blast'); } catch (e) {}
+                this.player2.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor * scBlast2 * _rstBlast2);
             }
         }
     }
@@ -55090,6 +55791,22 @@ class Game {
         }
         if (audio) audio.playPickup('money');
     }
+
+    // RESTED-DEBUG-START render-only rested debug toggle (never taints; easy delete with flag + draw blocks)
+    devSetRestedDebug(on) {
+        this.RESTED_DEBUG = !!on;
+        const b = document.getElementById('btn-dev-rested-debug');
+        if (b) {
+            b.innerText = this.RESTED_DEBUG ? 'ENABLED' : 'DISABLED';
+            b.style.color = this.RESTED_DEBUG ? 'var(--green)' : 'var(--red)';
+            b.style.borderColor = this.RESTED_DEBUG ? 'var(--green)' : 'var(--red)';
+        }
+    }
+    devToggleRestedDebug() {
+        this.devSetRestedDebug(!this.RESTED_DEBUG);
+        if (audio) audio.playPickup('money');
+    }
+    // RESTED-DEBUG-END
     
     devAddCash(amount) {
         this.taintRunEligibility('dev_cash'); // PHASE 0: run-currency cheat
@@ -61100,6 +61817,9 @@ class Game {
             R.armsGfx = mg(R.gunC);
             R.shoveC = mk(R.gunC);
             R.gunStatic = mg(R.shoveC);
+            // RESTED-GUN: left-side bake twin for the hand-swap crossfade
+            // (rigid arts, no flatten). Baked on weapon change only, like gunStatic.
+            R.gunStaticL = mg(R.shoveC);
             R.bodyStatic = mg(R.bodyC);
             R.dressGfx = mg(R.bodyC);
             R.shieldGfx = mg(R.root);
@@ -61129,14 +61849,15 @@ class Game {
         G.ellipse(0, r * 0.95, r * 0.27, r * 0.34); G.fill({ color: 0xc9a876 });
     }
 
-    _pixiPlayerGunStatic(G, p, GG, baseY, foreY) {
+    _pixiPlayerGunStatic(G, p, GG, baseY, foreY, side) {
+        if (side === undefined) side = 1;
         if (GG.mag) { G.rect(GG.mag.x, baseY + 1, GG.mag.w, GG.mag.h); G.fill({ color: 0x7d6f1a }); }
         if (GG.stock > 0) { G.rect(GG.recX - GG.stock, baseY - 1, GG.stock, 2); G.fill({ color: 0x8a8f98 }); }
         G.rect(GG.recX, baseY - GG.barrelH / 2, GG.barrelLen, GG.barrelH); G.fill({ color: 0xffffff });
         G.rect(GG.recX + 2, baseY - GG.recH / 2, GG.recLen, GG.recH); G.fill({ color: p.weapon.color });
-        G.arc(GG.grip, 7, 3.1, -0.3, 2.6); G.stroke({ width: 2, color: 0xa855f7 });
+        G.arc(GG.grip, 7 * side, 3.1, -0.3, 2.6); G.stroke({ width: 2, color: 0xa855f7 });
         if (GG.fore !== null) { G.arc(GG.fore, foreY, 2.7, -0.3, 2.6); G.stroke({ width: 2, color: 0xa855f7 }); }
-        else { G.arc(GG.grip + 3, 7, 2.7, -0.3, 2.6); G.stroke({ width: 2, color: 0xa855f7 }); }
+        else { G.arc(GG.grip + 3, 7 * side, 2.7, -0.3, 2.6); G.stroke({ width: 2, color: 0xa855f7 }); }
     }
 
     drawPixiPlayer(p, cam, isPlayer2) {
@@ -61164,9 +61885,21 @@ class Game {
         const gk = wName + '|' + r;
         if (gk !== R.gunKey) {
             R.gunStatic.clear();
-            this._pixiPlayerGunStatic(R.gunStatic, p, GG, 6, (GG.foreY !== undefined) ? GG.foreY : 5);
+            this._pixiPlayerGunStatic(R.gunStatic, p, GG, 6, (GG.foreY !== undefined) ? GG.foreY : 5, 1);
+            // RESTED-GUN: left-side rigid bake (crossfade twin, no flatten).
+            if (R.gunStaticL) {
+                R.gunStaticL.clear();
+                const _lfy = ((GG.foreY !== undefined) ? GG.foreY : 5);
+                this._pixiPlayerGunStatic(R.gunStaticL, p, GG, -6, -_lfy, -1);
+            }
             R.gunKey = gk;
         }
+        // RESTED-GUN: hand crossfade (rigid arts) + mid-swap dip. handBlend
+        // 1 = right settled. Draw-only: spawn tracks side math separately.
+        let _handMixP = (((p.handBlend === undefined ? 1 : p.handBlend) * 2 - 1) || 0);
+        if (!isFinite(_handMixP)) _handMixP = 1;
+        if (_handMixP === 0) _handMixP = 0.001;
+        let _handDipP = (1 - Math.abs(_handMixP)) * 3;
         // Body dynamics (WO-001 secondary motion, verbatim reads).
         const vx = p.vx || 0, vy = p.vy || 0;
         const bmSpeed = Math.hypot(vx, vy);
@@ -61223,21 +61956,32 @@ class Game {
         const gunD = (p.angle || 0) - (p.moveFacingAngle || 0);
         R.gunC.rotation = gunD;
         R.gunC.position.set((GUN_MOUNT_OFFSET - gunRe) * Math.cos(gunD), (GUN_MOUNT_OFFSET - gunRe) * Math.sin(gunD));
-        R.shoveC.position.set(meleeShovePx, 0);
+        R.gunC.scale.set(1, 1);
+        // RESTED-GUN: rigid slide (never alpha ghosts). One bake visible,
+        // hard-swapped at the midpoint; slideOff keeps the rendered lateral
+        // continuous (bakeSide*6 + slideOff == 6*handMix) with a mid dip.
+        // Opaque art stays opaque: hands visibly swing, never fade.
+        let _hbP = Math.max(0, Math.min(1, (p.handBlend === undefined ? 1 : p.handBlend)));
+        let _bakeSideP = _handMixP >= 0 ? 1 : -1;
+        let _slideOffP = 6 * _handMixP - _bakeSideP * 6;
+        if (R.gunStatic) { R.gunStatic.visible = _bakeSideP > 0; R.gunStatic.alpha = 1; }
+        if (R.gunStaticL) { R.gunStaticL.visible = _bakeSideP < 0; R.gunStaticL.alpha = 1; }
+        R.shoveC.position.set(meleeShovePx, _handDipP + _slideOffP);
         {
             const A = R.armsGfx; A.clear();
             const baseY = 6, foreY = (GG.foreY !== undefined) ? GG.foreY : 5;
             const sh = meleeShovePx;
-            const sx = -2, sy = 9;
-            const uel = Math.hypot((GG.grip - 3) - sx, 14 - sy);
-            const ua = Math.atan2(14 - sy, (GG.grip - 3) - sx) - (sh / MELEE_TUNING.SHOVE_PX) * 0.55;
+            // RESTED-GUN: arms track the sliding hands positionally (draw-only).
+            const sx = -2, sy = 9 * _handMixP;
+            const uel = Math.hypot((GG.grip - 3) - sx, 14 * _handMixP - sy);
+            const ua = Math.atan2(14 * _handMixP - sy, (GG.grip - 3) - sx) - (sh / MELEE_TUNING.SHOVE_PX) * 0.55;
             A.moveTo(sx, sy); A.lineTo(sx + Math.cos(ua) * uel, sy + Math.sin(ua) * uel);
-            A.lineTo(GG.grip + sh, 7); A.stroke({ width: 3, color: p.color, join: 'round', cap: 'round' });
+            A.lineTo(GG.grip + sh, 7 * _handMixP); A.stroke({ width: 3, color: p.color, join: 'round', cap: 'round' });
             // F2 pistol origin: canvas moveTo(0,-4) when fore==null (pistol),
             // (0,-6) otherwise — twin had -6 always (2px support-hand error).
-            A.moveTo(0, (GG.fore == null) ? -4 : -6);
-            if (GG.fore !== null) A.lineTo(GG.fore + sh, foreY - 3);
-            else A.lineTo(GG.grip + 2 + sh, 5);
+            A.moveTo(0, ((GG.fore == null) ? -4 : -6) * _handMixP);
+            if (GG.fore !== null) A.lineTo(GG.fore + sh, foreY * _handMixP - 3 * _handMixP);
+            else A.lineTo(GG.grip + 2 + sh, 5 * _handMixP);
             A.stroke({ width: 3, color: p.color, join: 'round', cap: 'round' });
         }
         // Wife dress + flower + fish (wifeMode only; vacuous in parity).
@@ -61347,7 +62091,81 @@ class Game {
                 G2.closePath(); G2.stroke({ width: 1.5 * ez, color: 0x00e5ff });
             }
         }
+        // RESTED-DEBUG-START world-space debug shapes (paired block; delete with flag + methods)
+        try { this.drawPixiRestedDebug(p, cam, isPlayer2, R); } catch (e) { if (!this._restDbgCallWarned) { this._restDbgCallWarned = true; try { console.warn('[rested-debug-call]', e); } catch (_e) {} } }
     }
+
+    // RESTED-DEBUG-START rested-gun debug visuals (render-only, flag-gated).
+    // Shapes (player-local, child of rig root so per-half + swept free):
+    // white pivot cross, lime rest ring, red break ring, gold tangent,
+    // cyan fore / orange aft arrows, blend bar. Zero per-frame alloc (one
+    // Graphics per rig, cleared per frame). Off = visible=false, zero binds.
+    // Delete: this method + the call above + flag + dashboard/TweakLab lines.
+    drawPixiRestedDebug(p, cam, isPlayer2, R) {
+        try {
+            if (!R) return;
+            if (!R.restedGfx && window.PIXI) {
+                R.restedGfx = new window.PIXI.Graphics();
+                if (R.root) R.root.addChild(R.restedGfx);
+            }
+            const D = R.restedGfx;
+            if (!D) return;
+            if (!this.RESTED_DEBUG) { D.visible = false; return; }
+            D.visible = true;
+            D.clear();
+            const T = (typeof RESTED_TUNING !== 'undefined') ? RESTED_TUNING : { REST_DIST: 2, BREAK_DIST: 12 };
+            // Foregrip pivot cross (white); rest/break rings around the EDGE
+            // point (v2 body-contact: _restEx/_restEy), radii in body-gap terms.
+            const px = (p._restPx !== undefined ? p._restPx : p.x) - p.x;
+            const py = (p._restPy !== undefined ? p._restPy : p.y) - p.y;
+            const ex = (p._restEx !== undefined ? p._restEx : p.x) - p.x;
+            const ey = (p._restEy !== undefined ? p._restEy : p.y) - p.y;
+            const hasKind = !!p._restedKind;
+            // Blend bar shows the EFFECTIVE lock (blend x look-away gate).
+            let _gateD = (p._restAimGateV === undefined ? 1 : p._restAimGateV);
+            if (!isFinite(_gateD)) _gateD = 1;
+            const blend = (p.restedBlend || 0) * _gateD;
+            const restR = 12 + (T.REST_DIST || 2), breakR = 12 + (T.BREAK_DIST || 12);
+            // Pivot cross (white, 8px arms, thick for daylight + night).
+            D.moveTo(px - 8, py); D.lineTo(px + 8, py);
+            D.moveTo(px, py - 8); D.lineTo(px, py + 8);
+            D.stroke({ width: 2.5, color: 0xFFFFFF, alpha: 1.0 });
+            // Rest ring (lime) + break ring (red) around the edge.
+            D.circle(ex, ey, restR);
+            D.stroke({ width: 2.5, color: 0x00FF66, alpha: hasKind ? 1.0 : 0.5 });
+            D.circle(ex, ey, breakR);
+            D.stroke({ width: 2, color: 0xFF2A5F, alpha: 0.85 });
+            // Tangent (gold, 40px) + fore (cyan) / aft (orange) normals (16px).
+            const tx = p._restTx || 1, ty = p._restTy || 0;
+            D.moveTo(ex - tx * 20, ey - ty * 20); D.lineTo(ex + tx * 20, ey + ty * 20);
+            D.stroke({ width: 2.5, color: 0xFFD600, alpha: 0.95 });
+            const nx = p._restNx || 0, ny = p._restNy || 0;
+            const nl = Math.hypot(nx, ny);
+            if (nl > 0.001) {
+                const ax = nx / nl, ay = ny / nl;
+                D.moveTo(ex, ey); D.lineTo(ex + ax * 16, ey + ay * 16);
+                D.stroke({ width: 2.5, color: 0x00E5FF, alpha: 1.0 });
+                D.moveTo(ex, ey); D.lineTo(ex - ax * 16, ey - ay * 16);
+                D.stroke({ width: 2.5, color: 0xFF7A00, alpha: 1.0 });
+            }
+            // Hand-side tick (white): lateral toward gun side, 6px like spawn side.
+            let hm = (((p.handBlend === undefined ? 1 : p.handBlend) * 2 - 1) || 0);
+            if (!isFinite(hm)) hm = 1;
+            const ga = p.angle || 0;
+            const sx = -Math.sin(ga) * 6 * hm, sy = Math.cos(ga) * 6 * hm;
+            D.moveTo(px, py); D.lineTo(px + sx, py + sy);
+            D.stroke({ width: 2, color: 0xE0F7FA, alpha: 1.0 });
+            // Blend bar 40x4 above head: bg red-dim, fill lime->red by blend.
+            const r = p.r || 12;
+            const bx = -20, by = -r - 14;
+            D.rect(bx, by, 40, 4); D.fill({ color: 0xFF0000, alpha: 0.35 });
+            const fw = Math.max(0, Math.min(1, blend)) * 40;
+            if (fw > 0.5) { D.rect(bx, by, fw, 4); D.fill({ color: hasKind ? 0x00FF66 : 0xFFD600, alpha: 0.9 }); }
+        } catch (e) {
+            if (!this._restDbgWarned) { this._restDbgWarned = true; try { console.warn('[rested-debug]', e); } catch (_e) {} }
+        }
+    }
+    // RESTED-DEBUG-END
 
     // PixiJS port L7b (2026-09-16): BASE-draw non-jammer enemies.
     // Twin rule: `typeof e.draw === Enemy.prototype.draw` (inherited base
@@ -62495,8 +63313,13 @@ class Game {
         const aimCoords = this.getWorldAimCoords(p);
         const lAngle = p.angle;
         const lRe = Math.min(14, p.gunRetractPx || 0);
-        const lStartX = p.x + Math.cos(lAngle) * (20 - lRe) - Math.sin(lAngle) * 6;
-        const lStartY = p.y + Math.sin(lAngle) * (20 - lRe) + Math.cos(lAngle) * 6;
+        // RESTED-GUN: lateral start mirrors handBlend (default right preserves
+        // live). Longitudinal (20-lRe) untouched: look bit-identical, beam still
+        // leaves the gun (muzzle flash covers the 12px to the true tip).
+        let _handMixL = (((p.handBlend === undefined ? 1 : p.handBlend) * 2 - 1) || 0);
+        if (!isFinite(_handMixL)) _handMixL = 1;
+        const lStartX = p.x + Math.cos(lAngle) * (20 - lRe) - Math.sin(lAngle) * 6 * _handMixL;
+        const lStartY = p.y + Math.sin(lAngle) * (20 - lRe) + Math.cos(lAngle) * 6 * _handMixL;
         let laserAngle;
         if (this.isPaused) laserAngle = lAngle;
         else {
@@ -68673,7 +69496,10 @@ class Game {
                 const GG = (entity.weapon && PLAYER_GUN_GEOM[entity.weapon.name]) ? PLAYER_GUN_GEOM[entity.weapon.name] : PLAYER_GUN_GEOM.SMG;
                 let barrelOffset = GG ? (GG.recX + GG.barrelLen) : 22;
                 let fwd = GUN_MOUNT_OFFSET + barrelOffset - _gunRe;
-                let side = 6;
+                // RESTED-GUN: lateral mirrors hand (draw truth kept: recoil slide stays visual).
+                let _handMixM = (((entity.handBlend === undefined ? 1 : entity.handBlend) * 2 - 1) || 0);
+                if (!isFinite(_handMixM)) _handMixM = 1;
+                let side = 6 * _handMixM;
                 wx = entity.x + Math.cos(angle) * fwd - Math.sin(angle) * side;
                 wy = entity.y + Math.sin(angle) * fwd + Math.cos(angle) * side;
             } else {
