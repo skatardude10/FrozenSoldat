@@ -880,6 +880,13 @@
         box-shadow: 0 0 12px rgba(0, 229, 255, 0.6) !important;
         background: rgba(0, 229, 255, 0.10) !important;
     }
+    /* Controller focus highlight for armory cosmetic swatches (id-ed divs
+       rendered inside armory cards) -- same glow as the mission chips so a
+       pad player can see which swatch has focus. */
+    .armory-swatch.focused-btn {
+        border-color: #00e5ff !important;
+        box-shadow: 0 0 12px rgba(0, 229, 255, 0.6) !important;
+    }
     .mission-card.selected {
         border-color: #39ff14; background: rgba(57, 255, 20, 0.09);
         box-shadow: 0 0 10px rgba(57, 255, 20, 0.25);
@@ -1875,7 +1882,7 @@
 
             <!-- Settings sub-tab: CONTROLS -->
             <div id="tab-settings-controls" class="settings-subtab-content active">
-                <button id="btn-sec-move" class="sec-head" onclick="game.toggleMenuSection('sec-move')"><span class="sec-arrow">▾</span> MOVEMENT</button>
+                <button id="btn-sec-move" class="sec-head" onclick="game.toggleMenuSection('sec-move')"><span class="sec-arrow">▸</span> MOVEMENT</button>
                 <div class="sec-body" id="sec-move">
                 <div style="margin-bottom: 15px;">
                     <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">WASD MOVEMENT MODE:</label><br>
@@ -1886,7 +1893,7 @@
                 </div>
                 </div>
 
-                <button id="btn-sec-touch" class="sec-head" onclick="game.toggleMenuSection('sec-touch')"><span class="sec-arrow">▾</span> TOUCH</button>
+                <button id="btn-sec-touch" class="sec-head" onclick="game.toggleMenuSection('sec-touch')"><span class="sec-arrow">▸</span> TOUCH</button>
                 <div class="sec-body" id="sec-touch">
                 <!-- TOUCH INTERFACE (moved here from Game Options -- it's a
                      controls preference). Force On/Off/Auto-detect + virtual
@@ -1946,7 +1953,7 @@
                 </div>
             </div>
 
-            <button id="btn-sec-pad" class="sec-head" onclick="game.toggleMenuSection('sec-pad')"><span class="sec-arrow">▾</span> GAMEPADS</button>
+            <button id="btn-sec-pad" class="sec-head" onclick="game.toggleMenuSection('sec-pad')"><span class="sec-arrow">▸</span> GAMEPADS</button>
             <div class="sec-body" id="sec-pad">
             <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.15);">
                 <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px;">GAMEPAD ASSIGNMENT:</label>
@@ -1980,7 +1987,7 @@
                 </div>
                 </div>
 
-                <button id="btn-sec-wife" class="sec-head" onclick="game.toggleMenuSection('sec-wife')"><span class="sec-arrow">▾</span> 🌸 WIFE MODE</button>
+                <button id="btn-sec-wife" class="sec-head" onclick="game.toggleMenuSection('sec-wife')"><span class="sec-arrow">▸</span> 🌸 WIFE MODE</button>
                 <div class="sec-body" id="sec-wife">
                 <!-- WIFE MODE: per-player accessibility assist (gentle aim
                      magnet + occasional auto-fire + half damage + comfort
@@ -2005,7 +2012,7 @@
                     </div>
                 </div>
                 </div>
-                <button id="btn-sec-copilot" class="sec-head" onclick="game.toggleMenuSection('sec-copilot')"><span class="sec-arrow">▾</span> 🎮 CO-PILOT</button>
+                <button id="btn-sec-copilot" class="sec-head" onclick="game.toggleMenuSection('sec-copilot')"><span class="sec-arrow">▸</span> 🎮 CO-PILOT</button>
                 <div class="sec-body" id="sec-copilot">
                 <!-- CO-PILOT: two gamepads drive one P1 soldier. Sticks
                      average, either trigger fires (semi re-arms only when
@@ -2675,7 +2682,7 @@
         
         <!-- Tab content: CONTROLS -->
         <div id="tab-controls-pause" class="tab-content">
-            <button id="btn-sec-move-pause" class="sec-head" onclick="game.toggleMenuSection('sec-move-pause')"><span class="sec-arrow">▾</span> MOVEMENT</button>
+            <button id="btn-sec-move-pause" class="sec-head" onclick="game.toggleMenuSection('sec-move-pause')"><span class="sec-arrow">▸</span> MOVEMENT</button>
             <div class="sec-body" id="sec-move-pause">
             <div style="margin-bottom: 15px;">
                 <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px;">WASD MOVEMENT MODE:</label><br>
@@ -2723,8 +2730,9 @@
                     </div>
                 </div>
             </div>
+            </div>
 
-            <button id="btn-sec-pad-pause" class="sec-head" onclick="game.toggleMenuSection('sec-pad-pause')"><span class="sec-arrow">▾</span> GAMEPADS</button>
+            <button id="btn-sec-pad-pause" class="sec-head" onclick="game.toggleMenuSection('sec-pad-pause')"><span class="sec-arrow">▸</span> GAMEPADS</button>
             <div class="sec-body" id="sec-pad-pause">
             <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.15);">
                 <label style="font-weight: bold; color: var(--neon-blue); letter-spacing: 1px; font-size: 11px;">GAMEPAD ASSIGNMENT:</label>
@@ -2758,7 +2766,7 @@
             </div>
             </div>
 
-            <button id="btn-sec-wife-pause" class="sec-head" onclick="game.toggleMenuSection('sec-wife-pause')"><span class="sec-arrow">▾</span> 🌸 WIFE MODE</button>
+            <button id="btn-sec-wife-pause" class="sec-head" onclick="game.toggleMenuSection('sec-wife-pause')"><span class="sec-arrow">▸</span> 🌸 WIFE MODE</button>
             <div class="sec-body" id="sec-wife-pause">
 
             <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(255, 159, 243, 0.25);">
@@ -2780,7 +2788,7 @@
                     </div>
                 </div>
             </div>
-            <button id="btn-sec-copilot-pause" class="sec-head" onclick="game.toggleMenuSection('sec-copilot-pause')"><span class="sec-arrow">▾</span> 🎮 CO-PILOT</button>
+            <button id="btn-sec-copilot-pause" class="sec-head" onclick="game.toggleMenuSection('sec-copilot-pause')"><span class="sec-arrow">▸</span> 🎮 CO-PILOT</button>
             <div class="sec-body" id="sec-copilot-pause">
 
             <div style="margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(0, 229, 255, 0.25);">
@@ -2790,7 +2798,6 @@
                     <button id="btn-copilot-off-pause" onclick="game.setCoPilotMode(false)" style="font-size: 10px; padding: 4px 12px; margin: 0;">OFF</button>
                     <button id="btn-copilot-on-pause" onclick="game.setCoPilotMode(true)" style="font-size: 10px; padding: 4px 12px; margin: 0;">🎮 ON</button>
                 </div>
-            </div>
             </div>
             </div>
         </div>
@@ -2918,7 +2925,7 @@
         <div id="extmags-choices-container" style="display: flex; flex-direction: column; gap: 12px; justify-content: center; margin-bottom: 30px;">
             <!-- Rendered dynamically -->
         </div>
-        <button class="neon-btn" onclick="game._cancelExtMags()" style="border-color: var(--red); color: var(--red); width: 100%;">CANCEL</button>
+        <button id="extmags-cancel" class="neon-btn" onclick="game._cancelExtMags()" style="border-color: var(--red); color: var(--red); width: 100%;">CANCEL (B)</button>
     </div>
 </div>
 
@@ -8277,24 +8284,73 @@ class MusicEngine {
         // switch never jumps mid-phrase into the new arrangement.
         this.pendingTrack = null;
         this.pendingArmStep = -1;
+        // MUSIC DIRECTOR (2026-09-26) — continuous tension + feel state,
+        // smoothed on the audio clock. prime() holds anticipation from
+        // spawner intent; updateDirector() blends it with live state.
+        // Rest ledger counts near-silent bars for the floor invariant.
+        this._tension = 0;
+        this._prime = null;
+        this._spdAvg1 = 0;
+        this._spdAvg2 = 0;
+        this._restSilentBars = 0;
+        this._restTotalBars = 0;
+        this._restPct = 0;
+        this._restBarSounded = false;
+        this._lastPadBar = -99;
+        this._lastChord = null;
+        // Scripted dropout (primeDropout): mute-all-but-downbeat-pulse for N
+        // bars, armed/dropped/released on bar lines only (quantization rule).
+        this._dropArmed = 0;
+        this._dropBarsLeft = 0;
+        this._dropRelease = false;
+        // Floor-dropout cooldown (loops): the enforced hole must stay rare
+        // enough to read as an event, not wallpaper — every 3rd loop at most.
+        this._dropCooldown = 0;
+        // Ceiling enforcement (anti-vanish): one-bar sparse pulse sounding
+        // through thinners. Decompress dip after wins (release()).
+        this._sparseBarsLeft = 0;
+        this._releaseUntil = 0;
+        // SEEDED MOTIF TRANSFORMS (2026-09-26): per-loop lead variation
+        // (octave/fragment/literal) picked from the run seed — deterministic
+        // per loop, non-repeating across sessions. Literal weighted by loops
+        // since literal (leitmotif recurrence). 512/pool-safe by construction.
+        this._leadXform = null;
+        this._loopIdx = 0;
+        this._loopsSinceLiteral = 2;
+        this._velRng = null;
+        this._leadVariant = null;
+        this._primeProg = 0;
+        // HOOK C (composition 2026-09-26): third CYBER-BREACH hook — the sigh
+        // after hookB's peak. Same 63-step skeleton as hookB (drops in over
+        // its footprint), new lyrical descent C6-A5-G5-E5-D5-E5-G5-A5-B5-A5-
+        // G5-E5 resolving home. All white-key pool (C,A,G,E,D,B).
+        this._hookC = [null, null, null, null, null, null, 84, null, null, 81, null, null, null, null, null, null, null, 79, null, null, null, null, null, 76, null, null, null, null, null, 74, null, 76, null, null, null, null, null, null, 79, null, null, 81, null, null, null, null, null, null, null, 83, null, null, null, null, null, 81, null, null, null, 79, null, 76, null];
         
         this.delayNode = null;
         this.delayGain = null;
+        // STEM GAINS (2026-09-26): drums unducked -> musicGain; bass/pad/lead
+        // -> duckBus (pump moves whole stems). Pad/lead delay taps wire from
+        // the stem gains (post-gain) so muted stems don't ghost through delay.
+        this.drumsGain = null;
+        this.bassGain = null;
+        this.padGain = null;
+        this.leadGain = null;
         
         this.tracks = {
             off: { bpm: 120 },
             action: (function() {
                 // "CYBER-BREACH" - 108 BPM Darksynth. 4 Stages: Intro -> Verse -> Drop -> Bridge
                 const rep = (arr, times) => Array(times).fill(arr).flat();
-                const e  = [40, 40, 52, 40,  40, 40, 52, 40,  40, 40, 52, 40,  43, 40, 45, 40]; // Em driving riff
-                const c  = [36, 36, 48, 36,  36, 36, 48, 36,  36, 36, 48, 36,  39, 36, 41, 36]; // C driving riff
-                const d  = [38, 38, 50, 38,  38, 38, 50, 38,  38, 38, 50, 38,  41, 38, 43, 38]; // D driving riff
-                const b  = [35, 35, 47, 35,  35, 35, 47, 35,  35, 35, 47, 35,  38, 35, 40, 35]; // Bm bridge riff
+                const e  = [40, 40, 52, 40,  43, 40, 47, 45,  40, 40, 52, 55,  57, 55, 52, 45]; // Em drive: octave punches, A-G-A fall, B passing
+                const c  = [36, 36, 48, 36,  43, 36, 45, 48,  52, 48, 45, 43,  45, 43, 41, 40]; // C drive: climb to G, walk home to E (E natural pool)
+                const d  = [38, 38, 50, 38,  45, 38, 43, 41,  38, 38, 50, 53,  55, 53, 52, 50]; // D drive: F-fall into the A-G-E close, home on D
+                const b  = [35, 35, 47, 35,  38, 35, 43, 45,  47, 45, 43, 40,  38, 40, 35, 35]; // Bm bridge: climb out of the pedal, fall home to B
 
                 const riff = [...e, ...e, ...c, ...d]; // 4 bars, 64 steps
 
-                // Intro: sparse pulsing low E, 8 bars.
-                const introBass = rep([40, null, null, null, 40, null, null, null, 40, null, null, null, 40, null, null, null], 8);
+                // Intro: E pedal with octave blips and a G-A pickup into the drive.
+                const introBass = [40, null, null, null, 52, null, null, null, 40, null, null, null, 43, null, 45, null];
+                const introBass8 = rep(introBass, 8);
                 // Bridge: same riff shape rooted on Bm, thinning out (kick
                 // drops here) into an anticipatory wind-down before the loop.
                 const bridgeRiff = [...b, ...b];
@@ -8303,27 +8359,30 @@ class MusicEngine {
                 // exact repeat -- same core contour and rhythmic DNA as
                 // before (this IS the song's hook), but the second pass
                 // answers with a variation instead of literally repeating.
-                const hookA = [...rep(null, 6), 79, null, null, 74, null, null, null, null, null, null, null, 76, null, null, null, null, null, 71, null, null, null, null, null, 74, null, 76, null, null, null, null, null, null, 79, null, null, 83, null, null, null, null, null, null, null, 81, null, null, null, null, null, 79, null, null, null, 74, null, 71, null]; // 63 steps
-                const hookB = [...rep(null, 6), 83, null, null, 79, null, null, null, null, null, null, null, 81, null, null, null, null, null, 76, null, null, null, null, null, 79, null, 81, null, null, null, null, null, null, 86, null, null, 88, null, null, null, null, null, null, null, 86, null, null, null, null, null, 83, null, null, null, 79, null, 76, null]; // answer phrase, up a 4th -- 63 steps
+                const hookA = [...rep(null, 6), 81, null, null, 79, null, null, null, null, null, null, null, 76, null, null, null, null, null, 79, null, null, null, null, null, 83, null, 81, null, null, null, null, null, null, 79, null, null, 76, null, null, null, null, null, null, null, 74, null, null, null, null, null, 76, null, null, null, 79, null, 81, null]; // 63 steps (statement: rise to B5, home on E)
+                const hookB = [...rep(null, 6), 83, null, null, 81, null, null, null, null, null, null, null, 79, null, null, null, null, null, 76, null, null, null, null, null, 74, null, 76, null, null, null, null, null, null, 79, null, null, 76, null, null, null, null, null, null, null, 74, null, null, null, null, null, 72, null, null, null, 71, null, 69, null]; // answer phrase: peak early, D-C-B-A descent home (fate-cell tail) -- 63 steps
                 const outroTag = [...rep(null, 14), 76, null]; // 16 steps, the receding tag that closes the drop out
 
-                const introLen = introBass.length;           // 128 steps (8 bars)
+                const introLen = introBass8.length;          // 128 steps (8 bars)
                 const riffLen = rep(riff, 4).length;          // 256 steps (16 bars)
                 const hooksLen = hookA.length + hookB.length; // 126 steps
                 const leadSilenceLen = 256;                   // lead enters at bar 17 -- "the drop"
                 const outroRepeats = Math.floor((512 - leadSilenceLen - hooksLen) / outroTag.length);
                 const leadPadding = 512 - (leadSilenceLen + hooksLen + outroRepeats * outroTag.length);
 
-                const EmPad = [52, 55, 59], CPad = [48, 52, 55], DPad = [50, 54, 57], BmPad = [47, 50, 54];
+                const EmPad = [52, 55, 59], CPad = [48, 52, 55], DPad = [50, 53, 57], BmPad = [47, 50, 53]; // Dm/Bdim: shared white-key pool (F#->F, 2026-09-26)
 
                 return {
                     bpm: 108,
                     // Bars 1-8 intro -> 9-24 driving riff -> 25-32 Bm bridge wind-down
-                    bassPattern: [...introBass, ...rep(riff, 4), ...rep(bridgeRiff, 4)],
+                    bassPattern: [...introBass8, ...rep(riff, 4), ...rep(bridgeRiff, 4)],
                     drums: {
-                        kick:  [...rep([1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0], 24), ...rep([0], 128)], // Drops out at bridge
+                        // Intro stalks (boom ··· ba-boom ··· boom) -> four-floor
+                        // drive -> bridge dropout. Snare enters bar 9 with a
+                        // ghost 16th before beat 4 from the drive on.
+                        kick:  [...rep([1,0,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0], 8), ...rep([1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0], 16), ...rep([0], 128)],
                         hat:   [...rep([0,0,1,0, 0,0,1,0, 0,0,1,0, 0,0,1,0], 8), ...rep([1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0], 24)],
-                        snare: [...rep([0], 128), ...rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0], 24)] // Enters at bar 9
+                        snare: [...rep([0], 128), ...rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,1,0], 24)] // Enters at bar 9
                     },
                     // Pad: enters bar 9 following Em-Em-C-D through the drive,
                     // resolves through Bm-Bm-Em-Em under the bridge -- locked
@@ -8339,13 +8398,13 @@ class MusicEngine {
             agent: (function() {
                 // "SHADOW PROTOCOL" - 90 BPM Trip Hop / Stealth. 4 Stages: Intro -> Groove -> Chorus (relative-major lift) -> Wind-down
                 const rep = (arr, times) => Array(times).fill(arr).flat();
-                const groove = [38, null, null, 38,  null, 41, null, null,  38, null, null, 38,  null, null, 45, 41]; // core groove -- the track's identity, unchanged
-                const grooveLift = [38, null, null, 38,  null, 43, null, null,  38, null, null, 41,  null, null, 45, 43]; // same DNA, one note raised under the chorus lift
+                const groove = [38, null, null, 45,  null, 43, null, null,  41, null, null, 45,  null, null, 48, 45]; // revoiced: D-A | G-F | A-C-A walk, downbeat D kept
+                const grooveLift = [38, null, null, 45,  null, 48, null, null,  41, null, null, 45,  null, null, 52, 50]; // same DNA, C and E lift under the chorus
 
-                const arp = [null, null, null, null, 81, null, null, null, null, null, null, null, 79, null, 74, null]; // core motif
-                const arpBright = [null, null, null, null, 84, null, null, null, null, null, null, null, 83, null, 79, null]; // chorus answer, brighter contour matching the major lift
+                const arp = [null, null, null, null, 76, null, null, null, null, null, null, null, 74, null, 72, null]; // revoiced: fate-cell head E-D-C over the groove
+                const arpBright = [null, null, null, null, 79, null, null, null, null, null, null, null, 81, null, 83, null]; // chorus answer: G-A-B rise against the major lift
 
-                const Am = [57, 60, 64], F = [53, 57, 60], E7 = [52, 56, 60]; // i-VI-V, core harmony, unchanged
+                const Am = [57, 60, 64], F = [53, 57, 60], E7 = [52, 55, 59]; // i-VI-v, Em for shared white-key pool (G#->G, 2026-09-26)
                 const C2 = [60, 64, 67], F2 = [53, 57, 60], G2 = [55, 59, 62]; // relative-major lift for the chorus
 
                 return {
@@ -8353,7 +8412,7 @@ class MusicEngine {
                     // Bars 1-8 sparse intro -> 9-16 full groove -> 17-24 lifted groove under the chorus -> 25-32 core groove wind-down
                     bassPattern: [...rep(groove, 16), ...rep(grooveLift, 8), ...rep(groove, 8)],
                     drums: {
-                        kick:  [...rep([0], 64), ...rep([1,0,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0], 20), ...rep([0], 64), ...rep([1,0,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0], 4)],
+                        kick:  [...rep([0], 64), ...rep([1,0,0,0, 0,0,1,0, 0,1,0,0, 1,0,0,0], 20), ...rep([0], 64), ...rep([1,0,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0], 4)],
                         hat:   [...rep([1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0], 8), ...rep([1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1], 20), ...rep([1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0], 4)],
                         snare: [...rep([0], 64), ...rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0], 20), ...rep([0], 64), ...rep([0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0], 4)]
                     },
@@ -8372,7 +8431,7 @@ class MusicEngine {
             ambient: (function() {
                 // "FROZEN WASTES" - 65 BPM Atmospheric Drone. 4 Stages: Home -> Shift -> Desolation -> Swell home
                 const rep = (arr, times) => Array(times).fill(arr).flat();
-                const Dm9 = [50, 53, 57, 64], BbM7 = [46, 53, 57, 62], F = [53, 57, 60, 65], C = [48, 55, 59, 64]; // core harmony, unchanged
+                const Dm9 = [50, 53, 57, 64], BbM7 = [47, 53, 57, 62], F = [53, 57, 60, 65], C = [48, 55, 60, 64]; // Bm7b5 + C triad: shared white-key pool (Bb->B, 2026-09-26)
                 const Gm7 = [43, 50, 53, 57]; // bars 9-16: same chord family, recontextualized from the subdominant side
                 const DmSus = [50, 52, 57]; // bars 17-24: unresolved, suspended -- the coldest point of the piece
 
@@ -8385,8 +8444,8 @@ class MusicEngine {
                 // Lead motif -- unchanged core phrase (a single rising 5th),
                 // placed once per section instead of identically 8 times in
                 // a row, so it reads as a recurring visitor, not wallpaper.
-                const motif = [null, null, null, null, 74, ...rep(null, 27), 79, ...rep(null, 31)]; // 64 steps
-                const motifDistant = [null, null, null, null, null, null, null, null, 67, ...rep(null, 55)]; // a lower, more distant echo for the desolate section
+                const motif = [null, null, null, null, 76, ...rep(null, 27), 81, ...rep(null, 31)]; // 64 steps (E5-A5 rising 4th, same visitor rhythm)
+                const motifDistant = [null, null, null, null, null, null, null, null, 71, ...rep(null, 55)]; // a third higher (B4), more distant shimmer for the desolate section
                 const silence64 = rep(null, 64);
 
                 return {
@@ -8419,16 +8478,16 @@ class MusicEngine {
                 const rep = (arr, times) => Array(times).fill(arr).flat();
 
                 const introBass = rep([40, null, null, null, null, null, null, null, 40, null, null, null, null, null, 41, null], 8);
-                const verseRiff  = [40, null, 41, null, 40, null, 38, null, 40, null, 41, null, 40, null, 41, null];
-                const verseRiffB = [40, null, 41, null, 43, null, 41, null, 40, null, 38, null, 40, null, 41, null];
-                const dropRiff   = [40, 41, 40, 41, 40, 43, 40, 41, 40, 41, 40, 38, 40, 41, 40, 50];
+                const verseRiff  = [40, null, 41, null, 43, null, 41, null, 40, null, 38, null, 40, null, 43, null]; // climb to G and back
+                const verseRiffB = [40, null, 43, null, 45, null, 43, null, 41, null, 40, null, 38, null, 40, null]; // reach A, fall home
+                const dropRiff   = [40, 41, 43, 41, 40, 41, 43, 45, 43, 41, 40, 41, 38, 40, 41, 40]; // surge and resolve to E
                 const breakdownBass = rep([40, ...rep(null, 15)], 8);
 
                 const EStab = [40, 47, 52], FStab = [41, 48, 53], DStab = [38, 45, 50];
                 const TensionDrone = [40, 41, 52]; // held, unresolved half-step under the breakdown
 
-                const stabLead  = [null, null, null, null, 76, null, 77, null, null, null, null, null, 76, null, 74, null];
-                const stabLeadB = [null, null, null, null, 77, null, 76, null, null, null, null, null, 74, null, 72, null];
+                const stabLead  = [null, null, null, null, 79, null, 81, null, null, null, null, null, 83, null, 81, null]; // rising answer G-A-B-A
+                const stabLeadB = [null, null, null, null, 76, null, 74, null, null, null, null, null, 72, null, 71, null]; // fate cell verbatim: E-D-C-B
 
                 return {
                     bpm: 130,
@@ -8466,22 +8525,22 @@ class MusicEngine {
                 // (driving drop) -> Collapse (unresolved breakdown).
                 const rep = (arr, times) => Array(times).fill(arr).flat();
 
-                const verseRiff = [40, null, 40, null, 43, null, 40, null, 40, null, 38, null, 41, null, 40, null];
-                const assaultRiff = [40, 40, 40, 40, 43, 43, 40, 40, 38, 38, 40, 40, 41, 41, 43, 43];
+                const verseRiff = [40, null, 43, null, 45, null, 43, null, 41, null, 40, null, 38, null, 40, null]; // climb and fall home
+                const assaultRiff = [40, 43, 45, 43, 40, 43, 41, 40, 38, 40, 41, 43, 45, 43, 41, 43]; // surge, ends open into the collapse pedal
                 const introPulse = [40, null, null, null, null, null, null, null, 40, null, null, null, null, null, 43, null];
                 const collapsePulse = [40, ...rep(null, 15)];
 
-                const Em = [52, 55, 59], C = [48, 52, 55], D = [50, 54, 57];
+                const Em = [52, 55, 59], C = [48, 52, 55], D = [50, 53, 57]; // Dm: shared white-key pool (F#->F, 2026-09-26)
                 const EStab = [40, 47, 52];
 
-                const verseMotif = [null, null, null, null, 76, null, null, null, null, null, 74, null, null, null, 71, null,
-                                    null, null, null, null, 72, null, null, null, null, null, 74, null, null, null, 76, null,
-                                    null, null, null, null, 76, null, null, null, null, null, 74, null, null, null, 71, null,
-                                    null, null, 67, null, null, null, 69, null, null, null, 71, null, null, null, null, null]; // 64 steps
-                const assaultHook = [76, null, 76, null, 79, null, 76, null, 74, null, 74, null, 76, null, null, null,
+                const verseMotif = [null, null, null, null, 79, null, null, null, null, null, 76, null, null, null, 74, null,
+                                    null, null, null, null, 76, null, null, null, null, null, 79, null, null, null, 81, null,
+                                    null, null, null, null, 83, null, null, null, null, null, 81, null, null, null, 79, null,
+                                    null, null, 76, null, null, null, 74, null, null, null, 72, null, null, null, null, null]; // 64 steps (statement / lift / peak-fall / fate head)
+                const assaultHook = [76, null, 76, null, 79, null, 81, null, 79, null, 76, null, 74, null, null, null,
+                                     76, null, 79, null, 81, null, 83, null, 81, null, 79, null, 76, null, null, null,
                                      76, null, 76, null, 79, null, 81, null, 79, null, 76, null, 74, null, null, null,
-                                     76, null, 76, null, 79, null, 76, null, 74, null, 74, null, 76, null, null, null,
-                                     83, null, 81, null, 79, null, 76, null, 74, null, 71, null, 72, null, null, null]; // 64 steps
+                                     83, null, 81, null, 79, null, 76, null, 74, null, 72, null, 71, null, null, null]; // 64 steps (close spells the fate cell E-D-C-B)
 
                 return {
                     bpm: 100,
@@ -8518,10 +8577,13 @@ class MusicEngine {
         this.ctx = audio.ctx;
         
         if (!this.delayNode) {
-            this.delayNode = this.ctx.createDelay(1.0);
+            this.delayNode = this.ctx.createDelay(2.0);
             this.delayGain = this.ctx.createGain();
-            this.delayNode.delayTime.value = 0.28; 
-            this.delayGain.gain.value = 0.45;
+            // Time/feedback sync to tempo in _syncDelayToTempo() (start +
+            // bar-line commits + baseBpm change) — 0.42 is only a pre-sync
+            // default (~dotted-8th at 108bpm), never the sound.
+            this.delayNode.delayTime.value = 0.42; 
+            this.delayGain.gain.value = MUSIC_DELAY.FEEDBACK;
             
             this.delayNode.connect(this.delayGain);
             this.delayGain.connect(this.delayNode);
@@ -8537,6 +8599,68 @@ class MusicEngine {
             this.duckBus.gain.value = 1.0;
             this.duckBus.connect(audio.musicGain);
         }
+
+        // CONVOLVER SPACE (2026-09-26): one medium room, parallel send like
+        // delayNode. Guarded singleton; stereo-locked (Firefox fix); returns
+        // pre-filter so tails inherit the HP muffle + user volume. Room size
+        // is wet-gain breathing on one IR — never live buffer swaps. Created
+        // BEFORE the stem gains below so their post-gain taps can wire to it.
+        if (!this.verb) {
+            this.verb = this.ctx.createConvolver();
+            this.verb.channelCount = 2;
+            this.verb.channelCountMode = 'explicit';
+            this.verb.channelInterpretation = 'speakers';
+            this.verb.buffer = this._makeImpulse(1.5, 2.8);
+            this.verbWet = this.ctx.createGain();
+            this.verbWet.gain.value = 0.0;
+            this.verb.connect(this.verbWet);
+            this.verbWet.connect(audio.musicGain);
+        }
+
+        // STEM GAINS (2026-09-26): one fader per layer so the director can
+        // crossfade the mix without touching voices. Drums stay unducked
+        // (kicks must never self-duck); bass/pad/lead ride the duckBus.
+        // Pad delay send wires from the stem gain (post-gain). Lead has no
+        // delay send by design (see leadGain block).
+        if (!this.drumsGain) {
+            this.drumsGain = this.ctx.createGain();
+            this.drumsGain.gain.value = 1.0;
+            this.drumsGain.connect(audio.musicGain);
+        }
+        if (!this.bassGain) {
+            this.bassGain = this.ctx.createGain();
+            this.bassGain.gain.value = 1.0;
+            this.bassGain.connect(this.duckBus);
+        }
+        if (!this.padGain) {
+            this.padGain = this.ctx.createGain();
+            this.padGain.gain.value = 1.0;
+            this.padGain.connect(this.duckBus);
+            this.padGain.connect(this.delayNode);
+            if (this.verb) this.padGain.connect(this.verb);
+        }
+        if (!this.leadGain) {
+            this.leadGain = this.ctx.createGain();
+            this.leadGain.gain.value = 1.0;
+            this.leadGain.connect(this.duckBus);
+            // NOTE: lead does NOT tap delayNode — an octave-up vibrato lead
+            // through feedback is the twiddly-diddly machine (2026-09-26).
+            // Lead space comes from the convolver send only.
+            if (this.verb) this.leadGain.connect(this.verb);
+        }
+    }
+
+    // Generated-IR builder (2026-09-26): stereo noise-decay impulse, mirrors
+    // createNoiseBuffer(). Built once in init(), never per-note.
+    _makeImpulse(durSec, decay) {
+        const rate = this.ctx.sampleRate;
+        const len = Math.max(1, Math.floor(rate * durSec));
+        const ir = this.ctx.createBuffer(2, len, rate);
+        for (let ch = 0; ch < 2; ch++) {
+            const d = ir.getChannelData(ch);
+            for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+        }
+        return ir;
     }
     
     start() {
@@ -8545,6 +8669,8 @@ class MusicEngine {
         this.isPlaying = true;
         this.nextNoteTime = this.ctx.currentTime;
         this.step = 0;
+        this._delayBpm = 0;
+        this._syncDelayToTempo((this.tracks[this.currentTrack] || {}).bpm || 120);
         this.schedulerTimerId = setInterval(() => this.scheduler(), this.lookahead);
     }
     
@@ -8553,6 +8679,29 @@ class MusicEngine {
         this.isPlaying = false;
         this.pendingTrack = null;
         this.pendingArmStep = -1;
+        // Director rest state: clear prime, tension, feel avgs, rest ledger.
+        this._prime = null;
+        this._tension = 0;
+        this._spdAvg1 = 0;
+        this._spdAvg2 = 0;
+        this._restSilentBars = 0;
+        this._restTotalBars = 0;
+        this._restPct = 0;
+        this._restBarSounded = false;
+        this._lastPadBar = -99;
+        this._lastChord = null;
+        this._dropArmed = 0;
+        this._dropBarsLeft = 0;
+        this._dropRelease = false;
+        this._dropCooldown = 0;
+        this._sparseBarsLeft = 0;
+        this._releaseUntil = 0;
+        this._leadXform = null;
+        this._loopIdx = 0;
+        this._loopsSinceLiteral = 2;
+        this._velRng = null;
+        this._leadVariant = null;
+        this._primeProg = 0;
         clearInterval(this.schedulerTimerId);
         this.schedulerTimerId = null;
     }
@@ -8579,6 +8728,151 @@ class MusicEngine {
         }
         this.pendingTrack = trackName;
         this.pendingArmStep = ((Math.floor(this.step / 16) + 1) * 16) % 512;
+    }
+
+    // MUSIC DIRECTOR — intent priming (2026-09-26). The spawn director calls
+    // prime() at DECISION time (startNextWave, RUNNER escape), before anything
+    // spawns, so tension builds in the anticipation pocket and the spawn lands
+    // as release. Wall-clock hold (audio clock); overwritten by the next prime.
+    prime(tension, holdSec) {
+        if (!this.ctx) return;
+        const level = Math.max(0, Math.min(1, tension || 0));
+        const dur = Math.max(0, holdSec || 0);
+        this._prime = { level, until: this.ctx.currentTime + dur, dur };
+    }
+
+    // Scripted silence beat (2026-09-26): mute everything but a bar-downbeat
+    // bass-root pulse for N bars — the pad-dropout-before-the-horde-lands.
+    // Arming is bar-quantized (starts next step%16===0); release lands on the
+    // spawn downbeat with a phrase breath. Scalar state only, GC-clean.
+    primeDropout(bars) {
+        if (!this.ctx) return;
+        this._dropArmed = Math.max(0, Math.min(8, bars || 0));
+        this._dropRelease = false;
+    }
+    releaseDropout() {
+        // Deferred to the next bar line inside scheduleNote (never mid-bar).
+        this._dropRelease = true;
+    }
+    // Decompress dip (2026-09-26): after a win/loss, force tension toward a
+    // floor for decaySec wall-clock seconds so the tail resolves instead of
+    // snapping. Callers: wave-clear shop entry (8s), endRun (12s).
+    release(decaySec) {
+        if (!this.ctx) return;
+        this._prime = null;
+        this._releaseUntil = this.ctx.currentTime + Math.max(0, decaySec || 0);
+        try { this.duckPump(this.ctx.currentTime, DUCK_TUNING.PHRASE); } catch (e) {}
+    }
+
+    // SEEDED MOTIF TRANSFORMS (2026-09-26): at each 512-loop wrap, pick the
+    // next loop's lead variation from the run seed — same seed+loop plays
+    // byte-identical (harness-replayable), different runs diverge. Transform
+    // space is pool-safe by construction: octave displacement (±12, always
+    // diatonic-safe), fragmentation (drop off-beat 16ths, contour kept), or
+    // literal. Literal is weighted by loops-since-literal (leitmotif
+    // recurrence: the hook returns recognizably instead of atomizing).
+    _pickLeadTransform() {
+        this._leadXform = { oct: 0, thin: false };
+        this._leadVariant = null;
+        // Floor-dropout cooldown ticks on loop wraps (called at step 0).
+        if (this._dropCooldown > 0) this._dropCooldown--;
+        try {
+            this._loopIdx = (this._loopIdx || 0) + 1;
+            let seed = 0xC0FFEE;
+            if (typeof game !== 'undefined' && game && game.runConfig && Number.isFinite(game.runConfig.mapSeed)) seed = game.runConfig.mapSeed >>> 0;
+            const rng = SeededRNG.mulberry32((seed ^ (this._loopIdx * 0x9E3779B9)) >>> 0);
+            this._velRng = SeededRNG.mulberry32((seed ^ (this._loopIdx * 0x9E3779B9 + 0x51F15E)) >>> 0);
+            if (this._loopsSinceLiteral === undefined) this._loopsSinceLiteral = 2;
+            const pLiteral = Math.min(0.5, 0.15 + 0.1 * this._loopsSinceLiteral);
+            if (rng() < pLiteral) { this._loopsSinceLiteral = 0; return; }
+            this._loopsSinceLiteral++;
+            // 1 in 4 non-literal loops: hookC answers instead of hookB on
+            // CYBER-BREACH (same 63-step footprint, new descending melody).
+            if (rng() < 0.25) this._leadVariant = 'hookC';
+            const r = rng();
+            this._leadXform.oct = r < 0.33 ? 12 : (r < 0.66 ? -12 : 0);
+            this._leadXform.thin = rng() < 0.4;
+        } catch (e) { this._leadXform = { oct: 0, thin: false }; }
+    }
+
+    // Velocity humanize (2026-09-26): gain-only ±8% from the loop-seeded
+    // stream — deterministic per loop, no timing change (the 512 grid is
+    // never touched). Falls back to 1.0 outside a picked loop.
+    _humanize() {
+        try { if (this._velRng) return 0.92 + 0.16 * this._velRng(); } catch (e) {}
+        return 1.0;
+    }
+
+    // MUSIC DIRECTOR — per-tick state blend (2026-09-26). Reads cheap O(1)
+    // fields + one combined enemies pass at most; called from scheduler()
+    // next to thinDrums/streakHot. Returns smoothed 0..1 tension.
+    updateDirector(now) {
+        let target = 0;
+        try {
+            if (typeof game !== 'undefined' && game && game.state === 'playing') {
+                // Locomotion feel: decaying speed average per living player
+                // (hum-lerp idiom k=min(1,dt*0.5), ~2s average at 25ms ticks).
+                // Dead players freeze stale velocity, so gate !dead (camera
+                // lookahead precedent). min() so one runner crossing an empty
+                // map can't fake tension; pair with enemy presence below.
+                const k = 0.0125;
+                let feel = 0, living = 0;
+                if (game.player && !game.player.dead) {
+                    const s = Math.hypot(game.player.vx || 0, game.player.vy || 0);
+                    this._spdAvg1 += (s - this._spdAvg1) * k;
+                    feel = this._spdAvg1; living++;
+                } else { this._spdAvg1 = 0; }
+                if (game.isTwoPlayer && game.player2 && !game.player2.dead) {
+                    const s2 = Math.hypot(game.player2.vx || 0, game.player2.vy || 0);
+                    this._spdAvg2 += (s2 - this._spdAvg2) * k;
+                    feel = living ? Math.min(feel, this._spdAvg2) : this._spdAvg2; living++;
+                } else { this._spdAvg2 = 0; }
+                if (!living) feel = 0;
+                // Walk ~260 / sprint ~550: feel term saturates at sprint.
+                const speedT = Math.max(0, Math.min(1, feel / 550));
+                // Threat: field pressure + boss + heat tier (extraction only).
+                let enemyFrac = 0;
+                try {
+                    const n = game.enemies ? game.enemies.length : 0;
+                    const cap = (typeof game._tacticalLiveCap === 'function') ? game._tacticalLiveCap() : 16;
+                    enemyFrac = cap > 0 ? Math.min(1, n / cap) : 0;
+                } catch (e) {}
+                const bossT = (game.activeBoss && !game.activeBoss.dead) ? 0.35 : 0;
+                const heatT = (game.extractionMode && game.heatTier) ? game.heatTier * 0.08 : 0;
+                const mutT = game.activeMutator ? 0.1 : 0;
+                const prepT = (game.prepTimer && game.prepTimer > 0) ? 0.25 : 0;
+                // Mode awareness: peaceful has no spawns (calm bias), HORDE
+                // is dense by premise, chaos draft runs hot.
+                const modeT = game.peacefulMode ? -0.2 : (game.nowMode ? 0.1 : (game.chaosDraftMode ? 0.05 : 0));
+                // Kill streaks lift tension while hot (same fresh-3+ read the
+                // hat lift uses — a spree should press the mix, not just tick).
+                let streakT = 0;
+                try { if (this._streakHot()) streakT = 0.15; } catch (e) {}
+                // Speed only matters with company: gate feel by presence.
+                target = Math.max(0, Math.min(1, modeT +
+                    0.15 * enemyFrac + bossT + heatT + mutT + prepT + streakT + 0.15 * speedT * Math.min(1, enemyFrac + (bossT > 0 ? 1 : 0) + (prepT > 0 ? 1 : 0))));
+            }
+            // Intent override: a live prime wins over state (anticipation).
+            // _primeProg (0..1 through the hold) drives the riser layer.
+            if (this._prime) {
+                if (now < this._prime.until) {
+                    target = Math.max(target, this._prime.level);
+                    this._primeProg = this._prime.dur > 0 ? Math.max(0, Math.min(1, 1 - (this._prime.until - now) / this._prime.dur)) : 1;
+                } else { this._prime = null; this._primeProg = 0; }
+            } else { this._primeProg = 0; }
+            // Decompress dip: after release(), hold the target near the floor
+            // while the tail resolves. The glide tau does the smoothing.
+            if (this._releaseUntil) {
+                if (now < this._releaseUntil) target *= 0.25;
+                else this._releaseUntil = 0;
+            }
+        } catch (e) {}
+        // Asymmetric glide: rises breathe in slow (~1s — arrival feels
+        // deliberate), falls release fast (~0.4s — the mix never lags the
+        // room going quiet). Recency bias lives here.
+        const gk = target > this._tension ? 0.025 : 0.06;
+        this._tension += (target - this._tension) * gk;
+        return this._tension;
     }
     
     // SOUNDSCAPE Phase 3c — adaptive auto-select (OQ-038). Manual picks stay
@@ -8638,6 +8932,7 @@ class MusicEngine {
         }
         
         let baseBpm = this.tracks[this.currentTrack]?.bpm || 120;
+        if (this._delayBpm !== baseBpm) { this._delayBpm = baseBpm; this._syncDelayToTempo(baseBpm); }
         let bpm = baseBpm;
         let targetFreq = 20000;
         let heartbeatVol = 0.0;
@@ -8658,6 +8953,22 @@ class MusicEngine {
             bpm = baseBpm * (1.0 + hpFactor * 0.25); // Slight tempo increase
             targetFreq = 20000 - hpFactor * (20000 - 600); // Muffle the high end
             heartbeatVol = hpFactor * 0.85;
+        }
+
+        // MUSIC DIRECTOR (2026-09-26): continuous tension closes the filter
+        // toward dread as anticipation/threat builds. Composes by taking the
+        // deeper cut so HP muffle and menu roll-off always win ties.
+        const tension = this.updateDirector(this.ctx.currentTime);
+        if (typeof game !== 'undefined' && game && game.state === 'playing') {
+            targetFreq = Math.min(targetFreq, 20000 - tension * (20000 - 2500));
+        }
+        // CONVOLVER SPACE breathing (2026-09-26): tight room in combat,
+        // cathedral in dread. Slow tau — the room size drifts, never snaps.
+        // Menu gets a middle room so idle still feels spatial.
+        if (this.verbWet) {
+            const inRunNow = !!(typeof game !== 'undefined' && game && game.state === 'playing');
+            const targetWet = inRunNow ? (MUSIC_SPACE.WET_BASE + tension * MUSIC_SPACE.WET_TENSION) : MUSIC_SPACE.WET_MENU;
+            this.verbWet.gain.setTargetAtTime(targetWet, this.ctx.currentTime, 0.3);
         }
         
         if (audio.musicFilter) {
@@ -8690,6 +9001,9 @@ class MusicEngine {
             this.nextNoteTime += secondsPerStep;
             // INCREASED TO 512 STEPS (32 BARS) FOR FULL SONG EVOLUTION
             this.step = (this.step + 1) % 512; 
+            // SEEDED MOTIF TRANSFORMS (2026-09-26): pick next loop's lead
+            // variation at the wrap — deterministic per run seed + loop.
+            if (this.step === 0) { try { this._pickLeadTransform(); } catch (e) {} }
             // SOUNDSCAPE Phase 3a: commit an armed track switch exactly on the
             // bar line, with one duckBus "phrase breath" (the kick-pump idiom
             // at phrase depth) to soften the arrangement seam. The 0.1s
@@ -8698,6 +9012,7 @@ class MusicEngine {
                 this.currentTrack = this.pendingTrack;
                 this.pendingTrack = null;
                 this.pendingArmStep = -1;
+                this._syncDelayToTempo((this.tracks[this.currentTrack] || {}).bpm || 120);
                 this.duckPump(this.ctx.currentTime, DUCK_TUNING.PHRASE);
                 // In auto mode the committed track becomes the persisted pick
                 // (mode flips explicit so fresh-save auto survives reloads and
@@ -8720,10 +9035,36 @@ class MusicEngine {
         
         let bar = Math.floor(step / 16);
         let stepInBar = step % 16;
+        // BAR-QUANTIZED DROPOUT (2026-09-26): arm/release land on step 0
+        // only — never mid-bar (quantization rule). Release carries a phrase
+        // breath so the re-entry lands on a seam.
+        if (stepInBar === 0) {
+            if (this._dropRelease) {
+                this._dropBarsLeft = 0; this._dropArmed = 0; this._dropRelease = false;
+                try { this.duckPump(time, DUCK_TUNING.PHRASE); } catch (e) {}
+            } else if (this._dropArmed > 0) {
+                this._dropBarsLeft = this._dropArmed; this._dropArmed = 0;
+            }
+        }
+        const dropping = this._dropBarsLeft > 0;
+        // Rest ledger: sounded-onset flags feed the bar score at the bottom.
+        // Post-gate (what the speaker gets), lift included, heartbeat excluded.
+        let kickHit = false, snareHit = false, liftHit = false;
+        let bassHit = false, leadHit = false;
         
+        // Turnaround fills (composition 2026-09-26): the last bar of every
+        // 8-bar block gets a drum turnaround + bass root pedal instead of
+        // the pattern — the composed seam between sections. Ambient is
+        // exempt (its desolation is the point; a snare fill would break the
+        // vow). Unpitched drums, in-key roots: 512/grid-safe by construction.
+        const fillBar = (bar % 8 === 7) && this.currentTrack !== 'ambient';
+        const drumKit = track.drums || {};
+        const kickPat = (fillBar && !dropping) ? FILL_KICK : drumKit.kick;
+        const snrPat = (fillBar && !dropping) ? FILL_SNARE : drumKit.snare;
         // 1. Kick drum (SOUNDSCAPE Phase 3d: low-HP dread thins the kit --
         // kicks drop out, hats keep the pulse)
-        if (!thinDrums && track.drums && track.drums.kick && track.drums.kick[step % track.drums.kick.length]) {
+        if (!thinDrums && !dropping && kickPat && kickPat[step % kickPat.length]) {
+            kickHit = true;
             if (this.currentTrack === 'ambient') this.playAmbientKick(time);
             else if (this.currentTrack === 'pvp' || this.currentTrack === 'siege') this.playIndustrialKick(time);
             else this.playKick(time);
@@ -8731,42 +9072,122 @@ class MusicEngine {
         }
         
         // 2. Hi-hat
-        let hatHit = !!(track.drums && track.drums.hat && track.drums.hat[step % track.drums.hat.length]);
+        let hatHit = !dropping && !!(track.drums && track.drums.hat && track.drums.hat[step % track.drums.hat.length]);
         if (hatHit) {
             this.playHat(time, (this.currentTrack === 'agent') ? 0.02 : 0.06);
         }
         // SOUNDSCAPE Phase 3d: kill-streak lift -- an extra off-beat tick
         // while hot, never flamming a scheduled hat.
-        if (streakHot && !hatHit && stepInBar % 2 === 0) this.playHat(time, 0.03);
+        if (!dropping && streakHot && !hatHit && stepInBar % 2 === 0) { liftHit = true; this.playHat(time, 0.03); }
         
         // 3. Snare / Rimshot (thinned with the kick -- see above)
-        if (!thinDrums && track.drums && track.drums.snare && track.drums.snare[step % track.drums.snare.length]) {
+        if (!thinDrums && !dropping && snrPat && snrPat[step % snrPat.length]) {
+            snareHit = true;
             if (this.currentTrack === 'agent') this.playRimshot(time);
             else this.playActionSnare(time);
         }
         
-        // 4. Heavy Darksynth Bass
+        // 4. Heavy Darksynth Bass (dropout: downbeat root pulse only;
+        // fill bars: root pedal on quarters instead of the riff)
         if (track.bassPattern) {
-            let note = track.bassPattern[step % track.bassPattern.length];
-            if (note !== null && note !== undefined) this.playBass(note, time);
+            if (fillBar && !dropping) {
+                if (stepInBar % 4 === 0) {
+                    const root = TRACK_ROOTS[this.currentTrack] !== undefined ? TRACK_ROOTS[this.currentTrack] : 40;
+                    bassHit = true; this.playBass(root, time);
+                }
+            } else {
+                let note = track.bassPattern[step % track.bassPattern.length];
+                if (note !== null && note !== undefined && (!dropping || stepInBar === 0)) { bassHit = true; this.playBass(note, time); }
+            }
         }
         
-        // 5. Analog Lead Melody
+        // 5. Analog Lead Melody (seeded per-loop transform: octave/thin/literal;
+        // hookC variant answers over hookB's footprint on CYBER-BREACH)
         if (track.leadPattern) {
-            let note = track.leadPattern[step % track.leadPattern.length];
-            if (note !== null && note !== undefined) this.playLead(note, time);
+            let note;
+            const vFrom = 319, vLen = 63;
+            if (this._leadVariant === 'hookC' && this.currentTrack === 'action' && this._hookC && step >= vFrom && step < vFrom + vLen) {
+                note = this._hookC[step - vFrom];
+            } else {
+                note = track.leadPattern[step % track.leadPattern.length];
+            }
+            if (note !== null && note !== undefined && !dropping) {
+                const xf = this._leadXform;
+                if (xf) {
+                    if (xf.thin && (stepInBar % 4 >= 2)) note = null;
+                    else if (xf.oct) note = Math.max(0, Math.min(127, note + xf.oct));
+                }
+                if (note !== null) { leadHit = true; this.playLead(note, time); }
+            }
         }
         
-        // 6. Cinematic Pads / Chords (Triggers once per bar on step 0)
-        if (track.padPattern && stepInBar === 0) {
-            let chord = track.padPattern[bar % track.padPattern.length];
-            if (chord) this.playPad(chord, time);
+        // 6. Cinematic Pads / Chords (Triggers once per bar on step 0).
+        // Anticipation stasis: while a prime holds, replay the last chord
+        // instead of advancing the progression (unresolved hold).
+        if (!dropping && track.padPattern && stepInBar === 0) {
+            let chord = this._prime ? this._lastChord : track.padPattern[bar % track.padPattern.length];
+            if (chord) { this._lastPadBar = bar; this._lastChord = chord; this.playPad(chord, time); }
+        }
+
+        // PRIME RISER (composition 2026-09-26): the anticipation build. While
+        // a prime holds, off-beat hats thicken with hold progress and snare
+        // quarters join past halfway — unpitched, deterministic, riding the
+        // pocket rather than the form, so the spawn lands as release.
+        let riserHit = false;
+        const prog = this._primeProg || 0;
+        if (!dropping && this._prime && prog > 0) {
+            if (stepInBar % 2 === 1) { this.playHat(time, 0.02 + 0.05 * prog); riserHit = true; }
+            if (prog > 0.5 && stepInBar % 4 === 0 && stepInBar >= 4) {
+                if (this.currentTrack === 'agent') this.playRimshot(time);
+                else this.playActionSnare(time);
+                riserHit = true;
+            }
+        }
+
+        // Ceiling pulse (anti-vanish, 2026-09-26): one hat tick + soft bass
+        // root on the downbeat, sounding through thinners and dropout. Priority:
+        // scripted-drop > ceiling-pulse > thinDrums > pattern.
+        if (!dropping && this._sparseBarsLeft > 0 && stepInBar === 0) {
+            this.playHat(time, 0.03);
+            if (track.bassPattern) {
+                const rn = track.bassPattern[step % track.bassPattern.length];
+                if (rn !== null && rn !== undefined) { bassHit = true; this.playBass(rn, time); }
+            }
         }
         
         // 7. Low Health Heartbeat overlay
         if (heartbeatVol > 0.0) {
             if (stepInBar === 0 || stepInBar === 8) this.playHeartbeat(time, heartbeatVol, true);
             else if (stepInBar === 1 || stepInBar === 9) this.playHeartbeat(time, heartbeatVol, false);
+        }
+
+        // REST LEDGER (2026-09-26): bar-granular silence accounting for the
+        // floor invariant (enforcement lands in phase 2; counting only here).
+        // Near-silent bar = no kick/snare/hat/lift/bass/lead onsets in any of
+        // its 16 steps AND no pad chord in this or the previous bar (tail veto).
+        // Heartbeat excluded (dread signal, not arrangement). In-run only.
+        if (typeof game !== 'undefined' && game && game.state === 'playing') {
+            if (kickHit || snareHit || hatHit || liftHit || bassHit || leadHit || riserHit) this._restBarSounded = true;
+            if (stepInBar === 15) {
+                const padVeto = (this._lastPadBar >= 0) && (((bar - this._lastPadBar) % 32 + 32) % 32 < 2);
+                this._restTotalBars++;
+                if (!this._restBarSounded && !padVeto) this._restSilentBars++;
+                this._restBarSounded = false;
+                // Dropout/sparse countdowns tick on bar lines (quantized).
+                if (this._dropBarsLeft > 0) this._dropBarsLeft--;
+                if (this._sparseBarsLeft > 0) this._sparseBarsLeft--;
+                if (this._restTotalBars >= 32) {
+                    this._restPct = this._restSilentBars / 32;
+                    // Floor (anti-wallpaper): armed dropout via the bar-line
+                    // path — kept rare (cooldown) and never on ambient
+                    // (already sparse by composition; a forced hole there is
+                    // pointless). Ceiling (anti-vanish): one-bar sparse pulse.
+                    if (this._restPct < REST_TUNING.FLOOR && !(this._dropCooldown > 0) && this.currentTrack !== 'ambient') { this._dropArmed = 2; this._dropCooldown = 3; }
+                    else if (this._restPct > REST_TUNING.CEIL) this._sparseBarsLeft = 1;
+                    this._restSilentBars = 0;
+                    this._restTotalBars = 0;
+                }
+            }
         }
     }
     
@@ -8779,11 +9200,11 @@ class MusicEngine {
         osc.frequency.setValueAtTime(130, time);
         osc.frequency.exponentialRampToValueAtTime(35, time + 0.12);
         
-        gain.gain.setValueAtTime(0.75, time);
+        gain.gain.setValueAtTime(0.6, time);
         gain.gain.exponentialRampToValueAtTime(0.01, time + 0.14);
         
         osc.connect(gain);
-        gain.connect(audio.musicGain);
+        gain.connect(this.drumsGain || audio.musicGain);
         
         osc.start(time);
         osc.stop(time + 0.15);
@@ -8802,6 +9223,20 @@ class MusicEngine {
         g.setValueAtTime(depth, time);
         g.setTargetAtTime(1.0, time + 0.02, 0.09);
     }
+
+    // Tempo-synced delay (2026-09-26): MUSIC_DELAY.BEATS of the CURRENT
+    // track's base bpm — never menu/HP-scaled (the room stays put while tempo
+    // FX come and go). Called on start, bar-line track commits, and baseBpm
+    // changes. setTargetAtTime so retunes glide instead of Doppler-zipping.
+    _syncDelayToTempo(baseBpm) {
+        try {
+            if (!this.delayNode || !this.ctx || !Number.isFinite(baseBpm) || baseBpm <= 0) return;
+            const t = (60 / baseBpm) * MUSIC_DELAY.BEATS;
+            const now = this.ctx.currentTime;
+            this.delayNode.delayTime.setTargetAtTime(t, now, 0.1);
+            this.delayGain.gain.setTargetAtTime(MUSIC_DELAY.FEEDBACK, now, 0.1);
+        } catch (e) {}
+    }
     
     playIndustrialKick(time) {
         if (!audio.ctx) return;
@@ -8812,11 +9247,11 @@ class MusicEngine {
         osc.frequency.setValueAtTime(150, time);
         osc.frequency.exponentialRampToValueAtTime(45, time + 0.06); // faster, harder snap than the standard kick
         
-        gain.gain.setValueAtTime(0.8, time);
+        gain.gain.setValueAtTime(0.7, time);
         gain.gain.exponentialRampToValueAtTime(0.01, time + 0.09);
         
         osc.connect(gain);
-        gain.connect(audio.musicGain);
+        gain.connect(this.drumsGain || audio.musicGain);
         
         osc.start(time);
         osc.stop(time + 0.1);
@@ -8836,7 +9271,7 @@ class MusicEngine {
         gain.gain.exponentialRampToValueAtTime(0.001, time + 0.28);
         
         osc.connect(gain);
-        gain.connect(audio.musicGain);
+        gain.connect(this.drumsGain || audio.musicGain);
         
         osc.start(time);
         osc.stop(time + 0.3);
@@ -8854,7 +9289,7 @@ class MusicEngine {
         filter.Q.value = 1.8;
         
         const gain = audio.ctx.createGain();
-        gain.gain.setValueAtTime(vol, time);
+        gain.gain.setValueAtTime(vol * this._humanize(), time);
         gain.gain.exponentialRampToValueAtTime(0.001, time + 0.045);
         
         const pan = audio.ctx.createStereoPanner();
@@ -8863,7 +9298,7 @@ class MusicEngine {
         source.connect(filter);
         filter.connect(gain);
         gain.connect(pan);
-        pan.connect(audio.musicGain);
+        pan.connect(this.drumsGain || audio.musicGain);
         
         source.start(time);
         source.stop(time + 0.05);
@@ -8883,7 +9318,7 @@ class MusicEngine {
         gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
         
         osc.connect(gain);
-        gain.connect(audio.musicGain);
+        gain.connect(this.drumsGain || audio.musicGain);
         
         osc.start(time);
         osc.stop(time + 0.05);
@@ -8948,8 +9383,7 @@ class MusicEngine {
         });
 
         filter.connect(gain);
-        gain.connect(this.duckBus || audio.musicGain);
-        if (this.delayNode) gain.connect(this.delayNode); // Drown the pad in delay
+        gain.connect(this.padGain || this.duckBus || audio.musicGain);
     }
 
     playBass(note, time) {
@@ -8977,7 +9411,7 @@ class MusicEngine {
         filter.frequency.exponentialRampToValueAtTime(endFilter, time + ((this.currentTrack === 'pvp') ? 0.07 : 0.12));
         
         let baseVol = (this.currentTrack === 'agent') ? 0.35 : (this.currentTrack === 'pvp') ? 0.32 : 0.22;
-        gain.gain.setValueAtTime(baseVol, time);
+        gain.gain.setValueAtTime(baseVol * this._humanize(), time);
         gain.gain.exponentialRampToValueAtTime(0.001, time + ((this.currentTrack === 'pvp') ? 0.1 : 0.16));
         
         // Bass stays centered (mono) -- standard mixing practice, keeps the
@@ -8985,7 +9419,7 @@ class MusicEngine {
         osc1.connect(filter);
         osc2.connect(filter);
         filter.connect(gain);
-        gain.connect(this.duckBus || audio.musicGain);
+        gain.connect(this.bassGain || this.duckBus || audio.musicGain);
         
         osc1.start(time);
         osc2.start(time);
@@ -9014,7 +9448,7 @@ class MusicEngine {
         const lfoGain = audio.ctx.createGain();
         lfo.type = 'sine';
         lfo.frequency.value = 6; // 6Hz vibrato speed
-        lfoGain.gain.value = 6;  // Vibrato depth
+        lfoGain.gain.value = 4;  // Vibrato depth (tamed 2026-09-26: 6Hz wobble through delay was seasick)
         lfo.connect(lfoGain);
         lfoGain.connect(osc1.frequency);
         lfoGain.connect(osc2.frequency);
@@ -9026,15 +9460,14 @@ class MusicEngine {
         filter.frequency.exponentialRampToValueAtTime(400, time + 0.15);
         
         let baseVol = (this.currentTrack === 'ambient') ? 0.1 : 0.05;
-        gain.gain.setValueAtTime(baseVol, time);
+        gain.gain.setValueAtTime(baseVol * this._humanize(), time);
         gain.gain.exponentialRampToValueAtTime(0.001, time + 0.25);
         
         osc1.connect(filter);
         osc2.connect(filter);
         filter.connect(gain);
         gain.connect(pan);
-        pan.connect(this.duckBus || audio.musicGain);
-        if (this.delayNode) gain.connect(this.delayNode);
+        pan.connect(this.leadGain || this.duckBus || audio.musicGain);
         
         osc1.start(time);
         osc2.start(time);
@@ -9074,10 +9507,10 @@ class MusicEngine {
         
         noiseSource.connect(noiseFilter);
         noiseFilter.connect(noiseGain);
-        noiseGain.connect(audio.musicGain);
+        noiseGain.connect(this.drumsGain || audio.musicGain);
         
         bodyOsc.connect(bodyGain);
-        bodyGain.connect(audio.musicGain);
+        bodyGain.connect(this.drumsGain || audio.musicGain);
         
         noiseSource.start(time);
         noiseSource.stop(time + 0.15);
@@ -17137,8 +17570,8 @@ const RESTED_TUNING = {
     // or off to the side and the lock fades, getaway gets easier. Barriers
     // demand aiming over the top; walls tolerate parallel lean; corners are
     // most forgiving (pivot play aims around the point, not at it).
-    GATE_FULL: { barrier: 80, wall: 90, corner: 100 },
-    GATE_HARD: { barrier: 100, wall: 110, corner: 120 },
+    GATE_FULL: { barrier: 80, wall: 90, corner: 100, sill: 80 },
+    GATE_HARD: { barrier: 100, wall: 110, corner: 120, sill: 100 },
     TIP_MAX: 34,              // muzzle tip must be within this of the edge (overhang check)
     ENGAGE_MAX_SPEED: 140,    // px/s: engage only below creep speed (run-through = no stick)
     BREAK_SPEED: 280,         // px/s: instant break above this (walk/run past never grabs)
@@ -17160,6 +17593,14 @@ const RESTED_TUNING = {
         recoil: 0.65, climbPerShot: 0.70, climbMax: 0.66, climbDecayMult: 1.16,
         bite: 0.84, hit: 0.70, whiz: 0.75, blast: 0.80, physical: 0.50,
         walk: 0.60, idleBase: 0.70, heart: 0.75, engage: 0.80, fade: 0.87
+    },
+    // MESA SILLS: window-sill rest ({_parapet, seeThrough} walls). Seeded as a
+    // copy of MULT_BARRIER (operator call: sills hit like sandbags — deck
+    // outbound always clears, so this is the prime firing position).
+    MULT_SILL: {
+        recoil: 0.35, climbPerShot: 0.38, climbMax: 0.36, climbDecayMult: 1.44,
+        bite: 0.69, hit: 0.40, whiz: 0.50, blast: 0.55, physical: 0.25,
+        walk: 0.30, idleBase: 0.35, heart: 0.50, engage: 0.60, fade: 0.67
     }
 };
 
@@ -17407,6 +17848,11 @@ function buildTweakRegistry() {
     TW('Audio', 'LADDER_TUNING.WINDOW', LADDER_TUNING, 'WINDOW', 1.0, 3.5, 0.1);
     TW('Audio', 'MUFFLE_TUNING.FLASH_FLOOR', MUFFLE_TUNING, 'FLASH_FLOOR', 100, 2000, 10);
     TW('Audio', 'MUFFLE_TUNING.BLAST_FLOOR', MUFFLE_TUNING, 'BLAST_FLOOR', 200, 4000, 10);
+    TW('Audio', 'REST_TUNING.FLOOR', REST_TUNING, 'FLOOR', 0, 0.5, 0.01);
+    TW('Audio', 'REST_TUNING.CEIL', REST_TUNING, 'CEIL', 0.1, 0.9, 0.01);
+    TW('Audio', 'MUSIC_SPACE.WET_TENSION', MUSIC_SPACE, 'WET_TENSION', 0, 0.5, 0.01);
+    TW('Audio', 'MUSIC_DELAY.BEATS', MUSIC_DELAY, 'BEATS', 0.25, 1, 0.25);
+    TW('Audio', 'MUSIC_DELAY.FEEDBACK', MUSIC_DELAY, 'FEEDBACK', 0, 0.6, 0.01);
     // --- Lighting ---
     TW('Lighting', 'VEIL_TUNING.ALPHA', VEIL_TUNING, 'ALPHA', 0, 0.5, 0.01);
     TW('Lighting', 'HERO_TUNING.RANGE', HERO_TUNING, 'RANGE', 200, 1600, 10);
@@ -17722,6 +18168,24 @@ const FIRSTBITE_TUNING = { RATE: 1.07, GAIN: 1.15 };
 const ECHO_TUNING = { WET1: 0.25, WET2: 0.10 };
 // Sidechain depths: kick-pump default + phrase-breath on track switches.
 const DUCK_TUNING = { DEPTH: 0.55, PHRASE: 0.3 };
+// Music delay (2026-09-26): tempo-synced dotted-8th, not a fixed 0.28s — a
+// fixed time flams against every tempo but one. BEATS is fractions of a beat
+// (0.75 = dotted 8th, the rhythmic delay); FEEDBACK sets repeat count.
+const MUSIC_DELAY = { BEATS: 0.75, FEEDBACK: 0.32 };
+// Rest budget (MusicDirector 2026-09-26): floor % of near-silent bars per
+// 32-bar loop (anti-wallpaper), ceiling % (anti-vanish), pad tail veto window.
+// FLOOR sits below the sparsest track's arranged rate — the guard only
+// catches director/thinner-stacked density, never composition.
+const REST_TUNING = { FLOOR: 0.15, CEIL: 0.60, PAD_TAIL_BARS: 2 };
+// Convolver room bounds (MusicDirector 2026-09-26): tight combat floor,
+// dread-driven slope, menu middle room. Automated via setTargetAtTime.
+const MUSIC_SPACE = { WET_BASE: 0.04, WET_TENSION: 0.25, WET_MENU: 0.12 };
+// Turnaround fills (composition 2026-09-26): unpitched drum fills sound on
+// the last bar of every 8-bar block (bar%8===7) across all tracks — the
+// "composed" seam between sections. Bass pedals the track root on quarters.
+const FILL_KICK = [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0];
+const FILL_SNARE = [0,0,0,0, 0,0,0,0, 1,0,1,0, 1,0,1,0];
+const TRACK_ROOTS = { action: 40, agent: 38, ambient: 38, pvp: 40, siege: 40, off: 40 };
 // Kill-ladder combo window (registerKillCredit + streak read share it).
 const LADDER_TUNING = { WINDOW: 2.0 };
 
@@ -20389,6 +20853,9 @@ class Player extends Entity {
             for (let i = 0; i < walls.length; i++) {
                 let w = walls[i];
                 if (!w) continue;
+                // MESA: sills (seeThrough) never veto — the gun fires over
+                // them. Solid walls use combat truth (opaque at windows).
+                if (w.seeThrough) continue;
                 try {
                     if (MathUtils.lineIntersectAABB(bx, by, ex, ey, w)) {
                         // Ignore walls behind the muzzle start (touching overlap).
@@ -20449,6 +20916,10 @@ class Player extends Entity {
             this._restedForePivot();
             let fx = this._restPx, fy = this._restPy;
             let spd = Math.hypot(this.vx || 0, this.vy || 0);
+            // MESA: solid floors only — stairs (floorAt 0, connected to both
+            // levels) never rest. No-platform maps always read 1 here.
+            let onStair = false;
+            try { onStair = game.map.floorAt ? (game.map.floorAt(this.x, this.y) === 0) : false; } catch (e) {}
             // Run-through: no stick at all at speed. Instant break, gun home right.
             if (spd >= T.BREAK_SPEED) {
                 this._restedTimer = 0;
@@ -20486,6 +20957,11 @@ class Player extends Entity {
                         for (let i = 0; i < bars.length; i++) {
                             let bar = bars[i];
                             if (!bar) continue;
+                            // MESA: barriers mix floors in one array — gate by
+                            // midpoint floor (draw splits the same way).
+                            try {
+                                if (game.map.floorAt && game.map.floorAt((bar.ax + bar.bx) / 2, (bar.ay + bar.by) / 2) !== game.map.floorAt(this.x, this.y)) continue;
+                            } catch (e) {}
                             let cp = null;
                             try { cp = MathUtils.closestPointOnSegment(this.x, this.y, bar.ax, bar.ay, bar.bx, bar.by); } catch (e) { continue; }
                             if (!cp) continue;
@@ -20536,7 +21012,12 @@ class Player extends Entity {
                     if (near) {
                         for (let i = 0; i < near.length; i++) {
                             let w = near[i];
-                            if (!w || w.seeThrough) continue;
+                            if (!w) continue;
+                            // MESA SILLS: {_parapet, seeThrough} window sills are
+                            // restable cover (gun goes over the top); all other
+                            // seeThrough voids are skipped as before.
+                            let isSillW = !!w.seeThrough && !!w._parapet;
+                            if (w.seeThrough && !isSillW) continue;
                             if (w.hp !== undefined && w.hp <= 0) continue;
                             let cpx = MathUtils.clamp(this.x, w.x, w.x + w.w);
                             let cpy = MathUtils.clamp(this.y, w.y, w.y + w.h);
@@ -20557,8 +21038,9 @@ class Player extends Entity {
                                 }
                             } catch (e) {}
                             // Corner test: body offset on both axes (peeking an edge).
+                            // Sill segment ends read as corners (pivot points).
                             let isCorner = (Math.abs(this.x - cpx) > 0.5 && Math.abs(this.y - cpy) > 0.5);
-                            let kind = isCorner ? 'corner' : 'wall';
+                            let kind = isCorner ? 'corner' : (isSillW ? 'sill' : 'wall');
                             // Gun-aware score with sandbag priority + incumbent
                             // bonus: a new edge must beat the held one by a
                             // margin, so 1px steps stop flipping the lock.
@@ -20614,9 +21096,9 @@ class Player extends Entity {
                 // edge (the barrel ON cover counts); ignored while locked.
                 let gunLim = locked ? 1e9 : 30;
                 let slowEnough = locked ? (spd < T.BREAK_SPEED) : (spd <= T.ENGAGE_MAX_SPEED);
-                if (bestKind && bestBodyD <= gapLim && bestGunD <= gunLim && slowEnough) {
-                    // Kind latch: barrier > wall > corner; re-latch when free or stronger appears.
-                    let rank = { barrier: 3, wall: 2, corner: 1 };
+                if (bestKind && bestBodyD <= gapLim && bestGunD <= gunLim && slowEnough && !onStair) {
+                    // Kind latch: barrier/sill > wall > corner; re-latch when free or stronger appears.
+                    let rank = { barrier: 3, sill: 3, wall: 2, corner: 1 };
                     if (!this._restedKind || (this.restedBlend || 0) === 0 || (rank[bestKind] || 0) >= (rank[this._restedKind] || 0)) {
                         this._restedKind = bestKind;
                         this._restEdgeRef = bestEdgeRef;
@@ -20744,7 +21226,9 @@ class Player extends Entity {
                             tx /= tl; ty /= tl;
                             let vt = (this.vx || 0) * tx + (this.vy || 0) * ty;
                             let kind2 = this._restedKind;
-                            let tdamp = (kind2 === 'corner') ? 6.0 : (kind2 === 'barrier' ? 4.0 : 0.6);
+                            // MESA: sills slide-sticky like sandbags (prime firing
+                            // position); sill ends read as corners (point-stick).
+                            let tdamp = (kind2 === 'corner') ? 6.0 : ((kind2 === 'barrier' || kind2 === 'sill') ? 4.0 : 0.6);
                             // Driving frees the tangent (reposition while held);
                             // hands-off keeps the sticky slide / point-stick.
                             if (driving) tdamp *= 0.15;
@@ -41949,8 +42433,8 @@ class Game {
 
     // Collapsible menu sections (tall menus fit short screens). Header button
     // toggles its body div; state persists in saveData.menuSections following
-    // the renderScale precedent (guarded read, no migration). The controls
-    // reference lists default collapsed (tallest, rarely read); the gamepad
+    // the renderScale precedent (guarded read, no migration). All sections
+    // start collapsed (couch-first); the gamepad
     // nav resolver skips hidden ids so focus can never land in a closed body.
     toggleMenuSection(bodyId) {
         const body = document.getElementById(bodyId);
@@ -41961,11 +42445,36 @@ class Game {
         this.saveData.menuSections[bodyId] = open;
         this.saveGameData();
         this.refreshMenuSectionHeads();
+        // Re-park the pad cursor when a collapse strands it inside a now-
+        // hidden body (blank highlight + dead A until the next vertical
+        // move). Park on the first visible row so headers stay reachable.
+        try {
+            const mRows = this.getMainMenuTabRows();
+            const mTabEl = document.querySelector('#start-screen .tab-content.active');
+            const mTab = mTabEl ? mTabEl.id.replace('tab-', '').replace('settings-', 'settings') : null;
+            const mGrid = (mTab && mRows[mTab]) ? mRows[mTab] : null;
+            if (mGrid && !this._resolveNavTarget(mGrid, this.mainMenuRowIndex || 0, this.mainMenuOptionIndex || 0)) {
+                for (let s = 0; s < mGrid.length; s++) {
+                    if (this._navRowHasStop(mGrid, s)) { this.mainMenuRowIndex = s; this.mainMenuOptionIndex = 0; break; }
+                }
+            }
+        } catch (e) {}
+        try {
+            const pRows = this.getPauseMenuTabRows();
+            const pTabEl = document.querySelector('#pause-screen .tab-content.active');
+            const pTab = pTabEl ? pTabEl.id.replace('tab-', '').replace('-pause', '') : null;
+            const pGrid = (pTab && pRows[pTab]) ? pRows[pTab] : null;
+            if (pGrid && !this._resolveNavTarget(pGrid, this.pauseMenuRowIndex || 0, this.pauseMenuOptionIndex || 0)) {
+                for (let s = 0; s < pGrid.length; s++) {
+                    if (this._navRowHasStop(pGrid, s)) { this.pauseMenuRowIndex = s; this.pauseMenuOptionIndex = 0; break; }
+                }
+            }
+        } catch (e) {}
         this.refreshMainMenuHighlight();
         this.refreshPauseMenuHighlight();
     }
 
-    menuSectionOpen(bodyId, defOpen = true) {
+    menuSectionOpen(bodyId, defOpen = false) {
         try {
             const s = this.saveData && this.saveData.menuSections;
             if (s && typeof s[bodyId] === 'boolean') return s[bodyId];
@@ -41988,21 +42497,23 @@ class Game {
     }
 
     applyMenuSections() {
-        // Reference lists start collapsed (tallest, rarely read); the rest
-        // remember the player's last choice (default open).
+        // All sections start collapsed (couch-first: land on headers, not
+        // mid-body); the player's last choice wins after the first toggle.
         for (const id of ['sec-move', 'sec-touch', 'sec-ref', 'sec-pad', 'sec-wife', 'sec-copilot',
                           'sec-move-pause', 'sec-ref-pause', 'sec-pad-pause', 'sec-wife-pause', 'sec-copilot-pause']) {
             const body = document.getElementById(id);
-            if (body) body.style.display = this.menuSectionOpen(id, id !== 'sec-ref' && id !== 'sec-ref-pause') ? '' : 'none';
+            if (body) body.style.display = this.menuSectionOpen(id, false) ? '' : 'none';
         }
         this.refreshMenuSectionHeads();
     }
 
     // Collapsible-section gamepad guard: an element inside a display:none
-    // body must never take focus. offsetParent is null for display:none
-    // subtrees (these menus use no fixed positioning, so no false positives).
+    // body must never take focus, and a disabled control is never an
+    // actionable stop (pad focus would glow with a dead A). offsetParent is
+    // null for display:none subtrees (these menus use no fixed positioning,
+    // so no false positives).
     _navElVisible(el) {
-        try { return !!el && el.offsetParent !== null; }
+        try { return !!el && el.offsetParent !== null && !el.disabled; }
         catch (e) { return false; }
     }
 
@@ -42172,8 +42683,10 @@ class Game {
                 }
             }
 
-            // Clear gamepad highlight on mouse move so it doesn't clash with mouse hover
-            const focused = document.querySelectorAll('#start-screen .focused-btn');
+            // Clear gamepad highlight on mouse move so it doesn't clash with mouse hover.
+            // Document-wide (all menus incl. pause/shop/dev/debrief): a pad glow
+            // left on any surface would double up with the hover under the mouse.
+            const focused = document.querySelectorAll('.focused-btn');
             if (focused.length > 0) {
                 focused.forEach(el => el.classList.remove('focused-btn'));
             }
@@ -42893,7 +43406,10 @@ class Game {
     }
 
     refreshGamepadShopHighlight() {
-        let buttons = document.querySelectorAll('.shop-grid button, .shop-panel-items button');
+        // Single-glow invariant: clear every shop button incl. the full-width
+        // CALL-EVAC / READY rows (they live outside .shop-panel-items, so the
+        // old grid-scoped clear left them glowing alongside the grid cursor).
+        let buttons = document.querySelectorAll('#shop-screen button');
         buttons.forEach(btn => btn.classList.remove('focused-btn'));
 
         if (this.shopSelectedIndexP1 !== undefined && this._shopNavModel) {
@@ -43299,8 +43815,8 @@ class Game {
     // (once, on open) so the qSA/offsetParent scan logic lives in one place.
     _computeDevMenuFocusable(overlay) {
         return Array.from(overlay.querySelectorAll(
-            '.tabs-container .tab-button, .tab-content.active button, .tab-content.active input, .menu-box > button.neon-btn'
-        )).filter(el => el.offsetParent !== null);
+            '.tabs-container .tab-button, .tab-content.active button, .tab-content.active input, .tab-content.active select, .menu-box > button.neon-btn'
+        )).filter(el => el.offsetParent !== null && !el.disabled);
     }
 
     handleDevMenuNavigation(gpList) {
@@ -43371,6 +43887,37 @@ class Game {
                 this.toggleDevDashboard();
                 this.gpadButtonCooldown = 0.3;
                 return;
+            }
+
+            // Tweak-Lab adjust: L/R on a focused range/number/select edits
+            // the value through the same oninput/onchange setters the mouse
+            // uses, instead of moving focus. Mirrors the pause lone-slider
+            // pattern; text inputs stay spatial (pad can't type).
+            if (this.dpadCooldown <= 0 && (dLeft || dRight)) {
+                const f = this.devMenuFocusEl;
+                if (f && f.tagName === 'SELECT' && f.options && f.options.length > 0) {
+                    const delta = dLeft ? -1 : 1;
+                    f.selectedIndex = (f.selectedIndex + delta + f.options.length) % f.options.length;
+                    try { f.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) { if (f.onchange) f.onchange(); }
+                    if (typeof tweakSetAutoload === 'function' && f.id === 'tweak-autoload-sel') { try { tweakSetAutoload(); } catch (e) {} }
+                    this.dpadCooldown = 0.12;
+                    this.refreshDevMenuHighlight();
+                    return;
+                }
+                if (f && f.tagName === 'INPUT' && (f.type === 'range' || f.type === 'number')) {
+                    const step = parseFloat(f.step) || 1;
+                    const hasMin = f.min !== '' && f.min !== undefined;
+                    const hasMax = f.max !== '' && f.max !== undefined;
+                    const cur = parseFloat(f.value);
+                    const base = Number.isFinite(cur) ? cur : (hasMin ? parseFloat(f.min) : 0);
+                    const next = base + (dLeft ? -step : step);
+                    const clamped = Math.min(hasMax ? parseFloat(f.max) : next, Math.max(hasMin ? parseFloat(f.min) : next, next));
+                    f.value = clamped;
+                    try { f.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+                    this.dpadCooldown = 0.12;
+                    this.refreshDevMenuHighlight();
+                    return;
+                }
             }
 
             if (this.dpadCooldown <= 0 && (dUp || dDown || dLeft || dRight)) {
@@ -43465,12 +44012,19 @@ class Game {
                 ['sld-music-vol-pause'],
                 ['sld-sfx-vol-pause']
             ],
+            // One header per row: headers render stacked vertically, so
+            // D-up/down walks sections (L/R never has to). Bodies sit
+            // directly under their header; collapsed bodies skip via guard.
             controls: [
-                ['btn-sec-move-pause', 'btn-sec-ref-pause', 'btn-sec-pad-pause', 'btn-sec-wife-pause', 'btn-sec-copilot-pause'],
+                ['btn-sec-move-pause'],
                 ['btn-scheme-screen-pause', 'btn-scheme-player-pause'],
+                ['btn-sec-ref-pause'],
+                ['btn-sec-pad-pause'],
                 ['btn-p1-gp-auto-pause', 'btn-p1-gp-none-pause', 'btn-p1-gp-0-pause', 'btn-p1-gp-1-pause', 'btn-p1-gp-2-pause', 'btn-p1-gp-3-pause'],
                 ['btn-p2-gp-auto-pause', 'btn-p2-gp-none-pause', 'btn-p2-gp-0-pause', 'btn-p2-gp-1-pause', 'btn-p2-gp-2-pause', 'btn-p2-gp-3-pause'],
+                ['btn-sec-wife-pause'],
                 ['btn-p1-wife-off-pause', 'btn-p1-wife-on-pause', 'btn-p2-wife-off-pause', 'btn-p2-wife-on-pause'],
+                ['btn-sec-copilot-pause'],
                 ['btn-copilot-off-pause', 'btn-copilot-on-pause']
             ],
             performance: [
@@ -43482,14 +44036,22 @@ class Game {
 
     getMainMenuTabRows() {
         let settingsSubtabRows = {
+            // One header per row: headers render stacked vertically, so
+            // D-up/down walks sections (L/R never has to). Bodies sit
+            // directly under their header; collapsed bodies skip via guard.
             controls: [
-                ['btn-sec-move', 'btn-sec-touch', 'btn-sec-ref', 'btn-sec-pad', 'btn-sec-wife', 'btn-sec-copilot'],
+                ['btn-sec-move'],
                 ['btn-scheme-screen', 'btn-scheme-player'],
+                ['btn-sec-touch'],
                 ['btn-touch-auto', 'btn-touch-on', 'btn-touch-off'],
                 ['sld-touch-stick-size'],
+                ['btn-sec-ref'],
+                ['btn-sec-pad'],
                 ['btn-p1-gp-auto', 'btn-p1-gp-none', 'btn-p1-gp-0', 'btn-p1-gp-1', 'btn-p1-gp-2', 'btn-p1-gp-3'],
                 ['btn-p2-gp-auto', 'btn-p2-gp-none', 'btn-p2-gp-0', 'btn-p2-gp-1', 'btn-p2-gp-2', 'btn-p2-gp-3'],
+                ['btn-sec-wife'],
                 ['btn-p1-wife-off', 'btn-p1-wife-on', 'btn-p2-wife-off', 'btn-p2-wife-on'],
+                ['btn-sec-copilot'],
                 ['btn-copilot-off', 'btn-copilot-on']
             ],
             audio: [
@@ -43562,7 +44124,18 @@ class Game {
                 // zero dead rows in the nav grid.
                 ...(!(this.saveData && this.saveData.hasSeenArmoryTutorial)
                     ? [['btn-armory-tut-ok', 'btn-armory-tut-guide']] : []),
-                ...ARMORY_UPGRADES.map(u => ['armory-btn-' + u.key]),
+                // Buy + refund share a row: refund exists only when owned,
+                // buy skips when disabled (maxed/unaffordable) via the
+                // visibility guard, so the row never strands focus.
+                ...ARMORY_UPGRADES.map(u => ['armory-btn-' + u.key, 'armory-refund-' + u.key]),
+                // Cosmetic swatch groups (rendered only when owned): one row
+                // per group, skipped wholesale while locked via the guard.
+                [LASER_COLORS.map((c, i) => 'armory-laser-laserColorP1-' + i)].flat(),
+                [LASER_COLORS.map((c, i) => 'armory-laser-laserColorP2-' + i)].flat(),
+                [PLAYER_COLORS.map((c, i) => 'armory-paint-playerColorP1-' + i)].flat(),
+                [PLAYER_COLORS.map((c, i) => 'armory-paint-playerColorP2-' + i)].flat(),
+                ['armory-wall-stock', ...PLAYER_COLORS.map((c, i) => 'armory-wall-' + i)],
+                ['armory-tier-crumbling', 'armory-tier-light', 'armory-tier-reinforced', 'armory-tier-fortified'],
                 ['btn-armory-reset'],
                 ['btn-prestige']
             ],
@@ -43574,7 +44147,7 @@ class Game {
     }
 
     refreshPauseMenuHighlight() {
-        let allBtns = document.querySelectorAll('#pause-screen button, #pause-screen input');
+        let allBtns = document.querySelectorAll('#pause-screen button, #pause-screen input, #pause-screen select');
         allBtns.forEach(btn => btn.classList.remove('focused-btn'));
 
         let activeTabElement = document.querySelector('#pause-screen .tab-content.active');
@@ -43748,7 +44321,7 @@ class Game {
                             return;
                         }
                     }
-                } else if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol' || currentRow[0] === 'sld-sfx-vol' || currentRow[0] === 'sld-time-scale' || currentRow[0] === 'sld-max-marks' || currentRow[0] === 'sld-start-wave' || currentRow[0] === 'sld-ui-scale')) {
+                } else if (currentRow.length === 1 && (currentRow[0] === 'sld-music-vol' || currentRow[0] === 'sld-sfx-vol' || currentRow[0] === 'sld-time-scale' || currentRow[0] === 'sld-max-marks' || currentRow[0] === 'sld-start-wave' || currentRow[0] === 'sld-ui-scale' || currentRow[0] === 'sld-touch-stick-size')) {
                     let slider = document.getElementById(currentRow[0]);
                     if (slider) {
                         if (currentRow[0] === 'sld-time-scale') {
@@ -43800,6 +44373,19 @@ class Game {
                                 return;
                             } else if (dRight) {
                                 this.setUIScale(Math.min(2, curVal + 0.25));
+                                this.dpadCooldown = 0.18;
+                                return;
+                            }
+                        } else if (currentRow[0] === 'sld-touch-stick-size') {
+                            // TOUCH section: pad steps ±0.1 per press (mouse
+                            // drags are continuous, clamped in setTouchStickScale).
+                            let curVal = parseFloat(slider.value) || 1.0;
+                            if (dLeft) {
+                                this.setTouchStickScale(Math.max(0.7, curVal - 0.1));
+                                this.dpadCooldown = 0.18;
+                                return;
+                            } else if (dRight) {
+                                this.setTouchStickScale(Math.min(1.5, curVal + 0.1));
                                 this.dpadCooldown = 0.18;
                                 return;
                             }
@@ -43862,7 +44448,7 @@ class Game {
     }
 
     refreshMainMenuHighlight() {
-        let allBtns = document.querySelectorAll('#start-screen button, #start-screen input, #start-screen .mission-card, #start-screen .tactical-card');
+        let allBtns = document.querySelectorAll('#start-screen button, #start-screen input, #start-screen select, #start-screen .mission-card, #start-screen .tactical-card, #start-screen .armory-swatch');
         allBtns.forEach(btn => btn.classList.remove('focused-btn'));
 
         let activeTabElement = document.querySelector('.tab-content.active');
@@ -43915,8 +44501,8 @@ class Game {
     }
 
     handleDeathMenuNavigation(gpList) {
-        // PHASE 0: drives the unified debrief screen. Two focus targets
-        // (RE-DEPLOY / RETURN TO HQ), dpad or stick to move, A/Start to
+        // PHASE 0: drives the unified debrief screen. Three focus targets
+        // (RE-DEPLOY / SHARE / RETURN TO HQ), dpad or stick to move, A/Start to
         // confirm -- same focused-btn convention as the rest of the menus.
         if (this._debriefFocusIdx === undefined) this._debriefFocusIdx = 0;
         const ids = ['btn-debrief-redeploy', 'btn-debrief-share', 'btn-debrief-hq'];
@@ -43927,7 +44513,8 @@ class Game {
             let dRight = gp.buttons[15].pressed || (gp.axes[0] && gp.axes[0] > 0.5);
             if ((dLeft || dRight) && this.gpadButtonCooldown <= 0) {
                 this.gpadButtonCooldown = 0.25;
-                this._debriefFocusIdx = (this._debriefFocusIdx + 1) % ids.length;
+                if (dLeft) this._debriefFocusIdx = (this._debriefFocusIdx - 1 + ids.length) % ids.length;
+                else this._debriefFocusIdx = (this._debriefFocusIdx + 1) % ids.length;
             }
             if ((btnA || btnStart) && this.gpadButtonCooldown <= 0) {
                 this.gpadButtonCooldown = 0.3;
@@ -53833,6 +54420,18 @@ class Game {
         // OQ-076: a stale escape-hold must never leak into a fresh wave.
         this._scavEscape = null;
         this.rollScavDogs();
+        // MUSIC DIRECTOR intent priming (2026-09-26): the full composition
+        // is decided above and nothing spawns until prep expires, so this is
+        // the anticipation pocket — tension builds now, the wave lands as
+        // release. Hold uses prepTimer scaled to wall-clock (adrenaline
+        // shortens real prep; unscaled holds would overshoot the spawn).
+        try {
+            if (typeof musicEngine !== 'undefined' && musicEngine && typeof musicEngine.prime === 'function') {
+                const primeT = this._vengeanceWave ? 1.0 : (this.isBossWave ? 0.9 : (this.activeMutator ? 0.65 : 0.5));
+                const wallPrep = Math.max(2.0, (this.prepTimer || 0) / Math.max(0.5, this.timeScale || 1));
+                musicEngine.prime(primeT, wallPrep);
+            }
+        } catch (e) {}
         this.updateHUD();
     }
 
@@ -54519,6 +55118,13 @@ class Game {
                 if (e.target.tagName !== 'BUTTON') {
                     this.selectPerk(perk.key);
                 }
+            };
+            // Pad/mouse cursor sync (chaos-draft pattern): hovering a card
+            // moves the shared selection index so the pad continues from
+            // the hovered card instead of jumping.
+            card.onmouseenter = () => {
+                this.perkSelectionIndex = idx;
+                this.refreshPerkHighlight();
             };
             
             container.appendChild(card);
@@ -55408,7 +56014,11 @@ class Game {
                 const perk = this.availablePerkChoices[this.perkSelectionIndex];
                 if (perk) {
                     this.dpadCooldown = 0.30;
-                    this.selectPerk(perk.key);
+                    // Synthetic click so pad runs the exact mouse handler.
+                    const container = document.getElementById('perk-choices-container');
+                    const card = container && container.children[this.perkSelectionIndex];
+                    if (card) card.click();
+                    else this.selectPerk(perk.key);
                     return;
                 }
             }
@@ -55564,6 +56174,10 @@ class Game {
             btn.onclick = () => {
                 this._applyExtMags(weaponName.toLowerCase());
             };
+            btn.onmouseenter = () => {
+                this.extMagsSelectionIndex = idx;
+                this.refreshExtMagsHighlight();
+            };
             container.appendChild(btn);
         });
         
@@ -55628,6 +56242,17 @@ class Game {
     }
     
     handleExtMagsMenuNavigation(gpList) {
+        // B (cancel) stays reachable even with an empty picker so the pad
+        // can never soft-lock while the mouse CANCEL still works.
+        for (let gp of gpList) {
+            if (gp.buttons[1].pressed && this.dpadCooldown <= 0) {
+                this.dpadCooldown = 0.30;
+                const cancelBtn = document.getElementById('extmags-cancel');
+                if (cancelBtn) cancelBtn.click();
+                else this._cancelExtMags();
+                return;
+            }
+        }
         if (!this.extMagsChoices || this.extMagsChoices.length === 0) return;
         if (this.extMagsSelectionIndex === undefined) this.extMagsSelectionIndex = 0;
         
@@ -55657,14 +56282,20 @@ class Game {
                 const weaponName = this.extMagsChoices[this.extMagsSelectionIndex];
                 if (weaponName) {
                     this.dpadCooldown = 0.30;
-                    this._applyExtMags(weaponName.toLowerCase());
+                    // Synthetic click so pad runs the exact mouse handler.
+                    const container = document.getElementById('extmags-choices-container');
+                    const btn = container && container.children[this.extMagsSelectionIndex];
+                    if (btn) btn.click();
+                    else this._applyExtMags(weaponName.toLowerCase());
                     return;
                 }
             }
             
             if (btnB && this.dpadCooldown <= 0) {
                 this.dpadCooldown = 0.30;
-                this._cancelExtMags();
+                const cancelBtn = document.getElementById('extmags-cancel');
+                if (cancelBtn) cancelBtn.click();
+                else this._cancelExtMags();
                 return;
             }
         }
@@ -56171,6 +56802,11 @@ class Game {
                 if (this._resolveEvacOnWaveClear()) return;
                 this.state = 'shop';
                 this.grantOperatorWavePayout();
+                // MUSIC DIRECTOR decompress (2026-09-26): the win lands, the
+                // tail resolves — 8s dip + phrase breath into the shop room.
+                try {
+                    if (typeof musicEngine !== 'undefined' && musicEngine && typeof musicEngine.release === 'function') musicEngine.release(8);
+                } catch (e) {}
                 this.openShopInterface();
             }
             return;
@@ -57501,6 +58137,12 @@ class Game {
                 this.announce('RUNNER ESCAPED \u2014 HE CALLED FOR BACKUP!', '#ff2a5f', 4.5,
                     'NEXT WAVE: PROTOCOL 9 \u2014 REINFORCED \u00b7 LEGENDARY PRESSURE \u00b7 HALF PREP');
                 audio.playExplosion(0.25, this.mapW / 2, this.mapH / 2);
+                // MUSIC DIRECTOR intent priming (2026-09-26): the longest fuse
+                // in the game — vengeance lands next READY, minutes away if
+                // the player idles in shop. Wide hold; next prime overwrites.
+                try {
+                    if (typeof musicEngine !== 'undefined' && musicEngine && typeof musicEngine.prime === 'function') musicEngine.prime(1.0, 120);
+                } catch (e) {}
             }
         } else if (fk.role === 'martyr') {
             if (fk.mortarDelay > 0) {
@@ -59863,6 +60505,14 @@ class Game {
             // JULY item 10: first visit gets the orientation briefing.
             toggleClass('armory-tutorial', 'hidden', !!(this.saveData && this.saveData.hasSeenArmoryTutorial));
         }
+        // Park pad focus on entry so a mouse-click tab switch can't leave
+        // the cursor pointing at another tab's row shape. Settings preserves
+        // switchSettingsTab's (0, subIdx) park (it already refreshed).
+        if (tabName !== 'settings') {
+            this.mainMenuRowIndex = 0;
+            this.mainMenuOptionIndex = 0;
+            this.refreshMainMenuHighlight();
+        }
     }
 
     // JULY item 10: retire the one-time Armory briefing (optionally hopping
@@ -60073,9 +60723,10 @@ class Game {
                 const swatchRow = (pKey, label) => {
                     const cur = this.saveData[pKey] || '';
                     let out = `<div style="display:flex; align-items:center; gap:4px; margin-top:4px;"><span style="font-size:9px; color:#a9c2c7; width:20px;">${label}</span>`;
-                    for (const c of LASER_COLORS) {
+                    for (let ci = 0; ci < LASER_COLORS.length; ci++) {
+                        const c = LASER_COLORS[ci];
                         const sel = (cur === c.rgb) || (!cur && c.rgb === (pKey === 'laserColorP2' ? '255, 183, 0' : '0, 229, 255'));
-                        out += `<div title="${c.name}" onclick="game.setLaserColor('${pKey}','${c.rgb}')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:rgb(${c.rgb}); border:2px solid ${sel ? '#fff' : 'transparent'};"></div>`;
+                        out += `<div id="armory-laser-${pKey}-${ci}" class="armory-swatch" title="${c.name}" onclick="game.setLaserColor('${pKey}','${c.rgb}')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:rgb(${c.rgb}); border:2px solid ${sel ? '#fff' : 'transparent'};"></div>`;
                     }
                     return out + '</div>';
                 };
@@ -60088,9 +60739,10 @@ class Game {
                     const stockHex = '#ffffff'; // body ring is white for both players by default
                     const cur = this.saveData[pKey] || '';
                     let out = `<div style="display:flex; align-items:center; gap:4px; margin-top:4px; flex-wrap:wrap;"><span style="font-size:9px; color:#a9c2c7; width:20px;">${label}</span>`;
-                    for (const c of PLAYER_COLORS) {
+                    for (let ci = 0; ci < PLAYER_COLORS.length; ci++) {
+                        const c = PLAYER_COLORS[ci];
                         const sel = (cur === c.hex) || (!cur && c.hex === stockHex);
-                        out += `<div title="${c.name}" onclick="game.setPlayerColor('${pKey}','${c.hex}')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:${c.hex}; border:2px solid ${sel ? '#fff' : 'transparent'};"></div>`;
+                        out += `<div id="armory-paint-${pKey}-${ci}" class="armory-swatch" title="${c.name}" onclick="game.setPlayerColor('${pKey}','${c.hex}')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:${c.hex}; border:2px solid ${sel ? '#fff' : 'transparent'};"></div>`;
                     }
                     return out + '</div>';
                 };
@@ -60104,10 +60756,11 @@ class Game {
                 let out = `<div style="display:flex; align-items:center; gap:4px; margin-top:4px; flex-wrap:wrap;"><span style="font-size:9px; color:#a9c2c7; width:36px;">WALL</span>`;
                 // Stock tan swatch first so the player can revert to default.
                 const stockSel = !cur;
-                out += `<div title="STOCK TAN" onclick="game.setWallColor('')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:${stockHex}; border:2px solid ${stockSel ? '#fff' : 'transparent'};"></div>`;
-                for (const c of PLAYER_COLORS) {
+                out += `<div id="armory-wall-stock" class="armory-swatch" title="STOCK TAN" onclick="game.setWallColor('')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:${stockHex}; border:2px solid ${stockSel ? '#fff' : 'transparent'};"></div>`;
+                for (let ci = 0; ci < PLAYER_COLORS.length; ci++) {
+                    const c = PLAYER_COLORS[ci];
                     const sel = (cur === c.hex);
-                    out += `<div title="${c.name}" onclick="game.setWallColor('${c.hex}')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:${c.hex}; border:2px solid ${sel ? '#fff' : 'transparent'};"></div>`;
+                    out += `<div id="armory-wall-${ci}" class="armory-swatch" title="${c.name}" onclick="game.setWallColor('${c.hex}')" style="width:14px; height:14px; cursor:pointer; border-radius:2px; background:${c.hex}; border:2px solid ${sel ? '#fff' : 'transparent'};"></div>`;
                 }
                 extraHTML = out + '</div>';
             }
@@ -60132,7 +60785,7 @@ class Game {
                     const tKey = TIER_CHIPS[i][0], tLabel = TIER_CHIPS[i][1], tHp = TIER_CHIPS[i][2];
                     const tCol = MATTER_MANIPULATOR.TIER_COLORS[tKey].hex;
                     const sel = (selTier === tKey);
-                    out += `<div title="${tLabel}: ${tHp} (rubble cost matches hp)" onclick="game.setBuildTier('${tKey}')" style="cursor:pointer; padding:2px 6px; font-size:9px; font-weight:bold; letter-spacing:1px; border-radius:2px; color:#0b0f14; background:${tCol}; border:2px solid ${sel ? '#fff' : 'transparent'};">${tLabel}</div>`;
+                    out += `<div id="armory-tier-${tKey}" class="armory-swatch" title="${tLabel}: ${tHp} (rubble cost matches hp)" onclick="game.setBuildTier('${tKey}')" style="cursor:pointer; padding:2px 6px; font-size:9px; font-weight:bold; letter-spacing:1px; border-radius:2px; color:#0b0f14; background:${tCol}; border:2px solid ${sel ? '#fff' : 'transparent'};">${tLabel}</div>`;
                 }
                 extraHTML = out + '</div>';
             }
@@ -70107,6 +70760,12 @@ class Game {
         this._stopRunAudio();
         this.isPaused = false;
         this.state = 'debrief';                               // inert for update()/input, like 'over' was
+        // MUSIC DIRECTOR decompress (2026-09-26): loss and extraction land
+        // longer tails than a shop breather; the menu ambience takes over
+        // underneath as the dip resolves.
+        try {
+            if (typeof musicEngine !== 'undefined' && musicEngine && typeof musicEngine.release === 'function') musicEngine.release(12);
+        } catch (e) {}
         this._debriefFocusIdx = 0;
         toggleClass('pause-screen', 'hidden', true);
         toggleClass('shop-screen', 'hidden', true);
