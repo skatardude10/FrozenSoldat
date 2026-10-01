@@ -10411,7 +10411,24 @@ const TACTICAL_TUNING = {
     SUPPRESS_PIN_SPEED: 0.85,    // player accel while pinned
     SUPPRESS_PIN_FOCUS: 0.6,     // player focusLevel while pinned
     SNIPER_WINDUP: 0.8,          // sniper_grunt + op marksman pre-shot tell (windup-only redline, no damage change)
-    PUMP_WINDUP: 0.45            // op grenadier/breacher pump tell (short amber pulse, no damage change)
+    PUMP_WINDUP: 0.45,           // op grenadier/breacher pump tell (short amber pulse, no damage change)
+    // -- S1 scorer-lite + dwell-as-switch-cost (bot backport, attacker-side) --
+    ENEMY_DWELL: 0.8,            // s incumbent holds this long before a voluntary switch (fire never muted)
+    ENEMY_SWITCH_MARGIN: 0.25,   // challenger must beat incumbent by this fraction to steal (symmetric score both sides)
+    ENEMY_PB_RESCUE: 220,        // px: point-blank threat inside this breaks dwell outright (survival first)
+    ENEMY_MOON_SLACK: 20,        // px: per-body ± jitter on the 240/280 moonwalk line (seeded at spawn, not per-frame)
+    ENEMY_STANDOFF_BAND: { shotgun_grunt: -40, sniper_grunt: 80 }, // per-role standoff offset (shotgun closes, sniper lurks)
+    ENEMY_COVER_COMMIT: 3.0,     // s committed retreat holds its point before any re-pick (stagger-tick units)
+    ENEMY_COVER_LEASE: 5.0,      // s healthy-cover lease expires back to RUN/LKP re-read (anti-camp valve)
+    // -- S3 fire latitude (bot backport, intent-side only; gun tables never written) --
+    ENEMY_HARASS_BANDS: { grunt: [1000, 1400, 0.5], enforcer: [1000, 1300, 0.5], shotgun_grunt: [700, 900, 0.35], sniper_grunt: [1600, 2200, 0.9], shield: [900, 1200, 0.5], jammer: [800, 1100, 0.4], drone_op: [900, 1200, 0.4], fpv_pilot: [900, 1200, 0.4] },
+    ENEMY_HARASS_RETRY: 1.0,     // s per-enemy harass dice window (stagger-tick rolls only, never per-frame)
+    ENEMY_WINDOW_DICE: 0.55,     // sill-shot allow probability per window (deliberate pokes, deny eats no cadence)
+    ENEMY_WINDOW_RETRY: 1.2,     // s per-enemy window dice window
+    // -- S4 role tails (bot backport; scorer owns WHOM, roles own WHERE/HOW; heal economy untouched) --
+    ENEMY_TAIL_DENSITY_CAP: 8,   // live drones + mortar markers above this hold converging tails (anti-swarm-spike)
+    ENEMY_TRAIL_DIST: 180,       // px comm trail station behind its leader (+40 slack before re-stepping)
+    ENEMY_GUARD_RING: 150,       // px jammer guard ring radius (+40 slack before re-stepping)
 };
 
 // ==== STRIKE TEAM: tuning & coordination constants ====
@@ -23324,6 +23341,7 @@ class Enemy extends Entity {
         this.cachedReactingToDrone = false;
         this.reactingToDrone = false;
         this.slowTimer = 0;
+        this._riftStun = 0; // RIFT: never inherit arrival-freeze across pool recycle (G7-2)
         // PHASE 1 (stuck-enemy fix): base-class stuck detector state.
         // Must reset on pool reuse or a recycled enemy inherits a stale
         // position snapshot and can false-positive on its first check.
@@ -23362,6 +23380,20 @@ class Enemy extends Entity {
         this._stockBurstLeft = 0;
         this._stockBurstCooldown = 0;
         this._stockBurstTimer = 0;
+        this._tgtSince = -99; // S1 scorer dwell clock (pool-reset: never inherit commitment)
+        this._harassAllow = true; // S3 harass dice (pool-reset: allow until first stagger roll)
+        this._harassNext = 0; // S3 harass window (pool-reset)
+        this._windowAllow = true; // S3 window dice (pool-reset: allow until first stagger roll)
+        this._windowNext = 0; // S3 window window (pool-reset)
+        this._spoolTell = 0; // S3 shotgun spool tell (pool-reset: never inherit tell)
+        this._pinFlash = 0; // S3 enforcer pin-flash tell (pool-reset)
+        this._guardX = 0; // S4 jammer guard goal (pool-reset)
+        this._guardY = 0; // S4 jammer guard goal (pool-reset)
+        this._guardExp = 0; // S4 jammer guard expiry (pool-reset)
+        this._moonSlack = MathUtils.rand(-20, 20); // S2 footwork latitude (pool-reset: seeded per body, never per-frame)
+        this._coverCommit = 0; // S2 retreat commit (pool-reset)
+        this._coverIsMedic = false; // S2 medic-preempt tag (pool-reset)
+        this._coverLease = 0; // S2 healthy-cover lease (pool-reset)
         this._wasMoonwalking = false; // FIN slice moonwalk latch (pool-reset)
         // PHASE 4 (patrolling AI) -- pool-reset per the Phase 1 gotcha.
         // patrolUntilContact: extraction-only pre-detection state (tagged
@@ -23659,8 +23691,12 @@ class Enemy extends Entity {
                     }
                 }
             } else {
-                let targets = [];
-                let playerTargets = [];
+                // G7-1: instance scratch (was `let []` per AI tick) -- same
+                // `_sapperScratch` idiom: synchronous block, length=0 reuse.
+                let targets = this._tgtScratch || (this._tgtScratch = []);
+                let playerTargets = this._tgtPlayerScratch || (this._tgtPlayerScratch = []);
+                targets.length = 0;
+                playerTargets.length = 0;
                 if (game) {
                     if (!game.player.dead) { targets.push(game.player); playerTargets.push(game.player); }
                     if (game.isTwoPlayer && game.player2 && !game.player2.dead) { targets.push(game.player2); playerTargets.push(game.player2); }
@@ -23727,6 +23763,74 @@ class Enemy extends Entity {
                 if (preferredPlayer) {
                     target = preferredPlayer;
                 } else if (targets.length > 0) {
+                    // S1 scorer-lite (bot backport, attacker-side, AI_REVITALIZE-gated):
+                    // proximity-dominant + owner-aim bias + support discount. Off = nearest wins (byte-identical).
+                    // Dwell is switch-cost only: a live incumbent holds ENEMY_DWELL unless a point-blank
+                    // threat breaks it or the challenger wins by ENEMY_SWITCH_MARGIN. Fire gate untouched.
+                    let _scored = null;
+                    if (TACTICAL_TUNING.AI_REVITALIZE && targets.length > 1 && game) {
+                        const _now = gameTime || 0;
+                        const _inc = this.cachedTarget;
+                        let _incLive = false;
+                        if (_inc && !_inc.dead && _inc.x !== undefined) {
+                            for (let _k = 0; _k < targets.length; _k++) {
+                                if (targets[_k] === _inc) { _incLive = true; break; }
+                            }
+                        }
+                        const _oax = Math.cos(this.angle || 0), _oay = Math.sin(this.angle || 0);
+                        const _scoreT = (e) => {
+                            const _dx = e.x - this.x, _dy = e.y - this.y;
+                            const _d2 = _dx * _dx + _dy * _dy;
+                            const _dl = Math.sqrt(_d2) || 1;
+                            const _dot = ((_dx * _oax + _dy * _oay) / _dl);
+                            let _w = 1.0;
+                            // Attacker-side doctrine (inverted from bot's support-first):
+                            // the player's supports (turret/dog/cam) die first, heavies wait.
+                            if (e instanceof AutoTurret) _w = 1.25;
+                            else if (typeof RobotDog !== 'undefined' && (e instanceof RobotDog)) _w = 1.2;
+                            else if (typeof SecurityCamera !== 'undefined' && (e instanceof SecurityCamera)) _w = 1.15;
+                            else if (e.boundTo) _w = 1.3;
+                            else if (e.ax !== undefined) _w = 0.9;
+                            return _d2 * (_dot > 0.7 ? 0.7 : 1) / _w;
+                        };
+                        let _best = null, _bestScore = Infinity;
+                        for (let _i = 0; _i < targets.length; _i++) {
+                            const _s = _scoreT(targets[_i]);
+                            if (_s < _bestScore) { _bestScore = _s; _best = targets[_i]; }
+                        }
+                        if (_best) {
+                            const _dwellOk = !_incLive || (_now - (this._tgtSince || -99) > TACTICAL_TUNING.ENEMY_DWELL);
+                            // Point-blank rescue: breathing-on-us wins outright, no LOS needed.
+                            let _pb = null, _pbD = TACTICAL_TUNING.ENEMY_PB_RESCUE * TACTICAL_TUNING.ENEMY_PB_RESCUE;
+                            for (let _j = 0; _j < targets.length; _j++) {
+                                const _e2 = targets[_j];
+                                if (!_e2 || _e2.dead || _e2.x === undefined) continue;
+                                const _qx = _e2.x - this.x, _qy = _e2.y - this.y;
+                                const _q2 = _qx * _qx + _qy * _qy;
+                                if (_q2 < _pbD) { _pbD = _q2; _pb = _e2; }
+                            }
+                            if (_pb && _pb !== _inc) {
+                                _scored = _pb;
+                            } else if (!_incLive || _dwellOk || _best === _inc) {
+                                _scored = _best;
+                            } else {
+                                // Incumbent holds: challenger needs a decisive margin (symmetric score).
+                                const _incScore = _scoreT(_inc);
+                                if (_bestScore < _incScore * (1 - TACTICAL_TUNING.ENEMY_SWITCH_MARGIN)) _scored = _best;
+                                else _scored = _inc;
+                            }
+                            if (_scored && _scored !== _inc) this._tgtSince = _now;
+                        }
+                    }
+                    if (_scored) {
+                        target = _scored;
+                        // FIN slice 2P split still wins when it applies (lane discipline over score).
+                        if (TACTICAL_TUNING.AI_REVITALIZE && game && game.isTwoPlayer &&
+                            game.player && game.player2 && !game.player.dead && !game.player2.dead &&
+                            ((this._aiStaggerId || 0) % 2 === 1)) {
+                            target = game.player2;
+                        }
+                    } else {
                     let closestT = targets[0];
                     let dx0 = closestT.x - this.x;
                     let dy0 = closestT.y - this.y;
@@ -23741,6 +23845,7 @@ class Enemy extends Entity {
                         }
                     }
                     target = closestT;
+                    }
                 }
             }
 
@@ -24091,11 +24196,26 @@ class Enemy extends Entity {
             // 30-frame stagger as the comm aura pass above; dumb guns and
             // player aim are deliberately unaffected.
             if (this.type === 'jammer' && allEnemies) {
+                // S4 jammer guard draft: nearest 2 frontline guns in 900px (no new state
+                // beyond the pair stamps; refreshed each stagger while in range, 2s expiry).
+                let _g1 = null, _g1D = Infinity, _g2 = null, _g2D = Infinity;
                 for (let i = 0; i < allEnemies.length; i++) {
                     const je = allEnemies[i];
                     if (je.dead || je instanceof Boss) continue;
                     const jdx = je.x - this.x, jdy = je.y - this.y;
                     if (jdx * jdx + jdy * jdy < 250000) je._jamTimer = 1.4; // 500px radius
+                    if (TACTICAL_TUNING.AI_REVITALIZE && je !== this &&
+                        (je.type === 'grunt' || je.type === 'enforcer' || je.type === 'shield') &&
+                        !(je instanceof Operative) && !je.wounded && !je.finalKillRole) {
+                        const _gd = jdx * jdx + jdy * jdy;
+                        if (_gd < 900 * 900 && _gd < _g1D) { _g2 = _g1; _g2D = _g1D; _g1 = je; _g1D = _gd; }
+                        else if (_gd < 900 * 900 && _gd < _g2D) { _g2 = je; _g2D = _gd; }
+                    }
+                }
+                if (TACTICAL_TUNING.AI_REVITALIZE) {
+                    const _gexp = (game ? (game.gameTime || 0) : 0) + 2.0;
+                    if (_g1) { _g1._guardX = this.x; _g1._guardY = this.y; _g1._guardExp = _gexp; }
+                    if (_g2) { _g2._guardX = this.x; _g2._guardY = this.y; _g2._guardExp = _gexp; }
                 }
                 if (game && game.empDisruptNodes) {
                     game.empDisruptNodes(this.x, this.y, 450, 1.4);
@@ -24265,7 +24385,9 @@ class Enemy extends Entity {
                 // BRAINS SLICE: desync volleys -- floor 0.50 + spawn-stream jitter
                 // on the arm only (detection stagger untouched, fire-rate untouched).
                 this.fireHoldTimer = Math.max(this.fireHoldTimer,
-                    this.reactionDelay * Math.max(0.50, 1.1 - _iw * 0.05) + Math.random() * 0.25);
+                    this.reactionDelay * Math.max(0.50, 1.1 - _iw * 0.05) + Math.random() * 0.25
+                    // S3 jitter-in-intent: far acquisitions hesitate a beat longer (event-time only).
+                    + ((TACTICAL_TUNING.AI_REVITALIZE && distToTarget > 600) ? Math.random() * 0.20 : 0));
                 if (game && distToTarget < 900 && this._spotCooldown <= 0) {
                     this._spotCooldown = 6.0;
                     game.registerNoise(this.x, this.y, EXTRACTION_TUNING.NOISE.spotted);
@@ -24308,6 +24430,29 @@ class Enemy extends Entity {
             this.cachedAimAngle = windowLOS
                 ? Math.atan2(targetY - this.y, targetX - this.x)
                 : moveAngle;
+            // S3 harass intent bands + window dice (AI_REVITALIZE, stagger-tick
+            // rolls only — event-time RNG, never per-frame steering; deny eats
+            // no cadence because the gate below skips the shot, not lastFire).
+            if (TACTICAL_TUNING.AI_REVITALIZE && game) {
+                const _now3 = gameTime || 0;
+                const _hb = TACTICAL_TUNING.ENEMY_HARASS_BANDS ?
+                    TACTICAL_TUNING.ENEMY_HARASS_BANDS[this.type] : null;
+                if (_hb && (this._harassNext || 0) <= _now3) {
+                    this._harassNext = _now3 + TACTICAL_TUNING.ENEMY_HARASS_RETRY;
+                    const _dd = this.cachedDistToTarget || 9999;
+                    if (_dd < _hb[0]) this._harassAllow = true;
+                    else if (_dd < _hb[1] && (this.cachedHasLOS || this.cachedWindowLOS)) {
+                        const _frac = (_dd - _hb[0]) / Math.max(1, _hb[1] - _hb[0]);
+                        this._harassAllow = (Math.random() < Math.max(0.12, 1 - _frac) * _hb[2]);
+                    } else this._harassAllow = false;
+                }
+                if (!this.cachedHasLOS && this.cachedWindowLOS) {
+                    if ((this._windowNext || 0) <= _now3) {
+                        this._windowNext = _now3 + TACTICAL_TUNING.ENEMY_WINDOW_RETRY;
+                        this._windowAllow = (Math.random() < TACTICAL_TUNING.ENEMY_WINDOW_DICE);
+                    }
+                } else this._windowAllow = true;
+            }
             this.cachedVisibleToPlayers = visibleToPlayers;
 
             // WI-4 (C): "needs medic" ring state, computed on the tick
@@ -24654,7 +24799,16 @@ class Enemy extends Entity {
             // back-off yo-yos on the 240 line as the 30f cache flaps and backs
             // through doorways (raw velocity, no path). Lateral drift + exit
             // latch keeps spacing without stacking on one node.
-            const _mwEnter = 240, _mwExit = 280;
+            // S2 footwork latitude: per-body slack (seeded at spawn) + per-role
+            // band (shotgun closes, sniper lurks) replace the exact 240 line.
+            // Off (AI_REVITALIZE false) = exact 240/280, byte-identical.
+            let _mwBand = 0;
+            if (TACTICAL_TUNING.AI_REVITALIZE && TACTICAL_TUNING.ENEMY_STANDOFF_BAND) {
+                const _bb = TACTICAL_TUNING.ENEMY_STANDOFF_BAND[this.type];
+                if (typeof _bb === 'number') _mwBand = _bb;
+            }
+            const _mwSlack = (TACTICAL_TUNING.AI_REVITALIZE ? (this._moonSlack || 0) : 0) + _mwBand;
+            const _mwEnter = 240 + _mwSlack, _mwExit = 280 + _mwSlack;
             if (!this._wasMoonwalking && !(this.cachedDistToTarget < _mwEnter)) this._wasMoonwalking = false;
             const _inMoon = (this.cachedHasLOS && this.cachedDistToTarget < (this._wasMoonwalking ? _mwExit : _mwEnter) && !this.cachedRunFromDrone && !this.cachedPushing && !this.patrolUntilContact && !this.isSkittish);
             this._wasMoonwalking = !!_inMoon;
@@ -24671,6 +24825,25 @@ class Enemy extends Entity {
             } else {
                 this.vx += moveX * 3.0 * dt;
                 this.vy += moveY * 3.0 * dt;
+                // S2 stock advance-strafe: healthy guns drift laterally while
+                // closing (half moonwalk magnitude, parity-stable sign). Fire
+                // gate, engagement caps, PUSH/RUN/skittish all untouched; never
+                // writes moveTarget/angle; windowLOS never in the gate.
+                if (TACTICAL_TUNING.AI_REVITALIZE && !this.wounded && !this.patrolUntilContact &&
+                    !this.cachedRunFromDrone && !this.cachedPushing && !this.isSkittish &&
+                    this.cachedHasLOS && (this.cachedDistToTarget || 9999) > 240 &&
+                    (this.cachedDistToTarget || 9999) < 600 && game && !game.operatorMode &&
+                    !(this instanceof Boss) && !(this instanceof Operative)) {
+                    const _at = this.type;
+                    if (_at === 'grunt' || _at === 'enforcer' || _at === 'shotgun_grunt' ||
+                        _at === 'sniper_grunt' || _at === 'shield') {
+                        const _asb = (((this._aiStaggerId || 0) % 2 === 0) ? 1 : -1);
+                        const _asa = this.angle + Math.PI / 2 * _asb;
+                        const _asm = 0.2 * this.speed * dt;
+                        this.vx += Math.cos(_asa) * _asm;
+                        this.vy += Math.sin(_asa) * _asm;
+                    }
+                }
             }
 
             // Engagement range cap: `hasLOS` above is a pure wall-occlusion
@@ -24736,6 +24909,10 @@ class Enemy extends Entity {
                 * ((game && game.gameTime < (this._oracleConfuseUntil || 0)) ? 1.6 : 1);
             if (inEngagementRange && gameTime - this.lastFire > fireInterval && !this.cachedRunFromDrone && !(this.suppressedTimer > 0) && !(this.fireHoldTimer > 0) && !this.patrolUntilContact
                 && (this.cachedHasLOS || this.cachedWindowLOS) && this.cachedTarget
+                // S3 harass + window dice (AI_REVITALIZE): intent-side allow flags, rolled on the
+                // stagger tick above. Deny skips the shot without consuming lastFire (no cadence eat).
+                && (!TACTICAL_TUNING.AI_REVITALIZE || (this._harassAllow !== false))
+                && (!TACTICAL_TUNING.AI_REVITALIZE || (this._windowAllow !== false))
                 && this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)
                 && !(TACTICAL_TUNING.AI_REVITALIZE && ((this._stockBurstLeft || 0) > 0 || (this._stockBurstCooldown || 0) > 0))
                 && !(TACTICAL_TUNING.AI_REVITALIZE && this.type === 'shotgun_grunt' && (this._stockBurstCooldown || 0) <= 0 &&
@@ -24752,7 +24929,8 @@ class Enemy extends Entity {
                     const _wField = _isPumpTell ? '_pumpWindup' : '_sniperWindup';
                     const _wDur = _isPumpTell ? TACTICAL_TUNING.PUMP_WINDUP : TACTICAL_TUNING.SNIPER_WINDUP;
                     if ((this[_wField] || 0) <= 0) {
-                        this[_wField] = _wDur;
+                        // S3 windup jitter (tell-start only): ±10% keeps dodgeability, breaks volley sync.
+                        this[_wField] = _wDur * (1 + (Math.random() - 0.5) * 0.2);
                         try { audio.playTelegraphTick(0.1, this.x, this.y); } catch (e) {}
                     } else {
                         this[_wField] -= dt;
@@ -24773,6 +24951,8 @@ class Enemy extends Entity {
                         (this.type === 'enforcer' || this.roleKey === 'gunner') &&
                         this.cachedTarget && typeof this.cachedTarget._suppressPinTimer === 'number') {
                         this.cachedTarget._suppressPinTimer = TACTICAL_TUNING.SUPPRESS_PIN_TIME;
+                        // S3 enforcer pin-flash tell: 0.3s amber pulse on pin-applying shots (draw-only).
+                        if (this.type === 'enforcer') this._pinFlash = 0.3;
                     }
                 }
             }
@@ -24789,17 +24969,20 @@ class Enemy extends Entity {
                 if ((this._stockBurstLeft || 0) <= 0 && (this._stockBurstCooldown || 0) > 0) this._stockBurstCooldown -= dt;
                 if ((this._stockBurstLeft || 0) > 0) {
                     this._stockBurstTimer -= dt;
-                    if (this._stockBurstTimer <= 0) {
+                    // S3 shotgun spool tell: first round waits out the spool (abort checks still run).
+                    if ((this._spoolTell || 0) > 0) this._spoolTell -= dt;
+                    else if (this._stockBurstTimer <= 0) {
                         if (this.suppressedTimer > 0 || this.fireHoldTimer > 0 || !this.cachedHasLOS || this.cachedRunFromDrone ||
                             !this.cachedTarget || !this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
                             this._stockBurstLeft = 0;
-                            this._stockBurstCooldown = 2.0;
+                            this._stockBurstCooldown = TACTICAL_TUNING.AI_REVITALIZE ? 1.8 + Math.random() * 0.6 : 2.0;
                         } else {
                             this.fire(game);
                             this._stockBurstLeft--;
-                            this._stockBurstTimer = 0.12;
+                            // S3 burst-gap noise (event-time only): ±0.03s around the 0.12 beat.
+                            this._stockBurstTimer = TACTICAL_TUNING.AI_REVITALIZE ? 0.10 + Math.random() * 0.06 : 0.12;
                             this.lastFire = gameTime;
-                            if (this._stockBurstLeft <= 0) this._stockBurstCooldown = 2.0;
+                            if (this._stockBurstLeft <= 0) this._stockBurstCooldown = TACTICAL_TUNING.AI_REVITALIZE ? 1.8 + Math.random() * 0.6 : 2.0;
                         }
                     }
                 } else if ((this._stockBurstCooldown || 0) <= 0 && this.cachedHasLOS && !this.cachedRunFromDrone &&
@@ -24809,6 +24992,11 @@ class Enemy extends Entity {
                     this._fireLineClear(this.cachedTarget.x, this.cachedTarget.y)) {
                     this._stockBurstLeft = 3;
                     this._stockBurstTimer = 0;
+                    // S3 shotgun spool tell: 0.25s click before the first round (dodge beat, no rate change).
+                    if (TACTICAL_TUNING.AI_REVITALIZE) {
+                        this._spoolTell = 0.25;
+                        try { audio.playTelegraphTick(0.1, this.x, this.y); } catch (e) {}
+                    }
                 }
             }
             // Sniper/pump windup decays when gate fails (lost LOS/range or
@@ -24818,6 +25006,8 @@ class Enemy extends Entity {
                 this._sniperWindup = 0;
                 this._pumpWindup = 0;
             }
+            // S3 enforcer pin-flash tell decay (draw-only, per-frame).
+            if ((this._pinFlash || 0) > 0) this._pinFlash -= dt;
         }
 
         // ---- NEW ENEMY TYPES: special abilities (cooldowns tick every
@@ -25179,10 +25369,36 @@ class Enemy extends Entity {
             !game.operatorMode && !game.nowMode && !this.finalKillRole && !runFromDrone &&
             !(this instanceof Boss) && !(this instanceof Operative)) {
             this._coverTimer -= (1 / 60) * 30; // one throttled AI tick's worth
-            if (!this._coverPoint || this._coverTimer <= 0) {
+            if (TACTICAL_TUNING.AI_REVITALIZE) this._coverCommit = Math.max(0, (this._coverCommit || 0) - (1 / 60) * 30);
+            // S2 retreat commit: once a point is picked, hold it to arrival or
+            // commit-expiry (no per-tick flip-flop). The commit outlives the 2s throttle;
+            // while committed the timer is irrelevant. Sanctioned break only: a
+            // newly-charged medic inside retreat range preempts wall cover.
+            let _repick = (!this._coverPoint || this._coverTimer <= 0);
+            if (TACTICAL_TUNING.AI_REVITALIZE && this._coverPoint && (this._coverCommit || 0) > 0) {
+                _repick = false;
+                if (!this._coverIsMedic && game && game._strikeTeams && TACTICAL_TUNING.MEDIC_BOOST) {
+                    const _mrs = STRIKE_TEAM.MEDIC_RETREAT_RANGE * STRIKE_TEAM.MEDIC_RETREAT_RANGE;
+                    let _medFound = false;
+                    for (let _t = 0; _t < game._strikeTeams.length && !_medFound; _t++) {
+                        const _ms = game._strikeTeams[_t].members;
+                        for (let _m = 0; _m < _ms.length; _m++) {
+                            const _mm = _ms[_m];
+                            if (_mm === this || !_mm || _mm.dead || _mm.roleKey !== 'medic' || !(_mm._healCharges > 0)) continue;
+                            const _mdx = _mm.x - this.x, _mdy = _mm.y - this.y;
+                            if (_mdx * _mdx + _mdy * _mdy <= _mrs) { _medFound = true; break; }
+                        }
+                    }
+                    if (_medFound) _repick = true;
+                }
+            } else if (TACTICAL_TUNING.AI_REVITALIZE && this._coverPoint && (this._coverCommit || 0) <= 0) {
+                _repick = true;
+            }
+            if (_repick) {
                 this._coverTimer = 2.0;
                 // WI-4 (D): nearest charged medic within range, else wall cover.
                 this._coverPoint = this._findRetreatPoint(targetX, targetY);
+                if (TACTICAL_TUNING.AI_REVITALIZE) this._coverCommit = TACTICAL_TUNING.ENEMY_COVER_COMMIT;
             }
             if (this._coverPoint) {
                 const cdx = this._coverPoint.x - this.x, cdy = this._coverPoint.y - this.y;
@@ -25221,6 +25437,19 @@ class Enemy extends Entity {
                 if (!this._coverPoint || this._coverTimer <= 0) {
                     this._coverTimer = 2.0;
                     this._coverPoint = this._findCoverPoint(targetX, targetY);
+                    // S2 healthy-cover lease: cover-camp valve (wounded path keeps indefinite hold-on-arrival).
+                    if (TACTICAL_TUNING.AI_REVITALIZE) {
+                        this._coverLease = TACTICAL_TUNING.ENEMY_COVER_LEASE;
+                        this._coverIsMedic = false;
+                    }
+                }
+                // S2 lease expiry: drop the point and re-read RUN/LKP next tick (no hold this tick).
+                if (TACTICAL_TUNING.AI_REVITALIZE && (this._coverLease || 0) > 0) {
+                    this._coverLease = Math.max(0, this._coverLease - (1 / 60) * 30);
+                    if (this._coverLease <= 0) {
+                        this._coverPoint = null;
+                        return null;
+                    }
                 }
                 if (this._coverPoint) {
                     const hdx = this._coverPoint.x - this.x, hdy = this._coverPoint.y - this.y;
@@ -25246,9 +25475,16 @@ class Enemy extends Entity {
         if (this.type === 'medic' && game && !game.operatorMode &&
             !this.finalKillRole && !runFromDrone) {
             const mt = this._medicTarget;
-            if (mt && !mt.dead && this._medicHealCd <= 0) {
-                if (distToTarget > MEDIC_TUNING.fleeRange) return { x: mt.x, y: mt.y };
-                return null; // player on top: yield to the skittish standoff
+            // S4 medic commit-score: rush only a WOUNDED patient inside commitRange with
+            // charges and no density hold; otherwise drift to/hold the anchor (re-cover).
+            // Heal economy (HEAL_FRAC/charges/cooldown/channel/abort) untouched.
+            if (mt && !mt.dead && mt.wounded && this._medicHealCd <= 0 && (this._medicCharges || 0) > 0) {
+                const _mdx = mt.x - this.x, _mdy = mt.y - this.y;
+                const _md2 = _mdx * _mdx + _mdy * _mdy;
+                if (_md2 < MEDIC_TUNING.commitRange * MEDIC_TUNING.commitRange && !this._tailDensityHot()) {
+                    if (distToTarget > MEDIC_TUNING.fleeRange) return { x: mt.x, y: mt.y };
+                    return null; // player on top: yield to the skittish standoff
+                }
             }
             const a = this._medicAnchor;
             if (a && !a.dead) {
@@ -25258,6 +25494,56 @@ class Enemy extends Entity {
                 }
                 this._intentionalHold = true; // with the squad: deliberate stand
             }
+            return null;
+        }
+        // S4 comm trail-to-leader: a healthy comm stations behind a frontline gun
+        // instead of advancing into the fight. Skittish 620 owns close range; damaged
+        // comms already broke to cover above. Density-hot holds instead of trailing.
+        // Scorer owns WHOM (leader pick); role owns WHERE (trail offset, path-routed).
+        if (this.type === 'comm' && game && !game.operatorMode && !game.nowMode &&
+            !this.finalKillRole && !runFromDrone && !(this instanceof Boss) && !(this instanceof Operative) &&
+            (distToTarget || 0) > 620 && !this._tailDensityHot()) {
+            let _lead = null, _leadD2 = 900 * 900;
+            if (game.enemies) {
+                for (let _li = 0; _li < game.enemies.length; _li++) {
+                    const _le = game.enemies[_li];
+                    if (!_le || _le.dead || _le === this) continue;
+                    const _lt = _le.type;
+                    if (_lt !== 'grunt' && _lt !== 'enforcer' && _lt !== 'shotgun_grunt' &&
+                        _lt !== 'shield' && _lt !== 'jammer') continue;
+                    const _ldx = _le.x - this.x, _ldy = _le.y - this.y;
+                    const _ld2 = _ldx * _ldx + _ldy * _ldy;
+                    if (_ld2 < _leadD2) { _leadD2 = _ld2; _lead = _le; }
+                }
+            }
+            if (_lead) {
+                const _td = TACTICAL_TUNING.ENEMY_TRAIL_DIST || 180;
+                const _bx = this.x - _lead.x, _by = this.y - _lead.y;
+                const _bl = Math.hypot(_bx, _by) || 1;
+                if (_bl > _td + 40) {
+                    const _tx = _lead.x + _bx / _bl * _td, _ty = _lead.y + _by / _bl * _td;
+                    if (game.map.floorSeparated && game.map.floorSeparated(_lead.x, _lead.y, _tx, _ty)) return null;
+                    return { x: _tx, y: _ty };
+                }
+                this._intentionalHold = true; // on station: deliberate stand
+                return null;
+            }
+        }
+        // S4 jammer guard ring: drafted guns hold a ring around their jammer (move-only;
+        // guards stay hittable, no immunity). Defers to wounded/cover/medic/trail above and
+        // to drone-flee/final-kill (gated). Density-hot releases to stock behavior.
+        if (!(this instanceof Boss) && !(this instanceof Operative) && !this.finalKillRole && !runFromDrone &&
+            (this._guardExp || 0) > (game ? (game.gameTime || 0) : -99) && !this._tailDensityHot()) {
+            const _gx = (this._guardX || 0) - this.x, _gy = (this._guardY || 0) - this.y;
+            const _gl = Math.hypot(_gx, _gy) || 1;
+            const _gr = TACTICAL_TUNING.ENEMY_GUARD_RING || 150;
+            if (_gl > _gr + 40) {
+                return {
+                    x: (this._guardX || 0) + _gx / _gl * _gr,
+                    y: (this._guardY || 0) + _gy / _gl * _gr
+                };
+            }
+            this._intentionalHold = true; // on station: deliberate stand
             return null;
         }
         return null;
@@ -25345,8 +25631,12 @@ class Enemy extends Entity {
                     if (dSq <= RSq && dSq < bestDSq) { best = mm; bestDSq = dSq; }
                 }
             }
-            if (best) return { x: best.x, y: best.y };
+            if (best) {
+                this._coverIsMedic = true; // S2: committed point is a live medic (preempt tag)
+                return { x: best.x, y: best.y };
+            }
         }
+        this._coverIsMedic = false; // S2: wall cover (or no medic scan) — medic-preempt may break commit
         return this._findCoverPoint(threatX, threatY);
     }
 
@@ -25705,6 +25995,28 @@ class Enemy extends Entity {
     // anchorRange, so the medic hangs on the squad's key units rather than
     // whatever grunt happens to be closest. One pass, no allocation -- cheap
     // even on a full wave.
+    // S4 tail density governor: converging tails (medic rush, comm trail, jammer
+    // guard) hold when the sky is full — no new sustain stack, no kit change.
+    _tailDensityHot() {
+        if (!TACTICAL_TUNING.AI_REVITALIZE || typeof game === 'undefined' || !game) return false;
+        const _cap = TACTICAL_TUNING.ENEMY_TAIL_DENSITY_CAP || 8;
+        let _n = 0;
+        if (game.bossDrones) {
+            for (let i = 0; i < game.bossDrones.length; i++) {
+                const d = game.bossDrones[i];
+                if (d && !d.dead) { _n++; if (_n >= _cap) return true; }
+            }
+        }
+        if (game.grenades) {
+            for (let i = 0; i < game.grenades.length; i++) {
+                const m = game.grenades[i];
+                if (m && !m.dead && (typeof MortarMarker !== 'undefined') && (m instanceof MortarMarker)) {
+                    _n++; if (_n >= _cap) return true;
+                }
+            }
+        }
+        return false;
+    }
     _medicPickTarget() {
         if (!game || !game.enemies) return null;
         const CR = MEDIC_TUNING.commitRange;
@@ -25726,8 +26038,14 @@ class Enemy extends Entity {
             // Anchor: the highest-tier LIVING ally (any HP) within anchorRange
             // -- the point the medic hangs around when it has nothing to rush
             // to, so it stays with the squad instead of advancing on the player.
-            if (d2 < AR2 && (tier < anchorTier || (tier === anchorTier && d2 < anchorD2))) {
-                anchorTier = tier; anchorD2 = d2; anchor = e;
+            // S4 heavies-escort weight: heavies read closer so the anchor (and the
+            // heal economy behind it) concentrates on high-HP bodies. Patient
+            // selection (commitRange, wounded-only, tier→frac→dist) unchanged.
+            const _heavyAnchor = (TACTICAL_TUNING.AI_REVITALIZE &&
+                (e.type === 'shield' || e.type === 'enforcer')) ? 0.7 : 1.0;
+            const _ad2 = d2 * _heavyAnchor;
+            if (_ad2 < AR2 && (tier < anchorTier || (tier === anchorTier && _ad2 < anchorD2))) {
+                anchorTier = tier; anchorD2 = _ad2; anchor = e;
             }
             // The heal cooldown is a real rest window: a resting (or spent)
             // medic holds its anchor (the block above) and does NOT re-acquire
@@ -26913,7 +27231,12 @@ class TacticalSquad {
             this.boundPhase = (this.boundPhase === 'MOVE' ? 'COVER' : 'MOVE');
             this.boundTimer = MathUtils.rand(STRIKE_TEAM.BOUND_INTERVAL_MIN, STRIKE_TEAM.BOUND_INTERVAL_MAX);
             if (this.boundPhase === 'COVER' && Math.random() < 0.3) {
-                const gunner = this.members.find(m => m.roleKey === 'gunner' || m.roleKey === 'support');
+                // G7-4: manual scan (no per-frame closure alloc in the squad path).
+                let gunner = null;
+                for (let _gi = 0; _gi < this.members.length; _gi++) {
+                    const _gm = this.members[_gi];
+                    if (_gm && (_gm.roleKey === 'gunner' || _gm.roleKey === 'support')) { gunner = _gm; break; }
+                }
                 if (gunner) this.triggerRadioCallout(gunner, 'LAYING DOWN SUPPRESSIVE FIRE!', '#ff9100', game);
             }
         }
@@ -26947,8 +27270,15 @@ class TacticalSquad {
         if (this.flushCooldown <= 0 && (this.lkp.verified || this.lkp.age < STRIKE_TEAM.LKP_FRESHNESS * 2)) {
             const distToLKP = Math.hypot(this.leader.x - this.lkp.x, this.leader.y - this.lkp.y);
             if (distToLKP < STRIKE_TEAM.FLUSH_RANGE && !directLOS) {
-                const breacher = this.members.find(m => m.roleKey === 'breacher' && (!m.flashCooldown || m.flashCooldown <= 0));
-                const grenadier = this.members.find(m => m.roleKey === 'grenadier' && (m._fragCharges > 0));
+                // G7-4: manual scans (no per-frame closure allocs in the squad path).
+                let breacher = null, grenadier = null;
+                for (let _fi = 0; _fi < this.members.length; _fi++) {
+                    const _fm = this.members[_fi];
+                    if (!_fm) continue;
+                    if (!breacher && _fm.roleKey === 'breacher' && (!_fm.flashCooldown || _fm.flashCooldown <= 0)) breacher = _fm;
+                    if (!grenadier && _fm.roleKey === 'grenadier' && (_fm._fragCharges > 0)) grenadier = _fm;
+                    if (breacher && grenadier) break;
+                }
 
                 if (breacher) {
                     const angle = Math.atan2(this.lkp.y - breacher.y, this.lkp.x - breacher.x);
@@ -40181,6 +40511,7 @@ class Game {
         this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: EXTRACTION_TUNING.INSERTION_PREP + 2.0 };
         this._strikeTeams = [];
         this._strikeTeamsThisWave = 0;
+        this._strikeCompLast = null; // S5 double-team rotation (per-wave last-comp, no cross-wave memory)
         this._medicSquadsThisWave = 0;
         this._medicDelayArmed = false;
         for (const p of [this.player, this.player2]) if (p) p.carriedIntel = 0;
@@ -40604,7 +40935,16 @@ class Game {
             && w >= STRIKE_TEAM.MIN_WAVE) {
             const strikePool = STRIKE_TEMPLATES.filter(t => w >= t[0]);
             if (strikePool.length > 0 && Math.random() < STRIKE_TEAM.TEMPLATE_WEIGHT) {
-                const chosen = strikePool[Math.floor(Math.random() * strikePool.length)];
+                // S5 double-team rotation (w14+): the second team never repeats the first comp
+                // and never follows up with Command Element (event, not flood). Falls back to the
+                // full pool rather than stalling. Composition-only; caps/weights untouched.
+                let _sp = strikePool;
+                if (TACTICAL_TUNING.AI_REVITALIZE && spawnedThisWave >= 1 && this._strikeCompLast) {
+                    const _filt = strikePool.filter(t => (t[3] || '') !== this._strikeCompLast &&
+                        (t[3] || '') !== 'Command Element');
+                    if (_filt.length > 0) _sp = _filt;
+                }
+                const chosen = _sp[Math.floor(Math.random() * _sp.length)];
                 // Only commit if the whole team fits in the remaining wave
                 // budget. Without this the staged-plan truncation below can
                 // cut a 4-man Breach Team down to one man while the contact
@@ -40613,6 +40953,7 @@ class Game {
                     const plan = chosen[2].map(r => 'op_' + r);
                     plan.isStrikeTeam = true;
                     plan.compName = chosen[3] || 'Strike Team';
+                    this._strikeCompLast = plan.compName;
                     return plan;
                 }
             }
@@ -40651,14 +40992,53 @@ class Game {
             [11, () => 0.3 + w * 0.08,                 ['medic', 'jammer', 'grunt']]
         ];
         let pool = templates.filter(t => w >= t[0]);
+        // S5 escort-for-heavies: on boss waves the small escort screens heavies (composition-only;
+        // escort count untouched). Heavy rows up, light-only rows down. Mutator-exempt by construction
+        // (boss and mutator waves never coincide); extraction-safe (boss never fires there).
+        const _escort = TACTICAL_TUNING.AI_REVITALIZE && this.isBossWave && !this.activeMutator;
         let total = 0;
-        for (let t of pool) total += t[1]();
-        let r = Math.random() * total;
+        const _wts = [];
         for (let t of pool) {
-            r -= t[1]();
-            if (r <= 0) return t[2].slice();
+            let _wt = t[1]();
+            if (_escort) {
+                const _ms = t[2];
+                let _heavy = false, _light = 0;
+                for (let _mi = 0; _mi < _ms.length; _mi++) {
+                    const _mk = _ms[_mi];
+                    if (_mk === 'enforcer' || _mk === 'shield' || _mk === 'comm') _heavy = true;
+                    if (_mk === 'swarmer' || _mk === 'grunt') _light++;
+                }
+                if (_heavy) _wt *= 1.6;
+                else if (_light * 2 >= _ms.length) _wt *= 0.4;
+            }
+            _wts.push(_wt);
+            total += _wt;
         }
-        return pool[pool.length - 1][2].slice();
+        let r = Math.random() * total;
+        for (let _ti = 0; _ti < pool.length; _ti++) {
+            r -= _wts[_ti];
+            if (r <= 0) return this._screenSupportPlan(pool[_ti][2].slice());
+        }
+        return this._screenSupportPlan(pool[pool.length - 1][2].slice());
+    }
+
+    // S5 support-protected slots: a drawn support (comm/jammer/medic) never walks
+    // without a screen — the last slot becomes a grunt (or a shield on wave 6+
+    // with comm, keeping the screen fantasy). Same length, same budget; swarm and
+    // op_ plans exempt (swarm has no supports; strike comps are authored screens).
+    _screenSupportPlan(plan) {
+        if (!TACTICAL_TUNING.AI_REVITALIZE || !plan || plan.length < 2) return plan;
+        let _sup = false, _screen = false;
+        for (let i = 0; i < plan.length; i++) {
+            const _k = plan[i];
+            if (_k === 'comm' || _k === 'jammer' || _k === 'medic') _sup = true;
+            else if (_k === 'grunt' || _k === 'enforcer' || _k === 'shield' || _k === 'shotgun_grunt') _screen = true;
+        }
+        if (_sup && !_screen) {
+            const _hasComm = plan.indexOf('comm') >= 0;
+            plan[plan.length - 1] = (_hasComm && (this._spawnIntensityWave() || 0) >= 6) ? 'shield' : 'grunt';
+        }
+        return plan;
     }
 
     // Picks a validated edge spawn anchor for a whole squad (same edge-bias,
@@ -40922,6 +41302,25 @@ class Game {
         ss.plan = plan;
         ss.rolesAssigned = 0;
         ss.anchor = this._pickSquadAnchorBiased();
+        // S5 lane-split extension (2P only, both alive): alternate squads toward each player
+        // so waves stop collapsing on the nearest. Re-roll once, keep the anchor nearer P2
+        // on odd parity; seed flankSide so the first flanker arcs away from the anchor side.
+        // Position-only; counts/weights/gaps untouched. Swarmers/sappers keep beeline identity.
+        if (TACTICAL_TUNING.AI_REVITALIZE && this.isTwoPlayer && this.player && this.player2 &&
+            !this.player.dead && !this.player2.dead && !this.extractionMode) {
+            this._laneParity = (this._laneParity || 0) ^ 1;
+            if (this._laneParity === 1) {
+                const _a2 = this._pickSquadAnchorBiased();
+                if (_a2 && ss.anchor) {
+                    const _da = Math.hypot(ss.anchor.x - this.player2.x, ss.anchor.y - this.player2.y);
+                    const _db = Math.hypot(_a2.x - this.player2.x, _a2.y - this.player2.y);
+                    if (_db < _da) ss.anchor = _a2;
+                }
+                ss.flankSide = 1;
+            } else {
+                ss.flankSide = -1;
+            }
+        }
         ss.memberTimer = 0; // first member releases this frame
 
         ss.isStrikeTeam = !!plan.isStrikeTeam;
@@ -57643,6 +58042,7 @@ class Game {
         this._chaosDraftGen = (this._chaosDraftGen || 0) + 1;
         this._strikeTeams = [];
         this._strikeTeamsThisWave = 0;
+        this._strikeCompLast = null; // S5 double-team rotation (per-wave last-comp, no cross-wave memory)
         this._medicSquadsThisWave = 0;
         this._medicDelayArmed = false;
         this.intelEarnedThisRun = 0;
@@ -58347,6 +58747,7 @@ class Game {
             this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: 0.5 };
             this._strikeTeams = [];
             this._strikeTeamsThisWave = 0;
+        this._strikeCompLast = null; // S5 double-team rotation (per-wave last-comp, no cross-wave memory)
             this._medicSquadsThisWave = 0;
             this._medicDelayArmed = false;
             this.updateHUD();
@@ -58450,6 +58851,7 @@ class Game {
         this.squadState = { plan: [], anchor: null, memberTimer: 0, gapTimer: 0.5 };
         this._strikeTeams = [];
         this._strikeTeamsThisWave = 0;
+        this._strikeCompLast = null; // S5 double-team rotation (per-wave last-comp, no cross-wave memory)
         this._medicSquadsThisWave = 0;
         this._medicDelayArmed = false;
         // OQ-076: a stale escape-hold must never leak into a fresh wave.
@@ -67125,6 +67527,17 @@ class Game {
                 // E5 sniper-laser tell endpoint (v==0 only).
                 try { if (v === 0) this._pixiLightSplat(target.x, target.y, 24, 0.008, '#ff8a9c'); } catch (e2) {}
             }
+        }
+        // S3 enforcer pin-flash tell: amber pulse on pin-applying shots (draw-only, twin loop only —
+        // same single-site precedent as the sniper redline above; canvas def is retained, not presented).
+        if (TACTICAL_TUNING.AI_REVITALIZE && e.type === 'enforcer' && (e._pinFlash || 0) > 0 && e.cachedTarget && !e.cachedTarget.dead) {
+            try {
+                const _pf = Math.max(0, Math.min(1, e._pinFlash / 0.3));
+                const _pa = Math.atan2(e.cachedTarget.y - e.y, e.cachedTarget.x - e.x);
+                const _pl = 300 * ez;
+                FX.moveTo(SX(e.x), SY(e.y)); FX.lineTo(SX(e.x) + Math.cos(_pa) * _pl, SY(e.y) + Math.sin(_pa) * _pl);
+                FX.stroke({ width: (1.0 + _pf) * ez, color: 0xff9100, alpha: (0.25 + _pf * 0.45) * op });
+            } catch (e3) {}
         }
         // E5 enemy-tell trickles (v==0 only — one splat per frame, never
         // per half; same visibility guards as the strokes above, no
