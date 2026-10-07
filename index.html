@@ -10494,8 +10494,9 @@ const ENEMY_BASE_ARC = {
     ENABLED: true,               // master kill-switch: false restores pre-arc behavior byte-identical
     LOGI_MIN_WAVE: 2,            // first wave a founder may roll (raid-early: findable 2-3)
     LOGI_CADENCE: 2,             // ~1 founder per this many waves (±1 jitter)
-    LOGI_DROUGHT_MAX: 4,         // pity: force a founder after this many dry waves
+    LOGI_DROUGHT_MAX: 5,         // pity: free founder after this many dry waves (buyback fallback)
     LOGI_FLOOD_MAX: 2,           // pity: never more than this many founders in one wave
+    LOGI_PRICE: 50,              // dog-driven buyback: bank-$ per founder (trickle counts; pity free at the wall)
     LOGI_HP: 160,                // B4: founder survives an extra hit (jobs complete under fire; still no bounty/spill)
     BANK_APPETITE_PER_WAVE: 120, // B2: max cargo value the bank absorbs per wave (overflow destroyed, never deferred)
     BANK_TRICKLE_PER_WAVE: 13,   // A6: guaranteed income floor per wave (was 18 -- 18 fully funded a T1 pair; 13 forces steal for the 2nd tooth; BL-4)
@@ -18073,7 +18074,12 @@ const FLUID_TUNING = { CELL: 40, MAXCELLS: 24000, JACOBI: 8, VEL_DISS: 0.5, DENS
 const BLOOM_TUNING = { NIGHT_T: 0.45, VEIL_T: 0.62, DIM: 0.5 }; // SHADER-ERA #3: selective-bloom gate (hot passes, wash dims; veil tightens)
 const EXPO_TUNING = { STRENGTH: 1.0, TAU_UP: 1.2, TAU_DOWN: 0.10, MAX_T: 0.22, HOLD: 0.35 }; // EYE-ADAPTATION v1: analytic light-adaptation (CPU scalar, zero passes). Consumed as uT = base + ThAdj + expoV * MAX_T * STRENGTH. Shipped defaults frozen; presets live in frozensoldat.tweaks.v1.
 // PHASE 3 Item 3: heavy-gun muzzle refraction rings (UV-only — no vector ring, glow, blast or gameplay). radius px / life s / strength. Absent = none.
-const MUZZLE_SHOCK = { Shotgun: { r: 60, t: 0.15, s: 0.9 }, Sniper: { r: 70, t: 0.18, s: 1.0 }, LMG: { r: 36, t: 0.12, s: 0.6 }, M1A: { r: 40, t: 0.12, s: 0.7 }, Abakan: { r: 36, t: 0.12, s: 0.6 }, Thumper: { r: 80, t: 0.2, s: 1.0 } };
+// SHOCK feel (2026-10-07): mid tier ~1.7x original (Sniper stays king at
+// 105); small arms widened to read without squinting (Pistol 40/SMG 38).
+// Global spawnUvShock 2x sits on top of all of these.
+// Thumper launch is a small pop (r45) — the shell's landing explosion
+// carries the big effect, not the launch. Shotgun/Mauler stay at base 60.
+const MUZZLE_SHOCK = { Shotgun: { r: 88, t: 0.15, s: 0.9 }, Sniper: { r: 137, t: 0.18, s: 1.0 }, LMG: { r: 81, t: 0.13, s: 0.6 }, M1A: { r: 88, t: 0.13, s: 0.7 }, Abakan: { r: 81, t: 0.13, s: 0.6 }, Thumper: { r: 59, t: 0.12, s: 0.6 }, Mauler: { r: 88, t: 0.15, s: 0.9 }, Judge: { r: 117, t: 0.16, s: 0.95 }, Pistol: { r: 52, t: 0.10, s: 0.55 }, SMG: { r: 49, t: 0.10, s: 0.55 } };
 const WORLD_BREATHE = { CANOPY_PX: 3.0, BUSH_PX: 1.5, RIM_A: 0.03, BAND_A: 0.025, HAZE_STD: 0.02, HAZE_OP: 0.04, HAZE_R: 0.03 };
 const BODY_MOTION = {
     LEAN_K: 0.009,      // px lean per px/s forward (walk 260px/s -> ~2.3px, sprint caps at MAX)
@@ -34646,9 +34652,9 @@ const SCAV_DOG_TUNING = {
     R: 12,
     SEEK_RANGE: 9999,       // whole-map greed: the dog wants EVERYTHING
     STEAL_PAD: 6,           // touch slack on top of r + item.r
-    HIDE_DIST: 340,         // player closer than this: dodge logic arms
-    DODGE_DIST: 140,        // AND within this of the dog->loot route: arc
-    DETOUR_OFF: 120,        // how far off-route the arc waypoint swings
+    HIDE_DIST: 450,         // player closer than this to the route: dodge logic arms
+    DODGE_DIST: 180,        // AND within this of the dog->loot route: arc
+    DETOUR_OFF: 150,        // how far off-route the arc waypoint swings
     SPEED_SEEK: 250,        // trot to a target item
     SPEED_SCOUT: 120,       // idle drift while hunting
     SPEED_CARRY: 190,       // loaded lope (slower: carrying is readable)
@@ -34662,8 +34668,8 @@ const SCAV_DOG_TUNING = {
     FAILED_BAN: 10.0,       // don't re-eye an unreachable/taken item
     CARGO_CAP: 100,         // effectively uncapped -- greedy hoarders
     // -- Enemy Base Arc slice 1: fear spectrum + heatmap + courage --
-    FEAR_CLOSE: 220,        // LOS + closer than this: break to cover (panic <180 still outranks)
-    FEAR_FAR: 520,          // LOS + beyond this: brave, ignore the dodge arc
+    FEAR_CLOSE: 700,        // LOS + closer than this: break to cover (panic <180 still outranks)
+    FEAR_FAR: 1200,         // LOS + beyond this: brave, ignore the dodge arc
     COVER_RADIUS: 420,      // fear-cover sample radius (WOUND_COVER_RADIUS parity)
     COVER_HOLD: 2.0,        // cover-point re-pick throttle (wounded 2s parity)
     HEAT_AGE_DISCOUNT: 1,   // multiply worth by fadeAlpha (fresh pays full)
@@ -34985,15 +34991,33 @@ class ScavengerDog extends Entity {
             destY = this.y + Math.sin(a) * 200;
             currentSpeed = SCAV_DOG_TUNING.SPEED_PANIC;
             hasDest = true;
-        } else if (this._fearTier === 2 && this._coverPoint && (this.state === 'HUNTING' || this.state === 'CARRYING')) {
+        } else if (this._fearTier === 2 && (this.state === 'HUNTING' || this.state === 'CARRYING')) {
             // ENEMY BASE ARC slice 1: fear-cover (close LOS, outside panic).
             // Latched point from the slow tick; arrival clears it (stand and
             // fight -- never run blindly, grunt parity). Panic still outranks.
-            const cdx = this._coverPoint.x - this.x, cdy = this._coverPoint.y - this.y;
-            if (cdx * cdx + cdy * cdy < 30 * 30) {
-                this._coverPoint = null;
-            } else {
-                destX = this._coverPoint.x; destY = this._coverPoint.y;
+            // No wall-broken sample (open ground): back away radially instead
+            // of standing -- the band must always move, or close range reads
+            // identical to neutral. Arrival at a real cover point hunkers
+            // (falls through to hunting below); only the no-sample case backs.
+            const _hadCover = !!this._coverPoint;
+            if (this._coverPoint) {
+                const cdx = this._coverPoint.x - this.x, cdy = this._coverPoint.y - this.y;
+                if (cdx * cdx + cdy * cdy < 30 * 30) {
+                    this._coverPoint = null;
+                } else {
+                    destX = this._coverPoint.x; destY = this._coverPoint.y;
+                    currentSpeed = SCAV_DOG_TUNING.SPEED_SEEK;
+                    hasDest = true;
+                }
+            }
+            if (!hasDest && !_hadCover && px !== null) {
+                const _ra = Math.atan2(this.y - py, this.x - px);
+                destX = this.x + Math.cos(_ra) * 220;
+                destY = this.y + Math.sin(_ra) * 220;
+                try {
+                    destX = Math.max(40, Math.min(game.mapW - 40, destX));
+                    destY = Math.max(40, Math.min(game.mapH - 40, destY));
+                } catch (e) {}
                 currentSpeed = SCAV_DOG_TUNING.SPEED_SEEK;
                 hasDest = true;
             }
@@ -35502,9 +35526,12 @@ class ScavengerDog extends Entity {
 
         // Status light (readable at a glance, matches the design dial):
         //   green  = empty / hunting, amber = carrying loot,
-        //   red flash = spooked or running for the edge.
+        //   red flash = spooked (panic OR fear-cover) or running for the edge.
+        //   The cover tier (< FEAR_CLOSE LOS) blinks red like panic so the
+        //   widened band reads at a glance -- panic is proximity, cover is
+        //   sightline, both mean "it sees you, it's leaving".
         let lightColor, flash = false;
-        if (this.state === 'FLEEING' || (this._panic && !this.dead)) {
+        if (this.state === 'FLEEING' || (this._panic && !this.dead) || (this._fearTier === 2 && !this.dead)) {
             lightColor = '#ff2a5f';
             flash = true;
         } else if (this.cargo.length) {
@@ -41840,6 +41867,7 @@ class Game {
         this._logiWave = 0;           // single-roll-per-wave guard (HP-02 discipline: reset on new run)
         this._logiSinceSpawn = 0;     // drought counter for pity timer
         this._logiStaggerNext = 0;    // separate %30 stagger domain (scav WO-09 precedent)
+        this._logiPityCatchup = 0; // buyback: pity freebie arms a 3-wave pair catch-up window
         this._dogDeliveries = 0;      // telemetry: belly-to-bank deliveries this run
         this._enemyBankTotal = 0;      // telemetry: lifetime banked value this run (tuning-blind without it)
         this._enemyBankWastedTotal = 0; // slice 4b telemetry: appetite/cap overflow destroyed
@@ -44783,7 +44811,10 @@ class Game {
         if (!slot) slot = oldest;
         if (!slot) return;
         slot.active = true; slot.x = x; slot.y = y;
-        slot.maxRadius = Math.max(8, maxRadius || 60);
+        // SHOCK 2x (2026-10-07): global radius multiplier lives here so
+        // every caller (barrels, grenades, muzzles, impacts) doubles with
+        // one knob. Gameplay blastRadius untouched — render-only.
+        slot.maxRadius = Math.max(8, (maxRadius || 60) * 2.0);
         slot.maxLife = Math.max(0.05, duration || 0.2); slot.life = slot.maxLife;
         slot.str = (strength === undefined) ? 1 : strength;
     }
@@ -44812,11 +44843,26 @@ class Game {
         // PHASE 3 Item 3 (UV shock): own refraction ring with a 0.25s tail
         // beyond the vector ring (keeps expanding after the ring dies —
         // the distortion reads as a pressure wave, not a flash). Render-only.
+        // SHOCK physics (2026-10-07): the crack front OUTRANGES the heave —
+        // real pressure fronts travel until they decay into sound, fading to
+        // nothing as they expand; bulk-air heave is the local phenomenon.
+        // (Had it inverted: heave 4.8x vs crack 2.8x.) Barrel crack now runs
+        // to ~1580px in ~0.42s at constant speed, fringe riding it all the
+        // way out. Longer life keeps velocity sane over the longer range.
         // Rift: longer life (the implode phase needs room to read), negative
         // strength selects the tear branch in _pixiShockFrag.
+        // HEAVE (2026-10-07): big blasts also exhale one slow broad ring —
+        // the subsonic dynamic-pressure shove behind the supersonic crack.
+        // Fainter (0.25) and tightened up so the two reads stay close: crack
+        // leads, heave follows, both die out in the same neighborhood.
+        // Gated to maxRadius>=150 (grenades and up) so shells/drones never
+        // tax the 12-slot pool; top-4 env sort still prefers real fronts.
         try {
             if (rift) this.spawnUvShock(x, y, maxRadius * 1.1, duration + 0.55, -1.0);
-            else this.spawnUvShock(x, y, maxRadius * 1.15, duration + 0.25, 1.0);
+            else {
+                this.spawnUvShock(x, y, maxRadius * 2.2, duration + 0.25, 1.0);
+                if (maxRadius >= 150) this.spawnUvShock(x, y, maxRadius * 1.7, duration + 0.6, 0.25);
+            }
         } catch (e) {}
         // SHADER-ERA fluid: every blast is a pressure splat — explosions
         // visibly shove smoke/dust sideways (the money shot). One choke
@@ -58837,11 +58883,31 @@ class Game {
             'return dir * (pull + shiv) + tang * twist;\n' +
             '}\n' +
             'float rip = sin((d - p.x) * uM.x - uM.z * uM.y);\n' +
+            // Friedlander-ish profile: push front + negative-phase tug riding
+            // one band-width behind it, so the world closes back to normal
+            // right behind the wave (traveling reset) instead of the whole
+            // disc sitting bent and relaxing in place. 0.35 = subordinate;
+            // drop toward 0.0 if it ever reads as oscillation.
+            'float wt = (d - p.x + p.y * 1.1) / max(p.y * 0.7, 1.0);\n' +
+            'float wake = exp(-wt * wt);\n' +
+            // REVERTED 2026-10-07: soft alpha restored. The solid-mask + gate
+            // experiment failed across maps — opaque smear of bright cores
+            // (white discs), hard pop-out at slot death (static trailing
+            // discs), and no gate window spans bright/dark/night maps.
+            // Soft blend rides the envelope to zero: smooth birth and death.
             'a += band * p.z * p.w;\n' +
-            // Ripple share 0.3: at 10px amp a 0.6 share serrated straight
-            // edges into sawteeth (headless shot) — the bend should read as
-            // one smooth pressure lens with a faint shimmer riding it.
-            'return dir * (band * (p.z * uAmp + rip * p.z * uAmp * 0.3));\n' +
+            'a += wake * p.z * p.w * 0.35;\n' +
+            // Hot-air prism: faint chromatic split on the front. Scaled by
+            // local strength*envelope so flat areas stay clean; main()
+            // applies ch>0.01 with 2 extra taps on distorted pixels only.
+            'ch += band * p.z * p.w * 0.20 + wake * p.z * p.w * 0.08;\n' +
+            // Ripple share 0.18: condensation texture riding the front —
+            // visible breakup without washboard.
+            // Blast pushes OUTWARD: pixel samples baseUV+o, so +dir sucks
+            // content inward (implosion — was reading as wall ghosts leaning
+            // into the blast). -dir shoves it outward like a real pressure
+            // wave. Rift branch keeps its own signed pull/push logic.
+            'return (-dir * (band * (p.z * uAmp + rip * p.z * uAmp * 0.18)) + dir * (wake * p.z * uAmp * 0.35));\n' +
             '}\n' +
             'void main(){\n' +
             'vec2 sp = uRect.xy + vUV * uRect.zw;\n' +
@@ -58918,10 +58984,15 @@ class Game {
         const vh = this.height;
         const shX = cam._shX || 0, shY = cam._shY || 0;
         const live = [];
-        // Emanation speed: radius runs on a compressed clock (1.6× — the
-        // ring reaches full size in the first ~60% of its life, then holds
-        // while the envelope fades). Operator: "slowly expand" at 1.0.
-        const spd = (this._pixiShockSpeed === undefined ? 1.6 : this._pixiShockSpeed);
+        // Emanation speed: LINEAR clock (1.3× — full reach at ~77% life,
+        // short hold while fading). SHOCK physics (2026-10-07): the crack
+        // front runs ~1.4x (spd 1.3 + 0.05s tail ≈ 2670px/s on a barrel —
+        // Hollywood-slow next to real 340m/s+ supersonic fronts, but the
+        // crack/heave separation now carries the physics read). Real
+        // blast fronts never decelerate — they hold speed and die by
+        // spherical spreading. Every ease-out variant read as braking.
+        // Operator: "slowly expand" at 1.0.
+        const spd = (this._pixiShockSpeed === undefined ? 1.3 : this._pixiShockSpeed);
         for (const u of all) {
             if (!u || !u.active) continue;
             const t = 1 - ((u.life || 0) / (u.maxLife || 1));
@@ -58949,14 +59020,31 @@ class Game {
                 live.push({ sx, sy, sr, w: Math.max(3, sr * 0.22), env, rift: true, ph });
                 continue;
             }
+            // SHOCK physics (2026-10-07): LINEAR expansion — constant
+            // wavefront speed start to finish. Quad/cubic ease-outs all read
+            // as the wave braking at the edge; real shocks outrun their own
+            // pressure and die by spreading, never by slowing.
             const tr = Math.min(1, t * spd);
-            const rad = u.maxRadius * (1 - Math.pow(1 - tr, 3));
+            const rad = u.maxRadius * tr;
             const sr = Math.max(1, rad * ez);
             if ((sx - ox) < -sr * 2 || sy < -sr * 2 || (sx - ox) > vw + sr * 2 || sy > vh + sr * 2) continue;
             const attack = Math.min(1, t / 0.15);
-            const decay = 1 - Math.pow(Math.max(0, (t - 0.15) / 0.85), 1.5);
-            const env = Math.max(0, Math.min(1, attack * decay)) * (u.str || 1);
+            // SHOCK physics (2026-10-07): exponent 2.0 for the snappy
+            // temporal kill. Linear motion means time IS distance here.
+            const decay = 1 - Math.pow(Math.max(0, (t - 0.15) / 0.85), 2.0);
+            // SHOCK physics (2026-10-07): spherical-spreading loss off radius —
+            // offset AND alpha die with distance (both ride env), so the far
+            // field breathes out to near-zero instead of wobbling fullscreen.
+            // 1.5-power curve: mid-range keeps ~70% presence, full reach lands
+            // at ~15% before the temporal fade. Was linear 0.5 (edge held
+            // ~50%: the screenshot lie).
+            const spread = 1 - 0.85 * Math.pow(rad / Math.max(1, u.maxRadius), 1.5);
+            const env = Math.max(0, Math.min(1, attack * decay * spread)) * (u.str || 1);
             if (env <= 0.01) continue;
+            // SHOCK feel (2026-10-07): tight front — narrow gaussian reads as
+            // a sharp shock edge, not a rolling swell. Outer tail still
+            // reaches ~sr+2w ≈ 1.56×sr (≈3.1× original blast). Wake tug
+            // scales with w, so the traveling reset stays glued behind it.
             live.push({ sx, sy, sr, w: Math.max(3, sr * 0.28), env });
         }
         // RIFTLANCE hold: while the beam paints a mark, the paint disc is a
@@ -59055,13 +59143,18 @@ class Game {
                 // Strength scales with on-screen ring size (a 60px muzzle
                 // ring bends less than a 300px blast), clamped so tiny
                 // rings still read and huge ones don't tear the frame.
-                const sz = Math.max(0.35, Math.min(1.6, r.sr / 120));
+                // SHOCK 2x (2026-10-07): ceiling 1.6->2.6 + factor 0.9->1.0
+                // so doubled big blasts actually hit harder instead of
+                // clipping at the old cap. Small rings never reach the
+                // ceiling, so guns are untouched by the clamp. Rift factor
+                // left at 0.9.
+                const sz = Math.max(0.35, Math.min(2.6, r.sr / 120));
                 if (r.rift) {
                     // Sign-packed rift: -strength, env carries the phase sign.
                     const ra = (this._pixiRiftAmp === undefined ? 1.0 : this._pixiRiftAmp);
                     return { c: [r.sx, r.sy], p: [r.sr, r.w, -0.9 * sz * ra, r.env * (r.ph || 1)] };
                 }
-                return { c: [r.sx, r.sy], p: [r.sr, r.w, 0.9 * sz, r.env] };
+                return { c: [r.sx, r.sy], p: [r.sr, r.w, 1.0 * sz, r.env] };
             };
             const k0 = pk(0), k1 = pk(1), k2 = pk(2), k3 = pk(3);
             const structs = {
@@ -59077,9 +59170,9 @@ class Game {
                 uP2: { value: k2.p, type: 'vec4<f32>' },
                 uC3: { value: k3.c, type: 'vec2<f32>' },
                 uP3: { value: k3.p, type: 'vec4<f32>' },
-                uM: { value: [0.35, 22, this.gameTime || 0, 1], type: 'vec4<f32>' },
+                uM: { value: [0.22, 22, this.gameTime || 0, 1], type: 'vec4<f32>' },
                 uN: { value: Math.min(4, rings.length), type: 'f32' },
-                uAmp: { value: (this._pixiShockAmp === undefined ? 10 : this._pixiShockAmp), type: 'f32' },
+                uAmp: { value: (this._pixiShockAmp === undefined ? 14 : this._pixiShockAmp), type: 'f32' },
             };
             if (!G.shockProg) G.shockProg = new R.GlProgram({ vertex: this._pixiGpuDispVert(), fragment: this._pixiShockFrag() });
             const ug = new R.UniformGroup(structs);
@@ -61432,6 +61525,7 @@ class Game {
         this._logiWave = 0;
         this._logiSinceSpawn = 0;
         this._logiStaggerNext = 0;
+        this._logiPityCatchup = 0;
         this._dogDeliveries = 0;
         this._enemyBankTotal = 0;
         this._enemyBankWastedTotal = 0;
@@ -62112,14 +62206,41 @@ class Game {
         const _brng = (this.map && this.map.baseRng) ? this.map.baseRng : Math.random;
         this._logiSinceSpawn = (this._logiSinceSpawn || 0) + 1;
         let count = 0;
+        let _pity = false;
         if (this._logiSinceSpawn >= ENEMY_BASE_ARC.LOGI_DROUGHT_MAX) {
-            count = 1; // pity: droughts never exceed the max
+            count = 1; // pity: droughts never exceed the max (free at the wall)
+            _pity = true;
         } else if (_brng() < 1.0 / ENEMY_BASE_ARC.LOGI_CADENCE) {
             count = 1;
             if (this._logiSinceSpawn >= ENEMY_BASE_ARC.LOGI_CADENCE + 1 && _brng() < 0.3) count = 2; // rare pair
         }
+        // Dog-driven buyback catch-up: up to 3 waves after a pity freebie,
+        // a cadence-hit single upgrades to a pair (field cap still binds).
+        // Counter, not boolean: a single-wave flag died on a ~50% cadence
+        // miss and the catch-up never fired.
+        if (!_pity && (this._logiPityCatchup || 0) > 0) {
+            if (count === 1) {
+                count = 2;
+                _pity = true; // catch-up extra rides free, like pity
+                this._logiPityCatchup = 0;
+            } else if (count === 0) {
+                this._logiPityCatchup--; // miss: hold the window open
+            }
+        }
         count = Math.min(count, ENEMY_BASE_ARC.LOGI_FLOOD_MAX,
             Math.max(0, 3 - this.logiGuys.length)); // field cap of 3 live
+        // Buyback: founders cost bank (trickle counts). Pity/catch-up ride
+        // free; broke non-pity rolls wait (clock keeps ticking to the wall).
+        const _price = (ENEMY_BASE_ARC.LOGI_PRICE != null) ? ENEMY_BASE_ARC.LOGI_PRICE : 50;
+        let _paid = false;
+        if (count > 0 && !_pity) {
+            const _total = count * _price;
+            if ((this.enemyBank || 0) >= _total) {
+                _paid = true; // deduct per actual spawn below (rejects free)
+            } else {
+                count = 0; // broke: hold for pity, clock keeps ticking
+            }
+        }
         let spawned = 0;
         const hadSite = !!this.hubSite; // slice 5a: founding transition (claim sets it below)
         for (let n = 0; n < count; n++) {
@@ -62146,6 +62267,16 @@ class Game {
         }
         if (spawned > 0) {
             this._logiSinceSpawn = 0;
+            // Buyback settle: deduct per actual spawn (failed anchors free).
+            // Pity/catch-up freebies arm the catch-up flag for next wave.
+            if (_paid) {
+                const _due = spawned * _price;
+                this.enemyBank = Math.max(0, (this.enemyBank || 0) - _due);
+                this._enemyBankSpentWave = (this._enemyBankSpentWave || 0) + _due;
+                this._logiPityCatchup = 0; // economy works: clear stale catch-up
+            } else if (_pity) {
+                this._logiPityCatchup = 3;
+            }
             if (!hadSite && this.hubSite) {
                 // Fresh founding (null -> claimed above): marker + leakage + vault.
                 this.foundHubSite();
@@ -74963,9 +75094,10 @@ class Game {
                 if (H._cargoT1) H._cargoT1.visible = false;
                 if (H._cargoT2) H._cargoT2.visible = false;
             }
-            // Status light (unrotated).
+            // Status light (unrotated). Red flash covers panic AND the
+            // fear-cover tier so the widened band reads at a glance.
             let lightColor = 0x39ff14, flash = false;
-            if (d.state === 'FLEEING' || (d._panic && !d.dead)) { lightColor = 0xff2a5f; flash = true; }
+            if (d.state === 'FLEEING' || (d._panic && !d.dead) || (d._fearTier === 2 && !d.dead)) { lightColor = 0xff2a5f; flash = true; }
             else if (cargo.length) lightColor = 0xffb700;
             if (!flash || (Math.floor(now * 8) % 2 === 0)) {
                 F.circle(0, -13, 2.6); F.fill({ color: lightColor });
