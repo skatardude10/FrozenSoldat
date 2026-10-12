@@ -2427,6 +2427,7 @@
                         <button id="btn-buy-field-gen-p1" onclick="game.buyItem('field_gen', game.player)">Eventide Anchor ($20000)</button>
                         <button id="btn-buy-oracle-p1" onclick="game.buyItem('oracle', game.player)">Oracle Spice ($300)</button>
                         <button id="btn-buy-rift-seed-p1" onclick="game.buyItem('rift_seed', game.player)">Rift Seed ($300)</button>
+                        <button id="btn-buy-chronorall-p1" onclick="game.buyItem('chronorall', game.player)">Chronorall ($250)</button>
                         <button id="btn-buy-rift-station-p1" onclick="game.buyItem('rift_station', game.player)">Rift Station ($12000)</button>
                         <button id="btn-buy-riftlance-p1" onclick="game.buyItem('riftlance', game.player)">Riftlance ($9000)</button>
                     </div>
@@ -2555,6 +2556,7 @@
                         <button id="btn-buy-field-gen-p2" onclick="game.buyItem('field_gen', game.player2)">Eventide Anchor ($20000)</button>
                         <button id="btn-buy-oracle-p2" onclick="game.buyItem('oracle', game.player2)">Oracle Spice ($300)</button>
                         <button id="btn-buy-rift-seed-p2" onclick="game.buyItem('rift_seed', game.player2)">Rift Seed ($300)</button>
+                        <button id="btn-buy-chronorall-p2" onclick="game.buyItem('chronorall', game.player2)">Chronorall ($250)</button>
                         <button id="btn-buy-rift-station-p2" onclick="game.buyItem('rift_station', game.player2)">Rift Station ($12000)</button>
                         <button id="btn-buy-riftlance-p2" onclick="game.buyItem('riftlance', game.player2)">Riftlance ($9000)</button>
                     </div>
@@ -5646,6 +5648,7 @@ const SVGIcons = {
     eventide: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>`,
     oracle: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/><circle cx="12" cy="12" r="2.5"/></svg>`,
     riftseed: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>`,
+    chronorall: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.62 18.62 L18.62 9.62 A3 3 0 0 0 14.38 5.38 L5.38 14.38 A3 3 0 0 0 9.62 18.62 Z"/><path d="M9.88 9.88 L14.38 5.38 A3 3 0 0 1 18.62 9.62 L14.12 14.12 Z" fill="currentColor" stroke="none"/><path d="M9.88 9.88 L14.12 14.12"/></svg>`,
     riftstation: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1"/><circle cx="12" cy="12" r="1" fill="currentColor"/><path d="M12 3v3M12 18v3"/></svg>`,
     riftlance: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 14h9l3-3h8v3h-8l-2 2H2v-2z"/><circle cx="18" cy="9" r="2"/><path d="M18 11v3M20 4l-2 3M16 4l2 3"/></svg>`,
     abakan: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13h9l2-2h9v2.5h-9l-1 1.5H2v-2z"/><path d="M13 11l1.5-2M15 13l2 3"/><circle cx="10" cy="12" r="1.6"/><path d="M18 11v3"/></svg>`,
@@ -5686,6 +5689,7 @@ const ITEM_ICON_COLORS = {
     eventide:     '#b388ff',
     oracle:       '#ff5fd2',
     riftseed:     '#9d4edd',
+    chronorall:   '#eef4f8',
     riftstation:  '#00f5d4',
     riftlance:    '#9d4edd',
     abakan:       '#b0bec5',
@@ -5831,6 +5835,20 @@ function useLeftItem(player) {
                 const hint = (player.riftStationCount || 0) > 0 ? 'PLACE STATION: RIGHT RAIL [E]' : 'NO STATION — TOP SECRET SHOP';
                 game.floatingTexts.push(game.spawnFloatingText(player.x, player.y - 38, hint, '#ffb400', 1.6));
             }
+        }
+    } else if (player.leftSelectIdx === 6) {
+        // CHRONORALL (slot 6, L4 top-secret): asymmetric time-dilation pill.
+        // Operator-banned (whitelist-hidden + buy-gated); Chaos Draft has no
+        // shop so it never reaches here. Never wastes: ingest guards the
+        // 3-live cap (a 4th concurrent dose is refused before consuming).
+        if (game && game.operatorMode) return;
+        if (player.chronorall > 0 && !player.dead) {
+            const _live = (player.chronoDoses && player.chronoDoses.length) || 0;
+            const _cap = ((typeof CHRONO_TUNING !== 'undefined' && CHRONO_TUNING.CARRY_MAX) || 3);
+            if (_live >= _cap) return;
+            player.chronorall--;
+            if (typeof game.ingestChrono === 'function') game.ingestChrono(player);
+            else if (audio && audio.playPickup) audio.playPickup('weapon');
         }
     }
 }
@@ -6205,6 +6223,7 @@ function visibleLeftSlots(p) {
     if ((p.mines || 0) > 0) out.push(3);
     if ((p.oracle || 0) > 0) out.push(4);
     if ((p.riftSeeds || 0) > 0) out.push(5);
+    if ((p.chronorall || 0) > 0) out.push(6);
     return out;
 }
 function visibleRightSlots(p) {
@@ -6282,6 +6301,7 @@ function getHUDSelectorStateKey(player, suffix) {
         player.mines,
         player.oracle,
         player.riftSeeds,
+        player.chronorall,
         player.barriersCount,
         player.barrierUpgraded,
         player.turretsCount,
@@ -6323,7 +6343,8 @@ function renderHUDSelectors(player, suffix) {
                 { name: 'Grenade', slot: 2, count: player.grenades, max: player.maxGrenades || 3, icon: SVGIcons.grenade, color: ITEM_ICON_COLORS.grenade },
                 { name: 'Trip Mine', slot: 3, count: player.mines, max: 3, icon: SVGIcons.mine, color: ITEM_ICON_COLORS.mine },
                 { name: 'Oracle Spice', slot: 4, count: player.oracle || 0, max: 3, icon: SVGIcons.oracle, color: ITEM_ICON_COLORS.oracle },
-                { name: 'Rift Seed', slot: 5, count: player.riftSeeds || 0, max: 3, icon: SVGIcons.riftseed, color: ITEM_ICON_COLORS.riftseed }
+                { name: 'Rift Seed', slot: 5, count: player.riftSeeds || 0, max: 3, icon: SVGIcons.riftseed, color: ITEM_ICON_COLORS.riftseed },
+                { name: 'Chronorall', slot: 6, count: player.chronorall || 0, max: 3, icon: SVGIcons.chronorall, color: ITEM_ICON_COLORS.chronorall }
             ].filter(item => (item.count || 0) > 0);
             const _leftVis = visibleLeftSlots(player);
             items.forEach((item, idx) => {
@@ -7223,6 +7244,26 @@ class AudioEngine {
                 osc.start(0);
             }));
 
+            // 7b. Chronorall ingest hiss (duration 0.5s): pressurized
+            // "ptshhhh" — band-passed noise burst, fast attack, smooth decay.
+            promises.push(this.bakeSound('slip_ingest', 0.5, (offlineCtx) => {
+                const noise = offlineCtx.createBufferSource();
+                noise.buffer = this.noiseBuffer;
+                const bp = offlineCtx.createBiquadFilter();
+                bp.type = 'bandpass';
+                bp.frequency.setValueAtTime(5200, 0);
+                bp.frequency.exponentialRampToValueAtTime(2800, 0.4);
+                bp.Q.value = 0.8;
+                const gain = offlineCtx.createGain();
+                gain.gain.setValueAtTime(0.0001, 0);
+                gain.gain.exponentialRampToValueAtTime(0.5, 0.03);
+                gain.gain.exponentialRampToValueAtTime(0.001, 0.48);
+                noise.connect(bp);
+                bp.connect(gain);
+                gain.connect(offlineCtx.destination);
+                noise.start(0);
+            }));
+
             // 8. Tadah (duration 1.0s)
             promises.push(this.bakeSound('tadah', 1.0, (offlineCtx) => {
                 let osc1 = offlineCtx.createOscillator();
@@ -7720,6 +7761,17 @@ class AudioEngine {
             }
         }
         let hasEcho = this.echoBusInput && this.ECHO_SOUNDS.has(baseName);
+        // CHRONORALL thicken (slice 1): slowed voices darken + wash. Derived
+        // from the already-composed playbackRate (zero extra calls): depth 0
+        // at full rate, ~0.7 at the 0.3 audio floor. Wide-open cutoffs ease
+        // toward 13k; already-spatial cutoffs scale down in place. Echo lifts
+        // full for ECHO_SOUNDS, half-send otherwise (every pooled voice owns
+        // the tap; fallback path below gets the darken only — it has no tap
+        // for non-echo cues and runs only on 24-voice overflow).
+        const chronoDepth = playbackRate < 1 ? Math.min(0.7, 1 - playbackRate) : 0;
+        let effCutoff = cutoff;
+        if (chronoDepth > 0) effCutoff = cutoff >= 18000 ? 20000 * (1 - 0.5 * chronoDepth) : cutoff * (1 - 0.5 * chronoDepth);
+        const echoSwell = chronoDepth;
 
         // PERF (item 10): reuse a free pooled Filter->Gain->EchoGain chain
         // (see _initVoicePool) instead of building a fresh one. A voice is
@@ -7751,9 +7803,9 @@ class AudioEngine {
         }
 
         if (voice) {
-            voice.filter.frequency.value = cutoff < 18000 ? cutoff : 20000; // wide-open lowpass reads as no filtering
+            voice.filter.frequency.value = effCutoff < 18000 ? effCutoff : 20000; // wide-open lowpass reads as no filtering
             voice.gain.gain.value = gainValue;
-            voice.echoGain.gain.value = hasEcho ? 1 : 0;
+            voice.echoGain.gain.value = hasEcho ? 1 + echoSwell : echoSwell * 0.5;
             if (voice.destination !== destination) {
                 if (voice.destination) voice.gain.disconnect(voice.destination);
                 voice.gain.connect(destination);
@@ -7771,10 +7823,10 @@ class AudioEngine {
         // Fallback: no free voice (24 simultaneous overlapping tails is
         // rare) -- today's throwaway per-event Filter/Gain nodes, unchanged.
         let lastNode = source;
-        if (cutoff < 18000) {
+        if (effCutoff < 18000) {
             const filterNode = this.ctx.createBiquadFilter();
             filterNode.type = 'lowpass';
-            filterNode.frequency.value = cutoff;
+            filterNode.frequency.value = effCutoff;
             // FIREFOX FIX: mono lock, same reasoning as the voice pool.
             filterNode.channelCount = 1;
             filterNode.channelCountMode = 'explicit';
@@ -7827,12 +7879,21 @@ class AudioEngine {
     // EVENTIDE time-rate for a world-space voice: min positional × global
     // field depth, floored at 0.3 so epicenter audio stays a deep crawl
     // instead of subsonic mush. Null-safe with no anchors placed (fast 1).
+    // CHRONORALL composes multiplicatively on top (slip-only factor from
+    // the taker/world envelopes); the 0.3 floor still holds the bottom.
     eventideRate(x, y, ent = null) {
         if (x === null || y === null) return 1.0;
-        if (typeof game === 'undefined' || !game || !game.fieldGens || !game.fieldGens.length) return 1.0;
-        const f = game.fieldTimeFactor(x, y, ent);
-        const g = game._evGlobal || 1;
-        return Math.min(1, Math.max(0.3, f * g));
+        let f = 1, g = 1;
+        if (typeof game !== 'undefined' && game && game.fieldGens && game.fieldGens.length) {
+            f = game.fieldTimeFactor(x, y, ent);
+            g = game._evGlobal || 1;
+        }
+        let s = 1;
+        try {
+            if (typeof game !== 'undefined' && game && typeof game._chronoAudioFor === 'function') s = game._chronoAudioFor(ent);
+        } catch (e) {}
+        if (f === 1 && g === 1 && s === 1) return 1.0;
+        return Math.min(1, Math.max(0.3, f * g * s));
     }
 
     // EVENTIDE shorthand for entity-bound voices (reloads, tools, steps,
@@ -8025,6 +8086,23 @@ class AudioEngine {
     
     playPickup(type) {
         this.playBakedSound('pickup_' + type);
+    }
+
+    // CHRONORALL ingest hiss (the "ptshhhh"): head-space cue for your own
+    // dose, so it plays at full rate (never slowed) like other pickups.
+    playSlipIngest(x = null, y = null) {
+        if (!this.ctx) return;
+        let gainVal = 0.9;
+        let cutoff = 20000;
+        let delay = 0;
+        if (x !== null && y !== null) {
+            const d = this.getDistanceToPlayers(x, y);
+            const settings = this.getSpatialSettings('hit', d);
+            gainVal = settings.vol * 0.9;
+            cutoff = settings.cutoff;
+            delay = settings.delay;
+        }
+        this.playBakedSound('slip_ingest', this.sfxGain, gainVal, cutoff, delay, 1.0);
     }
 
     playTadah() {
@@ -9017,12 +9095,27 @@ class MusicEngine {
         if (typeof game !== 'undefined' && game && game.state === 'playing') {
             targetFreq = Math.min(targetFreq, 20000 - tension * (20000 - 2500));
         }
+        // CHRONORALL hold-breath (slice 3): while any dose is live, darken
+        // toward 4k and open the room. Composes by deepest-cut so HP muffle
+        // (600Hz), menu roll-off, and tension always win ties; single writer
+        // (this tick) so nothing fights the HP/tension owners. World factor:
+        // music is global, like world-riding voices.
+        let chronoDepth = 0;
+        try {
+            if (typeof game !== 'undefined' && game && game.state === 'playing' && typeof game._chronoWorldF === 'function' && game._hasChrono && game._hasChrono()) {
+                chronoDepth = Math.min(0.85, Math.max(0, 1 - game._chronoWorldF()));
+            }
+        } catch (e) {}
+        if (chronoDepth > 0 && typeof game !== 'undefined' && game && game.state === 'playing') {
+            targetFreq = Math.min(targetFreq, 20000 - chronoDepth * (20000 - 4000));
+        }
         // CONVOLVER SPACE breathing (2026-09-26): tight room in combat,
         // cathedral in dread. Slow tau — the room size drifts, never snaps.
         // Menu gets a middle room so idle still feels spatial.
         if (this.verbWet) {
             const inRunNow = !!(typeof game !== 'undefined' && game && game.state === 'playing');
-            const targetWet = inRunNow ? (MUSIC_SPACE.WET_BASE + tension * MUSIC_SPACE.WET_TENSION) : MUSIC_SPACE.WET_MENU;
+            // Chrono lift: +0.22 wet at full depth (cathedral-in-a-bottle).
+            const targetWet = inRunNow ? (MUSIC_SPACE.WET_BASE + tension * MUSIC_SPACE.WET_TENSION + chronoDepth * 0.22) : MUSIC_SPACE.WET_MENU;
             this.verbWet.gain.setTargetAtTime(targetWet, this.ctx.currentTime, 0.3);
         }
         
@@ -10035,6 +10128,47 @@ const Weapons = {
       let price = Math.round((T.PRICE_BASE || 300) * wander * waveDrift);
       return Math.max(1, price);
   }
+
+  // CHRONORALL (top-secret asymmetric time-dilation pill, L4 track).
+  // Left-carousel slot 6, buy-only, carry 3. Each live dose runs a 60s
+  // envelope (15s linear ramp 1->min, 17s plateau, 28s smoothstep back to
+  // 1). Full-effect factors: SELF 0.6 (taker) / WORLD 0.4 (everything
+  // else). Stacking is multiplicative across live doses with an absolute
+  // FLOOR so duo 3+3 can't hard-freeze the sim. The taker MUST exclude
+  // their own WORLD envelopes (taker = own SELF x others WORLD); the
+  // world takes ALL WORLD envelopes. PvP/co-op: a non-taker slows with
+  // the world (their taker product has no SELF terms, so it equals the
+  // world factor by construction). Never writes timeScale — composes
+  // after it like Eventide.
+  // SUBJECTIVE AGING: each dose burns 60s of its OWNER's experienced time
+  // (their final per-frame dt: globals x field x taker, stashed as
+  // `p._frameDt`), not wall seconds. Sprinting spends the buff faster;
+  // hunkering stretches it; stacking stretches it further — the wear-off
+  // is learnable (push = shorter, sit = longer) but never exactly
+  // predictable, which is the top-secret point. Pause/shop freeze via the
+  // tick gate (stale `_frameDt` unused). WALL_CAP backstops pathological
+  // stacks (near-freeze takers would otherwise hold the buff for minutes).
+  // SPRINT LIFT (bounded situational-OP lever): while a dose is live,
+  // sprinting eases the taker's OWN self-min from SELF_MIN toward
+  // SELF_MIN+SPRINT_LIFT (0.6 -> 0.75 max) — move fast, feel faster. One
+  // direction, capped, world untouched; sprint already costs stamina +
+  // gun readiness, so the lever prices itself. Smoothed (no pops: the
+  // envelope is continuous in its min).
+  const CHRONO_TUNING = {
+      PRICE: 250,      // flat in-run cash per pill (carry 3 => $750 full commit)
+      CARRY_MAX: 3,    // inventory cap (buy gate) + live-dose cap (ingest guard)
+      RAMP_S: 15,      // s linear 1 -> min
+      HOLD_S: 17,      // s plateau at min (hold ends at 32s)
+      TOTAL_S: 60,     // s per-dose lifetime (smoothstep back 32 -> 60s)
+      SELF_MIN: 0.6,   // taker factor at full effect
+      WORLD_MIN: 0.4,  // world factor at full effect per dose
+      FLOOR: 0.15,     // absolute floor on any composed slip factor
+      AUDIO_FLOOR: 0.3,// audio rate floor (matches eventideRate)
+      ABER_PULSE: 0.35,// aberration pulse seconds (pulses only, never a hold)
+      SPRINT_LIFT: 0.15, // max self-min lift at full sprint (0.6 -> 0.75)
+      SPRINT_RATE: 2.0,  // sprint-amount ease rate per second (0->1 in 0.5s)
+      WALL_CAP: 180,   // s absolute wall-clock life per dose (backstop only)
+  };
 
   // Anchor modes: TIDE slows everything symmetric (incl. the owner's own
   // bullets -- the cordon tool); AEGIS exempts the owner's whole lineage
@@ -18909,6 +19043,16 @@ class Player extends Entity {
         this.oracle = 0;
         this.trip = null; // active TripContext or null
         this.boundAlly = null; // permanently converted follower (cap 1)
+        // CHRONORALL (L4 top-secret pill, left-carousel slot 6): run-scoped
+        // by construction (Player rebuilt in startNewGame).
+        this.chronorall = 0; // inventory (carry 3, buy-only, Operator-banned)
+        this.chronoDoses = []; // live doses [{t}] aged on wall-clock _rawDt
+        this._chronoFxT = 0; // aberration pulse-cadence clock (pulses only)
+        this._chronoSprint = 0; // sprint-lift amount 0-1 (eased in _tickChrono)
+        // CHRONORALL supplement stack: steadiness scalars (regen/drain/shock/
+        // flinch/sway), all 1.0 clean. Persistent object, mutated per frame in
+        // Game.update — never allocated per frame.
+        this._chronoSteady = { regen: 1, drain: 1, shock: 1, flinch: 1, sway: 1 };
         // PHASE 5 (FLATLINE redesign): counts down from 2.5s after sprint
         // ends (held, not drained, WHILE sprinting -- see Player.update).
         this.flatlinePrimeTimer = 0;
@@ -20453,6 +20597,7 @@ class Player extends Entity {
         // the same rate as before (see takeDamage's shock penalty below) --
         // only movement drain/regen changed here.
         let regenRate = (26.4 / 3.0) * 1.6 * (1 + cardioLvl * META_STATS.regenPerLevel) * scRow.regen; // ~60% faster base regen (BUG-002: rate owned by META_STATS)
+        regenRate *= ((this._chronoSteady && this._chronoSteady.regen) || 1); // CHRONORALL supplement: faster recovery under the stimulant
         // Walking/jogging is no longer a stamina drain -- a light,
         // comfortable pace is genuinely refreshing rather than tiring, per
         // feedback. Gains a small trickle instead, at a fraction of the
@@ -20462,6 +20607,7 @@ class Player extends Entity {
         // that already scale regenRate carry over here automatically.
         let walkRegenRate = regenRate * 0.2;
         let runDrainRate = 23.0 * (1 - cardioLvl * META_STATS.drainPerLevel) * scRow.drain;    // was 27.0 (originally 38.0) -- running/sprinting drains quickly, just not THAT quickly (BUG-002: rate owned by META_STATS)
+        runDrainRate *= ((this._chronoSteady && this._chronoSteady.drain) || 1); // CHRONORALL supplement: slower burn under the stimulant
 
         // FPV OPERATOR MODE: running is a deliberate last resort (spec
         // section 4 -- "low stamina modifier so it's hard to effectively
@@ -21026,6 +21172,8 @@ class Player extends Entity {
             scFadeBase *= this._restedChannelMult('fade');
             scIdleBase *= this._restedChannelMult('idleBase');
         } catch (e) {}
+        // CHRONORALL supplement: steadier breathing under the stimulant.
+        try { if (this._chronoSteady) scIdleBase *= (this._chronoSteady.sway || 1); } catch (e) {}
         let swayBaseDeg = scIdleBase *
             (1 + healthPenalty * (AIM_WEIGHT.IDLE_SWAY_HEALTH_MAX_MULT - 1));
         let swayFadeTime = scFadeBase *
@@ -21086,6 +21234,7 @@ class Player extends Entity {
         // SOLDIER CONDITIONING: focused-floor absolute (L0 0.12deg never
         // settles, L3 0.06 live, L5 0.04 alive-but-mastered).
         let scIdleFloor = (scRowAW ? scRowAW.idleFloor : AIM_WEIGHT.IDLE_SWAY_FOCUSED_DEG);
+        try { if (this._chronoSteady) scIdleFloor *= (this._chronoSteady.sway || 1); } catch (e) {} // CHRONORALL supplement: lower focused floor
         let swayAmpDeg = swayBaseDeg
             - (swayBaseDeg - scIdleFloor) * swayEnvelope;
         let swayAmp = swayAmpDeg * Math.PI / 180;
@@ -22664,7 +22813,7 @@ class Player extends Entity {
         if (game && game.extractionMode && this.dead && (this.carriedIntel || 0) > 0) {
             game.dropIntelCache(this);
         }
-        this.stamina = Math.max(0, this.stamina - amt * ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).shock : 0.5)); // Shock takes away stamina instantly (SOLDIER CONDITIONING: L0 0.65 gasses, L3 0.5 live, L5 0.41 trained)
+        this.stamina = Math.max(0, this.stamina - amt * ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).shock : 0.5) * (((this._chronoSteady && this._chronoSteady.shock) || 1))); // Shock takes away stamina instantly (SOLDIER CONDITIONING: L0 0.65 gasses, L3 0.5 live, L5 0.41 trained; CHRONORALL supplement: hits cost less stamina)
         this.damageFlashIntensity = 1.0; // Trigger damage flash
         // Blood splatter (victim-only screen wash): armor/shield-only hits
         // lose no HP so net is 0 and never bleed; direction needs a finite
@@ -22715,6 +22864,7 @@ class Player extends Entity {
             try {
                 let scHit = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).hit : 1.0);
                 flinchDeg *= scHit;
+                flinchDeg *= ((this._chronoSteady && this._chronoSteady.flinch) || 1); // CHRONORALL supplement: steadier hands
             } catch (e) {}
             // RESTED-GUN: weight holds you (barrier strongest). Kick input only.
             try { flinchDeg *= this._restedChannelMult('hit'); } catch (e) {}
@@ -23625,6 +23775,10 @@ class Enemy extends Entity {
         this.color = config.color;
         this.scoreVal = config.score;
         this.weaponType = config.weapon || 'pistol';
+        // MELEE FLESH-OUT: bucketed swarmer tool variant (0/1/2) — pool-reset
+        // per the Phase 1 gotcha; read by _pixiEnemyBodyKey so the static
+        // shell rebuilds exactly once per spawn, never per frame.
+        this._swarmerVariant = (Math.random() * 3) | 0;
         this.lastFire = 0;
         this.lastMiniDroneTargetTime = 0;
         
@@ -30927,6 +31081,7 @@ class Bullet {
                                 try {
                                     let scWhiz = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).whiz : 1.0);
                                     whizKickDeg *= scWhiz;
+                                    whizKickDeg *= (((player._chronoSteady && player._chronoSteady.flinch) || 1)); // CHRONORALL supplement: steadier hands
                                 } catch (e) {}
                                 // RESTED-GUN: weight steadies startle (kick input only).
                                 try { whizKickDeg *= player._restedChannelMult('whiz'); } catch (e) {}
@@ -40367,7 +40522,15 @@ const ARMORY_UPGRADES = [
     { key: 'topSecretRift', name: 'TOP SECRET: RIFT NETWORK', maxLevel: 1,
       costPerLevel: [250],
       desc: 'Declassifies the RIFT NETWORK in the Shop (Top Secret Tech): Rift Seeds (left throwable, $300, carry 3) grow a collapsing field that teleports victims to your Rift Station ring (right pylon, $12k, carry 1); the Riftlance beam gun ($9k, rechargeable) teleports one painted hostile the same way. Fortify around the station.',
-      levelDescs: ['Rift Network available in the Shop (Top Secret Tech)'] }
+      levelDescs: ['Rift Network available in the Shop (Top Secret Tech)'] },
+    // TOP SECRET track (L4): CHRONORALL — banned-pharma time-dilation pill.
+    // Own entry; never raise an earlier top-secret maxLevel for it. 10 intel
+    // declassifies the left-carousel pill ($250, carry 3) under Top Secret
+    // Tech. Cheap unlock on purpose — the $750 full commit is the real gate.
+    { key: 'topSecretChronorall', name: 'TOP SECRET: CHRONORALL', maxLevel: 1,
+      costPerLevel: [10],
+      desc: 'Declassifies CHRONORALL in the Shop (Top Secret Tech): a banned time-dilation pill (left carousel). Your time drops to 60% while the world drops to 40% for 60s (15s ramp, hold, taper). Stacks multiplicatively — carry 3. $250 per dose. The other player slows with the world.',
+      levelDescs: ['Chronorall available in the Shop (Top Secret Tech)'] }
 ];
 
 // SOLDIER CONDITIONING ('soldierConditioning' armory track) feel table.
@@ -40701,6 +40864,10 @@ const SHOP_ITEMS = {
         flavor: 'Throw a collapsing nowhere.',
         mech: 'Left-rail throwable: grows a black field (350px, wired 450px) that drags victims to its center, then teleports them to your Rift Station ring. $300, carry 3. No station = fizzle.',
         owned: (p) => ({ have: p.riftSeeds || 0, max: 3, note: '' }) },
+    chronorall: { name: 'CHRONORALL', icon: 'chronorall', color: '#eef4f8', strip: true,
+        flavor: 'Banned pharma. Borrowed time.',
+        mech: 'Left-rail pill: your time drops to 60% while the world drops to 40% for 60s (15s ramp, hold, taper). Stacks multiplicatively — carry 3, $250 per dose. Sprinting under the effect pushes YOUR time faster (up to 75%, the world stays slow). The other player slows with the world. Operator-banned, buy-only.',
+        owned: (p) => ({ have: p.chronorall || 0, max: (typeof CHRONO_TUNING !== 'undefined' && CHRONO_TUNING.CARRY_MAX) || 3, note: '' }) },
     rift_station: { name: 'RIFT STATION', icon: 'riftstation', color: '#00f5d4', strip: true,
         flavor: 'The somewhere at the end of nowhere.',
         mech: 'Right-rail pylon: the arrival ring for seeds + lance. Ignored by enemies (jammer + blasts still kill it). Wired = bigger seed field + faster collapse + longer stun. $12k, carry 1 — destroyed means gone.',
@@ -40831,7 +40998,7 @@ const SHOP_ITEMS = {
         owned: null }
 };
 // Loadout-strip order: gear first, ammo pools second, overclocks last.
-const SHOP_STRIP_ORDER = ['grenade', 'mine', 'barrier', 'medpack', 'boost', 'drone', 'turret', 'dog', 'swarm_drone', 'camera', 'fiber_optic', 'repairgun', 'field_gen', 'oracle', 'rift_seed', 'rift_station', 'riftlance', 'rubble', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std', 'ammo_abakan_std', 'ammo_thumper_he', 'ammo_mauler_std', 'ammo_judge_std', 'ammo_pistol_hp', 'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC', 'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel'];
+const SHOP_STRIP_ORDER = ['grenade', 'mine', 'barrier', 'medpack', 'boost', 'drone', 'turret', 'dog', 'swarm_drone', 'camera', 'fiber_optic', 'repairgun', 'field_gen', 'oracle', 'rift_seed', 'chronorall', 'rift_station', 'riftlance', 'rubble', 'ammo_shotgun', 'ammo_smg_std', 'ammo_lmg_std', 'ammo_sniper_std', 'ammo_m1a_std', 'ammo_abakan_std', 'ammo_thumper_he', 'ammo_mauler_std', 'ammo_judge_std', 'ammo_pistol_hp', 'oc_hollowPoint', 'oc_exoServos', 'oc_extMags', 'oc_fireRate', 'oc_maxHpOC', 'oc_overpressure', 'oc_glassNerves', 'oc_coldBarrel'];
 
 // SHOP VISIBILITY: ammo key -> inventory gun name (w.name). Ammo stays
 // buyable without its gun (stash-ahead is legitimate), but renders dimmed
@@ -44492,7 +44659,7 @@ class Game {
                 // RESTED-GUN: weight steadies blast (kick input only, shake untouched).
                 let _rstBlast = 1;
                 try { _rstBlast = this.player._restedChannelMult('blast'); } catch (e) {}
-                this.player.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor * scBlast * _rstBlast);
+                this.player.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor * scBlast * _rstBlast * (((this.player._chronoSteady && this.player._chronoSteady.flinch) || 1)));
             }
         }
         
@@ -44516,7 +44683,7 @@ class Game {
                 // RESTED-GUN: P2 same (kick input only).
                 let _rstBlast2 = 1;
                 try { _rstBlast2 = this.player2._restedChannelMult('blast'); } catch (e) {}
-                this.player2.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor * scBlast2 * _rstBlast2);
+                this.player2.kickAim('aimExplosionFlinchOffset', AIM_WEIGHT.EXPLOSION_FLINCH_MAX_DEG * factor * scBlast2 * _rstBlast2 * (((this.player2._chronoSteady && this.player2._chronoSteady.flinch) || 1)));
             }
         }
     }
@@ -50529,6 +50696,7 @@ class Game {
             field_gen: 'btn-buy-field-gen',
             oracle: 'btn-buy-oracle',
             rift_seed: 'btn-buy-rift-seed',
+            chronorall: 'btn-buy-chronorall',
             rift_station: 'btn-buy-rift-station',
             riftlance: 'btn-buy-riftlance',
             ammo_shotgun: 'btn-buy-ammo-shotgun', ammo_smg_std: 'btn-buy-ammo-smg-std', ammo_smg_hp: 'btn-buy-ammo-smg-hp',
@@ -53389,6 +53557,146 @@ class Game {
         if (ent._dilNow === undefined || Math.abs(this.gameTime - ent._dilNow) > 5) ent._dilNow = this.gameTime;
         ent._dilNow += dt;
         return ent._dilNow;
+    }
+
+    // CHRONORALL core (L4 top-secret pill). One envelope per live dose,
+    // product-stacked: taker = own SELF x others WORLD, world = all WORLD.
+    // Floored at CHRONO_TUNING.FLOOR; never writes timeScale. Doses tick on
+    // wall-clock rawDt gated playing && !paused (see _tickChrono call site).
+    _chronoEnv(age, minF) {
+        const T = (typeof CHRONO_TUNING !== 'undefined') ? CHRONO_TUNING : {};
+        const TOTAL = T.TOTAL_S || 60, R = T.RAMP_S || 15, H = T.HOLD_S || 17;
+        if (!(age >= 0) || age >= TOTAL) return 1;
+        const holdEnd = R + H;
+        let k;
+        if (age < R) k = age / R;
+        else if (age < holdEnd) k = 1;
+        else { let u = (age - holdEnd) / Math.max(1, TOTAL - holdEnd); u = Math.min(1, Math.max(0, u)); k = 1 - (u * u * (3 - 2 * u)); }
+        return 1 - (1 - (minF || 0.5)) * k;
+    }
+    _hasChrono() {
+        return !!((this.player && this.player.chronoDoses && this.player.chronoDoses.length) ||
+            (this.isTwoPlayer && this.player2 && this.player2.chronoDoses && this.player2.chronoDoses.length));
+    }
+    // Taker factor for one player: own SELF product x OTHER players' WORLD
+    // product. A non-taker has no SELF terms so this equals the world factor
+    // (PvP/co-op other player slows with the world by construction).
+    _chronoTakerFor(p) {
+        const T = (typeof CHRONO_TUNING !== 'undefined') ? CHRONO_TUNING : {};
+        const FLOOR = T.FLOOR || 0.15, SELF = T.SELF_MIN || 0.6, WORLD = T.WORLD_MIN || 0.4;
+        // SPRINT LIFT: the taker's OWN self-min eases toward SELF+LIFT while
+        // sprinting (smoothed in _tickChrono; everyone else's terms untouched).
+        const LIFT = T.SPRINT_LIFT || 0.15;
+        const ownMin = SELF + LIFT * ((p && p._chronoSprint) || 0);
+        let f = 1;
+        try {
+            if (p && p.chronoDoses && p.chronoDoses.length) for (const d of p.chronoDoses) f *= this._chronoEnv(d.t, ownMin);
+            if (this.player && this.player !== p && this.player.chronoDoses && this.player.chronoDoses.length) for (const d of this.player.chronoDoses) f *= this._chronoEnv(d.t, WORLD);
+            if (this.isTwoPlayer && this.player2 && this.player2 !== p && this.player2.chronoDoses && this.player2.chronoDoses.length) for (const d of this.player2.chronoDoses) f *= this._chronoEnv(d.t, WORLD);
+        } catch (e) {}
+        return Math.max(FLOOR, Math.min(1, f));
+    }
+    // World factor: product of ALL live WORLD envelopes (both takers).
+    _chronoWorldF() {
+        const T = (typeof CHRONO_TUNING !== 'undefined') ? CHRONO_TUNING : {};
+        const FLOOR = T.FLOOR || 0.15, WORLD = T.WORLD_MIN || 0.4;
+        let f = 1;
+        try {
+            if (this.player && this.player.chronoDoses && this.player.chronoDoses.length) for (const d of this.player.chronoDoses) f *= this._chronoEnv(d.t, WORLD);
+            if (this.isTwoPlayer && this.player2 && this.player2.chronoDoses && this.player2.chronoDoses.length) for (const d of this.player2.chronoDoses) f *= this._chronoEnv(d.t, WORLD);
+        } catch (e) {}
+        return Math.max(FLOOR, Math.min(1, f));
+    }
+    // Supplement-stack depth: 1 minus the owner's OWN self product (own
+    // doses only — a non-taker slowed with the world gets nothing to lift,
+    // so PvP victims never inherit the taker's steadiness). 0 when clean.
+    // Deliberately UNLIFTED (plain SELF_MIN): steadiness tracks drug in the
+    // system, not speed — the sprint lift moves time rate only, and sprint
+    // already pays via walk sway + focus-break.
+    _chronoOwnDepth(p) {
+        const T = (typeof CHRONO_TUNING !== 'undefined') ? CHRONO_TUNING : {};
+        const SELF = T.SELF_MIN || 0.6;
+        let f = 1;
+        try {
+            if (p && p.chronoDoses && p.chronoDoses.length) for (const d of p.chronoDoses) f *= this._chronoEnv(d.t, SELF);
+        } catch (e) {}
+        return 1 - f;
+    }
+    // Audio factor for one entity: players ride their taker factor, everyone
+    // else rides the world factor. Already floored; eventideRate clamps to
+    // the 0.3 audio floor on compose.
+    _chronoAudioFor(ent) {
+        if (!this._hasChrono()) return 1;
+        try {
+            if (ent && (ent === this.player || ent === this.player2)) return this._chronoTakerFor(ent);
+            return this._chronoWorldF();
+        } catch (e) { return 1; }
+    }
+    ingestChrono(player) {
+        if (!player || player.dead) return;
+        if (this.operatorMode) return; // banned in Operator
+        const T = (typeof CHRONO_TUNING !== 'undefined') ? CHRONO_TUNING : {};
+        const CAP = T.CARRY_MAX || 3;
+        if (!player.chronoDoses) player.chronoDoses = [];
+        if (player.chronoDoses.length >= CAP) return; // live cap: never waste a pill past 3 live
+        player.chronoDoses.push({ t: 0, w: 0 });
+        player._chronoFxT = 0;
+        try { this.triggerChromaticAberration(T.ABER_PULSE || 0.35, player); } catch (e) {}
+        try {
+            if (typeof audio !== 'undefined' && audio && audio.playSlipIngest) audio.playSlipIngest(player.x, player.y);
+            else if (typeof audio !== 'undefined' && audio && audio.playPickup) audio.playPickup('weapon');
+        } catch (e) {}
+        // Slice-3 bookend: punch the music bus as time lets go (transient —
+        // the scheduler's sustained muffle/verb above holds the rest).
+        try { if (typeof musicEngine !== 'undefined' && musicEngine && musicEngine.duckBus && typeof audio !== 'undefined' && audio && audio.ctx) musicEngine.duckPump(audio.ctx.currentTime, 0.45); } catch (e) {}
+        try { this.floatingTexts.push(this.spawnFloatingText(player.x, player.y - 20, 'CHRONORALL IN — TIME SLIPS', '#eef4f8', 1.6)); } catch (e) {}
+    }
+    // Ages live doses in owner-experienced time (see CHRONO_TUNING) with a
+    // wall-clock backstop. Smoothing + pulses stay wall-clock (presentation).
+    _tickChrono(rawDt) {
+        if (!rawDt || rawDt <= 0) return;
+        if (this.state !== 'playing' || this.isPaused) return;
+        if (!this._hasChrono()) return;
+        const T = (typeof CHRONO_TUNING !== 'undefined') ? CHRONO_TUNING : {};
+        const TOTAL = T.TOTAL_S || 60, WCAP = T.WALL_CAP || 180;
+        const ps = [];
+        if (this.player) ps.push(this.player);
+        if (this.isTwoPlayer && this.player2) ps.push(this.player2);
+        for (const p of ps) {
+            // SPRINT LIFT state: ease toward 1 while sprinting, decay
+            // otherwise (0.5s each way at SPRINT_RATE). Continuous, so the
+            // taker factor never pops when the lift engages or releases.
+            try {
+                const RATE = T.SPRINT_RATE || 2.0;
+                const target = (!p.dead && p.isSprinting) ? 1 : 0;
+                const cur = p._chronoSprint || 0;
+                p._chronoSprint = (target > cur)
+                    ? Math.min(target, cur + RATE * rawDt)
+                    : Math.max(target, cur - RATE * rawDt);
+            } catch (e) {}
+            const doses = p.chronoDoses;
+            if (!doses || !doses.length) continue;
+            // Subjective burn: the owner's final per-frame dt (stashed at
+            // their update site). Sprint spends faster, hunker lasts longer.
+            const edt = (p._frameDt > 0) ? p._frameDt : rawDt;
+            let expired = 0;
+            for (let i = doses.length - 1; i >= 0; i--) {
+                doses[i].t += edt;
+                doses[i].w = (doses[i].w || 0) + rawDt;
+                if (doses[i].t >= TOTAL || doses[i].w >= WCAP) { doses[i] = doses[doses.length - 1]; doses.pop(); expired++; }
+            }
+            if (expired > 0 && !p.dead) {
+                try { this.triggerChromaticAberration(0.3, p); } catch (e) {}
+                // Slice-3 bookend: release punch as the last dose lets go.
+                try { if (typeof musicEngine !== 'undefined' && musicEngine && musicEngine.duckBus && typeof audio !== 'undefined' && audio && audio.ctx) musicEngine.duckPump(audio.ctx.currentTime, 0.55); } catch (e) {}
+            }
+            if (!doses.length || p.dead) continue;
+            try {
+                const selfF = this._chronoTakerFor(p);
+                p._chronoFxT = (p._chronoFxT || 0) + rawDt;
+                if (p._chronoFxT > 0.6 && selfF < 0.85) { p._chronoFxT = 0; this.triggerChromaticAberration(T.ABER_PULSE || 0.35, p); }
+            } catch (e) {}
+        }
     }
 
     // ORACLE SPICE core (L2 top-secret consumable). One TripContext per
@@ -66279,9 +66587,28 @@ class Game {
         if (this.fieldGens && this.fieldGens.length) {
             p1FieldF = this.fieldTimeFactor(this.player.x, this.player.y, this.player);
             p1Dt *= p1FieldF;
-            p1Now = this.dilNow(this.player, p1Dt);
         }
+        // CHRONORALL: asymmetric personal dilation (own SELF x others WORLD;
+        // a non-taker's product has no SELF terms so it equals the world
+        // factor — the other player slows with the world by construction).
+        // Single dilNow call on the final dt (never double-advance the clock).
+        let p1SlipF = 1;
+        if (this._hasChrono()) p1SlipF = this._chronoTakerFor(this.player);
+        p1Dt *= p1SlipF;
+        this.player._slipF = p1SlipF;
+        // CHRONORALL supplement stack: steadiness scalars from OWN-dose depth
+        // (mutates the persistent object — never allocates per frame).
+        try {
+            const _st1 = this.player._chronoSteady, _d1 = this._chronoOwnDepth(this.player);
+            _st1.regen = 1 + 2.0 * _d1;
+            _st1.drain = Math.max(0.25, 1 - 1.2 * _d1);
+            _st1.shock = Math.max(0.4, 1 - _d1);
+            _st1.flinch = Math.max(0.4, 1 - _d1);
+            _st1.sway = Math.max(0.5, 1 - 0.9 * _d1);
+        } catch (e) {}
+        if (p1FieldF !== 1 || p1SlipF !== 1) p1Now = this.dilNow(this.player, p1Dt);
         this.player.update(p1Dt, this.input, p1Walls, p1Now, gp1);
+        this.player._frameDt = p1Dt; // CHRONORALL: experienced-dt stash (subjective dose aging)
         // EVENTIDE deja-vu: the slowed shed fading afterimages (you SEE
         // time stretch) + the personal dilated tick (your own clock runs
         // slow, and you hear it). Effective rate = positional x global.
@@ -66313,9 +66640,24 @@ class Game {
             if (this.fieldGens && this.fieldGens.length) {
                 p2FieldF = this.fieldTimeFactor(this.player2.x, this.player2.y, this.player2);
                 p2Dt *= p2FieldF;
-                p2Now = this.dilNow(this.player2, p2Dt);
             }
+            // CHRONORALL: asymmetric personal dilation (see P1).
+            let p2SlipF = 1;
+            if (this._hasChrono()) p2SlipF = this._chronoTakerFor(this.player2);
+            p2Dt *= p2SlipF;
+            this.player2._slipF = p2SlipF;
+            // CHRONORALL supplement stack (see P1).
+            try {
+                const _st2 = this.player2._chronoSteady, _d2 = this._chronoOwnDepth(this.player2);
+                _st2.regen = 1 + 2.0 * _d2;
+                _st2.drain = Math.max(0.25, 1 - 1.2 * _d2);
+                _st2.shock = Math.max(0.4, 1 - _d2);
+                _st2.flinch = Math.max(0.4, 1 - _d2);
+                _st2.sway = Math.max(0.5, 1 - 0.9 * _d2);
+            } catch (e) {}
+            if (p2FieldF !== 1 || p2SlipF !== 1) p2Now = this.dilNow(this.player2, p2Dt);
             this.player2.update(p2Dt, this.input2, p2Walls, p2Now, gp2);
+            this.player2._frameDt = p2Dt; // CHRONORALL: experienced-dt stash (subjective dose aging)
             this.player2._evF = p2FieldF * (this._evGlobal || 1);
             this._eventidePlayerFx(this.player2, this.player2._evF);
             
@@ -66329,7 +66671,13 @@ class Game {
             // Split-screen halves only when isSplitScreen() (two viewports).
             this.camera2.update(this.player2, this.mapW, this.mapH, (this.isSplitScreen()) ? this.width / 2 : this.width, this.height, p2Dt, aimCoords2.x, aimCoords2.y, p2MaxZoom);
         }
-        
+
+        // CHRONORALL: shared world factor, resolved once per frame (product
+        // of ALL live WORLD envelopes, floored). 1 when no live doses, so
+        // every multiply below is byte-identical without the pill.
+        let _slipW = 1;
+        try { if (this._hasChrono()) _slipW = this._chronoWorldF(); } catch (e) {}
+
         let activePlayer = this.player;
         if (this.isTwoPlayer && this.player2 && this.player2.hp < this.player.hp) {
             activePlayer = this.player2;
@@ -66371,7 +66719,7 @@ class Game {
         }
         
         if (this.player && this.player.activeDrone && !this.player.activeDrone.dead) {
-            this.player.activeDrone.update(dt * this.fieldTimeFactor(this.player.activeDrone.x, this.player.activeDrone.y, this.player.activeDrone), this);
+            this.player.activeDrone.update(dt * this.fieldTimeFactor(this.player.activeDrone.x, this.player.activeDrone.y, this.player.activeDrone) * (this.player._slipF || 1), this);
         }
         // PIP LINGER: release expired linger stashes so the dead drone
         // object isn't retained past its 1s feed (two null-checks per
@@ -66380,7 +66728,7 @@ class Game {
         if (this.player && this.player._pipLinger && this.gameTime >= this.player._pipLinger.until) this.player._pipLinger = null;
         if (this.player2 && this.player2._pipLinger && this.gameTime >= this.player2._pipLinger.until) this.player2._pipLinger = null;
         if (this.player2 && this.player2.activeDrone && !this.player2.activeDrone.dead) {
-            this.player2.activeDrone.update(dt * this.fieldTimeFactor(this.player2.activeDrone.x, this.player2.activeDrone.y, this.player2.activeDrone), this);
+            this.player2.activeDrone.update(dt * this.fieldTimeFactor(this.player2.activeDrone.x, this.player2.activeDrone.y, this.player2.activeDrone) * (this.player2._slipF || 1), this);
         }
         
         for (let i = 0; i < this._sepTouched.length; i++) {
@@ -66433,8 +66781,10 @@ class Game {
             // lever the Enraged trait already uses (tongs zone, but this IS
             // its sanctioned use: whole-entity speedup with no desync).
             if (e.finalKillRole === 'runner') enemyDt *= 1.35;
-            if (hasField) {
-                enemyDt *= this.fieldTimeFactor(e.x, e.y, e);
+            // CHRONORALL: world factor (1 when no live doses — noop).
+            if (_slipW !== 1) enemyDt *= _slipW;
+            if (hasField || _slipW !== 1) {
+                if (hasField) enemyDt *= this.fieldTimeFactor(e.x, e.y, e);
                 e.update(enemyDt, this.player, this.map.walls, this.dilNow(e, enemyDt), this.enemies);
                 // EVENTIDE deja-vu: the slowed shed fading afterimages.
                 const _eEff = (dt > 0 ? enemyDt / dt : 1) * (this._evGlobal || 1);
@@ -66470,7 +66820,7 @@ class Game {
         if (this.bossDrones && this.bossDrones.length > 0) {
             for (let i = this.bossDrones.length - 1; i >= 0; i--) {
                 let d = this.bossDrones[i];
-                d.update(dt * this.fieldTimeFactor(d.x, d.y, d), this);
+                d.update(dt * this.fieldTimeFactor(d.x, d.y, d) * _slipW, this);
                 if (d.dead) {
                     if (d.stopAudio) d.stopAudio();
                     this.bossDrones[i] = this.bossDrones[this.bossDrones.length - 1];
@@ -66680,7 +67030,7 @@ class Game {
 
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             let b = this.bullets[i];
-            b.update(dt * this.fieldTimeFactor(b.x, b.y, b), this.map.walls, entities, this);
+            b.update(dt * this.fieldTimeFactor(b.x, b.y, b) * _slipW, this.map.walls, entities, this);
             if (!b.active) {
                 this.inactiveBullets.push(b);
                 this.bullets[i] = this.bullets[this.bullets.length - 1];
@@ -66691,7 +67041,7 @@ class Game {
         for (let i = this.grenades.length - 1; i >= 0; i--) {
             let g = this.grenades[i];
             let gWalls = this.map.getWallsNear(g.x, g.y);
-            let active = g.update(dt * this.fieldTimeFactor(g.x, g.y, g), gWalls, this);
+            let active = g.update(dt * this.fieldTimeFactor(g.x, g.y, g) * _slipW, gWalls, this);
             if (!active) {
                 if (g instanceof ShrapnelGrenade) {
                     if (!this.inactiveShrapnelGrenades) this.inactiveShrapnelGrenades = [];
@@ -66733,7 +67083,7 @@ class Game {
         this._tickDataLinks(dt);
 
         for (let i = this.mines.length - 1; i >= 0; i--) {
-            let active = this.mines[i].update(dt * this.fieldTimeFactor(this.mines[i].x, this.mines[i].y, this.mines[i]), this);
+            let active = this.mines[i].update(dt * this.fieldTimeFactor(this.mines[i].x, this.mines[i].y, this.mines[i]) * _slipW, this);
             if (!active) {
                 this.severDataLinks(this.mines[i]);
                 this.mines[i] = this.mines[this.mines.length - 1];
@@ -66742,7 +67092,7 @@ class Game {
         }
 
         for (let i = this.turrets.length - 1; i >= 0; i--) {
-            this.turrets[i].update(dt * this.fieldTimeFactor(this.turrets[i].x, this.turrets[i].y, this.turrets[i]), this);
+            this.turrets[i].update(dt * this.fieldTimeFactor(this.turrets[i].x, this.turrets[i].y, this.turrets[i]) * _slipW, this);
             if (this.turrets[i].dead) {
                 this.severDataLinks(this.turrets[i]);
                 this.turrets[i] = this.turrets[this.turrets.length - 1];
@@ -66752,7 +67102,7 @@ class Game {
 
         if (this.securityCameras) {
             for (let i = this.securityCameras.length - 1; i >= 0; i--) {
-                this.securityCameras[i].update(dt * this.fieldTimeFactor(this.securityCameras[i].x, this.securityCameras[i].y, this.securityCameras[i]), this);
+                this.securityCameras[i].update(dt * this.fieldTimeFactor(this.securityCameras[i].x, this.securityCameras[i].y, this.securityCameras[i]) * _slipW, this);
                 if (this.securityCameras[i].dead) {
                     this.severDataLinks(this.securityCameras[i]);
                     this.securityCameras[i] = this.securityCameras[this.securityCameras.length - 1];
@@ -66763,7 +67113,7 @@ class Game {
 
         if (this.dogs) {
             for (let i = this.dogs.length - 1; i >= 0; i--) {
-                this.dogs[i].update(dt * this.fieldTimeFactor(this.dogs[i].x, this.dogs[i].y, this.dogs[i]), this);
+                this.dogs[i].update(dt * this.fieldTimeFactor(this.dogs[i].x, this.dogs[i].y, this.dogs[i]) * _slipW, this);
                 if (this.dogs[i].dead) {
                     this.severDataLinks(this.dogs[i]);
                     this.dogs[i] = this.dogs[this.dogs.length - 1];
@@ -66807,7 +67157,7 @@ class Game {
             if (!this.inactiveScavDogs) this.inactiveScavDogs = [];
             for (let i = this.scavDogs.length - 1; i >= 0; i--) {
                 let sd = this.scavDogs[i];
-                sd.update(dt * this.fieldTimeFactor(sd.x, sd.y, sd), this);
+                sd.update(dt * this.fieldTimeFactor(sd.x, sd.y, sd) * _slipW, this);
                 if (sd.dead || sd.escaped) {
                     this.inactiveScavDogs.push(sd);
                     this.scavDogs[i] = this.scavDogs[this.scavDogs.length - 1];
@@ -66823,7 +67173,7 @@ class Game {
             if (!this.inactiveLogiGuys) this.inactiveLogiGuys = [];
             for (let i = this.logiGuys.length - 1; i >= 0; i--) {
                 let lg = this.logiGuys[i];
-                lg.update(dt * this.fieldTimeFactor(lg.x, lg.y, lg), this);
+                lg.update(dt * this.fieldTimeFactor(lg.x, lg.y, lg) * _slipW, this);
                 if (lg.dead) {
                     // B2: a dead founder's commissioned job refunds (bank was
                     // taken at commission; the body never materialized).
@@ -66866,7 +67216,7 @@ class Game {
                 this.inactiveHubVault.push(this.hubVault);
                 this.hubVault = null;
             } else {
-                try { this.hubVault.update(dt * this.fieldTimeFactor(this.hubVault.x, this.hubVault.y, this.hubVault), this); } catch (e) {}
+                try { this.hubVault.update(dt * this.fieldTimeFactor(this.hubVault.x, this.hubVault.y, this.hubVault) * _slipW, this); } catch (e) {}
             }
         }
         // ENEMY BASE ARC slice 6a: hostile-cam driver (sweep tick + death
@@ -66875,7 +67225,7 @@ class Game {
             if (!this.inactiveHostileCams) this.inactiveHostileCams = [];
             for (let i = this.hostileCams.length - 1; i >= 0; i--) {
                 const hc = this.hostileCams[i];
-                try { hc.update(dt * this.fieldTimeFactor(hc.x, hc.y, hc), this); } catch (e) {}
+                try { hc.update(dt * this.fieldTimeFactor(hc.x, hc.y, hc) * _slipW, this); } catch (e) {}
                 if (hc.dead) {
                     this.inactiveHostileCams.push(hc);
                     this.hostileCams[i] = this.hostileCams[this.hostileCams.length - 1];
@@ -66889,7 +67239,7 @@ class Game {
             if (!this.inactiveHostileTurrets) this.inactiveHostileTurrets = [];
             for (let i = this.hostileTurrets.length - 1; i >= 0; i--) {
                 const ht = this.hostileTurrets[i];
-                try { ht.update(dt * this.fieldTimeFactor(ht.x, ht.y, ht), this); } catch (e) {}
+                try { ht.update(dt * this.fieldTimeFactor(ht.x, ht.y, ht) * _slipW, this); } catch (e) {}
                 if (ht.dead) {
                     this.inactiveHostileTurrets.push(ht);
                     this.hostileTurrets[i] = this.hostileTurrets[this.hostileTurrets.length - 1];
@@ -66911,12 +67261,12 @@ class Game {
         // ESCORT_TARGET objective reads .dead to fail the run; splicing
         // would hide the body from it) -- they just stop updating/colliding.
         if (this.hostages) {
-            for (let h of this.hostages) h.update(dt * this.fieldTimeFactor(h.x, h.y, h), this);
+            for (let h of this.hostages) h.update(dt * this.fieldTimeFactor(h.x, h.y, h) * _slipW, this);
         }
 
         if (this.miniDrones) {
             for (let i = this.miniDrones.length - 1; i >= 0; i--) {
-                this.miniDrones[i].update(dt * this.fieldTimeFactor(this.miniDrones[i].x, this.miniDrones[i].y, this.miniDrones[i]), this);
+                this.miniDrones[i].update(dt * this.fieldTimeFactor(this.miniDrones[i].x, this.miniDrones[i].y, this.miniDrones[i]) * _slipW, this);
                 if (this.miniDrones[i].dead) {
                     if (this.miniDrones[i].stopAudio) this.miniDrones[i].stopAudio();
                     this.miniDrones[i] = this.miniDrones[this.miniDrones.length - 1];
@@ -67064,7 +67414,7 @@ class Game {
                 continue;
             }
 
-            it.update(dt * this.fieldTimeFactor(it.x, it.y, it), activePlayers);
+            it.update(dt * this.fieldTimeFactor(it.x, it.y, it) * _slipW, activePlayers);
             
             for (let p of activePlayers) {
                 // SIMULATED SECOND FLOOR: the magnetism guard in
@@ -67259,6 +67609,10 @@ class Game {
             try { this._tickOracleTrips(dt); } catch (e) { console.error('oracle tick', e); try { this._oracleAbortAll('cleared'); } catch (e2) {} }
         }
 
+        // CHRONORALL: age live doses on wall-clock rawDt (gated playing &&
+        // !paused inside). Runs on the same cadence as the oracle tick.
+        try { this._tickChrono(this._rawDt); } catch (e) { console.error('chrono tick', e); }
+
         let bothDead = this.player.dead && (!this.isTwoPlayer || !this.player2 || this.player2.dead);
         if (bothDead && !pvpActive) {
             // DEATH LINGER + DEATH FX: hold in 'playing' for 2 wall-clock
@@ -67347,6 +67701,12 @@ class Game {
             p.medpacks = 0;
             p.energyDrinks = 0;
             p.energyDrinkTimer = 0;
+            // CHRONORALL: active doses + inventory are run resources too.
+            p.chronorall = 0;
+            p.chronoDoses = [];
+            p._chronoFxT = 0;
+            p._chronoSprint = 0;
+            if (p._chronoSteady) { const _cs = p._chronoSteady; _cs.regen = _cs.drain = _cs.shock = _cs.flinch = _cs.sway = 1; }
             // MATTER MANIPULATOR: banked rubble is a run resource too.
             p.wallMaterial = 0;
             p.isBuilding = false;
@@ -67677,7 +68037,7 @@ class Game {
             'barrier', 'barrier-upgrade', 'rubble', 'drone', 'drone-upgrade', 'fiber-optic',
             'turret', 'turret-mk2', 'dog', 'dog-upgrade', 'swarm-drone', 'swarm-pack',
             'camera', 'repairgun', 'field-gen',
-            'oracle', 'rift-seed', 'rift-station', 'riftlance',
+            'oracle', 'rift-seed', 'rift-station', 'riftlance', 'chronorall',
             'ammo-shotgun', 'ammo-shotgun-slug', 'ammo-smg-std', 'ammo-lmg-std', 'ammo-sniper-std', 'ammo-m1a-std',
             'ammo-smg-hp', 'ammo-lmg-ap', 'ammo-sniper-ap', 'ammo-pistol-hp', 'ammo-m1a-ap',
             'ammo-abakan-std', 'ammo-abakan-ap', 'ammo-thumper-he', 'ammo-thumper-hedp',
@@ -67832,7 +68192,7 @@ class Game {
                 barrier: 75, rubble: 75, drone: 150, drone_upgrade: 600, fiber_optic: 600,
                 turret: 650, turret_mk2: 1200, barrier_upgrade: 400, dog: 500, dog_upgrade: 1000,
                 swarm_drone: 100, swarm_pack: 300, camera: 350, repairgun: 1250, field_gen: 20000,
-                rift_seed: 300, rift_station: 12000, riftlance: 9000,
+                rift_seed: 300, rift_station: 12000, riftlance: 9000, chronorall: 250,
                 ammo_shotgun: 30, ammo_shotgun_slug: 60, ammo_smg_std: 30, ammo_smg_hp: 75,
                 ammo_lmg_std: 40, ammo_lmg_ap: 100, ammo_sniper_std: 40, ammo_sniper_ap: 100,
                 ammo_pistol_hp: 80, ammo_m1a_std: 35, ammo_m1a_ap: 85,
@@ -68485,6 +68845,23 @@ class Game {
                 }
             }
 
+            // CHRONORALL (Top Secret Tech L4): flat $250, carry 3.
+            // Operator-banned: hidden by the whitelist (see
+            // applyOperatorShopWhitelist allIds).
+            let chronorallBtn = document.getElementById('btn-buy-chronorall-' + suffix);
+            if (chronorallBtn && !this._armoryGate(chronorallBtn, 'topSecretChronorall', 1, "Chronorall (UNLOCK IN ARMORY)")) {
+                const _cCap = ((typeof CHRONO_TUNING !== 'undefined' && CHRONO_TUNING.CARRY_MAX) || 3);
+                if ((p.chronorall || 0) >= _cCap) {
+                    chronorallBtn.classList.add('maxed');
+                    chronorallBtn.innerText = "CHRONORALL (MAX " + _cCap + ")";
+                    chronorallBtn.disabled = true;
+                } else {
+                    chronorallBtn.classList.remove('maxed');
+                    chronorallBtn.innerText = "Chronorall ($250)";
+                    chronorallBtn.disabled = false;
+                }
+            }
+
             let checkAmmoCap = (id, cur, max, label) => {
                 let el = document.getElementById(id);
                 if (el) {
@@ -68677,7 +69054,8 @@ class Game {
                 oracle: ['topSecretOracle', 1],
                 rift_seed: ['topSecretRift', 1],
                 rift_station: ['topSecretRift', 1],
-                riftlance: ['topSecretRift', 1]
+                riftlance: ['topSecretRift', 1],
+                chronorall: ['topSecretChronorall', 1]
             };
             const g = GATE[type];
             if (g && (MA[g[0]] || 0) < g[1]) return;
@@ -68854,6 +69232,14 @@ class Game {
             p.cash -= 12000;
             p.riftStationCount = (p.riftStationCount || 0) + 1;
             p.rightSelectIdx = 7; // auto-equip: no fiddling to find it
+            audio.playPickup('weapon');
+        } else if (type === 'chronorall' && !this.operatorMode && p.cash >= 250 && (p.chronorall || 0) < (((typeof CHRONO_TUNING !== 'undefined' && CHRONO_TUNING.CARRY_MAX) || 3))) {
+            // CHRONORALL: top-secret L4 pill (carry 3, buy-only). Flat $250.
+            // Chaos Draft has no shop so it simply never reaches here;
+            // Operator is banned. Auto-equip like the rift seed.
+            p.cash -= 250;
+            p.chronorall = (p.chronorall || 0) + 1;
+            p.leftSelectIdx = 6; // auto-equip: no fiddling to find it
             audio.playPickup('weapon');
         } else if (type === 'riftlance' && !this.operatorMode && p.cash >= 9000 && !p.inventory.some(w => w.name === 'Riftlance')) {
             // RIFTLANCE: buy-only recharge beam gun. Full battery on purchase;
@@ -69473,6 +69859,12 @@ class Game {
             // Additive only — never edit an older step.
             { to: 25, up: (sd) => {
                 if (typeof sd.aiCoOp !== 'boolean') sd.aiCoOp = false;
+            }},
+            // v26 (CHRONORALL): L4 top-secret pill gate. Additive only —
+            // never edit an older step.
+            { to: 26, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.topSecretChronorall !== 'number') sd.metaUpgrades.topSecretChronorall = 0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -69529,6 +69921,8 @@ class Game {
         if (MA.topSecretOracle === undefined) MA.topSecretOracle = 0;
         // v19: TOP SECRET Rift Network gate (mirrors the v19 migration).
         if (MA.topSecretRift === undefined) MA.topSecretRift = 0;
+        // v26: TOP SECRET Chronorall gate (mirrors the v26 migration).
+        if (MA.topSecretChronorall === undefined) MA.topSecretChronorall = 0;
         // v21: ABAKAN + THUMPER magazine tracks (mirrors the v21 migration).
         if (MA.magAbakan === undefined) MA.magAbakan = 0;
         if (MA.magThumper === undefined) MA.magThumper = 0;
@@ -72692,6 +73086,7 @@ class Game {
                 + Math.round((e.shieldArcHalf || 0.698) * 100);
         } else if (e.type === 'medic') v = ((e._medicCharges || 0) <= 0) ? 's' : '';
         else if (e.type === 'fpv_pilot') v = e._fpvState || '';
+        else if (e.type === 'swarmer') v = String(e._swarmerVariant || 0);
         return e.type + '|' + e.r + '|' + (e.isElite ? 1 : 0) + '|' + (e.weaponType || '') + '|' + v;
     }
 
@@ -72774,6 +73169,51 @@ class Game {
             G.rect(-r * 1.35, -r * 0.55, r * 0.75, r * 1.1); G.fill({ color: packC[0], alpha: packC[1] });
             G.rect(-r * 1.35, -r * 0.55, r * 0.75, r * 1.1);
             G.stroke({ width: 1.5, color: exhausted ? '#3a4a55' : (active ? '#40c4ff' : '#5c7a9a') });
+        }
+        // MELEE FLESH-OUT (Pixi-only, static, AFTER torso+shells): arms ride
+        // ON TOP of the body with tips clearly PAST the rim (r+4 to r+7,
+        // gun-style overhang) so they read as coming OUT of the body.
+        // Visual-only, no hitbox change (bulletHitsEnemyGun still skips
+        // melee by design — the 4-7px overhang is well under gun overhang).
+        // Dull steel tools avoid swarm-scale glare at 36-255 live bodies.
+        if (e.type === 'swarmer' || e.weaponType === 'melee') {
+            const scale = r / 12;
+            const gunY = Math.round(r * 0.5);
+            const armW = 2.5 * scale;
+            if (e.type === 'swarmer') {
+                const ax = r + 4 * scale;
+                G.moveTo(0, gunY); G.lineTo(ax, gunY - 2 * scale); G.stroke({ width: armW, color: enemyColor });
+                G.moveTo(0, -gunY); G.lineTo(ax, -gunY + 2 * scale); G.stroke({ width: armW, color: enemyColor });
+                const mv = e._swarmerVariant || 0;
+                if (mv === 1) {
+                    G.moveTo(ax - 1 * scale, 0); G.lineTo(ax + 3.5 * scale, -2.2 * scale); G.stroke({ width: 2 * scale, color: '#9aa7b0' });
+                    G.circle(ax + 3.5 * scale, -2.2 * scale, 1.1 * scale); G.fill({ color: '#6d4c41' });
+                } else if (mv === 2) {
+                    G.rect(ax - 1 * scale, -1.8 * scale, 4 * scale, 3.2 * scale); G.fill({ color: '#9aa7b0' });
+                    G.rect(ax + 2.2 * scale, -1.8 * scale, 0.9 * scale, 3.2 * scale); G.fill({ color: '#6d4c41' });
+                } else {
+                    G.rect(ax - 1 * scale, -1 * scale, 3.8 * scale, 2 * scale); G.fill({ color: '#9aa7b0' });
+                    G.rect(ax + 2 * scale, -1 * scale, 0.9 * scale, 2 * scale); G.fill({ color: '#6d4c41' });
+                }
+            } else if (e.type === 'sapper') {
+                // Suicide sprint: both hands shoving the charge out front.
+                G.moveTo(0, gunY); G.lineTo(r + 3 * scale, 2 * scale); G.stroke({ width: armW, color: enemyColor });
+                G.moveTo(0, -gunY); G.lineTo(r + 3 * scale, -2 * scale); G.stroke({ width: armW, color: enemyColor });
+                G.circle(r + 3 * scale, 0, 2 * scale); G.fill({ color: '#ffea00' });
+            } else if (e.type === 'bombardier') {
+                // Elbows out carrying the tube's weight.
+                G.moveTo(0, gunY); G.lineTo(r * 0.3, r + 3 * scale); G.stroke({ width: armW, color: enemyColor });
+                G.moveTo(0, -gunY); G.lineTo(r * 0.3, -r - 3 * scale); G.stroke({ width: armW, color: enemyColor });
+            } else if (e.type === 'comm') {
+                G.moveTo(-r * 0.75, -r * 0.3); G.lineTo(-r * 0.4, -r * 0.8); G.stroke({ width: 2 * scale, color: enemyColor });
+                G.moveTo(0, -gunY); G.lineTo(r + 5 * scale, -gunY + 3 * scale); G.stroke({ width: armW, color: enemyColor });
+            } else if (e.type === 'medic') {
+                const spent = (e._medicCharges || 0) <= 0;
+                G.moveTo(0, gunY); G.lineTo(-r * 0.45, r * 0.3); G.stroke({ width: armW, color: enemyColor });
+                G.moveTo(0, -gunY); G.lineTo(r + 4 * scale, -2 * scale); G.stroke({ width: armW, color: enemyColor });
+                G.rect(-r * 0.9, -r * 0.2, r * 0.5, r * 0.6); G.fill({ color: spent ? '#616161' : '#eceff1' });
+                G.rect(r + 4 * scale, -1 * scale, 4 * scale, 2 * scale); G.fill({ color: spent ? '#424242' : '#8ef0ff' });
+            }
         }
     }
 
@@ -75522,6 +75962,9 @@ class Game {
         if (op.roleKey === 'breacher') {
             B.arc(-r * 0.2, 0, r * 0.9, Math.PI * 0.6, Math.PI * 1.4);
             B.stroke({ width: W(2), color: 0xffd600 });
+            // BREACHER FLESH-OUT: demo pack on the back (visual-only, inside r).
+            B.rect(-r * 1.3, -r * 0.4, r * 0.6, r * 0.8); B.fill({ color: 0x3a2f1a });
+            B.rect(-r * 1.3, -r * 0.4, r * 0.6, r * 0.8); B.stroke({ width: W(1.2), color: 0xffea00 });
         }
         if (op.roleKey === 'marksman' && op.cachedHasLOS && op.cachedTarget && !op.cachedTarget.dead && !((op._sniperWindup || 0) > 0)) {
             const len = Math.min(op.cachedDistToTarget || 400, 1400);
@@ -81018,6 +81461,12 @@ class Game {
         this._stopEventideHum();
         // ORACLE SPICE: trips never survive the debrief (comedown now, no convert).
         if (this._oracleActive && this._oracleAbortAll) { try { this._oracleAbortAll('cleared'); } catch (e) {} }
+        // CHRONORALL: live doses never survive the debrief (no refs held, but
+        // the buff must not leak into the next run's opening seconds).
+        try {
+            if (this.player) { this.player.chronoDoses = []; this.player._chronoFxT = 0; this.player._chronoSprint = 0; if (this.player._chronoSteady) { const _cs = this.player._chronoSteady; _cs.regen = _cs.drain = _cs.shock = _cs.flinch = _cs.sway = 1; } }
+            if (this.player2) { this.player2.chronoDoses = []; this.player2._chronoFxT = 0; this.player2._chronoSprint = 0; if (this.player2._chronoSteady) { const _cs2 = this.player2._chronoSteady; _cs2.regen = _cs2.drain = _cs2.shock = _cs2.flinch = _cs2.sway = 1; } }
+        } catch (e) {}
 
         // WI-3: the kill feed + timer are match state -- a match-winning kill
         // must not leave its entry floating over the debrief screen.
