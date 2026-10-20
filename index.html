@@ -11521,6 +11521,50 @@ const CAMERA_BODY = {
     DIP_PAN_PX: 8           // vertical settle folded into camCenterY (was 6)
 };
 
+// ORGANIC FLOAT (Phase 1): additive drift layer — a second, much looser
+// spring underneath the existing follow spring. Pan-only, post-follow,
+// clamped separately, so the 5-site effectiveZoom rule + MAX_OFFSET +
+// shake/kickback semantics are untouched. Looseness L is computed per-frame
+// from body state (stamina/hp/trauma/focus/rested/conditioning) — the float
+// reads as feedback, not wallpaper.
+const CAMERA_DRIFT = {
+    STIFFNESS: 10,    // vs follow 90 — settles ~1-1.5s, clearly looser layer
+    DAMPING: 0.35,    // underdamped single overshoot (follow stays 0.9 critical)
+    MAX_PX: 28,       // own clamp (follow MAX_OFFSET stays sole follow clamp)
+    NOISE_PX: 8       // idle sway amplitude, scaled by L
+};
+CAMERA_DRIFT.OMEGA0 = Math.sqrt(Math.max(1, CAMERA_DRIFT.STIFFNESS));
+CAMERA_DRIFT.DAMPING_COEFF = 2 * Math.max(0.25, CAMERA_DRIFT.DAMPING) * CAMERA_DRIFT.OMEGA0;
+// L gains — widened fresh-vs-gassed gap + stronger focus counter.
+const CAMERA_DRIFT_L = {
+    STAM_LOOSEN: 0.9,   // (1 - stamina/max) — gassed = floaty
+    HP_LOOSEN: 0.8,     // (1 - hp/maxHp) — hurt = loose
+    HIT: 0.35,          // per-hit trauma gain (scaled by scDmgShake/rested)
+    BLAST: 0.5,         // per-blast trauma gain (scaled by factor/scBlast/rested)
+    FOCUS_TIGHTEN: 0.85, // focusAimBlend steadies the float
+    RESTED: 0.6,        // restedBlend (tripod) steadies the float
+    L_MAX: 2.0,         // clamp on L — worst stack drift28*2.0 capped by MAX_PX
+    TRAUMA_MAX: 1.0,    // clamp on driftTrauma
+    TRAUMA_DECAY: 1.4   // per-second rawDt decay in loop (not scaledDt)
+};
+// DRIFT_TELL (laser-dim test): gentle inverse of focus-whitening.
+// Per-shooter (uses p.stamina), so 1P/2P independent. Alpha-only, hue untouched.
+const DRIFT_TELL = {
+    LASER_DIM_MAX: 0.45, // max fractional dim at zero stamina (static part)
+    FLICKER_AMT: 0.22,   // shimmer amplitude at zero stamina (motion reads where static doesn't)
+    WIDEN_MAX: 0.0       // reverted — beam widen off (focus-comp idea shelved)
+};
+// BLAST_SHOVE (pure world event): close-range directional shove.
+// Class by maxShake: LARGE>=28 barrel/FPV, MED>=18 grenade/shell, else SMALL.
+// Launch (thumper fire recoil) never enters applyExplosionShake — untouched.
+// Flashbang has no shake path — untouched.
+const BLAST_SHOVE = {
+    MAG_LARGE: 70, // barrel/FPV point-blank extra
+    MAG_MED: 40,   // grenade/shell point-blank extra
+    MAG_SMALL: 15, // mini/tick point-blank extra
+    CAP: 160       // hard cap on _bF (was 110)
+};
+
 class Camera {
     constructor() { 
         this.x = 0; this.y = 0; 
@@ -11559,6 +11603,17 @@ class Camera {
         this._wasSprinting = false;
         this._wasDiving = false;
         this.dipBlend = 0;
+        // ORGANIC FLOAT (Phase 1, additive): drift spring + smoothed-vel +
+        // hit/blast trauma. Per-instance so camera2 stays isolated. All zero
+        // = drift off; no existing field retuned.
+        this.driftX = 0;
+        this.driftY = 0;
+        this.driftVX = 0;
+        this.driftVY = 0;
+        this.driftPhase = 0;
+        this.driftTrauma = 0;
+        this.velSmX = 0;
+        this.velSmY = 0;
     }
     update(player, mapW, mapH, canvasW, canvasH, dt, aimX, aimY, maxZoomOut) {
         // LOW READY (sprinting): the framing leans in -- the normal aim-based
@@ -11705,11 +11760,19 @@ class Camera {
         let camCenterY = player.y * (1 - aimWeight) + aimY * aimWeight;
         // WO-001 Phase 2: velocity lookahead + dip settle (pre-spring offsets;
         // MAX_OFFSET below stays the only clamp — no new clamp needed).
+        // Phase 1: lookahead rides SMOOTHED velocity (same 0.11 gain, EMA dt*8)
+        // so turns glide instead of jerking. Instant path preserved in shape.
         if (typeof CAMERA_BODY !== 'undefined' && player && !player.dead) {
             let _hasHost = player.trip && player.trip.host && !player.trip.host.dead;
             if (!_hasHost) {
-                camCenterX += (player.vx || 0) * CAMERA_BODY.LOOKAHEAD_GAIN;
-                camCenterY += (player.vy || 0) * CAMERA_BODY.LOOKAHEAD_GAIN;
+                if (dt) {
+                    let _smK = Math.min(1, dt * 8);
+                    let _tvx = (player.vx || 0), _tvy = (player.vy || 0);
+                    if (!Number.isFinite((this.velSmX || 0) + (this.velSmY || 0) + _tvx + _tvy)) { this.velSmX = 0; this.velSmY = 0; }
+                    else { this.velSmX += (_tvx - (this.velSmX || 0)) * _smK; this.velSmY += (_tvy - (this.velSmY || 0)) * _smK; }
+                }
+                camCenterX += (this.velSmX || 0) * CAMERA_BODY.LOOKAHEAD_GAIN;
+                camCenterY += (this.velSmY || 0) * CAMERA_BODY.LOOKAHEAD_GAIN;
             }
             camCenterY += CAMERA_BODY.DIP_PAN_PX * (this.dipBlend || 0);
         }
@@ -11737,6 +11800,9 @@ class Camera {
             this.followY = camCenterY;
             this.followVX = 0;
             this.followVY = 0;
+            // Phase 1: snap drift + smoothed-vel with the smash-cut (no slide-in).
+            this.driftX = 0; this.driftY = 0; this.driftVX = 0; this.driftVY = 0;
+            this.velSmX = 0; this.velSmY = 0;
         } else if (dt) {
             let springDt = Math.min(dt, 1 / 30); // same lag-spike safety as the AIM_WEIGHT springs
             let ax = -CAMERA_FOLLOW_SPRING.STIFFNESS * (this.followX - camCenterX)
@@ -11769,6 +11835,70 @@ class Camera {
         this.x = this.followX - visibleW / 2;
         this.y = this.followY - visibleH / 2;
 
+        // ORGANIC FLOAT (Phase 1, additive pan-only): looseness L from body
+        // state drives a loose drift spring toward a slow quadrature-noise
+        // target. Post-follow, pre-kickback; MAX_PX is its own clamp.
+        // dt-scaled like breath/dip (freezes in hit-stop, slows in slow-mo).
+        if (typeof CAMERA_DRIFT !== 'undefined' && typeof CAMERA_DRIFT_L !== 'undefined') {
+            let _L = 1;
+            let _stamF = 1, _hpF = 1, _restEff = 0, _condMult = 1;
+            try {
+                if (player && player.maxStamina > 0 && Number.isFinite(player.stamina)) _stamF = Math.min(1, Math.max(0, player.stamina / player.maxStamina));
+                if (player && player.maxHp > 0 && Number.isFinite(player.hp)) _hpF = Math.min(1, Math.max(0, player.hp / player.maxHp));
+                if (player && typeof player._restEff === 'function') _restEff = player._restEff() || 0;
+                else if (player && Number.isFinite(player.restedBlend)) _restEff = player.restedBlend || 0;
+                if (typeof soldierConditioningRow !== 'undefined' && typeof game !== 'undefined') {
+                    let _sc = soldierConditioningRow(game);
+                    if (_sc && Number.isFinite(_sc.dmgShake)) _condMult = _sc.dmgShake;
+                }
+            } catch (e) {}
+            // Oracle host ride: camera is at host, body elsewhere — suspend
+            // the stamina term so remote fatigue can't swim the host view.
+            let _hosted = !!(player && player.trip && player.trip.host && !player.trip.host.dead);
+            let _stamTerm = _hosted ? 0 : (1 - _stamF);
+            _L = 1 + CAMERA_DRIFT_L.STAM_LOOSEN * _stamTerm + CAMERA_DRIFT_L.HP_LOOSEN * (1 - _hpF)
+                + (this.driftTrauma || 0)
+                - CAMERA_DRIFT_L.FOCUS_TIGHTEN * (this.focusAimBlend || 0)
+                - CAMERA_DRIFT_L.RESTED * _restEff;
+            _L *= _condMult;
+            _L = Number.isFinite(_L) ? Math.min(CAMERA_DRIFT_L.L_MAX, Math.max(0, _L)) : 1;
+            if (player && player.dead) _L = 0;
+            if (dt) {
+                this.driftPhase = (this.driftPhase || 0) + dt * Math.PI * 2 * 0.4;
+                let _ph = this.driftPhase || 0;
+                let _nz = CAMERA_DRIFT.NOISE_PX * _L;
+                let _tgtX = (Math.sin(_ph) + 0.35 * Math.sin(_ph * 2.17)) * _nz;
+                let _tgtY = (Math.cos(_ph * 0.83) + 0.35 * Math.sin(_ph * 1.31 + 1.7)) * _nz;
+                if (!Number.isFinite((this.driftX || 0) + (this.driftY || 0) + (this.driftVX || 0) + (this.driftVY || 0) + _tgtX + _tgtY)) {
+                    this.driftX = 0; this.driftY = 0; this.driftVX = 0; this.driftVY = 0;
+                } else {
+                    let _sdt = Math.min(dt, 1 / 30);
+                    let _K = CAMERA_DRIFT.STIFFNESS, _C = CAMERA_DRIFT.DAMPING_COEFF;
+                    if (!Number.isFinite(_K) || !Number.isFinite(_C)) {
+                        let _om = Math.sqrt(Math.max(1, CAMERA_DRIFT.STIFFNESS || 10));
+                        _K = CAMERA_DRIFT.STIFFNESS || 10; _C = 2 * Math.max(0.25, CAMERA_DRIFT.DAMPING || 0.35) * _om;
+                    }
+                    this.driftVX += (-_K * (this.driftX - _tgtX) - _C * this.driftVX) * _sdt;
+                    this.driftVY += (-_K * (this.driftY - _tgtY) - _C * this.driftVY) * _sdt;
+                    this.driftX += this.driftVX * _sdt;
+                    this.driftY += this.driftVY * _sdt;
+                    let _d = Math.hypot(this.driftX, this.driftY);
+                    let _m = CAMERA_DRIFT.MAX_PX;
+                    if (Number.isFinite(_d) && Number.isFinite(_m) && _m >= 0 && _d > _m) {
+                        let _s = _m / (_d || 1);
+                        this.driftX *= _s; this.driftY *= _s;
+                    }
+                    if (!Number.isFinite(this.driftX + this.driftY + this.driftVX + this.driftVY)) {
+                        this.driftX = 0; this.driftY = 0; this.driftVX = 0; this.driftVY = 0;
+                    }
+                }
+            } else {
+                this.driftX = 0; this.driftY = 0; this.driftVX = 0; this.driftVY = 0;
+            }
+            this.x += (this.driftX || 0);
+            this.y += (this.driftY || 0);
+        }
+
         if (dt) {
             this.kickbackX += this.kickbackVX * dt;
             this.kickbackY += this.kickbackVY * dt;
@@ -11796,6 +11926,25 @@ class Camera {
         this.kickbackY -= Math.sin(angle) * instantJolt;
         this.kickbackVX -= Math.cos(angle) * force;
         this.kickbackVY -= Math.sin(angle) * force;
+    }
+    // Phase 1 additive: directional drift shove + trauma. Trauma decays on
+    // rawDt in loop (never stretched by slow-mo); shove rides the drift
+    // spring. Finite-guarded; directionless hits still add trauma.
+    addDriftTrauma(amount) {
+        if (typeof CAMERA_DRIFT_L === 'undefined') return;
+        if (!Number.isFinite(amount) || amount <= 0) return;
+        let _m = CAMERA_DRIFT_L.TRAUMA_MAX;
+        if (!Number.isFinite(_m)) _m = 1.0;
+        this.driftTrauma = Math.min(_m, Math.max(0, (this.driftTrauma || 0) + amount));
+    }
+    shoveDrift(angle, force) {
+        if (!Number.isFinite(force) || force <= 0) return;
+        force = Math.min(400, Math.max(0, force));
+        if (Number.isFinite(angle)) {
+            this.driftVX = (this.driftVX || 0) + Math.cos(angle) * force;
+            this.driftVY = (this.driftVY || 0) + Math.sin(angle) * force;
+            if (!Number.isFinite(this.driftVX + this.driftVY)) { this.driftVX = 0; this.driftVY = 0; }
+        }
     }
 }
 
@@ -18303,6 +18452,29 @@ function buildTweakRegistry() {
     };
     TW('Camera', 'CAMERA_FOLLOW_SPRING.STIFFNESS', CAMERA_FOLLOW_SPRING, 'STIFFNESS', 20, 200, 1, _recomputeSpring);
     TW('Camera', 'CAMERA_FOLLOW_SPRING.MAX_OFFSET', CAMERA_FOLLOW_SPRING, 'MAX_OFFSET', 0, 150, 1);
+    // Phase 1 additive: drift spring + looseness gains (all live, reset-safe).
+    const _recomputeDrift = () => {
+        if (typeof CAMERA_DRIFT === 'undefined') return;
+        CAMERA_DRIFT.OMEGA0 = Math.sqrt(Math.max(1, CAMERA_DRIFT.STIFFNESS));
+        CAMERA_DRIFT.DAMPING_COEFF = 2 * Math.max(0.25, CAMERA_DRIFT.DAMPING) * CAMERA_DRIFT.OMEGA0;
+    };
+    TW('Camera', 'CAMERA_DRIFT.STIFFNESS', CAMERA_DRIFT, 'STIFFNESS', 4, 60, 0.5, _recomputeDrift);
+    TW('Camera', 'CAMERA_DRIFT.DAMPING', CAMERA_DRIFT, 'DAMPING', 0.25, 1.2, 0.01, _recomputeDrift);
+    TW('Camera', 'CAMERA_DRIFT.MAX_PX', CAMERA_DRIFT, 'MAX_PX', 0, 50, 1);
+    TW('Camera', 'CAMERA_DRIFT.NOISE_PX', CAMERA_DRIFT, 'NOISE_PX', 0, 16, 0.5);
+    TW('Camera', 'CAMERA_DRIFT_L.STAM_LOOSEN', CAMERA_DRIFT_L, 'STAM_LOOSEN', 0, 1.2, 0.05);
+    TW('Camera', 'CAMERA_DRIFT_L.HP_LOOSEN', CAMERA_DRIFT_L, 'HP_LOOSEN', 0, 1.2, 0.05);
+    TW('Camera', 'CAMERA_DRIFT_L.HIT', CAMERA_DRIFT_L, 'HIT', 0, 1, 0.05);
+    TW('Camera', 'CAMERA_DRIFT_L.BLAST', CAMERA_DRIFT_L, 'BLAST', 0, 1, 0.05);
+    TW('Camera', 'CAMERA_DRIFT_L.FOCUS_TIGHTEN', CAMERA_DRIFT_L, 'FOCUS_TIGHTEN', 0, 1, 0.05);
+    TW('Camera', 'CAMERA_DRIFT_L.RESTED', CAMERA_DRIFT_L, 'RESTED', 0, 1, 0.05);
+    TW('Camera', 'DRIFT_TELL.LASER_DIM_MAX', DRIFT_TELL, 'LASER_DIM_MAX', 0, 0.6, 0.05);
+    TW('Camera', 'DRIFT_TELL.FLICKER_AMT', DRIFT_TELL, 'FLICKER_AMT', 0, 0.5, 0.01);
+    TW('Camera', 'DRIFT_TELL.WIDEN_MAX', DRIFT_TELL, 'WIDEN_MAX', 0, 1.0, 0.05);
+    TW('Camera', 'BLAST_SHOVE.MAG_LARGE', BLAST_SHOVE, 'MAG_LARGE', 0, 120, 5);
+    TW('Camera', 'BLAST_SHOVE.MAG_MED', BLAST_SHOVE, 'MAG_MED', 0, 80, 5);
+    TW('Camera', 'BLAST_SHOVE.MAG_SMALL', BLAST_SHOVE, 'MAG_SMALL', 0, 40, 1);
+    TW('Camera', 'BLAST_SHOVE.CAP', BLAST_SHOVE, 'CAP', 110, 250, 5);
     // --- Aim & focus ---
     TW('Aim & Focus', 'AIM_WEIGHT.FIRST_SHOT_BITE_MULT', AIM_WEIGHT, 'FIRST_SHOT_BITE_MULT', 1, 2, 0.05);
     TW('Aim & Focus', 'AIM_WEIGHT.FOCUS_STILL_RATE_DEG_PER_SEC', AIM_WEIGHT, 'FOCUS_STILL_RATE_DEG_PER_SEC', 30, 300, 5);
@@ -22848,6 +23020,25 @@ class Player extends Entity {
             let scDmgShake = 1.0;
             try { scDmgShake = ((typeof soldierConditioningRow !== 'undefined') ? soldierConditioningRow(game).dmgShake : 1.0); } catch (e) {}
             this.camera.screenShake = Math.max(this.camera.screenShake, Math.min(28, 6 + amt * 0.8) * scDmgShake);
+            // Phase 1 additive: directional shove away from the hit + looseness
+            // trauma. Victim-only (this.camera routes P2→camera2). Existing
+            // shake/flinch semantics untouched.
+            try {
+                if (typeof CAMERA_DRIFT_L !== 'undefined') {
+                    let _rstHit = 1;
+                    try { _rstHit = this._restedChannelMult('hit'); } catch (e2) {}
+                    if (!Number.isFinite(_rstHit)) _rstHit = 1;
+                    this.camera.addDriftTrauma(Math.min(0.6, amt * 0.02 * CAMERA_DRIFT_L.HIT * scDmgShake * _rstHit));
+                    if (Number.isFinite(pushDir)) {
+                        let _shoveF = Math.min(110, 30 + amt * 3) * scDmgShake * _rstHit;
+                        this.camera.applyKickback(pushDir, _shoveF);
+                        this.camera.shoveDrift(pushDir, _shoveF * 0.6);
+                        this.camera.followVX += Math.cos(pushDir) * Math.min(200, amt * 4) * 0.05;
+                        this.camera.followVY += Math.sin(pushDir) * Math.min(200, amt * 4) * 0.05;
+                    }
+                    if (Number.isFinite(amt)) this.camera.punchZoom(Math.min(0.02, amt * 0.0006 * scDmgShake));
+                }
+            } catch (e) {}
         }
         if (amt > 0) {
             // Aim Weight: getting shot knocks the reticle off briefly, right
@@ -31104,6 +31295,16 @@ class Bullet {
                                 let cam = player.isPlayer2 ? game.camera2 : game.camera;
                                 if (cam) {
                                     cam.screenShake = Math.max(cam.screenShake, calculatedShake);
+                                    // Phase 1 additive: startle trauma + small lateral
+                                    // nudge away from the pass side. Victim-only.
+                                    try {
+                                        if (typeof CAMERA_DRIFT_L !== 'undefined') {
+                                            cam.addDriftTrauma(intensity * CAMERA_DRIFT_L.HIT * 0.3);
+                                            let _wBase = (player && Number.isFinite(player.angle)) ? player.angle : 0;
+                                            let _wAng = _wBase + (pan >= 0 ? -Math.PI / 2 : Math.PI / 2);
+                                            if (Number.isFinite(_wAng)) cam.shoveDrift(_wAng, Math.min(30, 8 + intensity * 12));
+                                        }
+                                    } catch (e) {}
                                 }
                             }
                         }
@@ -44642,6 +44843,40 @@ class Game {
             if (shake > 0 && this.camera) {
                 this.camera.screenShake = Math.max(this.camera.screenShake, shake);
             }
+            // Blast shove (pure world event): proximity factor drives shake/
+            // trauma/flinch as before; close-range term adds near-field punch
+            // so point-blank barrels shove hard and far ones stay gentle.
+            // Unscaled by conditioning/rested — even rested aim gets moved via
+            // world = cam + screen/zoom. Victim-only.
+            try {
+                if (factor > 0 && this.camera && typeof CAMERA_DRIFT_L !== 'undefined') {
+                    let _rstB = 1;
+                    try { _rstB = this.player._restedChannelMult('blast'); } catch (e2) {}
+                    if (!Number.isFinite(_rstB)) _rstB = 1;
+                    let _ms = Number.isFinite(maxShake) ? maxShake : 20;
+                    this.camera.addDriftTrauma(factor * (0.25 + _ms / 100));
+                    let _bAng = Math.atan2(this.player.y - y, this.player.x - x);
+                    if (Number.isFinite(_bAng)) {
+                        let _mag = 15, _cap = 160;
+                        try {
+                            if (typeof BLAST_SHOVE !== 'undefined') {
+                                _mag = _ms >= 28 ? BLAST_SHOVE.MAG_LARGE : _ms >= 18 ? BLAST_SHOVE.MAG_MED : BLAST_SHOVE.MAG_SMALL;
+                                _cap = BLAST_SHOVE.CAP;
+                            }
+                        } catch (e3) {}
+                        if (!Number.isFinite(_mag)) _mag = 15;
+                        if (!Number.isFinite(_cap)) _cap = 160;
+                        _cap = Math.min(250, Math.max(110, _cap));
+                        let _br = Number.isFinite(blastRadius) && blastRadius > 0 ? blastRadius : 100;
+                        let _close = Math.max(0, 1 - dist / (_br * 1.2));
+                        let _bF = Math.min(_cap, _ms * factor * 1.2 + _mag * _close * _close);
+                        if (_bF > 0) {
+                            this.camera.applyKickback(_bAng, _bF);
+                            this.camera.shoveDrift(_bAng, _bF * 0.6);
+                        }
+                    }
+                }
+            } catch (e) {}
             // Concussion muffle (FELLPASS item 2): proximity-scaled into the
             // shared 0.9s channel; Math.max so chained barrel pops can't
             // stack past the window.
@@ -44670,6 +44905,36 @@ class Game {
             if (shake > 0 && this.camera2) {
                 this.camera2.screenShake = Math.max(this.camera2.screenShake, shake);
             }
+            // P2 mirror of the blast shove above (pure world event).
+            try {
+                if (factor > 0 && this.camera2 && typeof CAMERA_DRIFT_L !== 'undefined') {
+                    let _rstB2 = 1;
+                    try { _rstB2 = this.player2._restedChannelMult('blast'); } catch (e2) {}
+                    if (!Number.isFinite(_rstB2)) _rstB2 = 1;
+                    let _ms2 = Number.isFinite(maxShake) ? maxShake : 20;
+                    this.camera2.addDriftTrauma(factor * (0.25 + _ms2 / 100));
+                    let _bAng2 = Math.atan2(this.player2.y - y, this.player2.x - x);
+                    if (Number.isFinite(_bAng2)) {
+                        let _mag2 = 15, _cap2 = 160;
+                        try {
+                            if (typeof BLAST_SHOVE !== 'undefined') {
+                                _mag2 = _ms2 >= 28 ? BLAST_SHOVE.MAG_LARGE : _ms2 >= 18 ? BLAST_SHOVE.MAG_MED : BLAST_SHOVE.MAG_SMALL;
+                                _cap2 = BLAST_SHOVE.CAP;
+                            }
+                        } catch (e3) {}
+                        if (!Number.isFinite(_mag2)) _mag2 = 15;
+                        if (!Number.isFinite(_cap2)) _cap2 = 160;
+                        _cap2 = Math.min(250, Math.max(110, _cap2));
+                        let _br2 = Number.isFinite(blastRadius) && blastRadius > 0 ? blastRadius : 100;
+                        let _close2 = Math.max(0, 1 - dist / (_br2 * 1.2));
+                        let _bF2 = Math.min(_cap2, _ms2 * factor * 1.2 + _mag2 * _close2 * _close2);
+                        if (_bF2 > 0) {
+                            this.camera2.applyKickback(_bAng2, _bF2);
+                            this.camera2.shoveDrift(_bAng2, _bF2 * 0.6);
+                        }
+                    }
+                }
+            } catch (e) {}
             // Concussion muffle (FELLPASS item 2): P2 writes the SAME global
             // bus as P1 (the lowpass filter is one shared SFX bus, same as
             // the flashbang muffle) -- caveat: in co-op, a blast near either
@@ -61126,6 +61391,17 @@ class Game {
         // 2P FIX: no residual aberration after a mid-effect respawn.
         p.chromaticAberrationTimer = 0;
         p.chromaticAberrationPeak = 0;
+        // Phase 1 additive: no residual float/shove after redeploy.
+        try {
+            let _rcam = (p.isPlayer2 && this.camera2) ? this.camera2 : this.camera;
+            if (_rcam) {
+                _rcam.driftTrauma = 0;
+                _rcam.driftX = 0; _rcam.driftY = 0; _rcam.driftVX = 0; _rcam.driftVY = 0;
+                _rcam.velSmX = 0; _rcam.velSmY = 0;
+                _rcam.screenShake = 0; _rcam.zoomPunch = 0; _rcam.recoilZoom = 0;
+                _rcam.kickbackX = 0; _rcam.kickbackY = 0; _rcam.kickbackVX = 0; _rcam.kickbackVY = 0;
+            }
+        } catch (e) {}
         // Clear any transient action state carried across the death.
         p.isBuilding = false; p.buildTargetSide = 0; p.buildHoldTime = 0;
         p.manipulatorLatch = null;
@@ -73988,13 +74264,37 @@ class Game {
         }
         const collim = MathUtils.clamp(p.beamCollimation ?? 1, 0, 1);
         const halfAngleDeg = lt.wideDeg + (lt.tightDeg - lt.wideDeg) * collim;
-        const halfAngle = halfAngleDeg * Math.PI / 180 * (1 - 0.35 * g1Focus);
+        let halfAngle = halfAngleDeg * Math.PI / 180 * (1 - 0.35 * g1Focus);
         let effectiveMaxRange = AIM_WEIGHT.WIDE_EFFECTIVE_RANGE + (baseMaxLaserDist - AIM_WEIGHT.WIDE_EFFECTIVE_RANGE) * collim;
         effectiveMaxRange *= (1 + 0.35 * g3Clutch);
         const brightnessT = Math.pow(collim, AIM_WEIGHT.COLLIMATION_BRIGHTNESS_EXPONENT);
         const peakAlphaMult = AIM_WEIGHT.WIDE_PEAK_ALPHA_MULT + (1 - AIM_WEIGHT.WIDE_PEAK_ALPHA_MULT) * brightnessT;
         let peakAlpha = startAlpha * opacityMult * peakAlphaMult
             * (1 + 0.5 * g1Focus) * (1 + 0.35 * g3Clutch) * (1 + 0.6 * g1Flash);
+        // DRIFT_TELL: stamina tell as gentle inverse of focus-whitening.
+        // Per-shooter stamina only — 1P/2P independent, hue untouched.
+        // FIX vs first pass: floor is relative to undimmed peak (not
+        // startAlpha*0.4, which lifted collimation-dimmed beams and washed
+        // the effect out). Flicker = motion reads where static dim doesn't.
+        // Widen 1.5x is cancelled by full-focus 0.65x (1.5*0.65~=1.0).
+        let _stamFTell = 1;
+        try {
+            if (typeof DRIFT_TELL !== 'undefined' && p && p.maxStamina > 0) {
+                _stamFTell = MathUtils.clamp((p.stamina ?? p.maxStamina) / p.maxStamina, 0, 1);
+                let _widenMax = MathUtils.clamp(DRIFT_TELL.WIDEN_MAX ?? 0.0, 0, 1.0);
+                halfAngle *= 1 + _widenMax * (1 - _stamFTell);
+                let _undimmed = peakAlpha;
+                let _dimMax = MathUtils.clamp(DRIFT_TELL.LASER_DIM_MAX ?? 0.45, 0, 0.6);
+                peakAlpha *= 1 - _dimMax * (1 - _stamFTell);
+                let _flAmt = MathUtils.clamp(DRIFT_TELL.FLICKER_AMT ?? 0.22, 0, 0.5);
+                if (_flAmt > 0 && _stamFTell < 0.999) {
+                    let _t = (this.gameTime || 0) + (p.isPlayer2 ? 1.7 : 0);
+                    peakAlpha *= 1 + Math.sin(_t * 39) * _flAmt * (1 - _stamFTell);
+                }
+                let _floor = _undimmed * 0.35;
+                if (peakAlpha < _floor) peakAlpha = _floor;
+            }
+        } catch (e) {}
         const fallAt = (d) => Math.pow(MathUtils.clamp(1 - d / effectiveMaxRange, 0, 1), AIM_WEIGHT.BEAM_FALLOFF_EXPONENT);
         const visibleRange = Math.min(dist, effectiveMaxRange);
         const perpX = -Math.sin(laserAngle), perpY = Math.cos(laserAngle);
@@ -83510,6 +83810,19 @@ class Game {
             this.hurtDragRefractoryTimer -= dt;
             if (this.hurtDragRefractoryTimer < 0) this.hurtDragRefractoryTimer = 0;
         }
+        // Phase 1 additive: drift trauma decays on raw wall-clock dt (like
+        // chromatic/hurt-drag) so slow-mo / hit-pause can't stretch the wobble.
+        try {
+            if (typeof CAMERA_DRIFT_L !== 'undefined') {
+                let _tdec = CAMERA_DRIFT_L.TRAUMA_DECAY * dt;
+                if (this.camera && (this.camera.driftTrauma || 0) > 0) {
+                    this.camera.driftTrauma = Math.max(0, this.camera.driftTrauma - _tdec);
+                }
+                if (this.camera2 && (this.camera2.driftTrauma || 0) > 0) {
+                    this.camera2.driftTrauma = Math.max(0, this.camera2.driftTrauma - _tdec);
+                }
+            }
+        } catch (e) {}
 
         if (this.hitPauseTimer > 0) {
             this.hitPauseTimer -= dt;
