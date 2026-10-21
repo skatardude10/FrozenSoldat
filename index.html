@@ -18374,7 +18374,15 @@ const BODY_MOTION = {
     BREATHE_PX: 1.6,    // idle lateral drift when speed<15 (was 1.0 — invisible at 1080p)
     SQUASH_DUR: 0.24,   // landing squash envelope (one beat)
     SQUASH_DIVE_AMP: 0.045,  // scale peak on dive-land (was 0.03)
-    SQUASH_SPRINT_AMP: 0.03  // smaller squash on sprint-stop (was 0.02)
+    SQUASH_SPRINT_AMP: 0.03,  // smaller squash on sprint-stop (was 0.02)
+    STRIDE_PX: 85,      // px travelled per footfall (distance stride; was time*freq)
+    BOP_LAT_K: 0.012,   // step-bop lateral px per px/s live speed (TW-tested: walk 260 -> ~3.1, sprint caps -> taper)
+    BOP_LAT_MAX: 6.5,   // lateral bop rail (TW-tested)
+    BOP_FWD_K: 0.010,   // step-bop forward px per px/s (walk -> ~2.6, sprint -> caps at MAX)
+    BOP_FWD_MAX: 5.0,   // forward bop rail — a nudge, never a lunge
+    BOP_SPRINT_LAT_MULT: 0.6, // sprint-only lateral taper (walk untouched; 9 -> ~5.4 vs walk ~4.2)
+    BOP_EASE: 1,        // triangle->cosine blend (TW-tested full-round; peak stays on the footfall)
+    BOP_CAM_K: 12.0     // body-relative camera nudge force per weightMult (same footfall; ~doubles total bob energy)
 };
 
 // ==== TWEAK LAB (dev-dashboard live tuning) ====
@@ -18431,6 +18439,13 @@ function buildTweakRegistry() {
     TW('Body Feel', 'BODY_MOTION.BREATHE_PX', BODY_MOTION, 'BREATHE_PX', 0, 3, 0.1);
     TW('Body Feel', 'BODY_MOTION.SQUASH_DIVE_AMP', BODY_MOTION, 'SQUASH_DIVE_AMP', 0, 0.09, 0.005);
     TW('Body Feel', 'BODY_MOTION.SQUASH_SPRINT_AMP', BODY_MOTION, 'SQUASH_SPRINT_AMP', 0, 0.06, 0.005);
+    TW('Body Feel', 'BODY_MOTION.BOP_LAT_K', BODY_MOTION, 'BOP_LAT_K', 0, 0.02, 0.001);
+    TW('Body Feel', 'BODY_MOTION.BOP_LAT_MAX', BODY_MOTION, 'BOP_LAT_MAX', 0, 9, 0.1);
+    TW('Body Feel', 'BODY_MOTION.BOP_FWD_K', BODY_MOTION, 'BOP_FWD_K', 0, 0.015, 0.001);
+    TW('Body Feel', 'BODY_MOTION.BOP_FWD_MAX', BODY_MOTION, 'BOP_FWD_MAX', 0, 6, 0.1);
+    TW('Body Feel', 'BODY_MOTION.BOP_CAM_K', BODY_MOTION, 'BOP_CAM_K', 0, 30, 0.5);
+    TW('Body Feel', 'BODY_MOTION.BOP_EASE', BODY_MOTION, 'BOP_EASE', 0, 1, 0.05);
+    TW('Body Feel', 'BODY_MOTION.BOP_SPRINT_LAT_MULT', BODY_MOTION, 'BOP_SPRINT_LAT_MULT', 0.3, 1, 0.05);
     // --- Blood splatter (victim-only screen wash; transient, no save) ---
     TW('Body Feel', 'BLOOD_TUNING.EDGE_FRAC', BLOOD_TUNING, 'EDGE_FRAC', 0, 0.5, 0.01);
     TW('Body Feel', 'BLOOD_TUNING.HEAVY_FRAC', BLOOD_TUNING, 'HEAVY_FRAC', 0, 1, 0.01);
@@ -19108,6 +19123,18 @@ class Player extends Entity {
         // direction, so consecutive steps read as a real alternating gait
         // instead of a jittery coin-flip.
         this._walkSwaySide = 1;
+        // Step-bop: diagonal body shove latched per footfall (see
+        // applySprintStaminaAndMove()). Draw-only envelope like the land
+        // squash; amplitude keyed off live speed so gassed shuffles bop ~1px.
+        this._bopSide = 1;
+        this._bopLat = 0;
+        this._bopFwd = 0;
+        this._bopT = 0;
+        this._bopDur = 0.22;
+        // Footstep stride phase (render-only, run-scoped — Player rebuilt in
+        // startNewGame). Accumulated by distance in update(), consumed by
+        // canvas + Pixi feet. Keeps canon circles; only the cadence changes.
+        this._stridePhase = 0;
         // Biological Sync: own timer/phase so this works correctly per-
         // player in 2P mode -- deliberately NOT reusing Game.heartbeatPhase,
         // which only ever tracks whichever single player is "activePlayer"
@@ -19317,7 +19344,8 @@ class Player extends Entity {
         // passive always-up plate in front of the player -- front-arc bullets
         // chew carriedShield before armor/HP (hit chain in Bullet collision).
         // Arc/color transfer from the drop's source unit. Never bought, only
-        // earned. Lost on death (respawn resets it).
+        // earned (Horde mode start grant excepted — see grantNowModeLoadout).
+        // Lost on death (respawn resets it).
         this.carriedShield = 0;
         this.carriedShieldArc = 0;
         this.carriedShieldColor = '';
@@ -19856,6 +19884,11 @@ class Player extends Entity {
         if ((this._landSquashT || 0) > 0) {
             this._landSquashT -= dt;
             if (this._landSquashT <= 0) { this._landSquashT = 0; this._landSquashAmp = 0; }
+        }
+        // Step-bop envelope decay (same latch/decay idiom as the squash above).
+        if ((this._bopT || 0) > 0) {
+            this._bopT -= dt;
+            if (this._bopT <= 0) { this._bopT = 0; this._bopLat = 0; this._bopFwd = 0; }
         }
 
         // PHASE 5 (FLATLINE redesign): sprinting primes rounds; the window
@@ -20450,6 +20483,16 @@ class Player extends Entity {
 
         this.updatePhysics(dt, walls);
         this.updateDivePhysics(dt);
+        // Stride cadence (keep): accumulate by distance, not wall-clock, so
+        // walk ≈3 footfalls/s and sprint ≈5-6/s instead of the old 5-10Hz
+        // wiggle. Already dilated via speed*dt. Draw-only.
+        {
+            const _spd = Math.hypot(this.vx, this.vy);
+            if (_spd > 15) {
+                const _px = (typeof BODY_MOTION !== 'undefined' && BODY_MOTION.STRIDE_PX) ? BODY_MOTION.STRIDE_PX : 85;
+                this._stridePhase = (this._stridePhase || 0) + (_spd * dt / _px) * Math.PI;
+            }
+        }
     }
 
     // Cooldown bookkeeping always runs (cheap, one subtraction), but the
@@ -20996,6 +21039,58 @@ class Player extends Entity {
                         Math.atan2(-1.0, -this._walkSwaySide * 1.25),
                         12 * swayWeightMult);
                 }
+                // Step-bop (body mass): latch a diagonal shove on the same
+                // footfall — forward push along travel + alternating lateral
+                // weight shift, both keyed off ACTUAL live speed so a gassed
+                // sprint-shuffle barely bops. Backpedal flips the forward
+                // term (fwdFrac sign); pure strafe zeroes it, lateral rock
+                // remains. Draw-only; suppressed while diving (mid-roll).
+                try {
+                    if (!this.isDiving && typeof BODY_MOTION !== 'undefined') {
+                        let _mfa = this.moveFacingAngle || 0;
+                        let _mfx = Math.cos(_mfa), _mfy = Math.sin(_mfa);
+                        let _ff = (this.vx * _mfx + this.vy * _mfy) / Math.max(1, currentVelocity);
+                        if (!Number.isFinite(_ff)) _ff = 0;
+                        this._bopSide = this._walkSwaySide;
+                        this._bopLat = Math.min(BODY_MOTION.BOP_LAT_MAX, currentVelocity * BODY_MOTION.BOP_LAT_K);
+                        // Sprint taper (lateral only — forward pulse untouched):
+                        // raw sprint would slam the rail (~9px); tapered to
+                        // ~5.4, clearly above walk's ~4.2 without the shove.
+                        if (isSprinting && !this.isExhausted && typeof BODY_MOTION.BOP_SPRINT_LAT_MULT === 'number') {
+                            this._bopLat *= Math.min(1, Math.max(0, BODY_MOTION.BOP_SPRINT_LAT_MULT));
+                        }
+                        this._bopFwd = Math.min(BODY_MOTION.BOP_FWD_MAX, currentVelocity * BODY_MOTION.BOP_FWD_K) * (_ff >= 0 ? 1 : -1) * Math.min(1, Math.abs(_ff) + 0.25);
+                        if (!Number.isFinite(this._bopLat)) this._bopLat = 0;
+                        if (!Number.isFinite(this._bopFwd)) this._bopFwd = 0;
+                        this._bopDur = Math.max(0.08, this.footstepTimer || 0.22);
+                        this._bopT = this._bopDur;
+                    }
+                } catch (e) {}
+                // Step-bop camera nudge: SAME direction as the body bop just
+                // latched above (head rides torso — body right, head right,
+                // world slides left). Body-relative: forward along moveFacing,
+                // lateral alternating with the step. Same footfall, same
+                // kickback spring as the bob above (the drift spring at 0.5Hz
+                // can't track 3-6Hz steps — alternating shoves would low-pass
+                // into mush). applyKickback negates internally, so the passed
+                // angle points opposite the desired motion. Opposite-lateral
+                // was considered and rejected: it doubles body-vs-world shear
+                // (the seasickness vector) and fights the weight the bop just
+                // gave the body. Reads this step's fresh latch (runs after).
+                try {
+                    if (stepCam && stepCam.applyKickback && typeof BODY_MOTION !== 'undefined' &&
+                        (this._bopT || 0) > 0) {
+                        let _nmfa = this.moveFacingAngle || 0;
+                        let _ncf = Math.cos(_nmfa), _nsf = Math.sin(_nmfa);
+                        let _nF = (this._bopFwd || 0), _nL = (this._bopSide || 0) * (this._bopLat || 0);
+                        let _ndx = _ncf * _nF - _nsf * _nL;
+                        let _ndy = _nsf * _nF + _ncf * _nL;
+                        if (Number.isFinite(_ndx + _ndy) && (_ndx * _ndx + _ndy * _ndy) > 0.01) {
+                            stepCam.applyKickback(Math.atan2(-_ndy, -_ndx),
+                                (BODY_MOTION.BOP_CAM_K || 0) * swayWeightMult);
+                        }
+                    }
+                } catch (e) {}
                 // P1 footprints: dirt-ground prints on the same footfall
                 // event, alternating gait via _walkSwaySide (4px lateral).
                 // Never on deck (floorAt 2), 28px spacing, 0.6 coin,
@@ -23262,6 +23357,20 @@ class Player extends Entity {
             let _tB = (game && game.fieldGens && game.fieldGens.length && this._dilNow !== undefined) ? this._dilNow : (game ? game.gameTime : 0);
             let _breathe = _bmSpeed < 15 ? Math.sin(_tB * BODY_MOTION.BREATHE_HZ) * BODY_MOTION.BREATHE_PX : 0;
             ctx.translate(_leanF, _leanL + _breathe);
+            // Step-bop: diagonal body shove in the rotated frame (x = forward,
+            // y = lateral). Triangle envelope 1->0 over the step interval so
+            // chained steps hand off smoothly; amplitude already speed-keyed
+            // at latch, so stops ease out with no snap.
+            if ((this._bopT || 0) > 0 && (this._bopDur || 0) > 0) {
+                let _bk = Math.min(1, Math.max(0, this._bopT / this._bopDur));
+                // Gentle corner-rounding: cosine ease-out shares the triangle's
+                // peak (k=1, on the footfall) and floor (k=0), zero slope at
+                // both ends. Blended so the snap softens without reshaping.
+                let _be = 0.5 + 0.5 * Math.cos(Math.PI * (1 - _bk));
+                let _bm = (typeof BODY_MOTION !== 'undefined' && Number.isFinite(BODY_MOTION.BOP_EASE)) ? BODY_MOTION.BOP_EASE : 0.5;
+                _bk = _bk + (_be - _bk) * Math.min(1, Math.max(0, _bm));
+                ctx.translate((this._bopFwd || 0) * _bk, (this._bopSide || 0) * (this._bopLat || 0) * _bk);
+            }
             let _turnRoll = MathUtils.clamp((this.moveFacingAngularVelocity || 0) * BODY_MOTION.TURN_K, -BODY_MOTION.TURN_MAX, BODY_MOTION.TURN_MAX);
             if (_turnRoll) ctx.rotate(_turnRoll);
             let _sq = 0;
@@ -23275,17 +23384,13 @@ class Player extends Entity {
             if (_tot) ctx.scale(1 + _tot, 1 - _tot);
         }
 
-        // Stepping feet circles animation
+        // Stepping feet circles animation (canon circles; stride cadence kept)
         let speed = Math.hypot(this.vx, this.vy);
-        let walkPhase = 0;
+        let walkPhase = this._stridePhase || 0;
         let oscillation = 0;
         if (speed > 15) {
-            // EVENTIDE: leg cycle runs on the dilated clock while a field
-            // is up, so a slowed enemy strides in slow motion instead of
-            // gliding on fast-cycling legs (wrong in exactly the way that
-            // breaks the time-stop read).
-            const _tNow = (game && game.fieldGens && game.fieldGens.length && this._dilNow !== undefined) ? this._dilNow : (game ? game.gameTime : 0);
-            walkPhase = _tNow * (speed * 0.08);
+            // Stride phase is accumulated by distance in update(), so a slowed
+            // body (Eventide) already strides in slow motion via speed*dt.
             oscillation = Math.sin(walkPhase) * this.r * 0.5;
         }
         ctx.fillStyle = '#010a15';
@@ -23921,6 +24026,7 @@ class Enemy extends Entity {
         this.muzzleFlashY = 0;
         this.lastHitAngle = 0;
         this._hitFlash = 0; // pool-recycle reset -- a recycled enemy must not spawn pre-flashed
+        this._stridePhase = 0; // stride cadence (pool-reset like _hitFlash above)
         this._pendingKillLadderPlayer = null; // pool-recycle reset (FELLPASS-CLEANUP A6) -- a recycled enemy must not carry a stale kill credit from a removal path that bypassed onDeath
         // GIBBING phase 1: fixed dent slots (body wounds) + per-tick hit
         // merge scalars. Arrays preallocated once per pooled object, zeroed
@@ -26004,6 +26110,14 @@ class Enemy extends Entity {
         // raycasts, never for body collision.
         if (_medicSpeed) this.speed = _medicSpeed; // restore (see the capture above)
         this.updatePhysics(dt, nearbyWalls);
+        // Stride cadence (keep): same distance accumulation as Player.
+        {
+            const _spd = Math.hypot(this.vx, this.vy);
+            if (_spd > 15) {
+                const _px = (typeof BODY_MOTION !== 'undefined' && BODY_MOTION.STRIDE_PX) ? BODY_MOTION.STRIDE_PX : 85;
+                this._stridePhase = (this._stridePhase || 0) + (_spd * dt / _px) * Math.PI;
+            }
+        }
     }
 
     // ==== STRIKE TEAM: subclass steering extension point ====
@@ -27047,15 +27161,13 @@ class Enemy extends Entity {
 
         let enemyColor = this.isElite ? '#ffcc00' : this.color;
 
-        // Stepping feet circles animation (skipped for swarmer crawler types)
+        // Stepping feet circles animation (skipped for swarmer crawler types;
+        // canon circles; stride cadence kept)
         if (this.type !== 'swarmer') {
             let speed = Math.hypot(this.vx, this.vy);
-            let walkPhase = 0;
+            let walkPhase = this._stridePhase || 0;
             let oscillation = 0;
             if (speed > 15) {
-                // EVENTIDE: dilated leg cycle (see Enemy.draw).
-                const _tNow = (game && game.fieldGens && game.fieldGens.length && this._dilNow !== undefined) ? this._dilNow : (game ? game.gameTime : 0);
-                walkPhase = _tNow * (speed * 0.08);
                 oscillation = Math.sin(walkPhase) * this.r * 0.5;
             }
             ctx.fillStyle = '#010a15';
@@ -39653,7 +39765,8 @@ class Item {
                 } else if (this.type === 'shield') {
                     // ONE riot shield per player -- holding one leaves the
                     // drop on the ground (no refresh/stack). No buy-menu
-                    // source: kills are the only way to earn one.
+                    // source: kills are the only way to earn one (Horde mode
+                    // start grant excepted — see grantNowModeLoadout).
                     canCollect = ((p.carriedShield || 0) <= 0);
                 } else if (this.type === 'armor') {
                     // Vest only if armor isn't already at ceiling.
@@ -62305,6 +62418,17 @@ class Game {
                         p.ammo[key] = p.maxAmmo[key];
                     }
                 });
+                // HORDE start grant (no taint — legit mode grant, run stays
+                // eligible): 300HP/40° riot plate (dev-cheat values without
+                // devSpawnItem's taint), drinks topped to 5 (headroom to the
+                // cap-6), and a pre-lit 10s surge for the hot drop. Shield is
+                // death-stripped with no re-grant — mid-run plates come from
+                // Phalanx kills (faucet opens wave 6).
+                p.carriedShield = 300;
+                p.carriedShieldArc = 40 * Math.PI / 180;
+                p.carriedShieldColor = '#cfd8dc';
+                p.energyDrinks = Math.max(p.energyDrinks || 0, 5);
+                p.energyDrinkTimer = 10.0;
             };
             grantNowModeLoadout(this.player);
             if (this.player2) grantNowModeLoadout(this.player2);
@@ -72609,8 +72733,10 @@ class Game {
         G.rect(bpX + bpW * 0.15, bpY + bpH * 0.08, bpW * 0.7, bpH * 0.28); G.stroke({ width: 1.5, color: 0x5c6b45 });
         G.moveTo(bpX + bpW, -r * 0.35); G.lineTo(-r * 0.55, -r * 0.5); G.stroke({ width: 1.8, color: 0x5c6b45 });
         G.moveTo(bpX + bpW, r * 0.35); G.lineTo(-r * 0.55, r * 0.5); G.stroke({ width: 1.8, color: 0x5c6b45 });
-        G.arc(0, 0, r * 0.66, -1.05, 1.05); G.stroke({ width: 2.6, color: 0xa68a5b });
-        G.arc(0, 0, r * 0.46, -0.95, 0.95); G.stroke({ width: 2.2, color: 0xa68a5b });
+        { const _sr = r * 0.66, _a0 = -1.05, _a1 = 1.05, _n = 16; G.moveTo(_sr * Math.cos(_a0), _sr * Math.sin(_a0)); for (let _i = 1; _i <= _n; _i++) { const _a = _a0 + (_a1 - _a0) * _i / _n; G.lineTo(_sr * Math.cos(_a), _sr * Math.sin(_a)); } }
+        G.stroke({ width: 2.6, color: 0xa68a5b });
+        { const _sr = r * 0.46, _a0 = -0.95, _a1 = 0.95, _n = 14; G.moveTo(_sr * Math.cos(_a0), _sr * Math.sin(_a0)); for (let _i = 1; _i <= _n; _i++) { const _a = _a0 + (_a1 - _a0) * _i / _n; G.lineTo(_sr * Math.cos(_a), _sr * Math.sin(_a)); } }
+        G.stroke({ width: 2.2, color: 0xa68a5b });
         const outerR = r * 0.66;
         G.rect(Math.cos(1.05) * outerR - 1, Math.sin(1.05) * outerR - 1, 2.4, 2.4); G.fill({ color: 0xa68a5b });
         G.rect(Math.cos(-1.05) * outerR - 1, Math.sin(-1.05) * outerR - 1, 2.4, 2.4); G.fill({ color: 0xa68a5b });
@@ -72625,9 +72751,14 @@ class Game {
         if (GG.stock > 0) { G.rect(GG.recX - GG.stock, baseY - 1, GG.stock, 2); G.fill({ color: 0x8a8f98 }); }
         G.rect(GG.recX, baseY - GG.barrelH / 2, GG.barrelLen, GG.barrelH); G.fill({ color: 0xffffff });
         G.rect(GG.recX + 2, baseY - GG.recH / 2, GG.recLen, GG.recH); G.fill({ color: p.weapon.color });
-        G.arc(GG.grip, 7 * side, 3.1, -0.3, 2.6); G.stroke({ width: 2, color: 0xa855f7 });
-        if (GG.fore !== null) { G.arc(GG.fore, foreY, 2.7, -0.3, 2.6); G.stroke({ width: 2, color: 0xa855f7 }); }
-        else { G.arc(GG.grip + 3, 7 * side, 2.7, -0.3, 2.6); G.stroke({ width: 2, color: 0xa855f7 }); }
+        // HANDS: full rings, not partial arcs. arc() appends to the live poly
+        // (vault brown-line precedent) and moveTo alone did not hold the pen
+        // in this baked rig (1 line -> 2 lines on device). circle() is the
+        // proven-safe primitive here (shockwaves/rings/marks use it bare with
+        // no corner connectors). Visual delta at 3px: C -> O, keeps color.
+        G.circle(GG.grip, 7 * side, 3.1); G.stroke({ width: 2, color: 0xa855f7 });
+        if (GG.fore !== null) { G.circle(GG.fore, foreY, 2.7); G.stroke({ width: 2, color: 0xa855f7 }); }
+        else { G.circle(GG.grip + 3, 7 * side, 2.7); G.stroke({ width: 2, color: 0xa855f7 }); }
     }
 
     drawPixiPlayer(p, cam, isPlayer2) {
@@ -72689,7 +72820,18 @@ class Game {
             {
                 const mf = p.moveFacingAngle || 0, cf = Math.cos(mf), sf = Math.sin(mf);
                 const ly = leanL + breathe;
-                R.bodyC.position.set(leanF * cf - ly * sf, leanF * sf + ly * cf);
+                // Step-bop (body frame: bx = forward, by = lateral), rotated
+                // into world like the lean above. Same triangle envelope.
+                let _bbx = 0, _bby = 0;
+                if ((p._bopT || 0) > 0 && (p._bopDur || 0) > 0) {
+                    const _bk0 = Math.min(1, Math.max(0, p._bopT / p._bopDur));
+                    const _be0 = 0.5 + 0.5 * Math.cos(Math.PI * (1 - _bk0));
+                    const _bm0 = (typeof BODY_MOTION !== 'undefined' && Number.isFinite(BODY_MOTION.BOP_EASE)) ? BODY_MOTION.BOP_EASE : 0.5;
+                    const _bk = _bk0 + (_be0 - _bk0) * Math.min(1, Math.max(0, _bm0));
+                    _bbx = (p._bopFwd || 0) * _bk;
+                    _bby = (p._bopSide || 0) * (p._bopLat || 0) * _bk;
+                }
+                R.bodyC.position.set((leanF + _bbx) * cf - (ly + _bby) * sf, (leanF + _bbx) * sf + (ly + _bby) * cf);
             }
             const turnRoll = MathUtils.clamp((p.moveFacingAngularVelocity || 0) * BODY_MOTION.TURN_K, -BODY_MOTION.TURN_MAX, BODY_MOTION.TURN_MAX);
             if (turnRoll) R.bodyC.rotation += turnRoll;
@@ -72698,12 +72840,11 @@ class Game {
             const tot = Math.max(-0.05, Math.min(0.05, sq + breathe * 0.008));
             if (tot) R.bodyC.scale.set(1 + tot, 1 - tot);
         }
-        // Feet (stride phase, verbatim).
+        // Feet (canon circles; stride cadence kept).
         {
             let oscillation = 0;
             if (bmSpeed > 15) {
-                const tNow = (g.fieldGens && g.fieldGens.length && p._dilNow !== undefined) ? p._dilNow : (g.gameTime || 0);
-                oscillation = Math.sin(tNow * (bmSpeed * 0.08)) * r * 0.5;
+                oscillation = Math.sin(p._stridePhase || 0) * r * 0.5;
             }
             const F = R.feetGfx; F.clear();
             const footR = r * 0.35;
@@ -72794,6 +72935,7 @@ class Game {
                 D.quadraticCurveTo(hx0 + r * 0.25, -r * 0.12 + dsw * 0.7, hx0 + r * 0.5, -r * 0.38 + dsw * 0.6);
             }
             D.quadraticCurveTo(-r * 0.3, r * 0.48, 2, r * 0.5); D.closePath(); D.fill({ color: skirt });
+            D.moveTo(r * 0.55 * Math.cos(-1.2), r * 0.55 * Math.sin(-1.2));
             D.arc(0, 0, r * 0.55, -1.2, 1.2); D.stroke({ width: 2, color: 0xfff7ae });
             D.circle(r * 0.72, -3, 2.2); D.circle(r * 0.72, 3, 2.2); D.fill({ color: 0xff5fd2 });
             D.alpha = 1;
@@ -72847,9 +72989,14 @@ class Game {
                 const arc = (p.carriedShieldArc || 40 * Math.PI / 180);
                 S.visible = true; S.alpha = stepA;
                 S.rotation = (p.angle || 0);
-                S.arc(0, 0, r + 9, -arc, arc); S.stroke({ width: flashed ? 5 : (pct > 0.5 ? 4 : 2.5), color: flashed ? '#ffffff' : col });
+                // Shield arcs as segmented polylines, NOT arc(): arc()
+                // appends to the live poly in this rig (hands precedent:
+                // moveTo alone 1->2 lines on device). lineTo segments
+                // cannot drag a corner connector. 24 segs = smooth at r+9.
+                { const _sr = r + 9, _a0 = -arc, _a1 = arc, _n = 24; S.moveTo(_sr * Math.cos(_a0), _sr * Math.sin(_a0)); for (let _i = 1; _i <= _n; _i++) { const _a = _a0 + (_a1 - _a0) * _i / _n; S.lineTo(_sr * Math.cos(_a), _sr * Math.sin(_a)); } }
+                S.stroke({ width: flashed ? 5 : (pct > 0.5 ? 4 : 2.5), color: flashed ? '#ffffff' : col });
                 if (pct > 0.75) {
-                    S.arc(0, 0, r + 6, -arc * 0.85, arc * 0.85);
+                    { const _sr = r + 6, _a0 = -arc * 0.85, _a1 = arc * 0.85, _n = 20; S.moveTo(_sr * Math.cos(_a0), _sr * Math.sin(_a0)); for (let _i = 1; _i <= _n; _i++) { const _a = _a0 + (_a1 - _a0) * _i / _n; S.lineTo(_sr * Math.cos(_a), _sr * Math.sin(_a)); } }
                     S.stroke({ width: 1.5, color: flashed ? '#e0f7fa' : ((col === '#37474f') ? '#00e5ff' : '#eceff1') });
                 }
             }
@@ -73194,6 +73341,7 @@ class Game {
             const _hc = (typeof e._healChannel === 'number') ? e._healChannel : (typeof e._medicChannel === 'number' ? e._medicChannel : 0);
             if (TACTICAL_TUNING.AI_REVITALIZE && _hc > 0 && e.opacity > 0.05) {
                 const _hp = Math.max(0, Math.min(1, _hc / 1.2));
+                FX.moveTo(SX(e.x) + 7 * ez * Math.cos(-Math.PI / 2), SY(e.y) - (e.r + 8) * ez + 7 * ez * Math.sin(-Math.PI / 2));
                 FX.arc(SX(e.x), SY(e.y) - (e.r + 8) * ez, 7 * ez, -Math.PI / 2, -Math.PI / 2 + _hp * Math.PI * 2);
                 FX.stroke({ width: 2 * ez, color: 0x39ff14, alpha: 0.85 * op });
             }
@@ -73398,17 +73546,17 @@ class Game {
                 const blocked = e._shieldFlash > 0;
                 const pct = Math.min(1, e.shieldHp / 300);
                 const stepA = pct > 0.75 ? 1.0 : pct > 0.5 ? 0.8 : pct > 0.25 ? 0.6 : 0.35;
-                G.arc(0, 0, r + 4, -arcHalf, arcHalf);
+                { const _sr = r + 4, _a0 = -arcHalf, _a1 = arcHalf, _n = 20; G.moveTo(_sr * Math.cos(_a0), _sr * Math.sin(_a0)); for (let _i = 1; _i <= _n; _i++) { const _a = _a0 + (_a1 - _a0) * _i / _n; G.lineTo(_sr * Math.cos(_a), _sr * Math.sin(_a)); } }
                 G.stroke({ width: blocked ? 5 : (pct > 0.5 ? 4 : 2.5), color: blocked ? '#ffffff' : '#cfd8dc', alpha: stepA });
                 // SHADER-ERA #5: shield-hit cyan edge rides the flash
                 // envelope (geometry frozen — visual==hitbox contract holds).
                 if (blocked) {
                     const _fe = this._pixiFxEnvelope('shield', e._shieldFlash, 0.15, (e.x || 0));
-                    G.arc(0, 0, r + 4, -arcHalf, arcHalf);
+                    { const _sr = r + 4, _a0 = -arcHalf, _a1 = arcHalf, _n = 20; G.moveTo(_sr * Math.cos(_a0), _sr * Math.sin(_a0)); for (let _i = 1; _i <= _n; _i++) { const _a = _a0 + (_a1 - _a0) * _i / _n; G.lineTo(_sr * Math.cos(_a), _sr * Math.sin(_a)); } }
                     G.stroke({ width: 1.5, color: '#00e5ff', alpha: Math.max(0, Math.min(1, _fe.env)) * stepA });
                 }
                 if (pct > 0.75) {
-                    G.arc(0, 0, r + 7, -arcHalf * 0.85, arcHalf * 0.85);
+                    { const _sr = r + 7, _a0 = -arcHalf * 0.85, _a1 = arcHalf * 0.85, _n = 18; G.moveTo(_sr * Math.cos(_a0), _sr * Math.sin(_a0)); for (let _i = 1; _i <= _n; _i++) { const _a = _a0 + (_a1 - _a0) * _i / _n; G.lineTo(_sr * Math.cos(_a), _sr * Math.sin(_a)); } }
                     G.stroke({ width: 1.5, color: blocked ? '#e0f7fa' : '#546e7a', alpha: stepA });
                 }
             }
@@ -73503,8 +73651,7 @@ class Game {
             const speed = Math.hypot(e.vx || 0, e.vy || 0);
             let oscillation = 0;
             if (speed > 15) {
-                const tNow = (g && g.fieldGens && g.fieldGens.length && e._dilNow !== undefined) ? e._dilNow : gt;
-                oscillation = Math.sin(tNow * (speed * 0.08)) * r * 0.5;
+                oscillation = Math.sin(e._stridePhase || 0) * r * 0.5;
             }
             const footR = r * 0.35;
             F.circle(-r * 0.2 + oscillation, -r * 0.65, footR); F.fill({ color: '#010a15' });
@@ -73973,6 +74120,7 @@ class Game {
                 const ur = d.r + 5, un = Math.max(12, Math.ceil(2 * Math.PI * ur / 6));
                 for (let i = 0; i < un; i++) {
                     const a0 = ura + (i / un) * Math.PI * 2, a1 = a0 + (4 / ur);
+                    B.moveTo(ur * Math.cos(a0), ur * Math.sin(a0));
                     B.arc(0, 0, ur, a0, a1);
                     B.stroke({ width: 1.5, color: 0xff00ff, alpha: 0.45 });
                 }
@@ -76260,7 +76408,7 @@ class Game {
             B.rect(cx - 4, -1.5, 8, 3); B.fill({ color: 0x00e676 });
         }
         if (op.roleKey === 'breacher') {
-            B.arc(-r * 0.2, 0, r * 0.9, Math.PI * 0.6, Math.PI * 1.4);
+            { const _cx = -r * 0.2, _sr = r * 0.9, _a0 = Math.PI * 0.6, _a1 = Math.PI * 1.4, _n = 16; B.moveTo(_cx + _sr * Math.cos(_a0), _sr * Math.sin(_a0)); for (let _i = 1; _i <= _n; _i++) { const _a = _a0 + (_a1 - _a0) * _i / _n; B.lineTo(_cx + _sr * Math.cos(_a), _sr * Math.sin(_a)); } }
             B.stroke({ width: W(2), color: 0xffd600 });
             // BREACHER FLESH-OUT: demo pack on the back (visual-only, inside r).
             B.rect(-r * 1.3, -r * 0.4, r * 0.6, r * 0.8); B.fill({ color: 0x3a2f1a });
