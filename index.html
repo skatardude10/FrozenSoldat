@@ -18258,6 +18258,42 @@ const RESTED_ATTRACTOR_TUNING = {
     NORMAL_MAX_PX_S: 220      // clamp on servo velocity so it can never yank
 };
 
+// ==== ARM STRENGTH + STAGGER (players-only, datum-safe) ====
+// Arms are READERS first: pose solves to the already-computed gun tip.
+// Strength is a single scalar modulator with default 1.0 at L3 (live
+// bit-identical): weak arms transmit MORE kick, strong arms LESS.
+// No save keys, no `timeScale` writes, no new angle writer. All run-scoped
+// (Player rebuilt in startNewGame). ENABLED=false bypasses everything.
+const ARM_TUNING = {
+    ENABLED: true,
+    // HOLD per SOLDIER_CONDITIONING level L0..L5. L3 is the live reference.
+    // transmit = HOLD[3] / HOLD_eff, so L3 == 1.0 by construction.
+    HOLD: [55, 70, 85, 110, 135, 165],
+    // Stamina factor: exhausted arms hold less. 1.0 full -> 0.62 empty.
+    STAM_EXHAUST_MULT: 0.62,
+    // Focus still steadies the hold slightly (max +18% at full focus).
+    FOCUS_HOLD_BONUS: 0.18,
+    // Fatigue: short-window integrator of transmitted impulse. Bleeds hold
+    // down, recovers on cover/focus still. Clamped, never latches to zero.
+    FATIGUE_PER_DEG: 0.012,   // fatigue per transmitted kick-degree
+    FATIGUE_MAX: 0.35,        // max hold bleed (35%)
+    FATIGUE_RECOVER: 0.25,    // per-second recover (faster when focused still)
+    // Stagger (trip / fall-back without ragdoll): impulse threshold + sprint
+    // wall-catch. Visual wide-arms + existing flinch channel only; root
+    // slides on existing vx/vy + drag. Input damped, never fully locked.
+    STAGGER_IMPULSE: 22,      // single-frame transmitted deg that staggers
+    STAGGER_WALL_SPEED: 420,  // sprint speed + _wallContactT latch trips
+    STAGGER_DUR: 0.45,        // seconds
+    STAGGER_MOVE_DAMP: 0.35,  // curAccel mult while staggered
+    // Visual gains (lateral only — top-down foreshortens fore/aft).
+    VIS_SWING_SPREAD: 3.2,    // elbow-out px at full swing engagement
+    VIS_RECOIL_BEND: 0.55,    // elbow tuck px per transmit over 1.0
+    VIS_CLIMB_BEND: 0.35,     // extra tuck per climb radian (scaled)
+    VIS_RETRACT_TUCK: 0.45,   // tuck px per retract px
+    VIS_FOCUS_TUCK: 1.6,      // tight tuck px at full focus
+    VIS_STAGGER_WIDE: 5.0     // wide-arms px while staggered
+};
+
 // --- Combat Dive ("dive"/dodge roll) config ---
 // See Player.checkDiveTrigger()/startDive()/updateDivePhysics() and the
 // z/vz dodge check in Bullet.update()'s entity-hit loop. Reuses the exact
@@ -19182,6 +19218,14 @@ class Player extends Entity {
         this.handSide = 1;
         this.handTarget = 1;
         this.handBlend = 1;
+        // ==== ARM STRENGTH (players-only, run-scoped free via rebuild) ====
+        // _armFatigue 0..FATIGUE_MAX bleeds hold; _armStaggerT counts down;
+        // _armTransmit is last frame's ratio (1.0 == live); _armStaggerDir is
+        // world angle of the staggering push (for wide-arms bias).
+        this._armFatigue = 0;
+        this._armStaggerT = 0;
+        this._armTransmit = 1;
+        this._armStaggerDir = 0;
 
         // --- Open Bolt Delay (see Weapons.*.openBoltDelay + the fire-
         // trigger block in update()) ---
@@ -19673,6 +19717,10 @@ class Player extends Entity {
         // re-plant the lock-anchor.
         try { this._updateRestedSupport(dt, game, input, gp); } catch (e) {}
 
+        // ARM STRENGTH: per-frame fatigue recover + stagger decay + transmit
+        // refresh. Reads only, never writes angle/mount/retract.
+        try { this._armTick(dt, game); } catch (e) {}
+
         let chaseTargetAngle = targetAngle;
         if (this.isSprinting) {
             // Anchored to moveFacingAngle, NOT this.aimChaseAngle. This
@@ -19881,6 +19929,18 @@ class Player extends Entity {
             }
         }
         this._wasSprinting = isSprinting;
+        // ARM STAGGER: tripping over things. Sprint into a wall latch at speed
+        // = foot catches. Root keeps sliding (drag handles it), fresh accel is
+        // damped in applySprintStaminaAndMove, arms go wide in draw. No damage.
+        try {
+            if (typeof ARM_TUNING !== 'undefined' && ARM_TUNING.ENABLED && (this._armStaggerT || 0) <= 0) {
+                const _spd = Math.hypot(this.vx || 0, this.vy || 0);
+                if (isSprinting && _spd >= ARM_TUNING.STAGGER_WALL_SPEED && (this._wallContactT || 0) > 0) {
+                    this._armStaggerT = ARM_TUNING.STAGGER_DUR;
+                    this._armStaggerDir = Math.atan2(this.vy, this.vx);
+                }
+            }
+        } catch (e) {}
         if ((this._landSquashT || 0) > 0) {
             this._landSquashT -= dt;
             if (this._landSquashT <= 0) { this._landSquashT = 0; this._landSquashAmp = 0; }
@@ -20929,6 +20989,14 @@ class Player extends Entity {
                 : scStrafe + (scStrafe - scBack) * alignDot;
         }
         let curAccel = this.accel * scRow.accel * directionalMult * (1.0 + Math.min(2, this.speedUpgrades) * 0.12) * sprintSpeedMulti * this.speedPenalty * exhaustionPenalty * clutchSpeedBuff * exoServosAccelMulti * weaponMoveSpeedMult;
+        // ARM STAGGER: tripped / heavy-hit root still slides on existing vx/vy
+        // + drag, but fresh accel is damped (never fully locked — dive keeps
+        // its own no-steer rule below). L3 no-stagger == 1.0, no-op.
+        try {
+            if ((this._armStaggerT || 0) > 0 && typeof ARM_TUNING !== 'undefined' && ARM_TUNING.ENABLED) {
+                curAccel *= ARM_TUNING.STAGGER_MOVE_DAMP;
+            }
+        } catch (e) {}
         // AI REVITALIZE pin-only: suppressive fire slows repositioning, never damages.
         if (this._suppressPinTimer > 0) {
             curAccel *= TACTICAL_TUNING.SUPPRESS_PIN_SPEED;
@@ -21666,6 +21734,97 @@ class Player extends Entity {
             return 1 - b + b * m;
         } catch (e) { return 1; }
     }
+    // ==== ARM STRENGTH (players-only, datum-safe) ====
+    // Hold is the arm's capacity to absorb kick. transmit = HOLD[3] / HOLD_eff,
+    // so L3 (live) == 1.0 by construction. Weak arms transmit MORE, strong LESS.
+    // Readers only: never writes angle, mount, retract, or physics directly.
+    _armBaseHold(game) {
+        try {
+            if (typeof ARM_TUNING === 'undefined' || !ARM_TUNING.ENABLED) return 110;
+            let lvl = 3;
+            try {
+                const MA = game && game.saveData ? game.saveData.metaUpgrades : null;
+                lvl = MA ? (MA.soldierConditioning || 0) : 0;
+            } catch (e) {}
+            lvl = Math.max(0, Math.min(5, lvl | 0));
+            // Default to L3 row when save is absent so probes stay live-identical.
+            if (!game || !game.saveData || !game.saveData.metaUpgrades) lvl = 3;
+            const H = ARM_TUNING.HOLD;
+            return H[lvl] !== undefined ? H[lvl] : 110;
+        } catch (e) { return 110; }
+    }
+    _armHold(game) {
+        try {
+            if (typeof ARM_TUNING === 'undefined' || !ARM_TUNING.ENABLED) return 110;
+            let h = this._armBaseHold(game);
+            // Exhausted arms hold less.
+            try {
+                if (this.isExhausted) h *= ARM_TUNING.STAM_EXHAUST_MULT;
+                else if (this.maxStamina && this.stamina !== undefined) {
+                    const f = this.stamina / this.maxStamina;
+                    if (isFinite(f) && f < 0.25) h *= 1 - (1 - ARM_TUNING.STAM_EXHAUST_MULT) * (1 - f / 0.25) * 0.5;
+                }
+            } catch (e) {}
+            // Focus still steadies slightly.
+            try {
+                const fl = this.focusLevel || 0;
+                if (isFinite(fl) && fl > 0) h *= 1 + ARM_TUNING.FOCUS_HOLD_BONUS * Math.min(1, fl);
+            } catch (e) {}
+            // Fatigue bleeds hold.
+            try {
+                const fat = this._armFatigue || 0;
+                if (fat > 0) h *= Math.max(0.55, 1 - fat);
+            } catch (e) {}
+            return Math.max(20, h);
+        } catch (e) { return 110; }
+    }
+    _armTransmit(game) {
+        try {
+            if (typeof ARM_TUNING === 'undefined' || !ARM_TUNING.ENABLED) return 1;
+            const base = this._armBaseHold({ saveData: { metaUpgrades: { soldierConditioning: 3 } } });
+            const eff = this._armHold(game);
+            const t = base / Math.max(20, eff);
+            return Math.min(2.2, Math.max(0.55, t));
+        } catch (e) { return 1; }
+    }
+    // Per-frame decay: fatigue recovers (faster when focused still), stagger
+    // ticks down. Uses the entity dt passed to update (respects Eventide dilation).
+    // Zero alloc, never throws.
+    _armTick(dt, game) {
+        try {
+            if (typeof ARM_TUNING === 'undefined' || !ARM_TUNING.ENABLED) { this._armTransmit = 1; return; }
+            const sdt = Math.min(0.05, Math.max(0, dt || 0));
+            // Fatigue recover.
+            let rec = ARM_TUNING.FATIGUE_RECOVER * sdt;
+            try {
+                const fl = this.focusLevel || 0;
+                if (this.isSprinting) rec *= 0.5;
+                else if (isFinite(fl) && fl > 0.3) rec *= 1.6;
+            } catch (e) {}
+            this._armFatigue = Math.max(0, (this._armFatigue || 0) - rec);
+            // Stagger decay.
+            if ((this._armStaggerT || 0) > 0) {
+                this._armStaggerT = Math.max(0, this._armStaggerT - sdt);
+            }
+            this._armTransmit = this._armTransmit(game);
+        } catch (e) { try { this._armTransmit = 1; } catch (_e) {} }
+    }
+    // Called on every transmitted shot + heavy shove. Adds fatigue, latches
+    // stagger when a single impulse is huge. Returns the transmit used.
+    _armOnShot(transmittedDeg, game) {
+        try {
+            if (typeof ARM_TUNING === 'undefined' || !ARM_TUNING.ENABLED) return 1;
+            const t = this._armTransmit(game);
+            const add = Math.min(0.12, transmittedDeg * ARM_TUNING.FATIGUE_PER_DEG * t);
+            this._armFatigue = Math.min(ARM_TUNING.FATIGUE_MAX, (this._armFatigue || 0) + add);
+            if (transmittedDeg >= ARM_TUNING.STAGGER_IMPULSE && (this._armStaggerT || 0) <= 0) {
+                this._armStaggerT = ARM_TUNING.STAGGER_DUR;
+                try { this._armStaggerDir = this.lastHitAngle !== undefined ? this.lastHitAngle : this.angle; } catch (e) {}
+            }
+            this._armTransmit = t;
+            return t;
+        } catch (e) { return 1; }
+    }
     // Foregrip pivot in world px (retract only, never draw kicks), written to
     // _restPx/_restPy for the debug draw. Muzzle tip likewise to
     // _restTipX/_restTipY (overhang check). Returns nothing (zero alloc).
@@ -21683,8 +21842,7 @@ class Player extends Entity {
             return (this.restedBlend || 0) * this._restAimGate();
         } catch (e) { return (this.restedBlend || 0); }
     }
-    // Forward-clearance probe for a candidate gun side (+1 right / -1 left):
-    // raycast 50px along the aim from the PROPOSED barrel position using
+    // Forward-clearance probe for a candidate gun side (+1 right / -1 left):    // raycast 50px along the aim from the PROPOSED barrel position using
     // combat truth (lineIntersectAABB, opaque at windows). Used as a veto so
     // a swap never puts the muzzle into a wall instead of down the lane.
     // Runs only on hand-commit frames (rare), never per-frame.
@@ -22769,6 +22927,12 @@ class Player extends Entity {
         let _rstPhysEarly = 1;
         try { _rstPhysEarly = this._restedChannelMult('physical'); } catch (e) {}
         recoilForce *= _rstPhysEarly;
+        // ARM STRENGTH: weak arms transmit more shove, strong less. L3 == 1.0
+        // by construction (HOLD[3]/HOLD_eff), so live feel is untouched.
+        let _armT = 1;
+        try { _armT = (typeof ARM_TUNING !== 'undefined' && ARM_TUNING.ENABLED) ? this._armTransmit(game) : 1; } catch (e) { _armT = 1; }
+        if (!isFinite(_armT)) _armT = 1;
+        recoilForce *= _armT;
         // SOLDIER CONDITIONING: camera taken-mults (L3 = 1.0 = live). Row is
         // defined here so both the fire shake below and the recoil/zoom
         // block after share it.
@@ -22815,13 +22979,18 @@ class Player extends Entity {
         if (!_supp) {
         this.kickAim('aimRecoilOffset',
             (AIM_WEIGHT.RECOIL_KICK_DEG[this.weapon.name] || AIM_WEIGHT.RECOIL_KICK_DEG_DEFAULT) *
-            (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT * _rstBiteM : 1) * _recoilMult * scRecoil * _rstRecoil,
+            (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT * _rstBiteM : 1) * _recoilMult * scRecoil * _rstRecoil * _armT,
             this.aimRecoilBiasDir);
         let climbCapRad = AIM_WEIGHT.RECOIL_CLIMB_MAX_DEG * _rstClimbMaxM * Math.PI / 180;
         this.aimRecoilClimb = MathUtils.clamp(
-            this.aimRecoilClimb + this.aimRecoilBiasDir * AIM_WEIGHT.RECOIL_CLIMB_DEG_PER_SHOT * _rstClimb * scClimb * Math.PI / 180,
+            this.aimRecoilClimb + this.aimRecoilBiasDir * AIM_WEIGHT.RECOIL_CLIMB_DEG_PER_SHOT * _rstClimb * scClimb * _armT * Math.PI / 180,
             -climbCapRad, climbCapRad
         );
+        // ARM STRENGTH: fatigue + stagger latch on the transmitted impulse.
+        try {
+            const _rk = (AIM_WEIGHT.RECOIL_KICK_DEG[this.weapon.name] || AIM_WEIGHT.RECOIL_KICK_DEG_DEFAULT) * _armT;
+            this._armOnShot(_rk, game);
+        } catch (e) {}
         }
 
         let aimCoords = game.getWorldAimCoords(this);
@@ -22894,7 +23063,7 @@ class Player extends Entity {
         // SOLDIER CONDITIONING: camera kick taken (L3 = 1.0 = live).
         let scKick = scRowFire ? scRowFire.kick : 1.0;
         let scZoom = scRowFire ? scRowFire.zoom : 1.0;
-        let kickForce = (KICKBACK_FORCES[this.weapon.name] || 50) * _recoilMult * scKick * _rstPhysEarly;
+        let kickForce = (KICKBACK_FORCES[this.weapon.name] || 50) * _recoilMult * scKick * _rstPhysEarly * _armT;
         if (!_supp) {
         const kickCam = this.camera;
         if (kickForce && kickCam) kickCam.applyKickback(this.angle, kickForce);
@@ -22903,17 +23072,17 @@ class Player extends Entity {
         // Mechanical sprite recoil kick (arms/gun slam back into chest)
         const RECOIL_SPRITE_KICKS = FIRE_TUNING.RECOIL_SPRITE_KICKS;
         if (!_supp) {
-        this.gunRecoilKickPx = (RECOIL_SPRITE_KICKS[this.weapon.name] || 7.0) * _recoilMult * _rstPhysEarly;
+        this.gunRecoilKickPx = (RECOIL_SPRITE_KICKS[this.weapon.name] || 7.0) * _recoilMult * _rstPhysEarly * _armT;
         // WO-001 Phase 3: render-only personality kick — small additive slam,
         // draw translate only (never angle/barrel math in fire()).
-        this.gunKickPx = (FIRE_TUNING.GUNKICK_PX[this.weapon.name] || 1.2) * _recoilMult * _rstPhysEarly;
+        this.gunKickPx = (FIRE_TUNING.GUNKICK_PX[this.weapon.name] || 1.2) * _recoilMult * _rstPhysEarly * _armT;
         }
 
         // Camera optic zoom punch (concussive pressure wave)
         const ZOOM_PUNCHES = FIRE_TUNING.ZOOM_PUNCHES;
         // FELLPASS item 8: fresh trigger pull bites harder (FX only).
         // SOLDIER CONDITIONING: zoom-punch taken (L0 1.6 rocked, L3 1.0 live, L5 0.72 firm).
-        let zp = (ZOOM_PUNCHES[this.weapon.name] || 0.008) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scZoom * _rstPhysEarly;
+        let zp = (ZOOM_PUNCHES[this.weapon.name] || 0.008) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scZoom * _rstPhysEarly * _armT;
         if (!_supp) {
         if (this.camera) this.camera.punchZoom(zp);
         }
@@ -22925,7 +23094,7 @@ class Player extends Entity {
         // settle in the same breath. Full-auto saturates the channel, so a
         // spray holds a sustained ~2-3% wider framing.
         const RECOIL_ZOOM_OUT = FIRE_TUNING.RECOIL_ZOOM_OUT;
-        let rzo = (RECOIL_ZOOM_OUT[this.weapon.name] || 0.010) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scZoom * _rstPhysEarly;
+        let rzo = (RECOIL_ZOOM_OUT[this.weapon.name] || 0.010) * (firstShotOfPull ? AIM_WEIGHT.FIRST_SHOT_BITE_MULT : 1) * _recoilMult * scZoom * _rstPhysEarly * _armT;
         if (!_supp) {
         if (this.camera) this.camera.punchRecoilZoom(rzo);
         }
@@ -23155,6 +23324,15 @@ class Player extends Entity {
             // RESTED-GUN: weight holds you (barrier strongest). Kick input only.
             try { flinchDeg *= this._restedChannelMult('hit'); } catch (e) {}
             this.kickAim('aimHitFlinchOffset', flinchDeg);
+            // ARM STAGGER: heavy single hits knock the body back (fall-back
+            // without ragdoll). Visual wide-arms + existing flinch channel
+            // only; root slides on vx/vy + drag. No new angle writer.
+            try {
+                if (typeof ARM_TUNING !== 'undefined' && ARM_TUNING.ENABLED && amt >= 20 && (this._armStaggerT || 0) <= 0) {
+                    this._armStaggerT = ARM_TUNING.STAGGER_DUR * 0.8;
+                    if (Number.isFinite(pushDir)) this._armStaggerDir = pushDir;
+                }
+            } catch (e) {}
         }
         if (amt > 0 && game) {
             // FELLPASS item 6 (player-hit drag): "YOU feel getting hit" --
@@ -23453,11 +23631,34 @@ class Player extends Entity {
         // elbow so it hangs out from the body instead of being a stiff stub;
         // front arm reaches to the foregrip -- or, for a pistol, converges
         // next to the grip so both hands sit together.
+        // ARM STRENGTH pose: hands stay on the gun (constrained), elbows show
+        // load. Lateral only (top-down foreshortens fore/aft). All terms 0 at
+        // idle (transmit 1, centered, free, unfocused, no stagger) so rest
+        // collapses to the original stance.
         ctx.strokeStyle = this.color;
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         const _sh = _meleeShovePx; // melee shove offset (0 unless mid-swing)
+        let _armSpreadPx = 0, _armBackPx = 0;
+        try {
+            if (typeof ARM_TUNING !== 'undefined' && ARM_TUNING.ENABLED) {
+                const _gd = Math.atan2(Math.sin(this.angle - this.moveFacingAngle), Math.cos(this.angle - this.moveFacingAngle));
+                let _coneDeg = 35;
+                try { _coneDeg = (AIM_WEIGHT.WEAPON_DEADZONE_CONE_DEG[this.weapon.name] || 35); } catch (e) {}
+                const _coneRad = Math.max(0.12, _coneDeg * Math.PI / 180);
+                const _eng = Math.min(1, Math.abs(_gd) / _coneRad);
+                _armSpreadPx = _eng * ARM_TUNING.VIS_SWING_SPREAD;
+                const _tr = (typeof this._armTransmit === 'number' && isFinite(this._armTransmit)) ? this._armTransmit : 1;
+                const _climbD = (this.aimRecoilClimb || 0) * 57.29578;
+                _armBackPx = Math.max(-2, (_tr - 1) * 6 + _climbD * 0.15);
+                let _tuck = (this.gunRetractPx || 0) * ARM_TUNING.VIS_RETRACT_TUCK;
+                try { _tuck += (this.focusLevel || 0) * ARM_TUNING.VIS_FOCUS_TUCK; } catch (e) {}
+                if (this.isSprinting) _tuck += 2.0;
+                _armBackPx += _tuck;
+                if ((this._armStaggerT || 0) > 0) _armSpreadPx += ARM_TUNING.VIS_STAGGER_WIDE;
+            }
+        } catch (e) { _armSpreadPx = 0; _armBackPx = 0; }
         // RIGHT (trigger) arm: shoulder stays anchored. Instead of the elbow
         // drifting out with the hand (locked-look), it TUCKS -- it rides an
         // arc centered on the shoulder at its rest upper-arm length, swinging
@@ -23469,16 +23670,28 @@ class Player extends Entity {
             const _uel = Math.hypot((G.grip - 3) - _sx, 14 * _handMixD - _sy);        // upper-arm length (const)
             const _ua = Math.atan2(14 * _handMixD - _sy, (G.grip - 3) - _sx)
                      - (_sh / MELEE_TUNING.SHOVE_PX) * 0.55;              // tuck ~31 deg at full shove
+            const _ex = _sx + Math.cos(_ua) * _uel - _armBackPx;
+            const _ey = _sy + Math.sin(_ua) * _uel + _armSpreadPx * _handMixD;
             ctx.beginPath();
             ctx.moveTo(_sx, _sy);
-            ctx.lineTo(_sx + Math.cos(_ua) * _uel, _sy + Math.sin(_ua) * _uel);
+            ctx.lineTo(_ex, _ey);
             ctx.lineTo(G.grip + _sh, 7 * _handMixD);        // trigger hand rides the grip forward
             ctx.stroke();
         }
-        ctx.beginPath();
-        if (G.fore !== null) { ctx.moveTo(0, -6 * _handMixD); ctx.lineTo(G.fore + _sh, foreY - 3 * _handMixD); }
-        else { ctx.moveTo(0, -4 * _handMixD); ctx.lineTo(G.grip + 2 + _sh, 5 * _handMixD); }
-        ctx.stroke();
+        // Support arm: shoulder -> elbow -> hand (midpoint elbow so idle is
+        // still a straight line; load bends it out/back).
+        {
+            const _ssx = 0, _ssy = (G.fore !== null ? -6 : -4) * _handMixD;
+            const _hex = (G.fore !== null ? G.fore + _sh : G.grip + 2 + _sh);
+            const _hey = (G.fore !== null ? foreY - 3 * _handMixD : 5 * _handMixD);
+            const _midx = (_ssx + _hex) * 0.5 - _armBackPx * 0.7;
+            const _midy = (_ssy + _hey) * 0.5 - _armSpreadPx * _handMixD * 0.8;
+            ctx.beginPath();
+            ctx.moveTo(_ssx, _ssy);
+            ctx.lineTo(_midx, _midy);
+            ctx.lineTo(_hex, _hey);
+            ctx.stroke();
+        }
 
         // Gun + hands: the ONLY parts that lunge on the melee shove -- the
         // arms above already reach to their shoved positions, so the
@@ -72882,17 +73095,42 @@ class Game {
             const A = R.armsGfx; A.clear();
             const baseY = 6, foreY = (GG.foreY !== undefined) ? GG.foreY : 5;
             const sh = meleeShovePx;
+            // ARM STRENGTH pose (draw-only mirror of canvas): hands constrained
+            // to the gun, elbows show load. Collapses to original at idle.
+            let _pSpread = 0, _pBack = 0;
+            try {
+                if (typeof ARM_TUNING !== 'undefined' && ARM_TUNING.ENABLED) {
+                    const _gd = Math.atan2(Math.sin((p.angle || 0) - (p.moveFacingAngle || 0)), Math.cos((p.angle || 0) - (p.moveFacingAngle || 0)));
+                    let _coneDeg = 35;
+                    try { _coneDeg = (AIM_WEIGHT.WEAPON_DEADZONE_CONE_DEG[p.weapon.name] || 35); } catch (e) {}
+                    const _coneRad = Math.max(0.12, _coneDeg * Math.PI / 180);
+                    _pSpread = Math.min(1, Math.abs(_gd) / _coneRad) * ARM_TUNING.VIS_SWING_SPREAD;
+                    const _tr = (typeof p._armTransmit === 'number' && isFinite(p._armTransmit)) ? p._armTransmit : 1;
+                    const _clD = (p.aimRecoilClimb || 0) * 57.29578;
+                    _pBack = Math.max(-2, (_tr - 1) * 6 + _clD * 0.15);
+                    let _tk = (p.gunRetractPx || 0) * ARM_TUNING.VIS_RETRACT_TUCK;
+                    try { _tk += (p.focusLevel || 0) * ARM_TUNING.VIS_FOCUS_TUCK; } catch (e) {}
+                    if (p.isSprinting) _tk += 2.0;
+                    _pBack += _tk;
+                    if ((p._armStaggerT || 0) > 0) _pSpread += ARM_TUNING.VIS_STAGGER_WIDE;
+                }
+            } catch (e) { _pSpread = 0; _pBack = 0; }
             // RESTED-GUN: arms track the sliding hands positionally (draw-only).
             const sx = -2, sy = 9 * _handMixP;
             const uel = Math.hypot((GG.grip - 3) - sx, 14 * _handMixP - sy);
             const ua = Math.atan2(14 * _handMixP - sy, (GG.grip - 3) - sx) - (sh / MELEE_TUNING.SHOVE_PX) * 0.55;
-            A.moveTo(sx, sy); A.lineTo(sx + Math.cos(ua) * uel, sy + Math.sin(ua) * uel);
+            const _ex = sx + Math.cos(ua) * uel - _pBack;
+            const _ey = sy + Math.sin(ua) * uel + _pSpread * _handMixP;
+            A.moveTo(sx, sy); A.lineTo(_ex, _ey);
             A.lineTo(GG.grip + sh, 7 * _handMixP); A.stroke({ width: 3, color: p.color, join: 'round', cap: 'round' });
             // F2 pistol origin: canvas moveTo(0,-4) when fore==null (pistol),
             // (0,-6) otherwise — twin had -6 always (2px support-hand error).
-            A.moveTo(0, ((GG.fore == null) ? -4 : -6) * _handMixP);
-            if (GG.fore !== null) A.lineTo(GG.fore + sh, foreY * _handMixP - 3 * _handMixP);
-            else A.lineTo(GG.grip + 2 + sh, 5 * _handMixP);
+            const _ssx = 0, _ssy = ((GG.fore == null) ? -4 : -6) * _handMixP;
+            const _hex = (GG.fore !== null) ? GG.fore + sh : GG.grip + 2 + sh;
+            const _hey = (GG.fore !== null) ? foreY * _handMixP - 3 * _handMixP : 5 * _handMixP;
+            const _midx = (_ssx + _hex) * 0.5 - _pBack * 0.7;
+            const _midy = (_ssy + _hey) * 0.5 - _pSpread * _handMixP * 0.8;
+            A.moveTo(_ssx, _ssy); A.lineTo(_midx, _midy); A.lineTo(_hex, _hey);
             A.stroke({ width: 3, color: p.color, join: 'round', cap: 'round' });
         }
         // Wife dress + flower + fish (wifeMode only; vacuous in parity).
