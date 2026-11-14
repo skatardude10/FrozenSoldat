@@ -342,6 +342,33 @@
         padding: 2px 6px; border-radius: 3px; background: rgba(255, 42, 95, 0.1);
         box-shadow: 0 0 8px rgba(255, 42, 95, 0.2);
     }
+    .hud-mag-row {
+        display: flex; align-items: center; justify-content: center; gap: 4px;
+        margin: 2px 0 3px 0; min-height: 22px; pointer-events: auto; cursor: pointer;
+    }
+    .hud-mag-slot {
+        display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+        position: relative; padding: 1px; border-radius: 2px;
+    }
+    .hud-mag-slot.active-mag {
+        box-shadow: 0 0 6px rgba(0, 229, 255, 0.7);
+        border: 1px solid rgba(0, 229, 255, 0.85);
+    }
+    .hud-mag-slot.mag-low-pulse {
+        animation: magLowPulse 0.55s infinite alternate;
+    }
+    @keyframes magLowPulse {
+        0% { transform: scale(1); filter: brightness(1); }
+        100% { transform: scale(1.08); filter: brightness(1.35); }
+    }
+    .hud-pouch-pill {
+        font-size: 8px; font-weight: bold; padding: 1px 4px; border-radius: 2px;
+        border: 1px solid rgba(255, 255, 255, 0.25); color: #cfd8dc; background: rgba(0, 0, 0, 0.45);
+    }
+    .weapon-slot-mags {
+        font-size: 7px; font-weight: bold; color: #b0bec5; margin-top: 1px;
+        display: flex; align-items: center; gap: 2px; justify-content: center;
+    }
     
     .menu-overlay {
         position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -5934,7 +5961,10 @@ function cancelGLCharge(player) {
 function tryStartThumperCharge(player) {
     if (!player || player.dead) return false;
     if (!player.weapon || player.weapon.name !== 'Thumper') return false;
-    if ((player.ammo && player.ammo.thumper || 0) <= 0) return false;
+    if (player.reloadState && player.reloadState.phase === 'shell' && player.getReadyRounds('thumper') > 0) {
+        player.interruptReload('fire_shell');
+    }
+    if (player.getReadyRounds('thumper') <= 0) return false;
     if (!player.thumperCharging) {
         player.thumperCharging = true;
         player.thumperChargeDist = (typeof THUMPER_TUNING !== 'undefined' ? THUMPER_TUNING.MAX_DIST : 1400);
@@ -5951,7 +5981,7 @@ function releaseThumperCharge(player) {
     player.thumperCharging = false;
     player.thumperChargeDist = 0;
     player.thumperHoldTime = 0;
-    if ((player.ammo && player.ammo.thumper || 0) <= 0) {
+    if (player.getReadyRounds('thumper') <= 0) {
         if (typeof audio !== 'undefined' && audio && audio.playBakedSound && game) {
             audio.playBakedSound('empty_click', audio.sfxGain, 0.6, 20000, 0, audio.rateFor(player));
         }
@@ -6463,6 +6493,7 @@ function renderHUDSelectors(player, suffix) {
                 slot.innerHTML = `
                     <div class="item-icon-wrapper" style="color: ${w.color}">${wIcon}</div>
                     <div class="weapon-slot-name" style="color: ${w.color}">${w.name.toUpperCase()}</div>
+                    <div class="weapon-slot-mags" data-wkey="${w.name.toLowerCase()}"></div>
                 `;
                 weaponTrack.appendChild(slot);
             });
@@ -6470,11 +6501,125 @@ function renderHUDSelectors(player, suffix) {
             weaponTrack.style.transform = `translateX(${weaponOffset}px)`;
         }
     }
-    
+
+    // Update non-selected weapon mini-bars in-place (without touching weaponTrack.innerHTML)
+    let weaponTrackLive = document.getElementById('weapon-track-' + suffix);
+    if (weaponTrackLive && player.magState && typeof MAG_TUNING !== 'undefined' && MAG_TUNING.ENABLED) {
+        const magDivs = weaponTrackLive.querySelectorAll('.weapon-slot-mags');
+        for (let i = 0; i < magDivs.length; i++) {
+            const div = magDivs[i];
+            const wk = div.getAttribute('data-wkey');
+            const ws = wk && player.magState[wk];
+            let summary = '';
+            if (ws && i !== player.weaponIdx) {
+                if (ws.feed === 'tube') {
+                    const eff = player._slotEffRounds(wk, 0);
+                    summary = `${eff}/${ws.magCap}+${ws.loose}`;
+                } else if (ws.feed === 'box') {
+                    let fullCount = 0, partialCount = 0, topPartial = 0;
+                    for (let mi = 0; mi < ws.maxSlots; mi++) {
+                        const eff = player._slotEffRounds(wk, mi);
+                        if (eff >= ws.magCap) fullCount++;
+                        else if (eff > 0) {
+                            partialCount++;
+                            if (eff > topPartial) topPartial = eff;
+                        }
+                    }
+                    summary = `${fullCount}+${partialCount}${topPartial > 0 ? '(' + topPartial + ')' : ''}`;
+                }
+            }
+            if (div.textContent !== summary) div.textContent = summary;
+        }
+    }
+
     let ammoBar = document.getElementById('ammo-bar-' + suffix);
     let ammoText = document.getElementById('ui-ammo-text-' + suffix);
     let activeW = player.weapon;
     let wKey = activeW.name.toLowerCase();
+
+    // Render SVG mag row / shell pips above #ammo-bar-${suffix} when dirty
+    if (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.ENABLED && player.magState) {
+        let hudBottom = document.getElementById('hud-bottom-' + suffix);
+        let magRow = document.getElementById('hud-mag-row-' + suffix);
+        if (!magRow && hudBottom) {
+            magRow = document.createElement('div');
+            magRow.id = 'hud-mag-row-' + suffix;
+            magRow.className = 'hud-mag-row';
+            const ammoContainer = ammoBar ? ammoBar.parentElement : null;
+            if (ammoContainer && ammoContainer.parentElement === hudBottom) {
+                hudBottom.insertBefore(magRow, ammoContainer);
+            } else {
+                hudBottom.appendChild(magRow);
+            }
+        }
+        if (magRow) {
+            const ws = player.magState[wKey];
+            const rs = player.reloadState;
+            const rlKey = (rs && rs.phase !== 'idle' && rs.weaponKey === wKey) ? `${rs.phase}:${rs.magIdx}:${rs.speed ? 1 : 0}:${rs.fumbleT > 0 ? 1 : 0}` : 'idle';
+            let stateKey = wKey + '|' + rlKey;
+            if (ws) {
+                stateKey += `|${ws.activeIdx}|${ws.chambered}|${ws.wellState}|${ws.loose}|${ws.maxSlots}|${ws.magCap}`;
+                for (let mi = 0; mi < ws.maxSlots; mi++) stateKey += ':' + (ws.mags[mi] ? ws.mags[mi].rounds : 0);
+            }
+            const cacheProp = '_magRowState_' + suffix;
+            if (magRow[cacheProp] !== stateKey) {
+                magRow[cacheProp] = stateKey;
+                if (!ws) {
+                    magRow.innerHTML = '';
+                    magRow.style.display = 'none';
+                } else {
+                    magRow.style.display = 'flex';
+                    const sp = MAG_TUNING.SPECS[wKey];
+                    let html = '';
+                    if (ws.feed === 'box') {
+                        for (let mi = 0; mi < ws.maxSlots; mi++) {
+                            const eff = player._slotEffRounds(wKey, mi);
+                            const ratio = Math.min(1, eff / Math.max(1, ws.magCap));
+                            const isAct = (mi === ws.activeIdx && ws.wellState !== 'empty_well');
+                            const isLow = isAct && sp && sp.low > 0 && eff > 0 && eff <= sp.low;
+                            const lbl = (mi === ws.activeIdx && ws.wellState === 'ready' && ws.mags[mi].rounds === ws.magCap && ws.chambered === 1)
+                                ? (ws.magCap + '+1') : String(eff);
+                            let fillCol = '#39ff14', shapeCue = '';
+                            const h = Math.round(14 * ratio);
+                            const y = 17 - h;
+                            if (eff === 0) {
+                                fillCol = 'none';
+                            } else if (ratio < 0.2) {
+                                fillCol = '#ff2a5f';
+                                shapeCue = `<polygon points="8,4 12,10 4,10" fill="rgba(0,0,0,0.65)"/>`;
+                            } else if (ratio < 0.5) {
+                                fillCol = '#ffb700';
+                                shapeCue = `<line x1="3" y1="16" x2="13" y2="5" stroke="rgba(0,0,0,0.65)" stroke-width="1.5"/>`;
+                            }
+                            const strokeStyle = eff === 0 ? 'stroke="#607d8b" stroke-dasharray="2,1"' : `stroke="${isAct ? '#00e5ff' : '#90a4ae'}"`;
+                            html += `<div class="hud-mag-slot${isAct ? ' active-mag' : ''}${isLow ? ' mag-low-pulse' : ''}">
+                                <svg width="16" height="22" viewBox="0 0 16 22">
+                                    <rect x="2" y="2" width="12" height="16" rx="1.5" fill="rgba(10,16,24,0.85)" ${strokeStyle} stroke-width="1.2"/>
+                                    ${h > 0 ? `<rect x="3" y="${y}" width="10" height="${h}" fill="${fillCol}" opacity="0.88"/>` : ''}
+                                    ${shapeCue}
+                                    <text x="8" y="13" text-anchor="middle" fill="#ffffff" font-size="6.5" font-weight="bold" style="paint-order:stroke;stroke:#000;stroke-width:2px;">${lbl}</text>
+                                </svg>
+                            </div>`;
+                        }
+                        html += `<span class="hud-pouch-pill">+${ws.loose} POUCH</span>`;
+                    } else if (ws.feed === 'tube') {
+                        const loaded = ws.mags[0] ? ws.mags[0].rounds : 0;
+                        for (let si = 0; si < ws.magCap; si++) {
+                            const full = si < loaded;
+                            const col = full ? (wKey === 'shotgun' || wKey === 'mauler' ? '#ff5252' : '#ffd700') : 'none';
+                            const stroke = full ? '#ffd700' : '#607d8b';
+                            html += `<svg width="9" height="18" viewBox="0 0 9 18">
+                                <rect x="1.5" y="2" width="6" height="14" rx="1" fill="${col}" stroke="${stroke}" stroke-width="1.1"/>
+                                ${full ? '<rect x="1.5" y="12" width="6" height="4" fill="#ffd700"/>' : ''}
+                            </svg>`;
+                        }
+                        html += `<span class="hud-pouch-pill">+${ws.loose} POUCH</span>`;
+                    }
+                    magRow.innerHTML = html;
+                }
+            }
+        }
+    }
     let ammoPct = 1.0;
     let ammoColor = 'var(--green)';
     let displayAmmoText = '';
@@ -7672,6 +7817,42 @@ class AudioEngine {
                 osc2.start(0);
             }));
 
+            // 16. MAGS + RELOAD procedural foley bakes (zero runtime node allocs)
+            const bakeReloadClick = (name, dur, f1, f2, f3, g1, g2) => {
+                promises.push(this.bakeSound(name, dur, (offlineCtx) => {
+                    const o1 = offlineCtx.createOscillator(), ga1 = offlineCtx.createGain();
+                    o1.type = 'square';
+                    o1.frequency.setValueAtTime(f1, 0);
+                    o1.frequency.exponentialRampToValueAtTime(f2, dur * 0.45);
+                    ga1.gain.setValueAtTime(g1, 0);
+                    ga1.gain.exponentialRampToValueAtTime(0.001, dur * 0.5);
+                    o1.connect(ga1); ga1.connect(offlineCtx.destination);
+                    o1.start(0);
+                    if (f3 > 0) {
+                        const o2 = offlineCtx.createOscillator(), ga2 = offlineCtx.createGain();
+                        o2.type = 'triangle';
+                        o2.frequency.setValueAtTime(f3, dur * 0.4);
+                        o2.frequency.exponentialRampToValueAtTime(Math.max(40, f3 * 0.35), dur * 0.95);
+                        ga2.gain.setValueAtTime(0.0001, 0);
+                        ga2.gain.setValueAtTime(g2, dur * 0.4);
+                        ga2.gain.exponentialRampToValueAtTime(0.001, dur * 0.98);
+                        o2.connect(ga2); ga2.connect(offlineCtx.destination);
+                        o2.start(0);
+                    }
+                }));
+            };
+            bakeReloadClick('reload_out_light',    0.16, 920,  260, 420,  0.28, 0.18);
+            bakeReloadClick('reload_out_heavy',    0.20, 620,  160, 280,  0.34, 0.24);
+            bakeReloadClick('reload_in_light',     0.18, 340,  880, 1150, 0.26, 0.32);
+            bakeReloadClick('reload_in_heavy',     0.22, 220,  580, 820,  0.34, 0.38);
+            bakeReloadClick('reload_charge_light', 0.18, 1250, 320, 1480, 0.30, 0.30);
+            bakeReloadClick('reload_charge_heavy', 0.24, 820,  190, 980,  0.36, 0.36);
+            bakeReloadClick('reload_shell',        0.14, 720,  480, 1120, 0.25, 0.22);
+            bakeReloadClick('reload_drop',         0.20, 540,  180, 960,  0.26, 0.20);
+            bakeReloadClick('reload_pickup',       0.14, 680,  980, 1320, 0.25, 0.22);
+            bakeReloadClick('reload_fumble',       0.18, 290,  140, 210,  0.32, 0.25);
+            bakeReloadClick('reload_low',          0.08, 1850, 1420, 0,   0.22, 0.0);
+
             await Promise.all(promises);
         } catch (e) {
             console.error("Failed to bake sounds:", e);
@@ -7742,6 +7923,7 @@ class AudioEngine {
         if (!baseName) return 1;
         if (baseName === 'footstep' || baseName === 'empty_click' || baseName === 'repair_fizzle') return 0;
         if (baseName.lastIndexOf('pickup_') === 0 || baseName === 'weapon_switch') return 0;
+        if (baseName.indexOf('reload_') === 0) return 2;
         if (baseName.lastIndexOf('shoot_') === 0 || baseName === 'miniExplosion') return 2;
         if (baseName === 'explosion' || baseName.lastIndexOf('flashbang') === 0 || baseName === 'tadah') return 3;
         return 1;
@@ -8082,6 +8264,36 @@ class AudioEngine {
             delay = settings.delay;
         }
         this.playBakedSound('weapon_switch', this.sfxGain, gainVal, cutoff, delay, this.eventideRate(x, y));
+    }
+
+    playReload(wKey, stage, x = null, y = null, src = null) {
+        if (!this.ctx) return;
+        const wk = (wKey || '').toLowerCase();
+        const isHeavy = (wk === 'lmg' || wk === 'sniper' || wk === 'm1a' || wk === 'judge' || wk === 'thumper' || wk === 'mauler');
+        const isTube = (wk === 'shotgun' || wk === 'thumper' || wk === 'mauler' || wk === 'judge');
+        let bufName = 'reload_out_light';
+        if (stage === 'drop' || stage === 'pickup' || stage === 'fumble' || stage === 'low') {
+            bufName = 'reload_' + stage;
+        } else if (stage === 'in' && isTube) {
+            bufName = 'reload_shell';
+        } else if (stage === 'out' || stage === 'in' || stage === 'charge') {
+            bufName = 'reload_' + stage + '_' + (isHeavy ? 'heavy' : 'light');
+        }
+        let gainVal = stage === 'low' ? 0.55 : 0.75;
+        let cutoff = 20000;
+        let delay = 0;
+        if (x !== null && y !== null) {
+            const d = this.getDistanceToPlayers(x, y);
+            const settings = this.getSpatialSettings('hit', d);
+            gainVal *= settings.vol;
+            cutoff = settings.cutoff;
+            delay = settings.delay;
+        }
+        if (src && typeof src._restEff === 'function' && src._restEff() > 0.3) {
+            cutoff *= 0.85;
+        }
+        const rate = src ? this.rateFor(src) : this.eventideRate(x, y);
+        this.playBakedSound(bufName, this.sfxGain, gainVal, cutoff, delay, rate);
     }
     
     playPickup(type) {
@@ -18294,6 +18506,41 @@ const ARM_TUNING = {
     VIS_STAGGER_WIDE: 5.0     // wide-arms px while staggered
 };
 
+// ==== MAGS + RELOAD (Model A: physical mags + loose pouch, datum-safe) ====
+const MAG_TUNING = {
+    ENABLED: true,
+    DOUBLE_TAP_WINDOW: 0.28,       // s: 2nd R/B/tap within 0.28s upgrades tac -> speed drop
+    BRACED_TIME_MULT: 0.75,        // _restEff === 1.0 multiplies reload time by 0.75 (25% faster)
+    POUCH_REPACK_MULT: 1.25,       // reloading from loose pouch when all vest mags are 0
+    SPEED_TIME_MULT: 0.62,         // speed-drop phase time mult vs tac stow
+    FUMBLE_DURATION: 0.45,         // s: hang-pose / slow window on light hit (<20 dmg) or whizby
+    FUMBLE_MAX_SLOW: 1.65,         // max time stretch under fatigue + fumble
+    DROP_CAP: 12,                  // max live mag_drop entities in game.items (oldest recycled)
+    DROP_IGNORE_OWNER_S: 1.8,      // s: owner magnet/pickup lockout after speed-dropping a mag
+    DROP_STEP_AWAY_PX: 42,         // px: owner must step outside this radius before pickup re-arms
+    DROP_EXPIRE_S: 60,             // wall-clock fallback expiry for Extraction / PvP
+    MAX_VEST_SLOTS: 6,             // preallocated mag slots per box-mag weapon
+    WEIGHT_DRAIN_BASE: 15,         // weight threshold before extra stamina drain applies
+    WEIGHT_DRAIN_SLOPE: 0.0025,    // extra stamina drain per weight unit above 15
+    WEIGHT_HOLD_BASE: 20,          // weight threshold before _armHold bleed applies (keeps L3==1.0)
+    WEIGHT_HOLD_SLOPE: 0.0020,     // _armHold bleed per weight unit above 20
+    MAG_SWING_RELIEF: 0.06,        // up to +6% faster heavy swing as active mag empties
+    SPECS: {
+        pistol:    { feed: 'exempt', cap: Infinity, slots: 1, out: 0,    in: 0,    charge: 0,    shell: 0,    low: 0 },
+        repairgun: { feed: 'exempt', cap: 250,      slots: 1, out: 0,    in: 0,    charge: 0,    shell: 0,    low: 0 },
+        riftlance: { feed: 'exempt', cap: 100,      slots: 1, out: 0,    in: 0,    charge: 0,    shell: 0,    low: 0 },
+        smg:       { feed: 'box',    cap: 30,       slots: 4, out: 0.48, in: 0.52, charge: 0.25, shell: 0,    low: 6 },
+        lmg:       { feed: 'box',    cap: 60,       slots: 3, out: 0.85, in: 0.95, charge: 0.40, shell: 0,    low: 10 },
+        sniper:    { feed: 'box',    cap: 5,        slots: 3, out: 0.55, in: 0.60, charge: 0.38, shell: 0,    low: 2 },
+        m1a:       { feed: 'box',    cap: 20,       slots: 3, out: 0.52, in: 0.56, charge: 0.28, shell: 0,    low: 5 },
+        abakan:    { feed: 'box',    cap: 36,       slots: 3, out: 0.54, in: 0.58, charge: 0.28, shell: 0,    low: 6 },
+        shotgun:   { feed: 'tube',   cap: 8,        slots: 1, out: 0,    in: 0,    charge: 0.22, shell: 0.30, low: 2 },
+        thumper:   { feed: 'tube',   cap: 6,        slots: 1, out: 0,    in: 0,    charge: 0.24, shell: 0.38, low: 2 },
+        mauler:    { feed: 'tube',   cap: 8,        slots: 1, out: 0,    in: 0,    charge: 0.24, shell: 0.32, low: 2 },
+        judge:     { feed: 'tube',   cap: 6,        slots: 1, out: 0,    in: 0,    charge: 0.20, shell: 0.34, low: 2 }
+    }
+};
+
 // --- Combat Dive ("dive"/dodge roll) config ---
 // See Player.checkDiveTrigger()/startDive()/updateDivePhysics() and the
 // z/vz dodge check in Bullet.update()'s entity-hit loop. Reuses the exact
@@ -19379,6 +19626,7 @@ class Player extends Entity {
             judge: 'standard'   // 'standard' | 'ap' (magnum — .50 shield punch)
         };
         this.pistolHP = false; 
+        this._initMagState();
         this.barrierUpgraded = false;
         this.droneUpgraded = false;
         this.activeDrone = null;
@@ -19566,6 +19814,7 @@ class Player extends Entity {
 
     update(dt, input, walls, gameTime, gp = null) {
         if (this.dead) return;
+        this._reconcileExternalAmmoWrites();
 
         if (this.passiveRegen && this.hp < this.maxHp) {
             this.hp = Math.min(this.maxHp, this.hp + this.passiveRegen * dt);
@@ -19909,6 +20158,11 @@ class Player extends Entity {
 
         this.isSprinting = isSprinting;
         this.applySprintStaminaAndMove(dt, moveX, moveY, isSprinting);
+        if (this.reloadState && this.reloadState.phase !== 'idle') {
+            if (this.isSprinting) this.interruptReload('sprint');
+            else if (this.isDiving) this.interruptReload('dive');
+        }
+        this.updateReload(dt, game);
         // WO-001 Phase 1: sprint-stop squash latch (falling edge, only when
         // moving fast enough to read as a stop, not a tap). Dive-land latch
         // lives in updateDivePhysics touchdown. Both decay below.
@@ -20099,7 +20353,11 @@ class Player extends Entity {
         }
         if (isFiring && this.weapon.name !== 'RepairGun' && this.weapon.name !== 'Riftlance' && !(this.weapon.name === 'Thumper' && this.thumperCharging)) {
             let weaponKey = this.weapon.name.toLowerCase();
-            let hasAmmo = weaponKey === 'pistol' || this.ammo[weaponKey] > 0;
+            if (this.reloadState && this.reloadState.phase === 'shell' && this.getReadyRounds(weaponKey) > 0) {
+                this.interruptReload('fire_shell');
+            }
+            const _reloadingBox = (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.ENABLED && this.reloadState && this.reloadState.phase !== 'idle');
+            let hasAmmo = !_reloadingBox && (weaponKey === 'pistol' || this.getReadyRounds(weaponKey) > 0);
             let canFireSemi = !isSemi || this.semiAutoTriggerReleased;
             let baseFireRate = this.weapon.fireRate;
             let clutchFireRateBuff = (this.hp / this.maxHp < 0.20) ? 0.80 : 1.0;
@@ -20142,7 +20400,7 @@ class Player extends Entity {
                     this._suppressRecoilNext = true;
                     this.fire(game);
                     this._suppressRecoilNext = false;
-                    if (_bc > 1 && (this.ammo[weaponKey] || 0) > 0) {
+                    if (_bc > 1 && this.getReadyRounds(weaponKey) > 0) {
                         this.burstRemaining = _bc - 1;
                         this.burstTimer = this.weapon.burstInterval || 0.055;
                         this.burstWeaponKey = weaponKey;
@@ -20175,10 +20433,24 @@ class Player extends Entity {
                     this.semiAutoTriggerReleased = false;
                     input.mouseDown = false; 
                 }
-            } else if (!hasAmmo && canFireSemi && this.emptyClickCooldown <= 0) {
+            } else if (!hasAmmo && !_reloadingBox && canFireSemi && this.emptyClickCooldown <= 0) {
                 audio.playBakedSound('empty_click', audio.sfxGain, 0.6, 20000, 0, audio.rateFor(this));
-                let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'OUT OF AMMO!', '#ff2a5f', 1.0);
-                if (ft) game.floatingTexts.push(ft);
+                if ((this.ammo[weaponKey] || 0) > 0) {
+                    if (!this._shownFirstDryToast) {
+                        this._shownFirstDryToast = true;
+                        let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'MAG EMPTY — PRESS R (2×R SPEED DROP)', '#00e5ff', 1.4);
+                        if (ft) game.floatingTexts.push(ft);
+                    } else {
+                        let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'RELOAD! [R]', '#ffb700', 1.0);
+                        if (ft) game.floatingTexts.push(ft);
+                    }
+                    if (this.isPlayer2 && game && game.isAiCoOp) {
+                        this.tryStartReload(game, false);
+                    }
+                } else {
+                    let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'OUT OF AMMO!', '#ff2a5f', 1.0);
+                    if (ft) game.floatingTexts.push(ft);
+                }
                 this.emptyClickCooldown = 0.4;
                 if (isSemi) {
                     this.semiAutoTriggerReleased = false;
@@ -20488,7 +20760,7 @@ class Player extends Entity {
                 this.burstRemaining = 0;
                 this.burstTimer = 0;
                 this.burstWeaponKey = null;
-                if (!this.dead && game && this.weapon && this.weapon.name.toLowerCase() === _bw && (this.ammo[_bw] || 0) > 0) {
+                if (!this.dead && game && this.weapon && this.weapon.name.toLowerCase() === _bw && this.getReadyRounds(_bw) > 0) {
                     this._burstFinisher = true;
                     this.fire(game);
                     this._burstFinisher = false;
@@ -20906,6 +21178,9 @@ class Player extends Entity {
             regenRate *= 1 + 0.25 * staminaRanks;
             walkRegenRate *= 1 + 0.25 * staminaRanks;
             runDrainRate *= 1 - 0.15 * staminaRanks;
+        }
+        if (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.ENABLED) {
+            runDrainRate *= 1 + Math.max(0, this.weight - MAG_TUNING.WEIGHT_DRAIN_BASE) * MAG_TUNING.WEIGHT_DRAIN_SLOPE;
         }
 
         let healthRegenFactor = 1.0;
@@ -21426,6 +21701,14 @@ class Player extends Entity {
         // SOLDIER CONDITIONING: heavies only (Sniper/LMG/Thumper/Mauler);
         // lights fixed. Judge stays.
         if (scRowAW && (this.weapon.name === 'Sniper' || this.weapon.name === 'LMG' || this.weapon.name === 'Thumper' || this.weapon.name === 'Mauler')) swingRate *= scRowAW.swing;
+        if (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.ENABLED && this.weapon && this.magState) {
+            const _wk = this.weapon.name.toLowerCase();
+            const _ws = this.magState[_wk];
+            if (_ws && _ws.magCap > 0) {
+                const _fillFrac = Math.min(1, this.getReadyRounds(_wk) / _ws.magCap);
+                swingRate *= 1 + (1 - _fillFrac) * MAG_TUNING.MAG_SWING_RELIEF;
+            }
+        }
         let heavyRate = swingRate * AIM_WEIGHT.GUN_SWING_LEAD_MULT;
         let gunRateDegPerSec = AIM_WEIGHT.GUN_FREE_TURN_RATE_DEG_PER_SEC +
             engagement * (heavyRate - AIM_WEIGHT.GUN_FREE_TURN_RATE_DEG_PER_SEC);
@@ -21712,6 +21995,9 @@ class Player extends Entity {
         // field the spring integrator never reads.
         let velKey = channel.replace('Offset', 'Vel');
         this[velKey] = (this[velKey] || 0) + dir * kickRad * cfg.__omega0 / cfg.__peakRatio;
+        if ((channel === 'aimWhizFlinchOffset' || channel === 'aimWhizbyFlinchOffset') && kickDeg >= 1.5 && this.reloadState && this.reloadState.phase !== 'idle' && typeof MAG_TUNING !== 'undefined') {
+            this.reloadState.fumbleT = Math.max(this.reloadState.fumbleT || 0, MAG_TUNING.FUMBLE_DURATION * 0.7);
+        }
     }
 
     // ==== RESTED-GUN SUPPORT (sandbag / wall-lean / corner-edge) ====
@@ -21775,6 +22061,12 @@ class Player extends Entity {
                 const fat = this._armFatigue || 0;
                 if (fat > 0) h *= Math.max(0.55, 1 - fat);
             } catch (e) {}
+            // Heavy kit weight above threshold bleeds hold slightly (keeps L3 == 1.0 at <=20 weight).
+            try {
+                if (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.ENABLED && this.weight > MAG_TUNING.WEIGHT_HOLD_BASE) {
+                    h /= (1 + (this.weight - MAG_TUNING.WEIGHT_HOLD_BASE) * MAG_TUNING.WEIGHT_HOLD_SLOPE);
+                }
+            } catch (e) {}
             return Math.max(20, h);
         } catch (e) { return 110; }
     }
@@ -21806,7 +22098,7 @@ class Player extends Entity {
             if ((this._armStaggerT || 0) > 0) {
                 this._armStaggerT = Math.max(0, this._armStaggerT - sdt);
             }
-            this._armTransmit = this._armTransmit(game);
+            this._armTransmit = Player.prototype._armTransmit.call(this, game);
         } catch (e) { try { this._armTransmit = 1; } catch (_e) {} }
     }
     // Called on every transmitted shot + heavy shove. Adds fatigue, latches
@@ -21814,7 +22106,7 @@ class Player extends Entity {
     _armOnShot(transmittedDeg, game) {
         try {
             if (typeof ARM_TUNING === 'undefined' || !ARM_TUNING.ENABLED) return 1;
-            const t = this._armTransmit(game);
+            const t = Player.prototype._armTransmit.call(this, game);
             const add = Math.min(0.12, transmittedDeg * ARM_TUNING.FATIGUE_PER_DEG * t);
             this._armFatigue = Math.min(ARM_TUNING.FATIGUE_MAX, (this._armFatigue || 0) + add);
             if (transmittedDeg >= ARM_TUNING.STAGGER_IMPULSE && (this._armStaggerT || 0) <= 0) {
@@ -22828,7 +23120,21 @@ class Player extends Entity {
         let isHP = false;
 
         if (weaponKey !== 'pistol') {
-            this.ammo[weaponKey]--;
+            if (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.ENABLED && this.magState && this.magState[weaponKey]) {
+                const ws = this.magState[weaponKey];
+                if (ws.feed === 'tube') {
+                    if (ws.mags[0] && ws.mags[0].rounds > 0) ws.mags[0].rounds--;
+                } else {
+                    ws.chambered = 0;
+                    if (ws.mags[ws.activeIdx] && ws.mags[ws.activeIdx].rounds > 0) {
+                        ws.mags[ws.activeIdx].rounds--;
+                        ws.chambered = 1;
+                    }
+                }
+                this._syncWeaponAmmo(weaponKey);
+            } else {
+                this.ammo[weaponKey]--;
+            }
             if (this.ammoTypes[weaponKey] === 'ap') isAP = true;
             if (this.ammoTypes[weaponKey] === 'hp') isHP = true;
         } else {
@@ -22930,7 +23236,7 @@ class Player extends Entity {
         // ARM STRENGTH: weak arms transmit more shove, strong less. L3 == 1.0
         // by construction (HOLD[3]/HOLD_eff), so live feel is untouched.
         let _armT = 1;
-        try { _armT = (typeof ARM_TUNING !== 'undefined' && ARM_TUNING.ENABLED) ? this._armTransmit(game) : 1; } catch (e) { _armT = 1; }
+        try { _armT = (typeof ARM_TUNING !== 'undefined' && ARM_TUNING.ENABLED) ? Player.prototype._armTransmit.call(this, game) : 1; } catch (e) { _armT = 1; }
         if (!isFinite(_armT)) _armT = 1;
         recoilForce *= _armT;
         // SOLDIER CONDITIONING: camera taken-mults (L3 = 1.0 = live). Row is
@@ -23058,6 +23364,23 @@ class Player extends Entity {
             game.addParticle(barrelX, barrelY, Math.cos(spreadAngle)*600, Math.sin(spreadAngle)*600, '#fff', 0.04, 3);
         }
         }
+        if (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.ENABLED && MAG_TUNING.SPECS[weaponKey]) {
+            const _sp = MAG_TUNING.SPECS[weaponKey];
+            if (_sp.low > 0) {
+                const _remAfter = this.getReadyRounds(weaponKey);
+                if (_remAfter > 0 && _remAfter <= _sp.low) {
+                    if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                        audio.playReload(weaponKey, 'low', this.x, this.y, this);
+                    }
+                    if (weaponKey !== 'thumper' && game.bullets.length > 0) {
+                        const _lastB = game.bullets[game.bullets.length - 1];
+                        if (_lastB && _lastB.owner === this) {
+                            _lastB.color = (_remAfter === 1) ? '#ff2a5f' : '#ff9100';
+                        }
+                    }
+                }
+            }
+        }
 
         const KICKBACK_FORCES = FIRE_TUNING.KICKBACK_FORCES;
         // SOLDIER CONDITIONING: camera kick taken (L3 = 1.0 = live).
@@ -23144,6 +23467,15 @@ class Player extends Entity {
                     let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'DRY — SIDEARM!', '#ffb700', 1.2);
                     if (ft) game.floatingTexts.push(ft);
                 }
+            }
+        } else if (weaponKey !== 'pistol' && weaponKey !== 'repairgun' && weaponKey !== 'riftlance' && this.getReadyRounds(weaponKey) <= 0 && (this.ammo[weaponKey] || 0) > 0) {
+            if (!this._shownFirstDryToast && game && game.spawnFloatingText) {
+                this._shownFirstDryToast = true;
+                let ft = game.spawnFloatingText(this.x, this.y - this.r - 20, 'MAG EMPTY — PRESS R (2×R SPEED DROP)', '#00e5ff', 1.4);
+                if (ft) game.floatingTexts.push(ft);
+            }
+            if (this.isPlayer2 && game && game.isAiCoOp) {
+                this.tryStartReload(game, false);
             }
         }
     }
@@ -23331,6 +23663,16 @@ class Player extends Entity {
                 if (typeof ARM_TUNING !== 'undefined' && ARM_TUNING.ENABLED && amt >= 20 && (this._armStaggerT || 0) <= 0) {
                     this._armStaggerT = ARM_TUNING.STAGGER_DUR * 0.8;
                     if (Number.isFinite(pushDir)) this._armStaggerDir = pushDir;
+                }
+                if (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.ENABLED && this.reloadState && this.reloadState.phase !== 'idle') {
+                    if (amt >= 20) {
+                        this.interruptReload('hit');
+                    } else if (amt > 0) {
+                        this.reloadState.fumbleT = MAG_TUNING.FUMBLE_DURATION;
+                        if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                            audio.playReload(this.reloadState.weaponKey, 'fumble', this.x, this.y, this);
+                        }
+                    }
                 }
             } catch (e) {}
         }
@@ -23679,13 +24021,91 @@ class Player extends Entity {
             ctx.stroke();
         }
         // Support arm: shoulder -> elbow -> hand (midpoint elbow so idle is
-        // still a straight line; load bends it out/back).
+        // still a straight line; load bends it out/back; reload articulates to magwell/vest/bolt).
+        let _rlActive = false, _rlHex = 0, _rlHey = 0, _rlCarryMag = false, _rlCarryShell = false, _rlProg = 0;
         {
             const _ssx = 0, _ssy = (G.fore !== null ? -6 : -4) * _handMixD;
-            const _hex = (G.fore !== null ? G.fore + _sh : G.grip + 2 + _sh);
-            const _hey = (G.fore !== null ? foreY - 3 * _handMixD : 5 * _handMixD);
-            const _midx = (_ssx + _hex) * 0.5 - _armBackPx * 0.7;
-            const _midy = (_ssy + _hey) * 0.5 - _armSpreadPx * _handMixD * 0.8;
+            const _restX = (G.fore !== null ? G.fore + _sh : G.grip + 2 + _sh);
+            const _restY = (G.fore !== null ? foreY - 3 * _handMixD : 5 * _handMixD);
+            let _hex = _restX, _hey = _restY;
+            const _rs = this.reloadState;
+            const _tossT = this._magTossFlashT || 0;
+            if ((_rs && _rs.phase !== 'idle' && _rs.dur > 0) || _tossT > 0) {
+                _rlActive = true;
+                _rlProg = (_rs && _rs.dur > 0) ? (1 - Math.max(0, Math.min(1, _rs.t / _rs.dur))) : 0;
+                const _wellX = G.recX + 4 + _sh, _wellY = (baseY - 1) * _handMixD;
+                const _vestX = 1, _vestY = -2 * _handMixD;
+                const _tossX = G.recX + 2, _tossY = -10 * _handMixD;
+                const _boltX = G.recX + 1 + _sh, _boltY = (baseY - 2.5) * _handMixD;
+                if (_tossT > 0) {
+                    const _tk = 1 - Math.min(1, _tossT / 0.22);
+                    if (_tk < 0.5) {
+                        const _u = _tk / 0.5;
+                        _hex = _wellX + (_tossX - _wellX) * _u;
+                        _hey = _wellY + (_tossY - _wellY) * _u;
+                    } else {
+                        const _u = (_tk - 0.5) / 0.5;
+                        _hex = _tossX + (_vestX - _tossX) * _u;
+                        _hey = _tossY + (_vestY - _tossY) * _u;
+                    }
+                } else if (_rs.phase === 'out') {
+                    if (_rlProg < 0.35) {
+                        const _u = _rlProg / 0.35;
+                        _hex = _restX + (_wellX - _restX) * _u;
+                        _hey = _restY + (_wellY - _restY) * _u;
+                    } else {
+                        const _u = (_rlProg - 0.35) / 0.65;
+                        _hex = _wellX + (_vestX - _wellX) * _u;
+                        _hey = _wellY + (_vestY - _wellY) * _u;
+                        _rlCarryMag = true;
+                    }
+                } else if (_rs.phase === 'in') {
+                    if (_rlProg < 0.80) {
+                        const _u = _rlProg / 0.80;
+                        _hex = _vestX + (_wellX - _vestX) * _u;
+                        _hey = _vestY + (_wellY - _vestY) * _u;
+                        _rlCarryMag = true;
+                    } else {
+                        _hex = _wellX;
+                        _hey = _wellY + 1.2 * _handMixD;
+                    }
+                } else if (_rs.phase === 'charge') {
+                    if (_rlProg < 0.55) {
+                        const _u = _rlProg / 0.55;
+                        _hex = _wellX + ((_boltX - 3) - _wellX) * _u;
+                        _hey = _boltY;
+                    } else {
+                        const _u = (_rlProg - 0.55) / 0.45;
+                        _hex = (_boltX - 3) + (_restX - (_boltX - 3)) * _u;
+                        _hey = _boltY + (_restY - _boltY) * _u;
+                    }
+                } else if (_rs.phase === 'shell') {
+                    if (_rlProg < 0.45) {
+                        const _u = _rlProg / 0.45;
+                        _hex = _wellX + ((_vestX + 1) - _wellX) * _u;
+                        _hey = _wellY + (0 - _wellY) * _u;
+                    } else {
+                        const _u = (_rlProg - 0.45) / 0.55;
+                        _hex = (_vestX + 1) + (_wellX - (_vestX + 1)) * _u;
+                        _hey = 0 + (_wellY - 0) * _u;
+                        _rlCarryShell = true;
+                    }
+                }
+            }
+            _rlHex = _hex; _rlHey = _hey;
+            let _midx, _midy;
+            if (!_rlActive) {
+                _midx = (_ssx + _hex) * 0.5 - _armBackPx * 0.7;
+                _midy = (_ssy + _hey) * 0.5 - _armSpreadPx * _handMixD * 0.8;
+            } else {
+                const _dx = _hex - _ssx, _dy = _hey - _ssy;
+                const _d = Math.max(0.01, Math.hypot(_dx, _dy));
+                const _half = Math.min(7.2, _d * 0.5);
+                const _bend = Math.sqrt(Math.max(0, 7.5 * 7.5 - _half * _half)) + _armSpreadPx * 0.6 + ((_rs && _rs.fumbleT > 0) ? 3.2 : 0);
+                const _nx = (_dy / _d) * _handMixD;
+                _midx = (_ssx + _hex) * 0.5 - Math.abs(_nx) * _bend * 0.6 - _armBackPx * 0.7;
+                _midy = (_ssy + _hey) * 0.5 - _bend * 0.75 * _handMixD;
+            }
             ctx.beginPath();
             ctx.moveTo(_ssx, _ssy);
             ctx.lineTo(_midx, _midy);
@@ -23722,18 +24142,38 @@ class Player extends Entity {
         ctx.fillStyle = this.weapon.color;
         ctx.fillRect(G.recX + 2, baseY - G.recH / 2, G.recLen, G.recH);
 
+        // Held magazine or shell in support hand during reload:
+        if (_rlCarryMag) {
+            ctx.fillStyle = '#7d6f1a';
+            ctx.fillRect(_rlHex - _sh - 2, _rlHey - 1.1, 4, 2.2);
+            ctx.fillStyle = '#ffd700';
+            ctx.fillRect(_rlHex - _sh + 1, _rlHey - 1.1, 1.2, 2.2);
+        } else if (_rlCarryShell) {
+            ctx.fillStyle = this.weapon.color;
+            ctx.fillRect(_rlHex - _sh - 1.6, _rlHey - 0.9, 3.2, 1.8);
+        }
+
         // Hands: purple "C" brackets. Rear hand on the grip; front hand on the
-        // foregrip (its Y from foreY so it sits ON the barrel), or tucked
-        // beside the grip for a two-handed pistol hold.
+        // foregrip at idle, or following (_rlHex, _rlHey) during reload.
         ctx.strokeStyle = '#a855f7';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(G.grip, 7 * _handMixD, 3.1, -0.3, 2.6);
         ctx.stroke();
         ctx.beginPath();
-        if (G.fore !== null) ctx.arc(G.fore, foreY, 2.7, -0.3, 2.6);
+        if (_rlActive) ctx.arc(_rlHex - _sh, _rlHey, 2.7, -0.3, 2.6);
+        else if (G.fore !== null) ctx.arc(G.fore, foreY, 2.7, -0.3, 2.6);
         else ctx.arc(G.grip + 3, 7 * _handMixD, 2.7, -0.3, 2.6);
         ctx.stroke();
+
+        // Reload progress bar over gun mount when reloading:
+        if (this.reloadState && this.reloadState.phase !== 'idle' && this.reloadState.dur > 0) {
+            const _barCol = this.reloadState.fumbleT > 0 ? '#ff2a5f' : (this.reloadState.speed ? '#00e5ff' : '#ffb700');
+            ctx.fillStyle = 'rgba(0,0,0,0.65)';
+            ctx.fillRect(G.recX, -13, 14, 2.4);
+            ctx.fillStyle = _barCol;
+            ctx.fillRect(G.recX, -13, 14 * _rlProg, 2.4);
+        }
 
         ctx.restore(); // gun + hands shove
         ctx.restore();
@@ -23960,6 +24400,7 @@ class Player extends Entity {
     }
     
     switchWeapon(dir) {
+        this.interruptReload('swap');
         this.weaponIdx = (this.weaponIdx + dir + this.inventory.length) % this.inventory.length;
         cancelGLCharge(this);
         cancelThumperCharge(this);
@@ -23990,6 +24431,11 @@ class Player extends Entity {
         this.burstWeaponKey = null;
         this._suppressRecoilNext = false;
         this._burstFinisher = false;
+    }
+
+    switchWeaponTo(idx) {
+        if (idx < 0 || idx >= this.inventory.length || idx === this.weaponIdx) return;
+        this.switchWeapon(idx - this.weaponIdx);
     }
     
     addWeapon(typeKey) {
@@ -24024,6 +24470,571 @@ class Player extends Entity {
             else if (typeKey === 'mauler') this.ammo.mauler = Math.min(this.maxAmmo.mauler, this.ammo.mauler + 10);
             else if (typeKey === 'judge') this.ammo.judge = Math.min(this.maxAmmo.judge, this.ammo.judge + 8);
         }
+        this._reconcileExternalAmmoWrites();
+    }
+
+    _initMagState() {
+        this._lastSyncedAmmo = {
+            shotgun: 0, smg: 0, lmg: 0, sniper: 0, m1a: 0,
+            repairgun: 0, riftlance: 0, abakan: 0, thumper: 0, mauler: 0, judge: 0
+        };
+        this.magState = {};
+        const specs = (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.SPECS) ? MAG_TUNING.SPECS : {};
+        for (const k in specs) {
+            const sp = specs[k];
+            if (!sp || sp.feed === 'exempt') continue;
+            const mags = [];
+            for (let i = 0; i < 6; i++) mags.push({ cap: sp.cap, rounds: 0 });
+            const maxA = (this.maxAmmo && this.maxAmmo[k]) || 0;
+            const vestCap = sp.feed === 'box' ? sp.slots * sp.cap : sp.cap;
+            this.magState[k] = {
+                feed: sp.feed,
+                magCap: sp.cap,
+                maxSlots: sp.slots,
+                mags: mags,
+                activeIdx: 0,
+                chambered: 0,
+                wellState: 'ready',
+                loose: 0,
+                pouchCap: Math.max(0, maxA - vestCap),
+                _initialized: false
+            };
+        }
+        this.reloadState = {
+            phase: 'idle',
+            weaponKey: null,
+            t: 0,
+            dur: 0,
+            magIdx: 0,
+            speed: false,
+            dropped: false,
+            pouchRepack: false,
+            lastTapTime: -99,
+            fumbleT: 0
+        };
+        this._shownFirstDryToast = false;
+    }
+
+    _resetAmmoAndMags() {
+        const keys = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a', 'repairgun', 'riftlance', 'abakan', 'thumper', 'mauler', 'judge'];
+        if (!this.ammo) this.ammo = {};
+        for (let i = 0; i < keys.length; i++) this.ammo[keys[i]] = 0;
+        this.ammoTypes = {
+            shotgun: 'buck', smg: 'standard', lmg: 'standard', sniper: 'standard',
+            m1a: 'standard', abakan: 'standard', thumper: 'he', mauler: 'standard', judge: 'standard'
+        };
+        this._initMagState();
+    }
+
+    // Effective rounds in a specific mag slot (adds chambered round when slot is active & ready)
+    _slotEffRounds(wKey, slotIdx) {
+        const ws = this.magState && this.magState[wKey];
+        if (!ws || !ws.mags[slotIdx]) return 0;
+        const r = ws.mags[slotIdx].rounds || 0;
+        if (ws.feed === 'box' && slotIdx === ws.activeIdx && ws.wellState === 'ready') {
+            return r + (ws.chambered || 0);
+        }
+        return r;
+    }
+
+    // Rounds ready to fire right now from the active mag + chamber
+    getReadyRounds(wKey) {
+        if (typeof MAG_TUNING === 'undefined' || !MAG_TUNING.ENABLED) {
+            return wKey === 'pistol' ? Infinity : ((this.ammo && this.ammo[wKey]) || 0);
+        }
+        if (wKey === 'pistol') return Infinity;
+        if (wKey === 'repairgun' || wKey === 'riftlance') return (this.ammo && this.ammo[wKey]) || 0;
+        const ws = this.magState && this.magState[wKey];
+        if (!ws) return (this.ammo && this.ammo[wKey]) || 0;
+        if (ws.wellState !== 'ready') return 0;
+        const activeMag = ws.mags[ws.activeIdx];
+        return (activeMag ? activeMag.rounds : 0) + (ws.chambered || 0);
+    }
+
+    getTotalWeaponAmmo(wKey) {
+        const ws = this.magState && this.magState[wKey];
+        if (!ws) return (this.ammo && this.ammo[wKey]) || 0;
+        let sum = (ws.chambered || 0) + (ws.loose || 0);
+        for (let i = 0; i < ws.maxSlots; i++) {
+            sum += (ws.mags[i] ? ws.mags[i].rounds : 0);
+        }
+        return sum;
+    }
+
+    _syncWeaponAmmo(wKey) {
+        const ws = this.magState && this.magState[wKey];
+        if (!ws) return;
+        const total = Math.max(0, Math.min((this.maxAmmo && this.maxAmmo[wKey]) || 9999, this.getTotalWeaponAmmo(wKey)));
+        this.ammo[wKey] = total;
+        if (this._lastSyncedAmmo) this._lastSyncedAmmo[wKey] = total;
+    }
+
+    // Deterministic full repack (used on initial pickup, wave-clear consolidate, and save load).
+    // MANDATORY PATCH #3: explicitly sets ws.activeIdx = 0 in BOTH 'tube' and 'box' branches!
+    repackWeaponFromTotal(wKey, totalRounds, keepPlusOne = false) {
+        const ws = this.magState && this.magState[wKey];
+        if (!ws) return;
+        const maxA = (this.maxAmmo && this.maxAmmo[wKey]) || 0;
+        const tot = Math.max(0, Math.min(maxA, Math.floor(totalRounds || 0)));
+        ws.activeIdx = 0;
+        for (let i = 0; i < 6; i++) {
+            ws.mags[i].cap = ws.magCap;
+            ws.mags[i].rounds = 0;
+        }
+        if (ws.feed === 'tube') {
+            ws.activeIdx = 0;
+            ws.chambered = 0;
+            ws.wellState = 'ready';
+            ws.mags[0].rounds = Math.min(ws.magCap, tot);
+            ws.loose = Math.max(0, tot - ws.mags[0].rounds);
+        } else {
+            // 'box' feed:
+            ws.activeIdx = 0;
+            if (tot <= 0) {
+                ws.chambered = 0;
+                ws.wellState = 'ready';
+                ws.loose = 0;
+            } else {
+                ws.wellState = 'ready';
+                ws.chambered = 1;
+                let rem = tot - 1;
+                // Slot 0 (seated mag): holds up to magCap - 1 (so +1 chambered == magCap),
+                // or magCap if preserving an explicit 30+1 state.
+                const slot0Cap = keepPlusOne ? ws.magCap : Math.max(0, ws.magCap - 1);
+                const s0 = Math.min(slot0Cap, rem);
+                ws.mags[0].rounds = s0;
+                rem -= s0;
+                for (let i = 1; i < ws.maxSlots && rem > 0; i++) {
+                    const take = Math.min(ws.magCap, rem);
+                    ws.mags[i].rounds = take;
+                    rem -= take;
+                }
+                ws.loose = Math.max(0, rem);
+            }
+        }
+        ws._initialized = (tot > 0 || ws._initialized);
+        this._syncWeaponAmmo(wKey);
+    }
+
+    // Mid-run ammo addition (duplicate pickup, shop buy, crate).
+    // MANDATORY PATCH #1: when ws._initialized is true, NEVER touches ws.mags[ws.activeIdx],
+    // ws.wellState, or ws.chambered — only fills spare mags (i !== ws.activeIdx) and ws.loose!
+    grantWeaponAmmo(wKey, deltaRounds, fillSpareMagsFirst = true) {
+        const ws = this.magState && this.magState[wKey];
+        if (!ws) {
+            if (this.ammo && this.maxAmmo && this.ammo[wKey] !== undefined) {
+                this.ammo[wKey] = Math.min(this.maxAmmo[wKey], Math.max(0, (this.ammo[wKey] || 0) + deltaRounds));
+            }
+            return;
+        }
+        const curTotal = this.getTotalWeaponAmmo(wKey);
+        const maxA = (this.maxAmmo && this.maxAmmo[wKey]) || 0;
+        const targetTotal = Math.max(0, Math.min(maxA, curTotal + Math.floor(deltaRounds || 0)));
+        let add = targetTotal - curTotal;
+        if (add <= 0) {
+            this._syncWeaponAmmo(wKey);
+            return;
+        }
+        // First-ever load for this weapon (0 rounds previously and not yet initialized):
+        if (!ws._initialized && curTotal === 0) {
+            this.repackWeaponFromTotal(wKey, targetTotal, false);
+            return;
+        }
+        ws._initialized = true;
+        if (ws.feed === 'tube') {
+            ws.loose += add;
+        } else {
+            if (fillSpareMagsFirst) {
+                // Fill partial/empty SPARE mags (i !== ws.activeIdx) first:
+                for (let i = 0; i < ws.maxSlots && add > 0; i++) {
+                    if (i === ws.activeIdx) continue;
+                    const room = Math.max(0, ws.magCap - ws.mags[i].rounds);
+                    if (room > 0) {
+                        const take = Math.min(room, add);
+                        ws.mags[i].rounds += take;
+                        add -= take;
+                    }
+                }
+            }
+            ws.loose += add;
+        }
+        this._syncWeaponAmmo(wKey);
+    }
+
+    // MANDATORY PATCH #1: Reconcile direct writes to this.ammo[k] (from collectItem, Chaos Draft,
+    // Supply Drops, Dev Tools, or test probes) by applying ONLY the delta on initialized guns!
+    _reconcileExternalAmmoWrites() {
+        if (!this.magState || !this.ammo || !this._lastSyncedAmmo) return;
+        for (const k in this.magState) {
+            const cur = Math.max(0, Math.min((this.maxAmmo && this.maxAmmo[k]) || 9999, Math.floor(this.ammo[k] || 0)));
+            const prev = this._lastSyncedAmmo[k] || 0;
+            if (cur === prev) continue;
+            const ws = this.magState[k];
+            const delta = cur - prev;
+            if (!ws._initialized && prev === 0 && cur > 0) {
+                this.repackWeaponFromTotal(k, cur, false);
+            } else if (delta > 0) {
+                // Restore ammo[k] to prev before calling grantWeaponAmmo so grantWeaponAmmo adds exact delta
+                this.ammo[k] = prev;
+                this.grantWeaponAmmo(k, delta, true);
+            } else if (delta < 0) {
+                let need = -delta;
+                const fromLoose = Math.min(ws.loose, need);
+                ws.loose -= fromLoose; need -= fromLoose;
+                for (let i = ws.maxSlots - 1; i >= 0 && need > 0; i--) {
+                    if (i === ws.activeIdx) continue;
+                    const take = Math.min(ws.mags[i].rounds, need);
+                    ws.mags[i].rounds -= take; need -= take;
+                }
+                if (need > 0 && ws.mags[ws.activeIdx]) {
+                    const take = Math.min(ws.mags[ws.activeIdx].rounds, need);
+                    ws.mags[ws.activeIdx].rounds -= take; need -= take;
+                }
+                if (need > 0 && ws.chambered > 0) {
+                    ws.chambered = 0; need--;
+                }
+                this._syncWeaponAmmo(k);
+            }
+        }
+    }
+
+    consolidateMags() {
+        if (!this.magState) return;
+        this._reconcileExternalAmmoWrites();
+        for (const k in this.magState) {
+            const ws = this.magState[k];
+            const tot = this.getTotalWeaponAmmo(k);
+            if (tot > 0 || ws._initialized) {
+                this.repackWeaponFromTotal(k, tot, false);
+            }
+        }
+        if (this.reloadState) {
+            this.reloadState.phase = 'idle';
+            this.reloadState.t = 0;
+            this.reloadState.dur = 0;
+            this.reloadState.pouchRepack = false;
+        }
+    }
+
+    onReloadInput(game) {
+        if (typeof MAG_TUNING === 'undefined' || !MAG_TUNING.ENABLED) return false;
+        if (this.dead || !this.weapon) return false;
+        if (this.activeDrone && this.activeDrone.isPiloted && !this.activeDrone.dead) return false;
+        if (this.pendingFireTimer > 0 || this.burstRemaining > 0) return false;
+        const wKey = this.weapon.name.toLowerCase();
+        const spec = MAG_TUNING.SPECS[wKey];
+        if (!spec || spec.feed === 'exempt') return false;
+        const ws = this.magState && this.magState[wKey];
+        if (!ws) return false;
+        const now = (game && typeof game.gameTime === 'number') ? game.gameTime : 0;
+        const rs = this.reloadState;
+
+        // MANDATORY PATCH #4: Double-tap <= 0.28s upgrades in-progress tac reload to speed drop
+        // ONLY on 'box' guns while in 'out' phase and when magwell is NOT already 'empty_well'!
+        if (spec.feed === 'box' && rs.phase === 'out' && rs.weaponKey === wKey && !rs.speed && !rs.dropped && ws.wellState !== 'empty_well' && (now - rs.lastTapTime) <= MAG_TUNING.DOUBLE_TAP_WINDOW) {
+            rs.speed = true;
+            this._dropActiveMag(game, wKey);
+            rs.dropped = true;
+            ws.wellState = 'empty_well';
+            rs.t *= MAG_TUNING.SPEED_TIME_MULT;
+            rs.dur *= MAG_TUNING.SPEED_TIME_MULT;
+            if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                audio.playReload(wKey, 'drop', this.x, this.y, this);
+            }
+            return true;
+        }
+
+        if (rs.phase === 'idle') {
+            rs.lastTapTime = now;
+            return this.tryStartReload(game, false);
+        }
+        return false;
+    }
+
+    tryStartReload(game, isSpeed = false) {
+        if (typeof MAG_TUNING === 'undefined' || !MAG_TUNING.ENABLED) return false;
+        if (this.dead || !this.weapon || this.isSprinting || this.isDiving) return false;
+        if (this.pendingFireTimer > 0 || this.burstRemaining > 0) return false;
+        const wKey = this.weapon.name.toLowerCase();
+        const spec = MAG_TUNING.SPECS[wKey];
+        if (!spec || spec.feed === 'exempt') return false;
+        const ws = this.magState && this.magState[wKey];
+        if (!ws) return false;
+        const rs = this.reloadState;
+        if (rs.phase !== 'idle') return false;
+
+        // Shell-tube weapons (Shotgun, Thumper, Mauler, Judge):
+        if (spec.feed === 'tube') {
+            if (ws.mags[0].rounds >= ws.magCap || ws.loose <= 0) return false;
+            rs.phase = 'shell';
+            rs.weaponKey = wKey;
+            rs.magIdx = 0;
+            rs.dur = spec.shell;
+            rs.t = spec.shell;
+            rs.speed = false;
+            rs.dropped = false;
+            rs.pouchRepack = false;
+            if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                audio.playReload(wKey, 'out', this.x, this.y, this);
+            }
+            return true;
+        }
+
+        // Box-mag weapons (SMG, LMG, Sniper, M1A, Abakan):
+        // 1. Resume from 'uncharged' (mag-in completed previously, bolt not yet racked):
+        if (ws.wellState === 'uncharged' && ws.mags[ws.activeIdx] && ws.mags[ws.activeIdx].rounds > 0) {
+            rs.phase = 'charge';
+            rs.weaponKey = wKey;
+            rs.magIdx = ws.activeIdx;
+            rs.dur = spec.charge;
+            rs.t = spec.charge;
+            rs.speed = false;
+            rs.dropped = false;
+            rs.pouchRepack = false;
+            if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                audio.playReload(wKey, 'charge', this.x, this.y, this);
+            }
+            return true;
+        }
+
+        // MANDATORY PATCH #2: Unconditional ceiling guard so full guns NEVER reload when ws.loose > 0!
+        const curReady = this.getReadyRounds(wKey);
+        const maxPossibleReady = ws.magCap + (ws.chambered ? 1 : 0);
+        if (ws.wellState === 'ready' && curReady >= maxPossibleReady && ws.mags[ws.activeIdx].rounds >= ws.magCap) {
+            return false;
+        }
+
+        // Find fullest spare vest mag (i !== ws.activeIdx):
+        let bestIdx = -1, bestRounds = 0;
+        for (let i = 0; i < ws.maxSlots; i++) {
+            if (i === ws.activeIdx) continue;
+            if (ws.mags[i].rounds > bestRounds) {
+                bestRounds = ws.mags[i].rounds;
+                bestIdx = i;
+            }
+        }
+        const activeBoxRounds = (ws.wellState === 'ready' && ws.mags[ws.activeIdx]) ? ws.mags[ws.activeIdx].rounds : -1;
+
+        let usePouchRepack = false;
+        let targetIdx = bestIdx;
+
+        if (bestIdx !== -1 && bestRounds > activeBoxRounds) {
+            targetIdx = bestIdx;
+        } else if (ws.loose > 0 && curReady < ws.magCap) {
+            // MANDATORY PATCH #2: Pouch repack ONLY when gun has fired rounds (curReady < ws.magCap)
+            // and no strictly fuller spare mag exists in vest!
+            usePouchRepack = true;
+            let minIdx = ws.activeIdx, minR = 99999;
+            for (let i = 0; i < ws.maxSlots; i++) {
+                if (i !== ws.activeIdx && ws.mags[i].rounds < minR) {
+                    minR = ws.mags[i].rounds;
+                    minIdx = i;
+                }
+            }
+            targetIdx = minIdx;
+        } else {
+            return false;
+        }
+
+        rs.weaponKey = wKey;
+        rs.magIdx = targetIdx;
+        rs.speed = !!isSpeed;
+        rs.dropped = false;
+        rs.pouchRepack = usePouchRepack;
+        const pMult = usePouchRepack ? MAG_TUNING.POUCH_REPACK_MULT : 1;
+
+        if (ws.wellState === 'empty_well') {
+            rs.phase = 'in';
+            rs.dur = spec.in * pMult;
+            rs.t = rs.dur;
+            if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                audio.playReload(wKey, 'in', this.x, this.y, this);
+            }
+        } else {
+            rs.phase = 'out';
+            rs.dur = spec.out * pMult;
+            rs.t = rs.dur;
+            if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                audio.playReload(wKey, 'out', this.x, this.y, this);
+            }
+        }
+        return true;
+    }
+
+    updateReload(dt, game) {
+        const rs = this.reloadState;
+        if (!rs) return;
+        if (rs.fumbleT > 0) rs.fumbleT = Math.max(0, rs.fumbleT - dt);
+        if ((this._magTossFlashT || 0) > 0) this._magTossFlashT = Math.max(0, this._magTossFlashT - dt);
+        if (rs.phase === 'idle') return;
+        if (!this.weapon || this.weapon.name.toLowerCase() !== rs.weaponKey) {
+            this.interruptReload('swap');
+            return;
+        }
+        const wKey = rs.weaponKey;
+        const ws = this.magState && this.magState[wKey];
+        const spec = (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.SPECS) ? MAG_TUNING.SPECS[wKey] : null;
+        if (!ws || !spec) {
+            this.interruptReload('invalid');
+            return;
+        }
+        // Braced (_restEff) speeds reload up to 25% (x0.75 duration); fatigue/stagger/fumble stretches time:
+        const restEff = Math.min(1, Math.max(0, (typeof this._restEff === 'function' ? this._restEff() : 0) || 0));
+        const bracedTimeScale = 1 - (1 - MAG_TUNING.BRACED_TIME_MULT) * restEff;
+        const fumbleStretch = Math.min(
+            MAG_TUNING.FUMBLE_MAX_SLOW,
+            1 + (this._armFatigue || 0) * 0.8 + ((this._armStaggerT || 0) > 0 ? 0.35 : 0) + (rs.fumbleT > 0 ? 0.35 : 0)
+        );
+        const effDt = dt / Math.max(0.25, bracedTimeScale * fumbleStretch);
+        rs.t -= effDt;
+
+        while (rs.t <= 0 && rs.phase !== 'idle') {
+            const over = -rs.t;
+            if (rs.phase === 'shell') {
+                if (ws.loose > 0 && ws.mags[0].rounds < ws.magCap) {
+                    ws.mags[0].rounds++;
+                    ws.loose--;
+                    this._syncWeaponAmmo(wKey);
+                    if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                        audio.playReload(wKey, 'in', this.x, this.y, this);
+                    }
+                }
+                if (ws.mags[0].rounds < ws.magCap && ws.loose > 0) {
+                    rs.dur = spec.shell;
+                    rs.t = rs.dur - over;
+                } else {
+                    if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                        audio.playReload(wKey, 'charge', this.x, this.y, this);
+                    }
+                    this.finishReload(game);
+                }
+            } else if (rs.phase === 'out') {
+                ws.wellState = 'empty_well';
+                rs.phase = 'in';
+                rs.dur = spec.in * (rs.speed ? MAG_TUNING.SPEED_TIME_MULT : 1) * (rs.pouchRepack ? MAG_TUNING.POUCH_REPACK_MULT : 1);
+                rs.t = rs.dur - over;
+                if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                    audio.playReload(wKey, 'in', this.x, this.y, this);
+                }
+            } else if (rs.phase === 'in') {
+                if (rs.pouchRepack && ws.loose > 0 && ws.mags[rs.magIdx]) {
+                    const need = Math.max(0, ws.magCap - ws.mags[rs.magIdx].rounds);
+                    const take = Math.min(need, ws.loose);
+                    ws.mags[rs.magIdx].rounds += take;
+                    ws.loose -= take;
+                }
+                ws.activeIdx = rs.magIdx;
+                // Physical seating tap on the gun mount (draw-only kick):
+                this.gunKickPx = Math.max(this.gunKickPx || 0, 1.8);
+                // Hot chamber (chambered === 1): no bolt rack needed, seats 30+1 immediately!
+                if (ws.chambered === 1) {
+                    ws.wellState = 'ready';
+                    this.finishReload(game);
+                } else {
+                    ws.wellState = 'uncharged';
+                    rs.phase = 'charge';
+                    rs.dur = spec.charge * (rs.speed ? 0.85 : 1);
+                    rs.t = rs.dur - over;
+                    if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                        audio.playReload(wKey, 'charge', this.x, this.y, this);
+                    }
+                }
+            } else if (rs.phase === 'charge') {
+                if (ws.chambered === 0 && ws.mags[ws.activeIdx] && ws.mags[ws.activeIdx].rounds > 0) {
+                    ws.mags[ws.activeIdx].rounds--;
+                    ws.chambered = 1;
+                }
+                ws.wellState = 'ready';
+                this.gunKickPx = Math.max(this.gunKickPx || 0, 2.2);
+                this.finishReload(game);
+            }
+        }
+    }
+
+    interruptReload(reason) {
+        const rs = this.reloadState;
+        if (!rs || rs.phase === 'idle') return;
+        const wKey = rs.weaponKey;
+        const ws = wKey && this.magState ? this.magState[wKey] : null;
+        if (ws) {
+            if ((rs.phase === 'out' || rs.phase === 'in') && !rs.dropped) {
+                ws.wellState = 'ready';
+            }
+            this._syncWeaponAmmo(wKey);
+        }
+        rs.phase = 'idle';
+        rs.t = 0;
+        rs.dur = 0;
+        rs.pouchRepack = false;
+    }
+
+    finishReload(game) {
+        const rs = this.reloadState;
+        if (!rs) return;
+        const wKey = rs.weaponKey;
+        const ws = wKey && this.magState ? this.magState[wKey] : null;
+        if (ws) {
+            this._syncWeaponAmmo(wKey);
+        }
+        rs.phase = 'idle';
+        rs.t = 0;
+        rs.dur = 0;
+        rs.pouchRepack = false;
+    }
+
+    // Physical hand-toss of the active magazine on speed reload (double-tap <= 0.28s):
+    _dropActiveMag(game, wKey) {
+        const ws = this.magState && this.magState[wKey];
+        if (!ws) return;
+        const mag = ws.mags[ws.activeIdx];
+        const droppedRounds = mag ? (mag.rounds || 0) : 0;
+        if (mag) mag.rounds = 0;
+        this._syncWeaponAmmo(wKey);
+        this._magTossFlashT = 0.22; // 220ms support-arm lateral fling pose
+        if (droppedRounds <= 0 || !game || !game.items) return;
+
+        // Enforce pooled cap of 12 live mag_drop entities (oldest recycled):
+        let dropCount = 0, oldestIdx = -1, oldestT = -1;
+        for (let i = 0; i < game.items.length; i++) {
+            const it0 = game.items[i];
+            if (it0 && it0.type === 'mag_drop') {
+                dropCount++;
+                if ((it0.t || 0) > oldestT) { oldestT = it0.t || 0; oldestIdx = i; }
+            }
+        }
+        if (dropCount >= MAG_TUNING.DROP_CAP && oldestIdx !== -1) {
+            const oldIt = game.items[oldestIdx];
+            game.items[oldestIdx] = game.items[game.items.length - 1];
+            game.items.pop();
+            if (!game.inactiveItems) game.inactiveItems = [];
+            game.inactiveItems.push(oldIt);
+        }
+
+        // Support hand flings the magazine outward to the support-hand side (~105 deg off aim):
+        const handSign = (this.handBlend === undefined || this.handBlend >= 0.5) ? 1 : -1;
+        let tossAng = this.angle - handSign * (Math.PI * 0.58);
+        const startX = this.x + Math.cos(this.angle) * 6;
+        const startY = this.y + Math.sin(this.angle) * 6;
+        if (game.map && game.map.getWallsNear) {
+            const nearW = game.map.getWallsNear(this.x, this.y);
+            const testX = startX + Math.cos(tossAng) * 36;
+            const testY = startY + Math.sin(tossAng) * 36;
+            if (nearW.some(w => MathUtils.lineIntersectAABB(startX, startY, testX, testY, w))) {
+                tossAng = this.angle + Math.PI; // wall on support side -> toss rearward
+            }
+        }
+        const it = game.spawnItem(startX, startY, 'mag_drop');
+        it.vx = (this.vx || 0) * 0.35 + Math.cos(tossAng) * 165;
+        it.vy = (this.vy || 0) * 0.35 + Math.sin(tossAng) * 165;
+        it.landAngle = this.angle + handSign * 1.1;
+        it.magWeaponKey = wKey;
+        it.magRounds = droppedRounds;
+        it.magCap = ws.magCap;
+        it.owner = this;
+        it.ignoreOwnerUntil = (game.gameTime || 0) + MAG_TUNING.DROP_IGNORE_OWNER_S;
+        it.leftOwnerRadius = false;
+        it.pvpExpires = true;
+        game.items.push(it);
     }
 
     // FPV OPERATOR MODE edge case (spec section 9.2): if the player's body
@@ -24039,6 +25050,7 @@ class Player extends Entity {
     // applyDeadPlayerHardcorePenalties()/triggerRoundWinEffects(), which
     // this must not interfere with).
     onDeath() {
+        this.interruptReload('death');
         cancelGLCharge(this);
         cancelThumperCharge(this);
         this.wiring = null; // Data Link: a dead player drops the spool latch
@@ -24135,7 +25147,19 @@ class Player extends Entity {
                     : ['medpack', 'grenade', 'redbull'][Math.floor(Math.random() * 3)];
                 const gear = game.spawnItem(this.x + MathUtils.rand(-15, 15), this.y + MathUtils.rand(-15, 15), gearType);
                 gear.pvpExpires = true;
+                if (WEAPON_ITEM_FORMS.indexOf(curKey) !== -1) {
+                    gear.savedMagRounds = this.getTotalWeaponAmmo(curKey);
+                }
                 game.items.push(gear);
+            } else if (game.isTwoPlayer && game.friendlyFireMode !== 'pvp' && !game.isTestingMode) {
+                const curKey = (this.inventory && this.inventory[this.weaponIdx])
+                    ? this.inventory[this.weaponIdx].name.toLowerCase() : null;
+                const WEAPON_ITEM_FORMS = ['shotgun', 'smg', 'lmg', 'sniper', 'm1a', 'abakan', 'thumper', 'mauler', 'judge'];
+                if (WEAPON_ITEM_FORMS.indexOf(curKey) !== -1) {
+                    const gear = game.spawnItem(this.x + MathUtils.rand(-15, 15), this.y + MathUtils.rand(-15, 15), curKey);
+                    gear.savedMagRounds = this.getTotalWeaponAmmo(curKey);
+                    game.items.push(gear);
+                }
             }
         }
     }
@@ -34513,6 +35537,11 @@ class RobotDog extends Entity {
             // newcomer pays clearly better (no dithering between drops).
             const itemWorth = (it) => {
                 if (!it) return 0;
+                if (it.type === 'mag_drop') {
+                    if (game.gameTime < (it.ignoreOwnerUntil || 0)) return 0;
+                    if (!owner.ammo || !owner.maxAmmo || !it.magWeaponKey || (owner.ammo[it.magWeaponKey] || 0) >= (owner.maxAmmo[it.magWeaponKey] || 0)) return 0;
+                    return 40;
+                }
                 if (it.type === 'money') return Math.min(60, it.cashValue || 18);
                 if (typeof Weapons !== 'undefined' && Weapons[it.type]) return 100;
                 if (it.type === 'perk_case') return 95;
@@ -39892,6 +40921,13 @@ class Item {
         this.shieldHp = 0;
         this.shieldArcHalf = 0;
         this.shieldColor = '';
+        this.magWeaponKey = null;
+        this.magRounds = 0;
+        this.magCap = 0;
+        this.owner = null;
+        this.ignoreOwnerUntil = 0;
+        this.leftOwnerRadius = false;
+        this.savedMagRounds = 0;
     }
 
     // Waves elapsed since this item dropped. 0 = dropped this wave.
@@ -39910,6 +40946,11 @@ class Item {
     // fixtures, not run loot, so they never fade.
     fadeAlpha() {
         if (this.isSandbox) return 1;
+        if (this.type === 'mag_drop') {
+            if (this.waveAge() >= 1) return 0;
+            let tL = (typeof MAG_TUNING !== 'undefined' ? MAG_TUNING.DROP_EXPIRE_S : 60) - this.pvpWallAge;
+            return tL < 10 ? 0.4 : 1;
+        }
         // Shield drops read as urgent loot: full opacity until the last
         // 10 seconds of their 45s wall-clock fallback, then dim while the
         // next-wave cull (see isExpired) waits in wave modes.
@@ -39936,6 +40977,9 @@ class Item {
     // culled from the ground entirely.
     isExpired() {
         if (this.isSandbox) return false;
+        if (this.type === 'mag_drop') {
+            return this.waveAge() >= 1 || this.pvpWallAge >= (typeof MAG_TUNING !== 'undefined' ? MAG_TUNING.DROP_EXPIRE_S : 60);
+        }
         // Shield drops are scarce by design: gone at the NEXT wave, with a
         // 45s wall-clock fallback so they still vanish on no-wave maps.
         if (this.isShieldDrop()) return this.waveAge() >= 1 || this.pvpWallAge >= 45;
@@ -39984,6 +41028,15 @@ class Item {
                 } else if (this.type === 'armor') {
                     // Vest only if armor isn't already at ceiling.
                     canCollect = (p.armor < (p.maxArmor || 50));
+                } else if (this.type === 'mag_drop') {
+                    if (p === this.owner && Math.hypot(p.x - this.x, p.y - this.y) > (typeof MAG_TUNING !== 'undefined' ? MAG_TUNING.DROP_STEP_AWAY_PX : 42)) {
+                        this.leftOwnerRadius = true;
+                    }
+                    const ownerLocked = (p === this.owner && (!this.leftOwnerRadius || (typeof game !== 'undefined' && game && game.gameTime < (this.ignoreOwnerUntil || 0))));
+                    const pvpBlocked = (typeof game !== 'undefined' && game && game.friendlyFireMode === 'pvp' && this.owner && p !== this.owner);
+                    if (!ownerLocked && !pvpBlocked && this.magWeaponKey && p.ammo && p.maxAmmo) {
+                        canCollect = (p.ammo[this.magWeaponKey] < p.maxAmmo[this.magWeaponKey]);
+                    }
                 } else {
                     let wKey = this.type;
                     if (p.inventory && p.ammo && p.maxAmmo) {
@@ -40020,8 +41073,25 @@ class Item {
         }
         this.vx *= Math.pow(0.01, dt);
         this.vy *= Math.pow(0.01, dt);
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
+        const nextX = this.x + this.vx * dt;
+        const nextY = this.y + this.vy * dt;
+        if (this.type === 'mag_drop' && (Math.abs(this.vx) + Math.abs(this.vy) > 5) && typeof game !== 'undefined' && game && game.map && game.map.getWallsNear) {
+            const nw = game.map.getWallsNear(nextX, nextY);
+            let blocked = false;
+            for (let wi = 0; wi < nw.length; wi++) {
+                if (MathUtils.circleIntersectAABB(nextX, nextY, 4, nw[wi]).hit) { blocked = true; break; }
+            }
+            if (blocked) {
+                this.vx *= -0.25;
+                this.vy *= -0.25;
+            } else {
+                this.x = nextX;
+                this.y = nextY;
+            }
+        } else {
+            this.x = nextX;
+            this.y = nextY;
+        }
     }
     draw(ctx, cam) {
         let fadeAlpha = this.fadeAlpha();
@@ -40055,6 +41125,7 @@ class Item {
         else if (this.type === 'medpack') _glowCol = ITEM_ICON_COLORS.medpack;
         else if (this.type === 'redbull') _glowCol = ITEM_ICON_COLORS.boost;
         else if (this.type === 'armor') _glowCol = '#26a69a';
+        else if (this.type === 'mag_drop') _glowCol = '#ffd700';
         else if (this.type === 'shield') _glowCol = ((this.shieldColor || '#cfd8dc') === '#37474f') ? '#00e5ff' : '#eceff1';
         else if (typeof Weapons !== 'undefined' && Weapons[this.type]) _glowCol = Weapons[this.type].color;
         try {
@@ -40163,6 +41234,15 @@ class Item {
             // Teal armor vest -- HUD-icon silhouette (SVGIcons.armor), the
             // same strokeWorldIcon path the rest of the loot uses.
             strokeWorldIcon(ctx, 'armor', '#26a69a', 1.15);
+        } else if (this.type === 'mag_drop') {
+            ctx.rotate(this.landAngle || 0);
+            ctx.fillStyle = '#37474f';
+            ctx.fillRect(-5, -3, 10, 6);
+            ctx.strokeStyle = '#90a4ae';
+            ctx.lineWidth = 1.1;
+            ctx.strokeRect(-5, -3, 10, 6);
+            ctx.fillStyle = '#ffd700';
+            ctx.fillRect(3, -2.5, 2.2, 5);
         } else {
             let col = Weapons[this.type].color;
             // The bottom weapon carousel's silhouette, in that weapon's own
@@ -41057,7 +42137,13 @@ const ARMORY_UPGRADES = [
     { key: 'topSecretChronorall', name: 'TOP SECRET: CHRONORALL', maxLevel: 1,
       costPerLevel: [10],
       desc: 'Declassifies CHRONORALL in the Shop (Top Secret Tech): a banned time-dilation pill (left carousel). Your time drops to 60% while the world drops to 40% for 60s (15s ramp, hold, taper). Stacks multiplicatively — carry 3. $250 per dose. The other player slows with the world.',
-      levelDescs: ['Chronorall available in the Shop (Top Secret Tech)'] }
+      levelDescs: ['Chronorall available in the Shop (Top Secret Tech)'] },
+    { key: 'tacticalVest', name: 'TACTICAL RIG WEBBING', maxLevel: 2,
+      costPerLevel: [90, 180],
+      desc: 'Adds +1 physical magazine slot per level on your tactical vest for all box-fed weapons (SMG, LMG, Sniper, M1A, Abakan), and expands total ammo capacity by one full magazine per level.' },
+    { key: 'ammoPouch', name: 'EXPANDED DUMP POUCH', maxLevel: 3,
+      costPerLevel: [60, 120, 200],
+      desc: 'Expands loose ammo pouch capacity by +15% of base weapon reserve per level across all firearms and shell-tube launchers.' }
 ];
 
 // SOLDIER CONDITIONING ('soldierConditioning' armory track) feel table.
@@ -48274,8 +49360,12 @@ class Game {
                 if (this.map.floorSeparated(p2.x, p2.y, it.x, it.y)) continue;
                 const d = Math.hypot(it.x - p2.x, it.y - p2.y);
                 if (d > 600) continue;
+                if (it.type === 'mag_drop') {
+                    if (now < (it.ignoreOwnerUntil || 0) || !it.magWeaponKey || !p2.ammo || !p2.maxAmmo || (p2.ammo[it.magWeaponKey] || 0) >= (p2.maxAmmo[it.magWeaponKey] || 0)) continue;
+                }
                 let w = 20;
-                if (it.type === 'money') w = Math.min(60, it.cashValue || 18);
+                if (it.type === 'mag_drop') w = 45;
+                else if (it.type === 'money') w = Math.min(60, it.cashValue || 18);
                 else if (typeof Weapons !== 'undefined' && Weapons[it.type]) w = 100;
                 else if (it.type === 'perk_case') w = 95;
                 else if (it.type === 'intel_cache' || it.type === 'intel') w = 85;
@@ -50639,6 +51729,9 @@ class Game {
                     // drill flag below, no pickup spam.
                     this._fPress(this.player);
                 }
+                if (key === 'r' && !e.repeat) {
+                    this.player.onReloadInput(this);
+                }
                 if (key === 'p' || e.key === 'Escape') {
                     this.togglePause();
                 }
@@ -51188,6 +52281,17 @@ class Game {
                     }
                 }
 
+                // Circle / Xbox B (btn 1) or D-pad Right (btn 15) — RELOAD (edge-tracked for double-tap speed drop)
+                {
+                    this._gpReloadPrev = this._gpReloadPrev || {};
+                    const _rk = playerInstance.isPlayer2 ? 'p2' : 'p1';
+                    const _rDown = !!(gp.buttons[1] && gp.buttons[1].pressed) || !!(gp.buttons[15] && gp.buttons[15].pressed);
+                    if (_rDown && !this._gpReloadPrev[_rk]) {
+                        playerInstance.onReloadInput(this);
+                    }
+                    this._gpReloadPrev[_rk] = _rDown;
+                }
+
                 // Square / Xbox X — USE (tap = mode cycle on mode-bearing
                 // own nodes, hold = retrieve). Edge-tracked OUTSIDE the
                 // cooldown gate (a gate would swallow press/release edges);
@@ -51199,6 +52303,9 @@ class Game {
                     if (_down && !this._gpUsePrev[_uk]) {
                         if (playerInstance.activeDrone && playerInstance.activeDrone.isPiloted && !playerInstance.activeDrone.dead) {
                             interactPickUpItem(playerInstance);
+                        } else if (!this._hasInteractOrDrillTarget(playerInstance)) {
+                            playerInstance.onReloadInput(this);
+                            this._fPress(playerInstance);
                         } else {
                             this._fPress(playerInstance);
                         }
@@ -51270,6 +52377,41 @@ class Game {
         }
 
         return true;
+    }
+
+    _hasInteractOrDrillTarget(player) {
+        if (!player || player.dead) return false;
+        const interactDist = 45;
+        if (player.weapon && player.weapon.name === 'RepairGun') return true;
+        if (player.activeDrone && !player.activeDrone.dead && !player.activeDrone.isPiloted &&
+            Math.hypot(player.activeDrone.x - player.x, player.activeDrone.y - player.y) < interactDist) return true;
+        if (this.barriers) {
+            for (let i = 0; i < this.barriers.length; i++) {
+                const bar = this.barriers[i];
+                if (bar.side === 'enemy' || (this.friendlyFireMode === 'pvp' && bar.owner !== player)) continue;
+                const col = MathUtils.closestPointOnSegment(player.x, player.y, bar.ax, bar.ay, bar.bx, bar.by);
+                if (Math.hypot(col.x - player.x, col.y - player.y) < interactDist) return true;
+            }
+        }
+        const lists = [this.turrets, this.fieldGens, this.riftStations, this.dogs, this.securityCameras];
+        for (let li = 0; li < lists.length; li++) {
+            const arr = lists[li];
+            if (!arr) continue;
+            for (let i = 0; i < arr.length; i++) {
+                const ent = arr[i];
+                if (ent && ent.owner === player && Math.hypot(ent.x - player.x, ent.y - player.y) < interactDist) return true;
+            }
+        }
+        if (this.map && this.map.getWallsNear) {
+            const nearW = this.map.getWallsNear(player.x, player.y);
+            const reach = player.r + 46;
+            for (let i = 0; i < nearW.length; i++) {
+                const w = nearW[i];
+                if (!w.destructible || w.hp <= 0) continue;
+                if (MathUtils.circleIntersectAABB(player.x, player.y, reach, w).hit) return true;
+            }
+        }
+        return false;
     }
 
     // item id -> shop button base element id (no -p1/-p2 suffix). Shared by
@@ -60921,6 +62063,26 @@ class Game {
             }
             const extLvl = (oc && oc.extMags && oc.extMags[key]) || 0;
             p.maxAmmo[key] = Math.round(base * (1 + extLvl * 0.25));
+            if (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.SPECS && MAG_TUNING.SPECS[key] && MAG_TUNING.SPECS[key].feed !== 'exempt') {
+                const sp = MAG_TUNING.SPECS[key];
+                const vestLvl = Math.min(2, Math.max(0, (MA.tacticalVest || 0) | 0));
+                const pouchLvl = Math.min(3, Math.max(0, (MA.ammoPouch || 0) | 0));
+                const magCap = Math.max(1, Math.round(sp.cap * (1 + extLvl * 0.25)));
+                const maxSlots = sp.feed === 'box' ? Math.min(MAG_TUNING.MAX_VEST_SLOTS, sp.slots + vestLvl) : 1;
+                if (vestLvl > 0 || pouchLvl > 0) {
+                    const vestBonus = sp.feed === 'box' ? vestLvl * magCap : 0;
+                    const pouchBonus = Math.round(base * 0.15 * pouchLvl);
+                    p.maxAmmo[key] += vestBonus + pouchBonus;
+                }
+                if (p.magState && p.magState[key]) {
+                    const ws = p.magState[key];
+                    ws.magCap = magCap;
+                    ws.maxSlots = maxSlots;
+                    for (let mi = 0; mi < 6; mi++) ws.mags[mi].cap = magCap;
+                    const totalMagCap = sp.feed === 'box' ? maxSlots * magCap : magCap;
+                    ws.pouchCap = Math.max(0, p.maxAmmo[key] - totalMagCap);
+                }
+            }
         }
     }
 
@@ -62292,7 +63454,7 @@ class Game {
                 p.droneUpgraded = true;     // Bomber payload (3 bombs) granted from wave 1, see bombsDropped checks throughout Game
                 p.inventory = [{ ...Weapons.pistol }];
                 p.weaponIdx = 0;
-                p.ammo = { shotgun: 0, smg: 0, lmg: 0, sniper: 0, m1a: 0 };
+                p._resetAmmoAndMags();
             };
             setupOperatorPlayer(this.player);
             setupOperatorPlayer(this.player2);
@@ -62789,6 +63951,19 @@ class Game {
                     `INSURANCE +$${this.player2._insurancePayout}`, '#39ff14', 2.0
                 ));
                 this.player2._insurancePayout = 0;
+            }
+            if (this.player && this.player.consolidateMags) this.player.consolidateMags();
+            if (this.isTwoPlayer && this.player2 && this.player2.consolidateMags) this.player2.consolidateMags();
+            if (this.items) {
+                for (let i = this.items.length - 1; i >= 0; i--) {
+                    const it = this.items[i];
+                    if (it && it.type === 'mag_drop') {
+                        this.items[i] = this.items[this.items.length - 1];
+                        this.items.pop();
+                        if (!this.inactiveItems) this.inactiveItems = [];
+                        this.inactiveItems.push(it);
+                    }
+                }
             }
         }
         
@@ -65053,14 +66228,58 @@ class Game {
                     (Math.random() - 0.5) * 60, -80, 240, true));
                 audio.playPickup('weapon');
             }
+        } else if (it.type === 'mag_drop') {
+            const wk = it.magWeaponKey;
+            const dropped = Math.max(0, Math.floor(it.magRounds || 0));
+            if (wk && dropped > 0 && p.ammo && p.maxAmmo && p.ammo[wk] < p.maxAmmo[wk]) {
+                const ws = p.magState && p.magState[wk];
+                const curTotal = p.getTotalWeaponAmmo ? p.getTotalWeaponAmmo(wk) : (p.ammo[wk] || 0);
+                const add = Math.max(0, Math.min((p.maxAmmo[wk] || 0) - curTotal, dropped));
+                if (add > 0) {
+                    if (ws && ws.feed === 'box') {
+                        // Seat the recovered physical magazine into an empty spare slot first:
+                        let placed = false;
+                        for (let mi = 0; mi < ws.maxSlots; mi++) {
+                            if (mi === ws.activeIdx && ws.wellState !== 'empty_well') continue;
+                            if (ws.mags[mi].rounds === 0) {
+                                const inMag = Math.min(ws.magCap, add);
+                                ws.mags[mi].rounds = inMag;
+                                if (add > inMag) ws.loose += (add - inMag);
+                                p._syncWeaponAmmo(wk);
+                                placed = true;
+                                break;
+                            }
+                        }
+                        if (!placed) p.grantWeaponAmmo(wk, add, true);
+                    } else {
+                        p.grantWeaponAmmo(wk, add, true);
+                    }
+                    if (typeof audio !== 'undefined' && audio && audio.playReload) {
+                        audio.playReload(wk, 'pickup', p.x, p.y, p);
+                    } else if (audio) {
+                        audio.playPickup('weapon');
+                    }
+                    this.floatingTexts.push(this.spawnFloatingText(
+                        p.x, p.y - 15, `+MAG (${add})`, '#ffd700', 1.2,
+                        (Math.random() - 0.5) * 50, -70, 240, true
+                    ));
+                    pickedUp = true;
+                }
+            }
         } else {
             let wKey = it.type;
             let hasWeapon = p.inventory.some(w => w.name.toLowerCase() === wKey);
             if (!hasWeapon || p.ammo[wKey] < p.maxAmmo[wKey]) {
                 p.addWeapon(wKey);
+                let refill = wKey === 'shotgun' ? 12 : wKey === 'sniper' ? 5 : wKey === 'm1a' ? 20 : wKey === 'abakan' ? 48 : wKey === 'thumper' ? 8 : wKey === 'mauler' ? 10 : wKey === 'judge' ? 8 : 30;
+                if ((it.savedMagRounds || 0) > 0) {
+                    const startGrant = hasWeapon ? refill : (wKey === 'shotgun' ? 8 : wKey === 'smg' ? 30 : wKey === 'lmg' ? 60 : wKey === 'sniper' ? 4 : wKey === 'm1a' ? 20 : wKey === 'abakan' ? 36 : wKey === 'thumper' ? 6 : wKey === 'mauler' ? 8 : wKey === 'judge' ? 6 : 0);
+                    const extra = Math.max(0, (it.savedMagRounds || 0) - startGrant);
+                    if (extra > 0) p.grantWeaponAmmo(wKey, extra, true);
+                    refill = Math.max(refill, it.savedMagRounds);
+                }
                 audio.playPickup('weapon');
                 if (hasWeapon) {
-                    let refill = wKey === 'shotgun' ? 12 : wKey === 'sniper' ? 5 : wKey === 'm1a' ? 20 : wKey === 'abakan' ? 48 : wKey === 'thumper' ? 8 : wKey === 'mauler' ? 10 : wKey === 'judge' ? 8 : 30;
                     this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 15, "+" + refill + " AMMO", Weapons[wKey].color, 1.2));
                 } else {
                     this.floatingTexts.push(this.spawnFloatingText(p.x, p.y - 15, wKey.toUpperCase() + " ACQUIRED!", Weapons[wKey].color, 1.5));
@@ -66328,6 +67547,7 @@ class Game {
             // Each purchase still grants the capacity it just added as ammo.
             const granted = Math.max(0, player.maxAmmo[weaponKey] - prevMax);
             player.ammo[weaponKey] = Math.min(player.maxAmmo[weaponKey], player.ammo[weaponKey] + granted);
+            if (player.consolidateMags) player.consolidateMags();
             
             if (audio) audio.playPickup('weapon');
             this.floatingTexts.push(this.spawnFloatingText(
@@ -68038,6 +69258,13 @@ class Game {
                 // street. Cheap belt-and-braces so loot always has to be
                 // climbed for.
                 if (this.map && this.map.floorSeparated(p.x, p.y, it.x, it.y)) continue;
+                if (it.type === 'mag_drop') {
+                    if (p === it.owner && Math.hypot(p.x - it.x, p.y - it.y) > (typeof MAG_TUNING !== 'undefined' ? MAG_TUNING.DROP_STEP_AWAY_PX : 42)) {
+                        it.leftOwnerRadius = true;
+                    }
+                    if (p === it.owner && (!it.leftOwnerRadius || this.gameTime < (it.ignoreOwnerUntil || 0))) continue;
+                    if (this.friendlyFireMode === 'pvp' && it.owner && p !== it.owner) continue;
+                }
                 let dx = p.x - it.x;
                 let dy = p.y - it.y;
                 let radSum = p.r + it.r;
@@ -68332,8 +69559,7 @@ class Game {
             
             p.inventory = [{ ...Weapons.pistol }];
             p.weaponIdx = 0;
-            p.ammo = { shotgun: 0, smg: 0, lmg: 0, sniper: 0, m1a: 0 };
-            p.ammoTypes = { shotgun: 'buck', smg: 'standard', lmg: 'standard', sniper: 'standard', m1a: 'standard' };
+            p._resetAmmoAndMags();
 
             // RE-APPLY META STATS: restores correct maxHp and maxArmor from Armory upgrades.
             this._applyMetaStatsToPlayer(p);
@@ -68904,7 +70130,7 @@ class Game {
                     if (!hasGun && !maxed) {
                         btn.classList.add('stashable');
                         if (btn.innerText && btn.innerText.indexOf('STASHABLE') < 0) btn.innerText += ' · STASHABLE';
-                        const st = 'NO ' + String(gunName).toUpperCase() + ' YET — STASHABLE: SAME SHARED POOL, TYPE FLIPS ON PICKUP' + rebateText;
+                        const st = 'NO ' + String(gunName).toUpperCase() + ' YET — STASHED IN POUCH — PACKS MAGS ON PICKUP' + rebateText;
                         btn.title = st;
                         reasons[key] = { kind: 'stash', text: st };
                         if (p.cash < eff) { // broke AND stashable: short wins, keep the dash
@@ -69055,6 +70281,19 @@ class Game {
         }
         if (this.player) this.player.flashOpacity = 0;
         if (this.player2) this.player2.flashOpacity = 0;
+        if (this.player && this.player.consolidateMags) this.player.consolidateMags();
+        if (this.isTwoPlayer && this.player2 && this.player2.consolidateMags) this.player2.consolidateMags();
+        if (this.items) {
+            for (let i = this.items.length - 1; i >= 0; i--) {
+                const it = this.items[i];
+                if (it && it.type === 'mag_drop') {
+                    this.items[i] = this.items[this.items.length - 1];
+                    this.items.pop();
+                    if (!this.inactiveItems) this.inactiveItems = [];
+                    this.inactiveItems.push(it);
+                }
+            }
+        }
 
         // JULY item 11: evac button reflects current run state (called /
         // available / unsupported) every time the shop opens.
@@ -69912,6 +71151,7 @@ class Game {
         } else if (type === 'ammo_judge_ap' && p.cash >= 95 && p.ammo.judge < p.maxAmmo.judge) {
             p.cash -= 95; p.ammo.judge = Math.min(p.maxAmmo.judge, p.ammo.judge + 6); p.ammoTypes.judge = 'ap';
         }
+        if (p && p.consolidateMags) p.consolidateMags();
 
         // PHASE 4 (kit shop bias): requisition rebate. If a purchase
         // happened (cash went down) and the buyer's kit covers this
@@ -70478,6 +71718,12 @@ class Game {
             { to: 26, up: (sd) => {
                 if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
                 if (typeof sd.metaUpgrades.topSecretChronorall !== 'number') sd.metaUpgrades.topSecretChronorall = 0;
+            }},
+            // v27 (MAGS + RELOAD): tacticalVest + ammoPouch meta tracks. Additive only.
+            { to: 27, up: (sd) => {
+                if (!sd.metaUpgrades || typeof sd.metaUpgrades !== 'object') sd.metaUpgrades = {};
+                if (typeof sd.metaUpgrades.tacticalVest !== 'number') sd.metaUpgrades.tacticalVest = 0;
+                if (typeof sd.metaUpgrades.ammoPouch !== 'number') sd.metaUpgrades.ammoPouch = 0;
             }}
         ];
         const runMigrations = (sd) => {
@@ -70544,6 +71790,9 @@ class Game {
         if (MA.magJudge === undefined) MA.magJudge = 0;
         // v23: SOLDIER CONDITIONING mega-track (mirrors the v23 migration).
         if (MA.soldierConditioning === undefined) MA.soldierConditioning = 0;
+        // v27: MAGS + RELOAD meta tracks (mirrors the v27 migration).
+        if (MA.tacticalVest === undefined) MA.tacticalVest = 0;
+        if (MA.ammoPouch === undefined) MA.ammoPouch = 0;
         if (typeof this.saveData.buildTier !== 'string') this.saveData.buildTier = '';
         if (typeof this.saveData.hasSeenArmoryTutorial !== 'boolean') this.saveData.hasSeenArmoryTutorial = false;
         if (typeof this.saveData.touchFireHintDone !== 'boolean') this.saveData.touchFireHintDone = false;
@@ -71098,6 +72347,17 @@ class Game {
                 const c = _base + level * _per;
                 const n = _base + (level + 1) * _per;
                 return formatStat(`${c} ${_lbl}`, `${n} ${_lbl}`);
+            }
+            case 'tacticalVest': {
+                const _smgSlots = (typeof MAG_TUNING !== 'undefined' && MAG_TUNING.SPECS && MAG_TUNING.SPECS.smg) ? MAG_TUNING.SPECS.smg.slots : 4;
+                const c = `+${level} mag slots (SMG ${_smgSlots + level} mags)`;
+                const n = `+${level + 1} mag slots (SMG ${_smgSlots + level + 1} mags)`;
+                return formatStat(c, n);
+            }
+            case 'ammoPouch': {
+                const c = `+${level * 15}% loose pouch`;
+                const n = `+${(level + 1) * 15}% loose pouch`;
+                return formatStat(c, n);
             }
             default:
                 return '';
@@ -72964,14 +74224,9 @@ class Game {
         if (GG.stock > 0) { G.rect(GG.recX - GG.stock, baseY - 1, GG.stock, 2); G.fill({ color: 0x8a8f98 }); }
         G.rect(GG.recX, baseY - GG.barrelH / 2, GG.barrelLen, GG.barrelH); G.fill({ color: 0xffffff });
         G.rect(GG.recX + 2, baseY - GG.recH / 2, GG.recLen, GG.recH); G.fill({ color: p.weapon.color });
-        // HANDS: full rings, not partial arcs. arc() appends to the live poly
-        // (vault brown-line precedent) and moveTo alone did not hold the pen
-        // in this baked rig (1 line -> 2 lines on device). circle() is the
-        // proven-safe primitive here (shockwaves/rings/marks use it bare with
-        // no corner connectors). Visual delta at 3px: C -> O, keeps color.
+        // HANDS: rear trigger hand stays in gunStatic; front support hand is drawn in R.armsGfx
+        // so it sits at the exact foregrip at idle and travels with the support arm during reload.
         G.circle(GG.grip, 7 * side, 3.1); G.stroke({ width: 2, color: 0xa855f7 });
-        if (GG.fore !== null) { G.circle(GG.fore, foreY, 2.7); G.stroke({ width: 2, color: 0xa855f7 }); }
-        else { G.circle(GG.grip + 3, 7 * side, 2.7); G.stroke({ width: 2, color: 0xa855f7 }); }
     }
 
     drawPixiPlayer(p, cam, isPlayer2) {
@@ -73126,12 +74381,104 @@ class Game {
             // F2 pistol origin: canvas moveTo(0,-4) when fore==null (pistol),
             // (0,-6) otherwise — twin had -6 always (2px support-hand error).
             const _ssx = 0, _ssy = ((GG.fore == null) ? -4 : -6) * _handMixP;
-            const _hex = (GG.fore !== null) ? GG.fore + sh : GG.grip + 2 + sh;
-            const _hey = (GG.fore !== null) ? foreY * _handMixP - 3 * _handMixP : 5 * _handMixP;
-            const _midx = (_ssx + _hex) * 0.5 - _pBack * 0.7;
-            const _midy = (_ssy + _hey) * 0.5 - _pSpread * _handMixP * 0.8;
+            const _restX = (GG.fore !== null) ? GG.fore + sh : GG.grip + 2 + sh;
+            const _restY = (GG.fore !== null) ? foreY * _handMixP - 3 * _handMixP : 5 * _handMixP;
+            let _hex = _restX, _hey = _restY;
+            let _rlActP = false, _rlCarryMagP = false, _rlCarryShellP = false, _rlProgP = 0;
+            const _rsP = p.reloadState;
+            const _tossTP = p._magTossFlashT || 0;
+            if ((_rsP && _rsP.phase !== 'idle' && _rsP.dur > 0) || _tossTP > 0) {
+                _rlActP = true;
+                _rlProgP = (_rsP && _rsP.dur > 0) ? (1 - Math.max(0, Math.min(1, _rsP.t / _rsP.dur))) : 0;
+                const _wellX = GG.recX + 4 + sh, _wellY = (baseY - 1) * _handMixP;
+                const _vestX = 1, _vestY = -2 * _handMixP;
+                const _tossX = GG.recX + 2, _tossY = -10 * _handMixP;
+                const _boltX = GG.recX + 1 + sh, _boltY = (baseY - 2.5) * _handMixP;
+                if (_tossTP > 0) {
+                    const _tk = 1 - Math.min(1, _tossTP / 0.22);
+                    if (_tk < 0.5) {
+                        const _u = _tk / 0.5;
+                        _hex = _wellX + (_tossX - _wellX) * _u;
+                        _hey = _wellY + (_tossY - _wellY) * _u;
+                    } else {
+                        const _u = (_tk - 0.5) / 0.5;
+                        _hex = _tossX + (_vestX - _tossX) * _u;
+                        _hey = _tossY + (_vestY - _tossY) * _u;
+                    }
+                } else if (_rsP.phase === 'out') {
+                    if (_rlProgP < 0.35) {
+                        const _u = _rlProgP / 0.35;
+                        _hex = _restX + (_wellX - _restX) * _u;
+                        _hey = _restY + (_wellY - _restY) * _u;
+                    } else {
+                        const _u = (_rlProgP - 0.35) / 0.65;
+                        _hex = _wellX + (_vestX - _wellX) * _u;
+                        _hey = _wellY + (_vestY - _wellY) * _u;
+                        _rlCarryMagP = true;
+                    }
+                } else if (_rsP.phase === 'in') {
+                    if (_rlProgP < 0.80) {
+                        const _u = _rlProgP / 0.80;
+                        _hex = _vestX + (_wellX - _vestX) * _u;
+                        _hey = _vestY + (_wellY - _vestY) * _u;
+                        _rlCarryMagP = true;
+                    } else {
+                        _hex = _wellX;
+                        _hey = _wellY + 1.2 * _handMixP;
+                    }
+                } else if (_rsP.phase === 'charge') {
+                    if (_rlProgP < 0.55) {
+                        const _u = _rlProgP / 0.55;
+                        _hex = _wellX + ((_boltX - 3) - _wellX) * _u;
+                        _hey = _boltY;
+                    } else {
+                        const _u = (_rlProgP - 0.55) / 0.45;
+                        _hex = (_boltX - 3) + (_restX - (_boltX - 3)) * _u;
+                        _hey = _boltY + (_restY - _boltY) * _u;
+                    }
+                } else if (_rsP.phase === 'shell') {
+                    if (_rlProgP < 0.45) {
+                        const _u = _rlProgP / 0.45;
+                        _hex = _wellX + ((_vestX + 1) - _wellX) * _u;
+                        _hey = _wellY + (0 - _wellY) * _u;
+                    } else {
+                        const _u = (_rlProgP - 0.45) / 0.55;
+                        _hex = (_vestX + 1) + (_wellX - (_vestX + 1)) * _u;
+                        _hey = 0 + (_wellY - 0) * _u;
+                        _rlCarryShellP = true;
+                    }
+                }
+            }
+            let _midx, _midy;
+            if (!_rlActP) {
+                _midx = (_ssx + _hex) * 0.5 - _pBack * 0.7;
+                _midy = (_ssy + _hey) * 0.5 - _pSpread * _handMixP * 0.8;
+            } else {
+                const _dx = _hex - _ssx, _dy = _hey - _ssy;
+                const _d = Math.max(0.01, Math.hypot(_dx, _dy));
+                const _half = Math.min(7.2, _d * 0.5);
+                const _bend = Math.sqrt(Math.max(0, 7.5 * 7.5 - _half * _half)) + _pSpread * 0.6 + ((_rsP && _rsP.fumbleT > 0) ? 3.2 : 0);
+                const _nx = (_dy / _d) * _handMixP;
+                _midx = (_ssx + _hex) * 0.5 - Math.abs(_nx) * _bend * 0.6 - _pBack * 0.7;
+                _midy = (_ssy + _hey) * 0.5 - _bend * 0.75 * _handMixP;
+            }
             A.moveTo(_ssx, _ssy); A.lineTo(_midx, _midy); A.lineTo(_hex, _hey);
             A.stroke({ width: 3, color: p.color, join: 'round', cap: 'round' });
+            if (_rlCarryMagP) {
+                A.rect(_hex - 2, _hey - 1.1, 4, 2.2); A.fill({ color: 0x7d6f1a });
+                A.rect(_hex + 1, _hey - 1.1, 1.2, 2.2); A.fill({ color: 0xffd700 });
+            } else if (_rlCarryShellP) {
+                A.rect(_hex - 1.6, _hey - 0.9, 3.2, 1.8); A.fill({ color: p.weapon.color });
+            }
+            // Front support-hand purple ring (at exact idle foregrip when !_rlActP, or following _hex/_hey during reload):
+            const _fHx = _rlActP ? _hex : ((GG.fore !== null ? GG.fore : GG.grip + 3) + sh);
+            const _fHy = _rlActP ? _hey : ((GG.fore !== null ? foreY * _bakeSideP : 7 * _bakeSideP) + _handDipP + _slideOffP);
+            A.circle(_fHx, _fHy, 2.7); A.stroke({ width: 2, color: 0xa855f7 });
+            if (_rsP && _rsP.phase !== 'idle' && _rsP.dur > 0) {
+                const _bCol = _rsP.fumbleT > 0 ? 0xff2a5f : (_rsP.speed ? 0x00e5ff : 0xffb700);
+                A.rect(GG.recX + sh, -13, 14, 2.4); A.fill({ color: 0x000000, alpha: 0.65 });
+                A.rect(GG.recX + sh, -13, 14 * _rlProgP, 2.4); A.fill({ color: _bCol });
+            }
         }
         // Wife dress + flower + fish (wifeMode only; vacuous in parity).
         R.dressGfx.clear(); R.flowerGfx.clear();
@@ -74967,6 +76314,14 @@ class Game {
             x.quadraticCurveTo(9, 9, 0, 12); x.quadraticCurveTo(-9, 9, -9, 3);
             x.lineTo(-9, -7); x.closePath(); x.fill();
             x.strokeStyle = edge; x.lineWidth = 1.6; x.stroke();
+        } else if (type === 'mag_drop') {
+            x.fillStyle = '#37474f';
+            x.fillRect(-5, -3, 10, 6);
+            x.strokeStyle = '#90a4ae';
+            x.lineWidth = 1.1;
+            x.strokeRect(-5, -3, 10, 6);
+            x.fillStyle = '#ffd700';
+            x.fillRect(3, -2.5, 2.2, 5);
         } else if (!icon(type === 'redbull' ? 'boost' : type,
                 type === 'grenade' ? ITEM_ICON_COLORS.grenade
                 : type === 'medpack' ? ITEM_ICON_COLORS.medpack
@@ -74992,6 +76347,7 @@ class Game {
         if (it.type === 'medpack') return ITEM_ICON_COLORS.medpack;
         if (it.type === 'redbull') return ITEM_ICON_COLORS.boost;
         if (it.type === 'armor') return '#26a69a';
+        if (it.type === 'mag_drop') return '#ffd700';
         if (it.type === 'shield') return (((it.shieldColor || '#cfd8dc') === '#37474f') ? '#00e5ff' : '#eceff1');
         if (typeof Weapons !== 'undefined' && Weapons[it.type]) return Weapons[it.type].color;
         return '#ffb700';
@@ -75061,7 +76417,7 @@ class Game {
         const tex = this._pixiItemTex(key);
         if (H.body.texture !== tex) H.body.texture = tex;
         H.body.visible = true;
-        H.body.rotation = (it.type === 'money' || it.type === 'shield') ? (it.landAngle || 0) : 0;
+        H.body.rotation = (it.type === 'money' || it.type === 'shield' || it.type === 'mag_drop') ? (it.landAngle || 0) : 0;
         let stepA = 1;
         if (it.type === 'shield') {
             const pct = Math.min(1, Math.max(it.shieldHp || 75, 1) / 300);
@@ -84683,6 +86039,13 @@ class TouchController {
             uiLayer.addEventListener('click', (e) => {
                 if (!game || game.state !== 'playing' || game.isPaused || !game.player || game.player.dead) return;
                 
+                // Mag row tap -> reload / double-tap speed drop
+                const magRowTap = e.target.closest('.hud-mag-row');
+                if (magRowTap) {
+                    game.player.onReloadInput(game);
+                    return;
+                }
+
                 // Weapon slots
                 const weaponSlot = e.target.closest('.weapon-slot');
                 if (weaponSlot) {
@@ -84690,8 +86053,11 @@ class TouchController {
                     if (track) {
                         const idx = Array.from(track.children).indexOf(weaponSlot);
                         if (idx !== -1) {
-                            game.player.weaponIdx = idx;
-                            if (typeof audio !== 'undefined' && audio.playPickup) audio.playPickup('weapon');
+                            if (idx === game.player.weaponIdx) {
+                                game.player.onReloadInput(game);
+                            } else {
+                                game.player.switchWeaponTo(idx);
+                            }
                         }
                     }
                     return;
