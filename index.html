@@ -15547,10 +15547,26 @@ class MapGen {
     _spawnCarveDebris(x, y, r, colorMain) {
         if (!game) return;
         audio.playExplosion(0.45, x, y);
+        const wCol = colorMain || (this.biome && this.biome.main) || '#808f9c';
         for (let i = 0; i < 12; i++) {
             let a = Math.random() * Math.PI * 2;
-            let spd = MathUtils.rand(80, 260);
-            game.addParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, colorMain || '#808f9c', 0.5, MathUtils.rand(2, 4));
+            let spd = MathUtils.rand(100, 280);
+            if (i < 5 && game.spawnParticle) {
+                let p = game.spawnParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, wCol, 0.55 + Math.random() * 0.35, MathUtils.rand(4.5, 7.5), false);
+                if (p) {
+                    p.isWallDebris = true;
+                    p.debrisColor = wCol;
+                    p.paintTrail = (i < 2);
+                    p.finalOpacity = 0.65 + Math.random() * 0.2;
+                    p.spin = (Math.random() - 0.5) * 14;
+                    p.angle = Math.random() * Math.PI * 2;
+                    p.h = 8 + Math.random() * 12;
+                    p.vz = 45 + Math.random() * 60;
+                    game.particles.push(p);
+                }
+            } else {
+                game.addParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, wCol, 0.5, MathUtils.rand(2, 4));
+            }
         }
         let circs = [];
         let chunkCount = 4 + Math.floor(Math.random() * 3);
@@ -15559,7 +15575,7 @@ class MapGen {
         }
         // under:true — carve rubble bakes into the deck-underlay layer
         // (below surviving wall stubs), never the above-walls deck layer.
-        game._pushPermanentMark({ type: 'debris', x, y, c: colorMain || '#4a5560', a: 0.9, circs, under: true });
+        game._pushPermanentMark({ type: 'debris', x, y, c: wCol, a: 0.9, circs, under: true });
         game.spawnScorchMark(x, y, Math.min(46, r * 0.9), true);
     }
 
@@ -16325,6 +16341,22 @@ class MapGen {
             return '128, 143, 156';
         }
         return wall.colorRgb || this.biome.rgb;
+    }
+
+    getWallImpactColor(wall) {
+        if (!wall) return (this.biome && this.biome.main) || '#808f9c';
+        if (this.biome && this.biome.splitTheme) {
+            const wx = wall.x + wall.w / 2;
+            if (wx < this.width * 0.35) return '#ff2a5f';
+            if (wx > this.width * 0.65) return '#00e5ff';
+            return '#808f9c';
+        }
+        if (wall.colorMain) return wall.colorMain;
+        if (wall._parapet && this.platforms && this.platforms.length) {
+            const pal = this.platforms[0].pal;
+            if (pal && pal.rim) return pal.rim;
+        }
+        return (this.biome && this.biome.main) || '#808f9c';
     }
 
     _ensureWallRgbGroups() {
@@ -33316,20 +33348,50 @@ class Bullet {
                     // this loop -- no extra spatial query -- and only ever
                     // runs on an actual bullet-wall contact event, not
                     // per-frame per bullet (see damageWallPoint).
-                    if (wall.destructible && game && game.map) {
+                     if (wall.destructible && game && game.map) {
                         game.map.damageWallPoint(wall, this.x, this.y, this.dmg * (this.isAP ? 0.6 : 0.3));
+                    }
+
+                    let hx = prevX, hy = prevY;
+                    if (nx < 0) hx = wall.x - 2;
+                    else if (nx > 0) hx = wall.x + wall.w + 2;
+                    if (ny < 0) hy = wall.y - 2;
+                    else if (ny > 0) hy = wall.y + wall.h + 2;
+                    const wCol = (game && game.map && game.map.getWallImpactColor) ? game.map.getWallImpactColor(wall) : (wall.colorMain || '#808f9c');
+                    const baseMag = MathUtils.clamp(this.dmg / 95, 0.08, 1.0);
+                    const nowT = (game && game.gameTime) || 0;
+                    const coalesced = ((wall._impFxCd || 0) > nowT);
+                    if (!coalesced) wall._impFxCd = nowT + 0.045;
+                    const canStamp = !coalesced && ((wall._pitCd || 0) <= nowT);
+                    if (canStamp) wall._pitCd = nowT + (baseMag >= 0.65 ? 0.06 : 0.12);
+                    const bDir = Math.atan2(this.vy, this.vx);
+                    const wOpts = game ? (game._wallImpOpts || (game._wallImpOpts = {})) : null;
+                    if (wOpts) {
+                        wOpts.nx = nx; wOpts.ny = ny; wOpts.colorMain = wCol;
+                        wOpts.seeThrough = !!wall.seeThrough;
+                        wOpts.coalesced = coalesced; wOpts.canStamp = canStamp;
+                        wOpts.ricochet = false;
                     }
 
                     if (this.isAP) {
                         let thickness = nx !== 0 ? wall.w : wall.h;
                         if (thickness <= 45) { 
+                            if (game && game.spawnImpact) game.spawnImpact(hx, hy, bDir, baseMag * 0.6, 'wall', wOpts);
                             this.x -= nx * (thickness + 6);
                             this.y -= ny * (thickness + 6);
                             this.vx *= 0.65;
                             this.vy *= 0.65;
                             this.dmg *= 0.7;
-                            for(let c=0; c<6; c++) {
-                                game.addParticle(this.x, this.y, -nx * MathUtils.rand(60, 150), -ny * MathUtils.rand(60, 150), '#808f9c', 0.25, 2);
+                            if (game && game.spawnImpact && wOpts) {
+                                let ex = this.x, ey = this.y;
+                                if (-nx < 0) ex = wall.x - 2;
+                                else if (-nx > 0) ex = wall.x + wall.w + 2;
+                                if (-ny < 0) ey = wall.y - 2;
+                                else if (-ny > 0) ey = wall.y + wall.h + 2;
+                                wOpts.nx = -nx; wOpts.ny = -ny;
+                                wOpts.coalesced = false; wOpts.canStamp = true;
+                                wOpts.ricochet = false;
+                                game.spawnImpact(ex, ey, bDir + Math.PI, Math.max(0.45, baseMag * 0.85), 'wall', wOpts);
                             }
                             break;
                         }
@@ -33340,16 +33402,7 @@ class Bullet {
                             this.explode(game, { surface: 'wall', nx, ny });
                         }
                         this.active = false;
-                        // P1 pit: bounce-exhausted terminal hits chip
-                        // indestructible walls (per-wall 0.12s cooldown, 50%
-                        // coin; ghost pass-throughs continued above and never
-                        // reach here).
-                        try {
-                            if (!wall.destructible && game && (wall._pitCd || 0) <= (game.gameTime || 0) && Math.random() < 0.5) {
-                                wall._pitCd = (game.gameTime || 0) + 0.12;
-                                game._pushPermanentMark({ type: 'debris', x: this.x + nx * 3, y: this.y + ny * 3, c: '#0a0c10', a: 0.85, circs: [{ ox: 0, oy: 0, r: 2.5 + Math.random() }] });
-                            }
-                        } catch (e) {}
+                        if (game && game.spawnImpact) game.spawnImpact(hx, hy, bDir, baseMag * 0.85, 'wall', wOpts);
                         break;
                     }
 
@@ -33377,7 +33430,8 @@ class Bullet {
                         this.startY = prevY;
                         this.bounces++;
                         audio.playRicochet(this.x, this.y);
-                        game.addParticle(this.x, this.y, nx*120, ny*120, '#00e5ff', 0.12, 2.5);
+                        if (wOpts) wOpts.ricochet = true;
+                        if (game && game.spawnImpact) game.spawnImpact(hx, hy, bDir, baseMag * 0.55, 'wall', wOpts);
                         if (comboExplosiveRubber) {
                             this.explode(game, { noShrapnel: true });
                             this.hasExploded = false; // allow the next bounce to detonate again (see explode()'s one-shot guard)
@@ -33387,15 +33441,7 @@ class Bullet {
                             this.explode(game, { surface: 'wall', nx, ny });
                         }
                         this.active = false;
-                        game.addParticle(this.x, this.y, -this.vx*0.12, -this.vy*0.12, '#ffffff', 0.15, 2);
-                        // P1 pit: absorbed terminal hits chip indestructible
-                        // walls (same throttle as the bounce-exhausted branch).
-                        try {
-                            if (!wall.destructible && game && (wall._pitCd || 0) <= (game.gameTime || 0) && Math.random() < 0.5) {
-                                wall._pitCd = (game.gameTime || 0) + 0.12;
-                                game._pushPermanentMark({ type: 'debris', x: this.x + nx * 3, y: this.y + ny * 3, c: '#0a0c10', a: 0.85, circs: [{ ox: 0, oy: 0, r: 2.5 + Math.random() }] });
-                            }
-                        } catch (e) {}
+                        if (game && game.spawnImpact) game.spawnImpact(hx, hy, bDir, baseMag, 'wall', wOpts);
                         break;
                     }
                 }
@@ -41607,6 +41653,7 @@ class Particle {
         
         // Corpse debris properties
         this.isCorpseDebris = false;
+        this.isWallDebris = false;
         this.debrisColor = '#fff';
         this.paintTrail = false;
         this.finalOpacity = 0.5;
@@ -41647,17 +41694,18 @@ class Particle {
         if (!(this.h > 0) && Math.abs(this.vx) < 5 && Math.abs(this.vy) < 5) this.stopped = true;
     }
     draw(ctx, cam) {
-        if (this.isCorpseDebris) {
+        if (this.isCorpseDebris || this.isWallDebris) {
             let lifeRatio = this.life / this.maxLife;
             let alpha = this.finalOpacity + (1.0 - this.finalOpacity) * lifeRatio;
             ctx.fillStyle = this.debrisColor;
             ctx.globalAlpha = Math.max(0, Math.min(1.0, alpha));
-            // GIBBING phase 2: airborne hunks ride fake height (feeds only;
-            // the main Pixi view adds rotation too -- see drawPixiParticles).
+            // GIBBING phase 2 + wall chunks: airborne hunks/chunks ride fake
+            // height (feeds only; the main Pixi view adds rotation too -- see
+            // drawPixiParticles).
             const _hy = this.y - (this.h || 0);
             ctx.fillRect(this.x - cam.x - this.size/2, _hy - cam.y - this.size/2, this.size, this.size);
-            if (this.trailStep > 0 && this.size >= 5) {
-                ctx.fillStyle = '#7a0d0d';
+            if ((this.trailStep > 0 && this.size >= 5) || (this.isWallDebris && this.size >= 4.5)) {
+                ctx.fillStyle = this.isWallDebris ? '#0b1017' : '#7a0d0d';
                 const _in = this.size * 0.55, _o = (this.size - _in) / 2;
                 ctx.fillRect(this.x - cam.x - this.size/2 + _o, _hy - cam.y - this.size/2 + _o, _in, _in);
             }
@@ -46751,31 +46799,127 @@ class Game {
             let nx = (opts.nx !== undefined) ? opts.nx : -Math.cos(dir);
             let ny = (opts.ny !== undefined) ? opts.ny : -Math.sin(dir);
             let nn = Math.hypot(nx, ny) || 1; nx /= nn; ny /= nn;
+            let tx = -ny, ty = nx;
             let baseA = Math.atan2(ny, nx);
-            let n = Math.round(5 * (0.7 + 0.6 * mag));
+            if (opts.ricochet) {
+                // Grazing ricochets kick a rooster-tail of chips biased
+                // forward along the reflected travel direction.
+                const incX = Math.cos(dir), incY = Math.sin(dir);
+                const dot = incX * nx + incY * ny;
+                const refX = incX - 2 * dot * nx, refY = incY - 2 * dot * ny;
+                baseA = Math.atan2(ny * 0.55 + refY * 0.45, nx * 0.55 + refX * 0.45);
+            }
             let chipCol = opts.colorMain || '#808f9c';
-            for (let i = 0; i < n; i++) {
-                let a = cone(baseA, 1.1);
-                let spd = MathUtils.rand(60, 150);
-                this.addParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd, chipCol, 0.25, 2);
+            let isGlass = !!opts.seeThrough;
+            // Heavy-tailed speed roll so sprayed walls scatter debris from
+            // right at the wall base (~6px) out to deep floor flyers (~70px)
+            // instead of forming a uniform parallel stripe. South/east faces
+            // (nx > 0 || ny > 0) get a small floor-clearance floor so close
+            // drops peek past the 13px dark 2.5D bevel.
+            const bevBoost = (nx > 0 || ny > 0) ? 65 : 0;
+            const rollBand = (scale) => {
+                const u = Math.random();
+                if (u < 0.36) return { spd: (MathUtils.rand(18, 58) + bevBoost) * scale, h: 2 + Math.random() * 3, vz: 8 + Math.random() * 18 };
+                if (u < 0.74) return { spd: (MathUtils.rand(95, 220) + bevBoost * 0.35) * scale, h: 4 + Math.random() * 6, vz: 22 + Math.random() * 35 };
+                return { spd: MathUtils.rand(260, 470) * scale, h: 6 + Math.random() * 9, vz: 35 + Math.random() * 55 };
+            };
+            const pickChipCol = (glassChance, slateChance) => {
+                if (isGlass && Math.random() < glassChance) return '#00e5ff';
+                if (Math.random() < slateChance) return Math.random() < 0.5 ? '#37474f' : '#263238';
+                return chipCol;
+            };
+            if (opts.coalesced) {
+                // Bullet-storm 45ms per-wall coalescer: intermediate hits
+                // emit 1-2 instanced falling wall crumbs and skip duplicate
+                // shader/glow/tile work.
+                let cCount = mag >= 0.55 ? 2 : 1;
+                for (let i = 0; i < cCount; i++) {
+                    let a = cone(baseA, 1.6);
+                    let b = rollBand(0.85 + 0.25 * mag);
+                    let cCol = pickChipCol(0.45, 0.28);
+                    let sz = 1.7 + Math.random() * (1.2 + mag * 1.2);
+                    let tJit = (Math.random() - 0.5) * 10, nJit = Math.random() * 3;
+                    let p = this.spawnParticle(x + tx * tJit + nx * nJit, y + ty * tJit + ny * nJit, Math.cos(a) * b.spd, Math.sin(a) * b.spd, cCol, 0.24 + Math.random() * 0.22, sz, false);
+                    if (p) {
+                        p.isWallDebris = true; p.debrisColor = cCol; p.finalOpacity = 0.5;
+                        p.spin = (Math.random() - 0.5) * 14; p.angle = Math.random() * Math.PI * 2;
+                        p.h = b.h; p.vz = b.vz;
+                        this.particles.push(p);
+                    }
+                }
+                return;
+            }
+            const freeFrac = this.inactiveParticles ? (this.inactiveParticles.length / (this.particlePoolSize || 1600)) : 1;
+            const poolScale = freeFrac < 0.35 ? Math.max(0.25, freeFrac * 2.5) : 1;
+            const canStamp = !!opts.canStamp;
+            let nCrumbs = Math.max(1, Math.round((3 + 4 * mag) * poolScale));
+            for (let i = 0; i < nCrumbs; i++) {
+                let a = cone(baseA, 1.6);
+                let b = rollBand(0.85 + 0.30 * mag);
+                let cCol = pickChipCol(0.45, 0.28);
+                let sz = 1.7 + Math.random() * (1.2 + mag * 1.1);
+                let tJit = (Math.random() - 0.5) * 12, nJit = Math.random() * 3.5;
+                let p = this.spawnParticle(x + tx * tJit + nx * nJit, y + ty * tJit + ny * nJit, Math.cos(a) * b.spd, Math.sin(a) * b.spd, cCol, 0.26 + Math.random() * 0.28, sz, false);
+                if (p) {
+                    p.isWallDebris = true; p.debrisColor = cCol; p.finalOpacity = 0.5 + Math.random() * 0.25;
+                    p.spin = (Math.random() - 0.5) * 14; p.angle = Math.random() * Math.PI * 2;
+                    p.h = b.h; p.vz = b.vz;
+                    if (canStamp && mag < 0.32 && i === 0) p.paintTrail = true;
+                    this.particles.push(p);
+                }
+            }
+            if (mag >= 0.32) {
+                let nChunks = mag >= 0.68 ? (2 + (Math.random() < 0.55 ? 1 : 0)) : (1 + (mag >= 0.50 && Math.random() < 0.45 ? 1 : 0));
+                if (freeFrac < 0.20) nChunks = Math.min(nChunks, 1);
+                let maxStampChunks = mag >= 0.68 ? 2 : 1;
+                for (let j = 0; j < nChunks; j++) {
+                    let a = cone(baseA, 1.45);
+                    let b = rollBand(0.90 + 0.30 * mag);
+                    let sz = mag >= 0.68 ? MathUtils.rand(5.0, 7.8) : MathUtils.rand(3.4, 5.0);
+                    let cCol = pickChipCol(0.35, 0.18);
+                    let tJit = (Math.random() - 0.5) * 10, nJit = Math.random() * 4;
+                    let p = this.spawnParticle(x + tx * tJit + nx * nJit, y + ty * tJit + ny * nJit, Math.cos(a) * b.spd, Math.sin(a) * b.spd, cCol, 0.38 + Math.random() * 0.42, sz, false);
+                    if (p) {
+                        p.isWallDebris = true; p.debrisColor = cCol; p.finalOpacity = 0.6 + Math.random() * 0.25;
+                        p.spin = (Math.random() - 0.5) * 12; p.angle = Math.random() * Math.PI * 2;
+                        p.h = b.h * (1 + 0.3 * mag); p.vz = b.vz * (1 + 0.3 * mag);
+                        if (canStamp && j < maxStampChunks) p.paintTrail = true;
+                        this.particles.push(p);
+                    }
+                }
             }
             this.addParticle(x, y, nx * 120, ny * 120, '#00e5ff', 0.12, 2.5);
             // SHADER-ERA haze: wall chips kick dust into the field.
-            try { this.fluidSplat(x, y, nx * 40, ny * 40, 0.15, 16); } catch (e) {}
+            try { this.fluidSplat(x, y, nx * 40, ny * 40, 0.06 + 0.08 * mag, 16); } catch (e) {}
             if (mag < 0.3) this.addParticle(x, y, -Math.cos(dir) * 40, -Math.sin(dir) * 40, '#ffffff', 0.15, 2);
             // Firefight core: every wall hit snaps — a hot tick the bloom
             // chain turns into a muzzle-like snap (restrained: <=40px, 0.5).
-            // Heavy hits (>=0.55) thump pressure and pit the floor at the
+            // Heavy hits (>=0.55) thump pressure and scatter rubble at the
             // wall base (under:true — rubble slides under surviving stubs,
-            // never over them). Zero RNG added (branch already rolls).
+            // never over them).
             this.stampGlow(x, y, 14 + 26 * mag, '#ffd9a0', 0.5);
             if (mag >= (typeof IMPACT_TUNING !== 'undefined' ? IMPACT_TUNING.SHOCK_MAG : 0.55)) {
                 try { this.spawnUvShock(x, y, 34, 0.15, 0.35); } catch (e) {}
                 // P2a impact light: heavy wall hits bounce warm off the base.
                 try { this._pixiLightSplat(x, y, 40, 0.25, '#ffd9a0'); } catch (e) {}
-                try {
-                    this._pushPermanentMark({ type: 'debris', x: x + nx * 6, y: y + ny * 6, c: chipCol, a: 0.8, circs: [{ ox: 0, oy: 0, r: 2.5 }], under: true });
-                } catch (e) {}
+                if (canStamp) {
+                    try {
+                        const nOff = (nx > 0 || ny > 0 ? 10 : 3) + Math.random() * 18;
+                        const tOff = (Math.random() - 0.5) * 18;
+                        this._pushPermanentMark({
+                            type: 'debris',
+                            x: x + nx * nOff + tx * tOff,
+                            y: y + ny * nOff + ty * tOff,
+                            c: chipCol,
+                            a: 0.75,
+                            circs: [
+                                { ox: 0, oy: 0, r: 1.8 + Math.random() * 1.4 },
+                                { ox: (Math.random() - 0.5) * 7, oy: (Math.random() - 0.5) * 7, r: 1.1 + Math.random() * 1.0 }
+                            ],
+                            under: true
+                        });
+                    } catch (e) {}
+                }
             }
         } else if (surface === 'dirt') {
             let n = Math.round(4 * (0.7 + 0.6 * mag));
@@ -62017,6 +62161,7 @@ class Game {
             p.isCasing = false;
             p.angle = 0;
             p.isCorpseDebris = false;
+            p.isWallDebris = false;
             p.debrisColor = '#fff';
             p.paintTrail = false;
             p.finalOpacity = 0.5;
@@ -66089,6 +66234,28 @@ class Game {
                     // hunk count itself. Append order = paint order.
                     if (p.trailStep > 0) {
                         this._pushPermanentMark({ type: 'blood', x: p.x, y: p.y, r: p.size * 0.45, c: '#800a0a' });
+                    }
+                    shouldDeactivate = true;
+                }
+            } else if (p.isWallDebris) {
+                if (p.stopped || p.life <= 0) {
+                    if (p.paintTrail) {
+                        let circles = [];
+                        let count = p.size >= 4.5 ? (2 + Math.floor(Math.random() * 3)) : (1 + (Math.random() < 0.65 ? 1 : 0));
+                        let spread = p.size * (1.6 + Math.random() * 1.4);
+                        for (let j = 0; j < count; j++) {
+                            circles.push({
+                                ox: (Math.random() - 0.5) * spread,
+                                oy: (Math.random() - 0.5) * spread,
+                                r: Math.max(1.1, p.size * (0.28 + Math.random() * 0.50))
+                            });
+                        }
+                        let rx = p.x + (Math.random() - 0.5) * 6;
+                        let ry = p.y + (Math.random() - 0.5) * 6;
+                        this._pushPermanentMark({ type: 'debris', x: rx, y: ry, c: p.debrisColor, a: p.finalOpacity, circs: circles, under: true });
+                        if (p.size >= 5.0) {
+                            this._pushPermanentMark({ type: 'debris', x: rx + (Math.random() - 0.5) * 2, y: ry + (Math.random() - 0.5) * 2, c: '#0a0c10', a: 0.75, circs: [{ ox: 0, oy: 0, r: p.size * 0.35 }], under: true });
+                        }
                     }
                     shouldDeactivate = true;
                 }
@@ -76601,7 +76768,7 @@ class Game {
                 continue;
             }
             let alpha, col;
-            if (p.isCorpseDebris) {
+            if (p.isCorpseDebris || p.isWallDebris) {
                 const lifeRatio = p.life / p.maxLife;
                 alpha = p.finalOpacity + (1.0 - p.finalOpacity) * lifeRatio;
                 col = p.debrisColor;
@@ -76611,22 +76778,23 @@ class Game {
             }
             if (alpha <= 0) continue;
             const pt = this._pixiPSpr(P0, this._pixiWhiteSquareTex());
-            // GIBBING phase 2: hunks tumble (rotation) and ride fake height;
-            // big ones get a raw-red cut square over the body-color shell.
-            // (Cull stays ground-pos based: apex <= ~85px only matters for
-            // chunks already at the screen edge -- negligible pop.)
+            // GIBBING phase 2 + wall chunks: hunks and wall debris tumble
+            // (rotation) and ride fake height; big ones get a two-tone inner
+            // core (#7a0d0d raw meat for hunks, #0b1017 fractured core for
+            // wall chunks).
             const _isHunk = p.trailStep > 0;
+            const _isWChunk = !!p.isWallDebris;
             pt.x = ox + (p.x - cam.x + shX) * ez; pt.y = ((p.y - (p.h || 0)) - cam.y + shY) * ez;
             pt.scaleX = pt.scaleY = (p.size * ez) / 8;
-            pt.rotation = _isHunk ? (p.angle || 0) : 0;
+            pt.rotation = (_isHunk || _isWChunk) ? (p.angle || 0) : 0;
             pt.tint = col;
             pt.alpha = Math.max(0, Math.min(1.0, alpha));
-            if (_isHunk && p.size >= 5 && alpha > 0) {
+            if (((_isHunk && p.size >= 5) || (_isWChunk && p.size >= 4.5)) && alpha > 0) {
                 const iq = this._pixiPSpr(P0, this._pixiWhiteSquareTex());
                 iq.x = pt.x; iq.y = pt.y;
                 iq.scaleX = iq.scaleY = (p.size * 0.55 * ez) / 8;
                 iq.rotation = pt.rotation;
-                iq.tint = '#7a0d0d';
+                iq.tint = _isWChunk ? '#0b1017' : '#7a0d0d';
                 iq.alpha = pt.alpha;
             }
         }
@@ -81945,12 +82113,26 @@ class Game {
                     }
                     items.sort((a, b) => a.s - b.s);
                 } catch (e) {}
-                for (let i = items.length - 1; i >= 0; i--) {
-                    let m = -1;
-                    for (const t of above) { const ti = idx(t); if (ti >= 0 && (m < 0 || ti < m)) m = ti; }
-                    if (m < 0) break;
+                let m0 = -1;
+                for (const t of above) { const ti = idx(t); if (ti >= 0 && (m0 < 0 || ti < m0)) m0 = ti; }
+                if (m0 < 0 || !items.length) return;
+                let converged = true, prevI = -1;
+                for (let i = 0; i < items.length; i++) {
                     const _rr = items[i] && items[i].r ? items[i].r : items[i];
-                    st.addChildAt(_rr, m);
+                    const ci = idx(_rr);
+                    if (ci < 0 || ci >= m0 || ci <= prevI) { converged = false; break; }
+                    prevI = ci;
+                }
+                if (!converged) {
+                    for (let i = 0; i < items.length; i++) {
+                        const _rr = items[i] && items[i].r ? items[i].r : items[i];
+                        if (!_rr || idx(_rr) < 0) continue;
+                        st.removeChild(_rr);
+                        let m = -1;
+                        for (const t of above) { const ti = idx(t); if (ti >= 0 && (m < 0 || ti < m)) m = ti; }
+                        if (m < 0) { st.addChild(_rr); continue; }
+                        st.addChildAt(_rr, Math.max(0, m));
+                    }
                 }
             } catch (e) {}
             // (a4) barrier/mine elevation routing (per half): ground pieces sit
