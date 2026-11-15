@@ -13196,8 +13196,10 @@ class MapGen {
                 let cellX2 = cellX1 + this.cellW;
                 
                 for (let wall of this.walls) {
-                    if (wall.x < cellX2 && (wall.x + wall.w) > cellX1 &&
-                        wall.y < cellY2 && (wall.y + wall.h) > cellY1) {
+                    const touchesCell = wall.isBoundary
+                        ? (wall.x <= cellX2 && (wall.x + wall.w) >= cellX1 && wall.y <= cellY2 && (wall.y + wall.h) >= cellY1)
+                        : (wall.x < cellX2 && (wall.x + wall.w) > cellX1 && wall.y < cellY2 && (wall.y + wall.h) > cellY1);
+                    if (touchesCell) {
                         this.spatialGrid[r][c].push(wall);
                         // DESTRUCTIBLE WALLS: remember every bucket a wall is
                         // filed under so a later carve (see _carveWall) can
@@ -33373,7 +33375,7 @@ class Bullet {
                         wOpts.ricochet = false;
                     }
 
-                    if (this.isAP) {
+                    if (this.isAP && !wall.isBoundary) {
                         let thickness = nx !== 0 ? wall.w : wall.h;
                         if (thickness <= 45) { 
                             if (game && game.spawnImpact) game.spawnImpact(hx, hy, bDir, baseMag * 0.6, 'wall', wOpts);
