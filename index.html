@@ -18540,6 +18540,221 @@ const ARM_TUNING = {
     VIS_STAGGER_WIDE: 5.0     // wide-arms px while staggered
 };
 
+// ==== LIMB IK (grounded plant-lock gait + closed-form 2-bone solve) ====
+// Mirrors the ARM_TUNING typeof-guard precedent. ENABLED=false => every call
+// site falls back to the shipped pure-sin path, byte-identical (probe P7).
+// The stepper is PURE and consumes only its dt parameter (never _rawDt /
+// gameTime / Date.now — invariant #367); phase = integral of dt. All render
+// twins/rigs read foot state only. One clearance AABB test per plant, against
+// the caller's per-instance _wallScratch copy (BUG-016 no-retention).
+const LIMB_TUNING = {
+    ENABLED: true,
+    MAX_SEG_ENTITY: 12,        // hard cap: segments per entity per frame
+    MAX_SEG_FRAME: 240,        // hard cap: segments across all limbs per frame
+    DUTY: 0.63,                // stance fraction: foot recovers ~7px behind knee
+    STRIDE_PX: 16,             // px per half-cycle (cadence reference, dt-keyed)
+    STRIDE_AHEAD: 14,          // true plant lead; visible shin still capped at L2
+    SWING_LEAD: 0.02,          // s of extra velocity lead (anticipation)
+    LIFT_PX: 3.0,              // swing lift (read as a lateral shorten in top-down)
+    UPPER_SWING: 0.38,         // hip actuation: visible knee travel (radians)
+    UPPER_SPLAY: 0.65,         // tighter thigh: more backward, sleeker stance
+    SHIN_ALIGN_LATERAL: 0.45,  // straight travel levels shin parallel to body
+    MIN_LOWER: 0.0,            // smooth foreshortening under knee (no 2*MIN_LOWER flip)
+    KNEE_ROUND_PX: 2.2,        // multi-vertex rounded knee bevel radius
+    KNEE_BULGE_PX: 0.55,       // subtle outward knuckle contour on tight folds
+    L1: 6.5,                   // upper leg (hip->knee) fixed length
+    L2: 16.0,                  // lower leg FORWARD max length (short, controlled)
+    L2_BACK: 9.0,              // lower leg REARWARD max (full but controlled recovery)
+    REAR_COS: -1.0,            // rear length cap handles gumby; allow straight-back shin
+    MOVE_BLEND_RATE: 6.0,      // engage easing: slower ramp (no lance deploy)
+    IDLE_SETTLE_RATE: 10.0,    // stop easing: feet recover to stance (no stop snap)
+    MOVE_FULL_SPEED: 90,       // speed at which moveBlend reaches 1
+    IDLE_SPEED: 6,             // below this speed feet settle to a planted stance
+    SPOT_THIGH_HEX: '#3e4a56', // darker hip->knee segment (Spot canvas)
+    SPOT_SHIN_HEX: '#7c8c99',  // lighter knee->foot segment (Spot canvas)
+    SPOT_THIGH_COL: 0x3e4a56,  // darker hip->knee segment (Spot Pixi)
+    SPOT_SHIN_COL: 0x7c8c99,   // lighter knee->foot segment (Spot Pixi)
+    SCAV_THIGH_HEX: '#354350', // darker hip->knee segment (Scav canvas)
+    SCAV_SHIN_HEX: '#62778c',  // lighter knee->foot segment (Scav canvas)
+    SCAV_THIGH_COL: 0x354350,  // darker hip->knee segment (Scav Pixi)
+    SCAV_SHIN_COL: 0x62778c    // lighter knee->foot segment (Scav Pixi)
+};
+
+// Closed-form 2-bone IK: shoulder (sx,sy) -> hand (hx,hy), bones l1/l2, bend
+// sign side (+1/-1). Writes the knee into out.ex/out.ey (zero alloc). The
+// equal-length case generalizes the shipped player elbow sqrt formula.
+function solve2Bone(sx, sy, hx, hy, l1, l2, side, out) {
+    const dx = hx - sx, dy = hy - sy;
+    let d = Math.hypot(dx, dy);
+    if (d < 1e-4) { out.ex = sx + l1 * side; out.ey = sy; return out; }
+    const reach = l1 + l2;
+    if (d >= reach) { out.ex = sx + dx / d * l1; out.ey = sy + dy / d * l1; return out; }
+    const a = Math.atan2(dy, dx);
+    let cosA = (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d);
+    cosA = Math.max(-1, Math.min(1, cosA));
+    const ang = Math.acos(cosA) * side;
+    out.ex = sx + Math.cos(a + ang) * l1;
+    out.ey = sy + Math.sin(a + ang) * l1;
+    return out;
+}
+
+// Plant-lock gait stepper. feet = pre-allocated array of foot structs (each
+// {hipX,hipY,gaitOff,bendSign,spreadY,l1,l2,l2b,planted,px,py,sx,sy,tx,ty,wx,wy,lx,ly,ex,ey,lift});
+// feet.phase carries the shared gait clock. Body state (x,y,vx,vy,angle,speed)
+// is the FINAL post-physics pose for the frame. walls = per-instance scratch
+// copy for the one clearance test per plant (may be null). Pure: dt-only.
+function stepLegs(feet, dt, x, y, vx, vy, angle, speed, walls) {
+    const T = LIMB_TUNING;
+    const TAU = Math.PI * 2;
+    feet.phase = (feet.phase || 0) + (speed * dt / T.STRIDE_PX) * Math.PI;
+    const ca = Math.cos(angle), sa = Math.sin(angle);
+    const duty = T.DUTY;
+    const idle = speed < T.IDLE_SPEED;
+    // dt-only engage/settle easing. This is the anti-jouster / anti-teleport
+    // contract: stride amplitude ramps in when movement starts, and decays to
+    // the planted rest stance when it stops. dt=0 (hit-stop) freezes it.
+    const targetBlend = idle ? 0 : Math.min(1, speed / T.MOVE_FULL_SPEED);
+    const blendRate = idle ? T.IDLE_SETTLE_RATE : T.MOVE_BLEND_RATE;
+    const blendK = 1 - Math.exp(-blendRate * dt);
+    feet.moveBlend = (feet.moveBlend || 0) + (targetBlend - (feet.moveBlend || 0)) * blendK;
+    if (Math.abs(targetBlend - feet.moveBlend) < 1e-3) feet.moveBlend = targetBlend;
+    const targetSpdScale = idle ? 0 : Math.min(1.5, speed / 220);
+    feet.speedScale = (feet.speedScale || 0) + (targetSpdScale - (feet.speedScale || 0)) * blendK;
+    const enteringIdle = idle && feet._wasIdle === false;
+    feet._wasIdle = idle;
+    // When travel is mostly along the body forward axis, level the drawn shin
+    // parallel to the body (no inward fold / bow-legged outward swing). Pure
+    // strafing keeps lateral reach. Clamp speed denominator by IDLE_SPEED so
+    // near-zero deceleration noise never twitches shinAlign before stopping.
+    const localVx = vx * ca + vy * sa, localVy = -vx * sa + vy * ca;
+    const lateralFrac = idle ? 0 : Math.abs(localVy) / Math.max(speed, T.IDLE_SPEED);
+    const shinAlign = Math.max(0, 1 - lateralFrac / T.SHIN_ALIGN_LATERAL) * feet.moveBlend;
+    for (let i = 0; i < feet.length; i++) {
+        const f = feet[i];
+        const hipX = f.hipX, hipY = f.hipY;
+        const homeLY = hipY + f.spreadY;
+        const hwx = x + hipX * ca - homeLY * sa;
+        const hwy = y + hipX * sa + homeLY * ca;
+        const wasSeeded = f.wx !== undefined;
+        if (!wasSeeded) { f.wx = hwx; f.wy = hwy; f.px = hwx; f.py = hwy; f.planted = true; }
+        if (idle) {
+            // On the transition into idle (or if mid-swing), latch the actual
+            // drawn foot world position (lx,ly) so settle starts immediately
+            // from the visible foot with zero unclamped slack or mid-settle unlock.
+            if (enteringIdle && wasSeeded && f.lx !== undefined && f.ly !== undefined) {
+                f.px = x + f.lx * ca - f.ly * sa;
+                f.py = y + f.lx * sa + f.ly * ca;
+                f.planted = true;
+            } else if (!f.planted) {
+                f.px = f.wx; f.py = f.wy; f.planted = true;
+            }
+            const settleK = 1 - Math.exp(-T.IDLE_SETTLE_RATE * dt);
+            f.px += (hwx - f.px) * settleK;
+            f.py += (hwy - f.py) * settleK;
+            f.wx = f.px; f.wy = f.py; f.lift = 0;
+        } else {
+            const cyc = (((feet.phase + f.gaitOff) % TAU) + TAU) % TAU / TAU;
+            if (cyc < duty) {
+                if (!f.planted) {
+                    f.px = f.wx; f.py = f.wy; f.planted = true;
+                    // one clearance test per plant: push out of any wall AABB.
+                    if (walls) {
+                        for (let w = 0; w < walls.length; w++) {
+                            const wl = walls[w];
+                            if (f.px > wl.x && f.px < wl.x + wl.w && f.py > wl.y && f.py < wl.y + wl.h) {
+                                const dl = f.px - wl.x, dr = wl.x + wl.w - f.px;
+                                const dtp = f.py - wl.y, db = wl.y + wl.h - f.py;
+                                const m = Math.min(dl, dr, dtp, db);
+                                if (m === dl) f.px = wl.x; else if (m === dr) f.px = wl.x + wl.w;
+                                else if (m === dtp) f.py = wl.y; else f.py = wl.y + wl.h;
+                            }
+                        }
+                    }
+                }
+                f.wx = f.px; f.wy = f.py; f.lift = 0;
+            } else {
+                const t = (cyc - duty) / (1 - duty);
+                if (f.planted) {
+                    f.sx = f.px; f.sy = f.py;
+                    // Anticipate the movement vector: plant AHEAD in the direction
+                    // of travel so the foot steps out forward (walking) instead of
+                    // returning under the hip and trailing behind (swimming). Falls
+                    // back to facing when nearly still.
+                    const spd = Math.hypot(vx, vy);
+                    const mvx = spd > 1 ? vx / spd : ca;
+                    const mvy = spd > 1 ? vy / spd : sa;
+                    // Compensate for body travel DURING swing so STRIDE_AHEAD is
+                    // the touchdown lead, not the lift-off lead. One full cycle
+                    // covers 2*STRIDE_PX of body travel; swing is (1-duty) of it.
+                    const swingTravel = 2 * T.STRIDE_PX * (1 - duty);
+                    const ahead = (T.STRIDE_AHEAD + swingTravel) * feet.moveBlend;
+                    f.tx = hwx + mvx * ahead + vx * T.SWING_LEAD * feet.moveBlend;
+                    f.ty = hwy + mvy * ahead + vy * T.SWING_LEAD * feet.moveBlend;
+                    f.planted = false;
+                }
+                const e = t * t * (3 - 2 * t);
+                f.wx = f.sx + (f.tx - f.sx) * e;
+                f.wy = f.sy + (f.ty - f.sy) * e;
+                f.lift = Math.sin(t * Math.PI) * T.LIFT_PX;
+            }
+        }
+        // world -> body-local for the render twins (read-only consumers).
+        const rx = f.wx - x, ry = f.wy - y;
+        let lx = rx * ca + ry * sa;
+        let ly = -rx * sa + ry * ca;
+        // Digitigrade top-down IK: the UPPER leg is a stiff mount that points
+        // outward/back and swings enough to make the hip/knee travel. The LOWER
+        // leg is the primary actuator: it telescopes toward the planted foot.
+        // Reach is asymmetric — long forward, short rearward — and its direction
+        // is clamped to a forward-facing cone, so it can drive a long forward
+        // step without becoming a rearward gumby string. The true world plant
+        // (px,py) remains untouched; only the drawn foot is reach-clamped.
+        const l1 = f.l1 || T.L1, l2 = f.l2 || T.L2, l2back = f.l2b || T.L2_BACK;
+        const side = f.bendSign || (f.hipY < 0 ? -1 : 1);
+        const upperSwing = Math.sin(feet.phase + f.gaitOff + 0.45) * T.UPPER_SWING * (feet.speedScale || 0) * feet.moveBlend;
+        const upperA = Math.PI - side * T.UPPER_SPLAY + upperSwing;
+        const ex = hipX + Math.cos(upperA) * l1;
+        const ey = hipY + Math.sin(upperA) * l1;
+        // Straight-ahead travel: shin runs parallel to the body axis. Strafing
+        // blends back to the natural lateral reach instead of forcing parallel.
+        ly = ey + (ly - ey) * (1 - shinAlign);
+        let dx = lx - ex, dy = ly - ey;
+        let lowerD = Math.hypot(dx, dy);
+        if (lowerD < 1e-4) {
+            if (shinAlign > 0.5) { dx = 1; dy = 0; }
+            else { dx = -Math.cos(upperA); dy = -Math.sin(upperA); }
+            lowerD = 1;
+        }
+        let ux = dx / lowerD, uy = dy / lowerD;
+        const maxLower = ux >= 0 ? l2 : l2back;
+        const lowerLen = Math.max(T.MIN_LOWER, Math.min(maxLower, lowerD));
+        if (ux < T.REAR_COS) {
+            ux = T.REAR_COS;
+            uy = (uy >= 0 ? 1 : -1) * Math.sqrt(Math.max(0, 1 - ux * ux));
+        }
+        lx = ex + ux * lowerLen;
+        ly = ey + uy * lowerLen;
+        f.ex = ex; f.ey = ey; f.lx = lx; f.ly = ly;
+        // Multi-vertex rounded knee arc (k0 -> k1 -> k2 -> k3): subdivides the
+        // joint into a 4-point quadratic Bezier bevel with an outward knuckle
+        // contour so tight folds never collapse into a 1-vertex miter spike.
+        const utx = (ex - hipX) / l1, uty = (ey - hipY) / l1;
+        const rA = Math.min(T.KNEE_ROUND_PX || 2.2, l1 * 0.35);
+        const rB = Math.min(T.KNEE_ROUND_PX || 2.2, lowerLen * 0.45);
+        const k0x = ex - utx * rA, k0y = ey - uty * rA;
+        const k3x = ex + ux * rB, k3y = ey + uy * rB;
+        const fold = Math.max(0, -ux);
+        const bulge = (T.KNEE_BULGE_PX || 0.55) * (0.4 + 0.6 * fold);
+        const cx = ex - 0.35 * bulge, cy = ey + side * bulge;
+        f.k0x = k0x; f.k0y = k0y;
+        f.k1x = (4 * k0x + 4 * cx + k3x) / 9;
+        f.k1y = (4 * k0y + 4 * cy + k3y) / 9;
+        f.k2x = (k0x + 4 * cx + 4 * k3x) / 9;
+        f.k2y = (k0y + 4 * cy + 4 * k3y) / 9;
+        f.k3x = k3x; f.k3y = k3y;
+    }
+}
+
 // ==== MAGS + RELOAD (Model A: physical mags + loose pouch, datum-safe) ====
 const MAG_TUNING = {
     ENABLED: true,
@@ -35202,6 +35417,18 @@ class RobotDog extends Entity {
         
         // Leg animation step variables
         this.walkCycle = 0;
+        // Limb-IK foot structs: 4 actuated legs, pre-allocated (non-pooled =>
+        // ctor-only). Both joints move: the thigh rotates (hip actuation) and
+        // the shin telescopes from the traveling knee. Controlled forward reach
+        // (l2) + fuller rearward recovery (l2b). Standard + upgraded share this.
+        this.feet = [
+            { hipX: 9, hipY: 5, gaitOff: 0, bendSign: 1, spreadY: 4.5, l1: 7.5, l2: 16, l2b: 9 },
+            { hipX: 9, hipY: -5, gaitOff: Math.PI, bendSign: -1, spreadY: -4.5, l1: 7.5, l2: 16, l2b: 9 },
+            { hipX: -9, hipY: 5, gaitOff: Math.PI, bendSign: 1, spreadY: 4.5, l1: 7.5, l2: 16, l2b: 9 },
+            { hipX: -9, hipY: -5, gaitOff: 0, bendSign: -1, spreadY: -4.5, l1: 7.5, l2: 16, l2b: 9 }
+        ];
+        this.feet.phase = 0; this.feet.moveBlend = 0; this.feet.speedScale = 0; this.feet._wasIdle = true;
+        this._limbsOn = true;
         this.zigZagTimer = 0;
         this.zigZagAngle = 0;
         
@@ -36079,7 +36306,14 @@ class RobotDog extends Entity {
         
         // Perform standard physics update (clamps, walls, etc.)
         this.updatePhysics(dt, nearbyWalls);
-        
+
+        // Limb-IK plant-lock gait (pure, dt-only, once per frame on the final
+        // pose; reuses this dog's own _wallScratch). One-bone legs: the render
+        // reads feet[].lx/ly only. Disabled => shipped sin path (probe P7).
+        if (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && this._limbsOn && this.feet) {
+            stepLegs(this.feet, dt, this.x, this.y, this.vx, this.vy, this.angle, Math.hypot(this.vx, this.vy), nearbyWalls);
+        }
+
         // Collect items if close enough
         if (this.state === 'COLLECTING' && this.targetItem) {
             let itemIdx = game.items.indexOf(this.targetItem);
@@ -36260,10 +36494,12 @@ class RobotDog extends Entity {
             { rx: -9, ry: -5, phase: 0 }        // Rear Left
         ];
         
-        for (let lp of legPositions) {
+        const _limbs = (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && this._limbsOn && this.feet);
+        for (let li = 0; li < legPositions.length; li++) {
+            const lp = legPositions[li];
             ctx.save();
             ctx.translate(lp.rx, lp.ry);
-            
+
             let angleOffset = 0;
             if (this.state === 'HUNKERED') {
                 // Splayed out, legs angled outwards
@@ -36272,6 +36508,33 @@ class RobotDog extends Entity {
                 ctx.beginPath();
                 ctx.moveTo(0, 0);
                 ctx.lineTo(0, lp.ry > 0 ? legLength * 1.2 : -legLength * 1.2);
+                ctx.stroke();
+            } else if (_limbs) {
+                // Two-tone multi-vertex leg: darker hip->knee thigh + lighter
+                // rounded-knee->foot shin with round cap/join (no miter spike).
+                const f = this.feet[li];
+                const k0x = (f.k0x !== undefined ? f.k0x : f.ex) - lp.rx;
+                const k0y = (f.k0y !== undefined ? f.k0y : f.ey) - lp.ry;
+                const k1x = (f.k1x !== undefined ? f.k1x : f.ex) - lp.rx;
+                const k1y = (f.k1y !== undefined ? f.k1y : f.ey) - lp.ry;
+                const k2x = (f.k2x !== undefined ? f.k2x : f.ex) - lp.rx;
+                const k2y = (f.k2y !== undefined ? f.k2y : f.ey) - lp.ry;
+                const k3x = (f.k3x !== undefined ? f.k3x : f.ex) - lp.rx;
+                const k3y = (f.k3y !== undefined ? f.k3y : f.ey) - lp.ry;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = LIMB_TUNING.SPOT_THIGH_HEX || '#3e4a56';
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(k0x, k0y);
+                ctx.lineTo(k1x, k1y);
+                ctx.stroke();
+                ctx.strokeStyle = LIMB_TUNING.SPOT_SHIN_HEX || '#7c8c99';
+                ctx.beginPath();
+                ctx.moveTo(k1x, k1y);
+                ctx.lineTo(k2x, k2y);
+                ctx.lineTo(k3x, k3y);
+                ctx.lineTo(f.lx - lp.rx, f.ly - lp.ry);
                 ctx.stroke();
             } else {
                 // Walking animation
@@ -36443,6 +36706,17 @@ const SCAV_DOG_TUNING = {
 class ScavengerDog extends Entity {
     constructor(x, y) {
         super(x, y, SCAV_DOG_TUNING.R);
+        // Limb-IK foot structs: 4 actuated legs, pre-allocated once (reset in
+        // init, BUG-010). Both joints move; controlled forward reach (l2) +
+        // fuller rearward recovery (l2b), foot just outboard of the knee.
+        this.feet = [
+            { hipX: 9, hipY: -6, gaitOff: 0, bendSign: -1, spreadY: -3.9, l1: 6.5, l2: 15, l2b: 8.5 },
+            { hipX: 9, hipY: 6, gaitOff: Math.PI, bendSign: 1, spreadY: 3.9, l1: 6.5, l2: 15, l2b: 8.5 },
+            { hipX: -8, hipY: -6, gaitOff: Math.PI, bendSign: -1, spreadY: -3.9, l1: 6.5, l2: 15, l2b: 8.5 },
+            { hipX: -8, hipY: 6, gaitOff: 0, bendSign: 1, spreadY: 3.9, l1: 6.5, l2: 15, l2b: 8.5 }
+        ];
+        this.feet.phase = 0; this.feet.moveBlend = 0; this.feet.speedScale = 0; this.feet._wasIdle = true;
+        this._limbsOn = true;
         this.init(x, y);
     }
 
@@ -36485,6 +36759,20 @@ class ScavengerDog extends Entity {
         this._courageT = 0;          // nerve after a snatch (decays, gates brave speed)
         this._energizeT = 0;         // hit-energize burst window (decays)
         this._brave = false;         // far-LOS this tick: skip the dodge arc
+        // Limb-IK: reset foot state in-place so a recycled dog never inherits a
+        // stale plant (BUG-010). Geometry constants (hip/gait/bendSign) live in
+        // the ctor and are never reset; wx=undefined re-seeds the first plant.
+        if (this.feet) {
+            this.feet.phase = 0; this.feet.moveBlend = 0; this.feet.speedScale = 0; this.feet._wasIdle = true;
+            for (let i = 0; i < this.feet.length; i++) {
+                const f = this.feet[i];
+                f.planted = false; f.wx = undefined; f.wy = undefined;
+                f.px = 0; f.py = 0; f.sx = 0; f.sy = 0; f.tx = 0; f.ty = 0;
+                f.lift = 0; f.lx = 0; f.ly = 0; f.ex = 0; f.ey = 0;
+                f.k0x = 0; f.k0y = 0; f.k1x = 0; f.k1y = 0;
+                f.k2x = 0; f.k2y = 0; f.k3x = 0; f.k3y = 0;
+            }
+        }
     }
 
     // FELLPASS item 4 convention (0.06s white flash) -- the shared set/
@@ -37049,6 +37337,14 @@ class ScavengerDog extends Entity {
 
         this.updatePhysics(dt, nearbyWalls);
 
+        // Limb-IK plant-lock gait: pure, dt-only, once per frame on the final
+        // post-physics pose. Clearance reuses this dog's own _wallScratch copy
+        // (nearbyWalls) — no new query. Render twins read feet[] only.
+        // Disabled => shipped pure-sin path, byte-identical (probe P7).
+        if (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && this._limbsOn && this.feet) {
+            stepLegs(this.feet, dt, this.x, this.y, this.vx, this.vy, this.angle, Math.hypot(this.vx, this.vy), nearbyWalls);
+        }
+
         // The snatch. Re-validate existence, identity AND whitelist at
         // the contact frame, then do the pooled round-trip BY HAND --
         // collectItem is the player pickup path (cash/inventory side
@@ -37156,14 +37452,36 @@ class ScavengerDog extends Entity {
         ctx.strokeStyle = '#54677a';
         ctx.lineWidth = 2.6;
         ctx.lineCap = 'round';
+        const _limbs = (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && this._limbsOn && this.feet);
         for (let i = 0; i < 4; i++) {
             const hx = hips[i][0], hy = hips[i][1];
-            const swing = Math.sin(this.walkCycle + gait[i]) * 4;
-            const kx = hx + 2 + swing * 0.4, ky = hy + outSign[i] * 4;
-            const fx = hx + swing, fy = hy + outSign[i] * 9;
-            ctx.beginPath();
-            ctx.moveTo(hx, hy); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy);
-            ctx.stroke();
+            let kx, ky, fx, fy;
+            if (_limbs) {
+                const f = this.feet[i];
+                fx = f.lx; fy = f.ly; kx = f.ex; ky = f.ey;
+                const k0x = f.k0x !== undefined ? f.k0x : kx, k0y = f.k0y !== undefined ? f.k0y : ky;
+                const k1x = f.k1x !== undefined ? f.k1x : kx, k1y = f.k1y !== undefined ? f.k1y : ky;
+                const k2x = f.k2x !== undefined ? f.k2x : kx, k2y = f.k2y !== undefined ? f.k2y : ky;
+                const k3x = f.k3x !== undefined ? f.k3x : kx, k3y = f.k3y !== undefined ? f.k3y : ky;
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = LIMB_TUNING.SCAV_THIGH_HEX || '#354350';
+                ctx.beginPath();
+                ctx.moveTo(hx, hy); ctx.lineTo(k0x, k0y); ctx.lineTo(k1x, k1y);
+                ctx.stroke();
+                ctx.strokeStyle = LIMB_TUNING.SCAV_SHIN_HEX || '#62778c';
+                ctx.beginPath();
+                ctx.moveTo(k1x, k1y); ctx.lineTo(k2x, k2y); ctx.lineTo(k3x, k3y); ctx.lineTo(fx, fy);
+                ctx.stroke();
+                ctx.lineJoin = 'miter';
+            } else {
+                const swing = Math.sin(this.walkCycle + gait[i]) * 4;
+                kx = hx + 2 + swing * 0.4; ky = hy + outSign[i] * 4;
+                fx = hx + swing; fy = hy + outSign[i] * 9;
+                ctx.strokeStyle = '#54677a';
+                ctx.beginPath();
+                ctx.moveTo(hx, hy); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy);
+                ctx.stroke();
+            }
             ctx.fillStyle = '#2f3d4a';
             ctx.beginPath(); ctx.arc(fx, fy, 1.8, 0, Math.PI * 2); ctx.fill();
         }
@@ -75854,19 +76172,34 @@ class Game {
             }
             H.spin.position.set(leanX, leanY);
             const legLength = 8;
-            for (const lp of [{ rx: 9, ry: 5, ph: 0 }, { rx: 9, ry: -5, ph: Math.PI }, { rx: -9, ry: 5, ph: Math.PI }, { rx: -9, ry: -5, ph: 0 }]) {
-                B.moveTo(lp.rx, lp.ry);
+            const _limbs = (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && d._limbsOn && d.feet);
+            const _legs = [{ rx: 9, ry: 5, ph: 0 }, { rx: 9, ry: -5, ph: Math.PI }, { rx: -9, ry: 5, ph: Math.PI }, { rx: -9, ry: -5, ph: 0 }];
+            for (let li = 0; li < _legs.length; li++) {
+                const lp = _legs[li];
                 if (d.state === 'HUNKERED') {
+                    B.moveTo(lp.rx, lp.ry);
                     const off = (lp.ry > 0) ? Math.PI / 3 : -Math.PI / 3;
                     const s = lp.ry > 0 ? legLength * 1.2 : -legLength * 1.2;
                     B.lineTo(lp.rx - Math.sin(off) * s, lp.ry + Math.cos(off) * s);
+                    B.stroke({ width: 2.5, color: 0x6c7a86 });
+                } else if (_limbs) {
+                    const f = d.feet[li];
+                    const k0x = f.k0x !== undefined ? f.k0x : f.ex, k0y = f.k0y !== undefined ? f.k0y : f.ey;
+                    const k1x = f.k1x !== undefined ? f.k1x : f.ex, k1y = f.k1y !== undefined ? f.k1y : f.ey;
+                    const k2x = f.k2x !== undefined ? f.k2x : f.ex, k2y = f.k2y !== undefined ? f.k2y : f.ey;
+                    const k3x = f.k3x !== undefined ? f.k3x : f.ex, k3y = f.k3y !== undefined ? f.k3y : f.ey;
+                    B.moveTo(lp.rx, lp.ry); B.lineTo(k0x, k0y); B.lineTo(k1x, k1y);
+                    B.stroke({ width: 2.5, color: LIMB_TUNING.SPOT_THIGH_COL || 0x3e4a56, cap: 'round', join: 'round' });
+                    B.moveTo(k1x, k1y); B.lineTo(k2x, k2y); B.lineTo(k3x, k3y); B.lineTo(f.lx, f.ly);
+                    B.stroke({ width: 2.5, color: LIMB_TUNING.SPOT_SHIN_COL || 0x7c8c99, cap: 'round', join: 'round' });
                 } else {
+                    B.moveTo(lp.rx, lp.ry);
                     const speedScale = Math.min(1.5, Math.hypot(d.vx || 0, d.vy || 0) / 220);
                     const ao = Math.sin(d.walkCycle + lp.ph) * 0.45 * speedScale;
                     const s = lp.ry > 0 ? legLength : -legLength;
                     B.lineTo(lp.rx - Math.sin(ao) * s, lp.ry + Math.cos(ao) * s);
+                    B.stroke({ width: 2.5, color: 0x6c7a86 });
                 }
-                B.stroke({ width: 2.5, color: 0x6c7a86 });
             }
             if (d.upgraded) {
                 // Canvas net rotation is Date.now/300 (body angle cancels).
@@ -77665,13 +77998,28 @@ class Game {
             const hips = [[9, -6], [9, 6], [-8, -6], [-8, 6]];
             const gait = [0, Math.PI, Math.PI, 0];
             const outSign = [-1, 1, -1, 1];
+            const _limbs = (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && d._limbsOn && d.feet);
             for (let i = 0; i < 4; i++) {
                 const hx = hips[i][0], hy = hips[i][1];
-                const swing = Math.sin((d.walkCycle || 0) + gait[i]) * 4;
-                const kx = hx + 2 + swing * 0.4, ky = hy + outSign[i] * 4;
-                const fx = hx + swing, fy = hy + outSign[i] * 9;
-                B.moveTo(hx, hy); B.lineTo(kx, ky); B.lineTo(fx, fy);
-                B.stroke({ width: W(2.6), color: 0x54677a, cap: 'round' });
+                let kx, ky, fx, fy;
+                if (_limbs) {
+                    const f = d.feet[i];
+                    fx = f.lx; fy = f.ly; kx = f.ex; ky = f.ey;
+                    const k0x = f.k0x !== undefined ? f.k0x : kx, k0y = f.k0y !== undefined ? f.k0y : ky;
+                    const k1x = f.k1x !== undefined ? f.k1x : kx, k1y = f.k1y !== undefined ? f.k1y : ky;
+                    const k2x = f.k2x !== undefined ? f.k2x : kx, k2y = f.k2y !== undefined ? f.k2y : ky;
+                    const k3x = f.k3x !== undefined ? f.k3x : kx, k3y = f.k3y !== undefined ? f.k3y : ky;
+                    B.moveTo(hx, hy); B.lineTo(k0x, k0y); B.lineTo(k1x, k1y);
+                    B.stroke({ width: W(2.6), color: LIMB_TUNING.SCAV_THIGH_COL || 0x354350, cap: 'round', join: 'round' });
+                    B.moveTo(k1x, k1y); B.lineTo(k2x, k2y); B.lineTo(k3x, k3y); B.lineTo(fx, fy);
+                    B.stroke({ width: W(2.6), color: LIMB_TUNING.SCAV_SHIN_COL || 0x62778c, cap: 'round', join: 'round' });
+                } else {
+                    const swing = Math.sin((d.walkCycle || 0) + gait[i]) * 4;
+                    kx = hx + 2 + swing * 0.4; ky = hy + outSign[i] * 4;
+                    fx = hx + swing; fy = hy + outSign[i] * 9;
+                    B.moveTo(hx, hy); B.lineTo(kx, ky); B.lineTo(fx, fy);
+                    B.stroke({ width: W(2.6), color: 0x54677a, cap: 'round' });
+                }
                 B.circle(fx, fy, 1.8); B.fill({ color: 0x2f3d4a });
             }
             B.moveTo(-12, 0); B.lineTo(-17, -2); B.stroke({ width: W(1.6), color: 0x7d8fa0 });
