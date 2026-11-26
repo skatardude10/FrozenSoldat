@@ -18577,7 +18577,21 @@ const LIMB_TUNING = {
     SCAV_THIGH_HEX: '#354350', // darker hip->knee segment (Scav canvas)
     SCAV_SHIN_HEX: '#62778c',  // lighter knee->foot segment (Scav canvas)
     SCAV_THIGH_COL: 0x354350,  // darker hip->knee segment (Scav Pixi)
-    SCAV_SHIN_COL: 0x62778c    // lighter knee->foot segment (Scav Pixi)
+    SCAV_SHIN_COL: 0x62778c,   // lighter knee->foot segment (Scav Pixi)
+    BOSS_THIGH_HEX: '#3a4553', // darker hip->knee segment (both bosses, canvas)
+    BOSS_SHIN_HEX: '#6e8093',  // lighter knee->foot segment (both bosses, canvas)
+    BOSS_THIGH_COL: 0x3a4553,  // darker hip->knee segment (both bosses, Pixi)
+    BOSS_SHIN_COL: 0x6e8093,   // lighter knee->foot segment (both bosses, Pixi)
+    PLANT_ENGAGE_BODY: 26,     // max player surface gap to engage barrier/wall plant
+    PLANT_HOLD_BODY: 40,       // max surface gap while planted (walk-back arm-extension band)
+    PLANT_ENGAGE_GUN: 16,      // max foregrip/tip gap to cover edge on engage
+    PLANT_HOLD_GUN: 30,        // max foregrip/tip gap while planted
+    PLANT_PIN_LAG: 5.5,        // px world-plant pin deadband/leash along cover tangent
+    PLANT_MIN_FWD: -5.5,       // px max gun compression when crowding into barrier/wall
+    PLANT_MAX_FWD: 9.5,        // px max gun forward reach when walking back from barrier/wall
+    PLANT_MAX_LAT: 4.5,        // px max gun lateral lag when strafing along barrier/wall
+    PLANT_ATTACK_RATE: 14.0,   // dt-only engage easing rate
+    PLANT_RELEASE_RATE: 11.0   // dt-only release easing rate
 };
 
 // Closed-form 2-bone IK: shoulder (sx,sy) -> hand (hx,hy), bones l1/l2, bend
@@ -19722,6 +19736,22 @@ class Player extends Entity {
         this._armStaggerT = 0;
         this._armTransmit = 1;
         this._armStaggerDir = 0;
+        // ==== LIMB IK GUN-PLANT (4a/4b: world-planted barrier/wall ledge mount) ====
+        // Pre-allocated (non-pooled player); _wallScratch owns a private copy
+        // of getWallsNear (BUG-016). Never retains a wall/barrier reference
+        // across frames — only world anchor coordinates (_gunPlantWx/_gunPlantWy).
+        this._wallScratch = [];
+        this._gunPlantBlend = 0;
+        this._gunPlantActive = false;
+        this._gunPlantWx = 0;
+        this._gunPlantWy = 0;
+        this._gunPlantFwd = 0;
+        this._gunPlantLat = 0;
+        this._gunPlantTipWx = 0;
+        this._gunPlantTipWy = 0;
+        this._gunPlantKind = null;
+        this._gunPlantTrigElbow = { ex: 0, ey: 0 };
+        this._gunPlantSupElbow = { ex: 0, ey: 0 };
 
         // --- Open Bolt Delay (see Weapons.*.openBoltDelay + the fire-
         // trigger block in update()) ---
@@ -20187,13 +20217,30 @@ class Player extends Entity {
         let retractTarget = 0;
         if (!this.isSprinting && game && game.map && game.map.walls) {
             const reach = 22 + GUN_MOUNT_OFFSET + 2;
-            const ga = this.angle;
-            const hit = game.getLaserEndPoint(this.x, this.y, ga, reach, game.map.walls);
-            const distAlong = (hit.x - this.x) * Math.cos(ga) + (hit.y - this.y) * Math.sin(ga);
-            if (distAlong < reach - 0.5) {
-                this.muzzleBlocked = true;
-                retractTarget = Math.min(GUN_RETRACT_MAX, reach - distAlong);
+            const gaBase = this.angle;
+            // B1: test a few tiny aim offsets for retract (test-only, aim unchanged)
+            const tryAngles = [0, 0.052, -0.052, 0.105, -0.105]; // ~0..6 deg
+            let bestRt = Infinity;
+            for (let ti = 0; ti < tryAngles.length; ti++) {
+                const ga = gaBase + tryAngles[ti];
+                const hit = game.getLaserEndPoint(this.x, this.y, ga, reach, game.map.walls);
+                const distAlong = (hit.x - this.x) * Math.cos(ga) + (hit.y - this.y) * Math.sin(ga);
+                let rt = 0;
+                if (distAlong < reach - 0.5) {
+                    rt = Math.min(GUN_RETRACT_MAX, reach - distAlong);
+                }
+                if (rt < bestRt) bestRt = rt;
             }
+            if (!isFinite(bestRt)) bestRt = 0;
+            if (bestRt > 0.5) {
+                this.muzzleBlocked = true;
+                retractTarget = bestRt;
+            } else if (bestRt > 0) {
+                this.muzzleBlocked = true;
+                retractTarget = bestRt;
+            }
+            // A1: forgive tiny corner grazes a bit
+            if (retractTarget > 0 && retractTarget < 4.5) retractTarget *= 0.55;
         }
         if (this.gunRetractPx === undefined) this.gunRetractPx = 0;
         this.gunRetractPx += (retractTarget - this.gunRetractPx) * Math.min(1, dt * 14);
@@ -21022,20 +21069,20 @@ class Player extends Entity {
         // activePlayer-only heartbeatPhase/Intensity.
         this.updateHeartbeatSway(dt);
 
-        // PvP Barrier Blocking: a player is physically stopped by barriers owned
-        // by the OTHER player. Their own barriers remain fully walk-through.
-        // FORT REBUILD: NEST walls (side enemy) block player bodies in ALL
-        // modes -- a real fort you siege with grenades/thumper/AP, not a walk
-        // through. Enemies + founders still pass through their own walls.
+        // Barrier body blocking: player-placed segment barriers block all players
+        // (single player, co-op, PvP, owner and non-owner alike). Dive/jump lets
+        // players clear them (same Z threshold bullets use). Enemy nest walls
+        // (side enemy) still block player bodies in ALL modes -- a real fort you
+        // siege with grenades/thumper/AP, not a walk-through. Enemies + founders
+        // still pass through their own walls.
         if (typeof game !== 'undefined' && game && game.barriers) {
-            const _isPvpBlock = (game.friendlyFireMode === 'pvp');
             for (let bar of game.barriers) {
                 const _isNest = (bar.side === 'enemy');
                 if (_isNest) {
                     // nest walls block every player, always
                 } else {
-                    if (!_isPvpBlock) continue;
-                    if (!bar.owner || bar.owner === this) continue;
+                    // Player-placed barrier: solid to all players unless airborne (dive/jump).
+                    if (this.z > DIVE_CONFIG.DIVE_DODGE_Z) continue;
                 }
                 let col = MathUtils.circleIntersectCapsule(this.x, this.y, this.r, bar);
                 if (col.hit) {
@@ -21074,6 +21121,10 @@ class Player extends Entity {
                 this._stridePhase = (this._stridePhase || 0) + (_spd * dt / _px) * Math.PI;
             }
         }
+        // Limb-IK 4a/4b: draw-only world-planted gun mount on barriers + solid
+        // walls. Runs post-physics; never writes this.angle, gunRetractPx, or
+        // barrel/muzzle spawn state (INV-43/52/448).
+        this._updateGunPlantIK(dt, game);
     }
 
     // Cooldown bookkeeping always runs (cheap, one subtraction), but the
@@ -22868,6 +22919,209 @@ class Player extends Entity {
         } catch (e) {}
     }
 
+    // Limb-IK 4a/4b: world-planted barrier/wall gun mount + elastic arm reach.
+    // Pure dt-only easing; strictly draw-only (never writes this.angle,
+    // gunRetractPx, or any barrel/muzzle spawn state — INV-43/52/448).
+    // Scans game.barriers (capsules) and a per-instance _wallScratch copy of
+    // getWallsNear (BUG-016; clears scratch before returning so no wall ref is
+    // retained). Skips seeThrough sills (probe P10c). Ends immediately on the
+    // death frame.
+    _updateGunPlantIK(dt, game) {
+        if (typeof LIMB_TUNING === 'undefined' || !LIMB_TUNING.ENABLED || this.dead || !game || !game.map) {
+            this._gunPlantBlend = 0;
+            this._gunPlantActive = false;
+            this._gunPlantFwd = 0;
+            this._gunPlantLat = 0;
+            this._gunPlantKind = null;
+            return;
+        }
+        const T = LIMB_TUNING;
+        const G = (typeof PLAYER_GUN_GEOM !== 'undefined' && this.weapon && PLAYER_GUN_GEOM[this.weapon.name]) || { recX: -4, fore: 10, barrelLen: 17, grip: 5 };
+        // Match the draw/muzzle convention exactly (`|| 0` + 0.001) so the
+        // plant's lateral offset is continuous through hand center.
+        let handMix = (((this.handBlend === undefined ? 1 : this.handBlend) * 2 - 1) || 0);
+        if (!isFinite(handMix)) handMix = 1;
+        if (handMix === 0) handMix = 0.001;
+        const sideY = 6 * handMix;
+        const gunRe = (this.gunRetractPx || 0) + (this.gunRecoilKickPx || 0) + (this.gunKickPx || 0);
+        const mount = (typeof GUN_MOUNT_OFFSET !== 'undefined') ? GUN_MOUNT_OFFSET : 10;
+        const foreLocalX = (G.recX !== undefined ? G.recX : -4) + ((G.fore !== null && G.fore !== undefined) ? G.fore + 2 : (G.barrelLen || 17) * 0.65);
+        const tipLocalX = (G.recX !== undefined ? G.recX : -4) + (G.barrelLen || 17);
+        const ca = Math.cos(this.angle || 0), sa = Math.sin(this.angle || 0);
+        const uWx = this.x + ca * (mount - gunRe + foreLocalX) - sa * sideY;
+        const uWy = this.y + sa * (mount - gunRe + foreLocalX) + ca * sideY;
+        const tipWx = this.x + ca * (mount - gunRe + tipLocalX) - sa * sideY;
+        const tipWy = this.y + sa * (mount - gunRe + tipLocalX) + ca * sideY;
+        const caseWx = this.x + ca * (4 + mount - gunRe) - sa * sideY;
+        const caseWy = this.y + sa * (4 + mount - gunRe) + ca * sideY;
+
+        let onStair = false;
+        try { onStair = game.map.floorAt ? (game.map.floorAt(this.x, this.y) === 0) : false; } catch (e) {}
+        const spd = Math.hypot(this.vx || 0, this.vy || 0);
+        const held = !!this._gunPlantActive;
+        const bodyLim = held ? (T.PLANT_HOLD_BODY || 40) : (T.PLANT_ENGAGE_BODY || 26);
+        const gunLim = held ? (T.PLANT_HOLD_GUN || 30) : (T.PLANT_ENGAGE_GUN || 16);
+        const alignLim = held ? 100 : 82;
+
+        let bestScore = Infinity, bestKind = null;
+        let bestSeatX = 0, bestSeatY = 0, bestTx = 1, bestTy = 0;
+        let bestAx = 0, bestAy = 0, bestBx = 0, bestBy = 0, bestSegLen = 0;
+
+        if (!onStair && !this.isSprinting && spd < 290) {
+            // 1. Player-placed & world barriers (capsule segments in game.barriers).
+            const bars = game.barriers;
+            if (bars && bars.length) {
+                for (let i = 0; i < bars.length; i++) {
+                    const bar = bars[i];
+                    if (!bar) continue;
+                    if (bar.hp !== undefined && bar.hp <= 0) continue;
+                    try {
+                        if (game.map.floorAt && game.map.floorAt((bar.ax + bar.bx) * 0.5, (bar.ay + bar.by) * 0.5) !== game.map.floorAt(this.x, this.y)) continue;
+                    } catch (e) {}
+                    const cpU = MathUtils.closestPointOnSegment(uWx, uWy, bar.ax, bar.ay, bar.bx, bar.by);
+                    if (!cpU) continue;
+                    // Shared-scratch result: snapshot cpU before the cpB query
+                    // overwrites MathUtils._segmentResult (both would alias).
+                    const cpUx = cpU.x, cpUy = cpU.y;
+                    const cpB = MathUtils.closestPointOnSegment(this.x, this.y, bar.ax, bar.ay, bar.bx, bar.by);
+                    if (!cpB) continue;
+                    const barR = (bar.r !== undefined) ? bar.r : 8;
+                    const bdx = this.x - cpB.x, bdy = this.y - cpB.y, bd = Math.hypot(bdx, bdy);
+                    const bodyD = Math.max(0, bd - barR);
+                    const gD = Math.max(0, Math.min(
+                        Math.hypot(uWx - cpUx, uWy - cpUy),
+                        Math.hypot(tipWx - cpUx, tipWy - cpUy),
+                        Math.hypot(caseWx - cpUx, caseWy - cpUy)
+                    ) - barR);
+                    if (bodyD > bodyLim || gD > gunLim) continue;
+                    const bl = Math.hypot(bar.bx - bar.ax, bar.by - bar.ay) || 1;
+                    const tx = (bar.bx - bar.ax) / bl, ty = (bar.by - bar.ay) / bl;
+                    const nx = bd > 1e-3 ? bdx / bd : -ty;
+                    const ny = bd > 1e-3 ? bdy / bd : tx;
+                    const align = Math.abs(MathUtils.angleDifference(this.angle || 0, Math.atan2(-ny, -nx))) * 180 / Math.PI;
+                    if (align > alignLim) continue;
+                    const score = bodyD * 0.6 + gD;
+                    if (score < bestScore) {
+                        bestScore = score; bestKind = 'barrier';
+                        bestSeatX = cpUx; bestSeatY = cpUy;
+                        bestTx = tx; bestTy = ty;
+                        bestAx = bar.ax; bestAy = bar.ay; bestBx = bar.bx; bestBy = bar.by; bestSegLen = bl;
+                    }
+                }
+            }
+            // 2. Solid walls via per-instance _wallScratch copy (BUG-016).
+            // Sills (w.seeThrough) never trigger a gun-plant (probe P10c).
+            const scratch = this._wallScratch || (this._wallScratch = []);
+            const src = game.map.getWallsNear ? game.map.getWallsNear(tipWx, tipWy) : game.map.walls;
+            scratch.length = 0;
+            if (src) {
+                for (let i = 0; i < src.length; i++) scratch.push(src[i]);
+            }
+            for (let i = 0; i < scratch.length; i++) {
+                const w = scratch[i];
+                if (!w || w.seeThrough) continue;
+                if (w.hp !== undefined && w.hp <= 0) continue;
+                const ucpx = MathUtils.clamp(uWx, w.x, w.x + w.w), ucpy = MathUtils.clamp(uWy, w.y, w.y + w.h);
+                const tcpx = MathUtils.clamp(tipWx, w.x, w.x + w.w), tcpy = MathUtils.clamp(tipWy, w.y, w.y + w.h);
+                const ccpx = MathUtils.clamp(caseWx, w.x, w.x + w.w), ccpy = MathUtils.clamp(caseWy, w.y, w.y + w.h);
+                const bcpx = MathUtils.clamp(this.x, w.x, w.x + w.w), bcpy = MathUtils.clamp(this.y, w.y, w.y + w.h);
+                try {
+                    if (game.map.floorSeparated && game.map.floorSeparated(this.x, this.y, bcpx, bcpy)) continue;
+                } catch (e) {}
+                const bdx = this.x - bcpx, bdy = this.y - bcpy, bodyD = Math.hypot(bdx, bdy);
+                const gD = Math.min(
+                    Math.hypot(tipWx - tcpx, tipWy - tcpy),
+                    Math.hypot(uWx - ucpx, uWy - ucpy),
+                    Math.hypot(caseWx - ccpx, caseWy - ccpy)
+                );
+                if (bodyD > bodyLim || gD > gunLim) continue;
+                const nx = bodyD > 1e-3 ? bdx / bodyD : -ca;
+                const ny = bodyD > 1e-3 ? bdy / bodyD : -sa;
+                const align = Math.abs(MathUtils.angleDifference(this.angle || 0, Math.atan2(-ny, -nx))) * 180 / Math.PI;
+                if (align > alignLim) continue;
+                const score = bodyD * 0.6 + gD + 2.0; // slight preference for barriers when overlapping
+                if (score < bestScore) {
+                    bestScore = score; bestKind = 'wall';
+                    bestSeatX = ucpx; bestSeatY = ucpy;
+                    bestTx = -ny; bestTy = nx;
+                    bestSegLen = 0;
+                }
+            }
+            scratch.length = 0; // never retain wall references across frames (BUG-016)
+        }
+
+        if (bestKind) {
+            if (!this._gunPlantActive || this._gunPlantKind !== bestKind) {
+                this._gunPlantWx = bestSeatX;
+                this._gunPlantWy = bestSeatY;
+                this._gunPlantTx = bestTx; this._gunPlantTy = bestTy;
+                this._gunPlantActive = true;
+                this._gunPlantKind = bestKind;
+            } else {
+                // World-planted anchor: stays locked along the cover normal and
+                // holds its world spot along the tangent within PLANT_PIN_LAG,
+                // then trails geometrically along the edge (frame-rate invariant).
+                let along = (this._gunPlantWx - bestSeatX) * bestTx + (this._gunPlantWy - bestSeatY) * bestTy;
+                const lagCap = T.PLANT_PIN_LAG || 5.5;
+                if (along > lagCap) along = lagCap;
+                else if (along < -lagCap) along = -lagCap;
+                let ax = bestSeatX + bestTx * along;
+                let ay = bestSeatY + bestTy * along;
+                if (bestKind === 'barrier' && bestSegLen > 1e-3) {
+                    const cpClamp = MathUtils.closestPointOnSegment(ax, ay, bestAx, bestAy, bestBx, bestBy);
+                    if (cpClamp) { ax = cpClamp.x; ay = cpClamp.y; }
+                }
+                this._gunPlantWx = ax;
+                this._gunPlantWy = ay;
+                this._gunPlantTx = bestTx; this._gunPlantTy = bestTy;
+            }
+        } else {
+            this._gunPlantActive = false;
+        }
+
+        const targetB = this._gunPlantActive ? 1 : 0;
+        const rate = this._gunPlantActive ? (T.PLANT_ATTACK_RATE || 14) : (T.PLANT_RELEASE_RATE || 11);
+        const k = 1 - Math.exp(-rate * dt);
+        this._gunPlantBlend = (this._gunPlantBlend || 0) + (targetB - (this._gunPlantBlend || 0)) * k;
+        if (Math.abs(targetB - this._gunPlantBlend) < 1e-3) this._gunPlantBlend = targetB;
+        if (this._gunPlantBlend === 0) this._gunPlantKind = null;
+
+        if (this._gunPlantBlend > 0) {
+            const dWx = this._gunPlantWx - uWx, dWy = this._gunPlantWy - uWy;
+            const rawFwd = dWx * ca + dWy * sa;
+            let rawLat = -dWx * sa + dWy * ca;
+            // Wall-only: preserve the old "lead with far shoulder" corner-peek feel.
+            // Barriers stay centered (plug-into-cover). Uses stored tangent to recover
+            // the wall normal pointing toward the player.
+            let wallLatCap = (T.PLANT_MAX_LAT || 4.5);
+            if (this._gunPlantKind === 'wall' && this._gunPlantBlend > 1e-3) {
+                const tTx = (this._gunPlantTx !== undefined) ? this._gunPlantTx : (Math.cos(this.angle + Math.PI / 2));
+                const tTy = (this._gunPlantTy !== undefined) ? this._gunPlantTy : (Math.sin(this.angle + Math.PI / 2));
+                const wNx = tTy, wNy = -tTx; // normal toward player (from tangent stored as -ny,nx in wall branch)
+                const wLatLocal = -wNx * sa + wNy * ca;
+                const farLat = wLatLocal;
+                if (Math.abs(farLat) > 0.12) {
+                    if (farLat > 0) {
+                        // Far side is left: strongly suppress rightward push; allow extra left lead
+                        if (rawLat < -0.3) rawLat = rawLat * 0.08;
+                        wallLatCap = (T.PLANT_MAX_LAT || 4.5) * 1.35; // a bit more lead-out room on walls
+                    } else {
+                        // Far side is right: strongly suppress leftward push; allow extra right lead
+                        if (rawLat > 0.3) rawLat = rawLat * 0.08;
+                        wallLatCap = (T.PLANT_MAX_LAT || 4.5) * 1.35;
+                    }
+                }
+            }
+            this._gunPlantFwd = MathUtils.clamp(rawFwd, T.PLANT_MIN_FWD || -5.5, T.PLANT_MAX_FWD || 9.5) * this._gunPlantBlend;
+            this._gunPlantLat = MathUtils.clamp(rawLat, -wallLatCap, wallLatCap) * this._gunPlantBlend;
+        } else {
+            this._gunPlantFwd = 0;
+            this._gunPlantLat = 0;
+        }
+        this._gunPlantTipWx = tipWx + ca * this._gunPlantFwd - sa * this._gunPlantLat;
+        this._gunPlantTipWy = tipWy + sa * this._gunPlantFwd + ca * this._gunPlantLat;
+    }
+
     // Biological Sync: kicks the gun once per heartbeat while badly hurt,
     // reusing the same kickAim()/spring machinery as recoil and flinch.
     // Deliberately keyed only off this player's OWN health, not the
@@ -24230,7 +24484,10 @@ class Player extends Entity {
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
-        const _sh = _meleeShovePx; // melee shove offset (0 unless mid-swing)
+        const _plantB = (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED) ? (this._gunPlantBlend || 0) : 0;
+        const _plantFwd = _plantB > 0 ? (this._gunPlantFwd || 0) : 0;
+        const _plantLat = _plantB > 0 ? (this._gunPlantLat || 0) : 0;
+        const _sh = _meleeShovePx + _plantFwd; // melee shove + planted ledge reach
         let _armSpreadPx = 0, _armBackPx = 0;
         try {
             if (typeof ARM_TUNING !== 'undefined' && ARM_TUNING.ENABLED) {
@@ -24258,15 +24515,24 @@ class Player extends Entity {
         // point, so the idle stance is unchanged.
         {
             const _sx = -2, _sy = 9 * _handMixD;
+            const _hx = G.grip + _sh, _hy = 7 * _handMixD + _plantLat;
             const _uel = Math.hypot((G.grip - 3) - _sx, 14 * _handMixD - _sy);        // upper-arm length (const)
             const _ua = Math.atan2(14 * _handMixD - _sy, (G.grip - 3) - _sx)
-                     - (_sh / MELEE_TUNING.SHOVE_PX) * 0.55;              // tuck ~31 deg at full shove
-            const _ex = _sx + Math.cos(_ua) * _uel - _armBackPx;
-            const _ey = _sy + Math.sin(_ua) * _uel + _armSpreadPx * _handMixD;
+                     - (_meleeShovePx / MELEE_TUNING.SHOVE_PX) * 0.55;              // tuck ~31 deg at full shove
+            let _ex = _sx + Math.cos(_ua) * _uel - _armBackPx;
+            let _ey = _sy + Math.sin(_ua) * _uel + _armSpreadPx * _handMixD;
+            if (_plantB > 0) {
+                const _tSide = _handMixD >= 0 ? 1 : -1;
+                const _fel = Math.hypot(G.grip - (G.grip - 3), (7 - 14) * _handMixD);
+                const _out = this._gunPlantTrigElbow || (this._gunPlantTrigElbow = { ex: 0, ey: 0 });
+                solve2Bone(_sx, _sy, _hx, _hy, _uel * 1.15, _fel * 1.15, _tSide, _out);
+                _ex += ((_out.ex - _armBackPx) - _ex) * _plantB;
+                _ey += ((_out.ey + _armSpreadPx * _handMixD) - _ey) * _plantB;
+            }
             ctx.beginPath();
             ctx.moveTo(_sx, _sy);
             ctx.lineTo(_ex, _ey);
-            ctx.lineTo(G.grip + _sh, 7 * _handMixD);        // trigger hand rides the grip forward
+            ctx.lineTo(_hx, _hy);        // trigger hand rides the grip forward + lateral plant
             ctx.stroke();
         }
         // Support arm: shoulder -> elbow -> hand (midpoint elbow so idle is
@@ -24275,17 +24541,17 @@ class Player extends Entity {
         {
             const _ssx = 0, _ssy = (G.fore !== null ? -6 : -4) * _handMixD;
             const _restX = (G.fore !== null ? G.fore + _sh : G.grip + 2 + _sh);
-            const _restY = (G.fore !== null ? foreY - 3 * _handMixD : 5 * _handMixD);
+            const _restY = (G.fore !== null ? foreY - 3 * _handMixD : 5 * _handMixD) + _plantLat;
             let _hex = _restX, _hey = _restY;
             const _rs = this.reloadState;
             const _tossT = this._magTossFlashT || 0;
             if ((_rs && _rs.phase !== 'idle' && _rs.dur > 0) || _tossT > 0) {
                 _rlActive = true;
                 _rlProg = (_rs && _rs.dur > 0) ? (1 - Math.max(0, Math.min(1, _rs.t / _rs.dur))) : 0;
-                const _wellX = G.recX + 4 + _sh, _wellY = (baseY - 1) * _handMixD;
+                const _wellX = G.recX + 4 + _sh, _wellY = (baseY - 1) * _handMixD + _plantLat;
                 const _vestX = 1, _vestY = -2 * _handMixD;
                 const _tossX = G.recX + 2, _tossY = -10 * _handMixD;
-                const _boltX = G.recX + 1 + _sh, _boltY = (baseY - 2.5) * _handMixD;
+                const _boltX = G.recX + 1 + _sh, _boltY = (baseY - 2.5) * _handMixD + _plantLat;
                 if (_tossT > 0) {
                     const _tk = 1 - Math.min(1, _tossT / 0.22);
                     if (_tk < 0.5) {
@@ -24346,6 +24612,16 @@ class Player extends Entity {
             if (!_rlActive) {
                 _midx = (_ssx + _hex) * 0.5 - _armBackPx * 0.7;
                 _midy = (_ssy + _hey) * 0.5 - _armSpreadPx * _handMixD * 0.8;
+                if (_plantB > 0) {
+                    const _sSide = _handMixD >= 0 ? -1 : 1;
+                    const _r0x = (G.fore !== null ? G.fore : G.grip + 2);
+                    const _r0y = (G.fore !== null ? foreY - 3 * _handMixD : 5 * _handMixD);
+                    const _sBone = Math.max(8.0, Math.hypot(_r0x - _ssx, _r0y - _ssy) * 0.5 + 2.8);
+                    const _outS = this._gunPlantSupElbow || (this._gunPlantSupElbow = { ex: 0, ey: 0 });
+                    solve2Bone(_ssx, _ssy, _hex, _hey, _sBone, _sBone, _sSide, _outS);
+                    _midx += ((_outS.ex - _armBackPx * 0.7) - _midx) * _plantB;
+                    _midy += ((_outS.ey - _armSpreadPx * _handMixD * 0.8) - _midy) * _plantB;
+                }
             } else {
                 const _dx = _hex - _ssx, _dy = _hey - _ssy;
                 const _d = Math.max(0.01, Math.hypot(_dx, _dy));
@@ -24368,7 +24644,7 @@ class Player extends Entity {
         // RESTED-GUN: mid-swap dip (rigid swing read, no flatten).
         ctx.save();
         let _handDipC = (1 - Math.abs(_handMixD)) * 3;
-        ctx.translate(_sh, _handDipC);
+        ctx.translate(_sh, _handDipC + _plantLat);
         // LMG drum/ammo drawn UNDER the gun (before the barrel so the gun
         // sits on top and it peeks out the bottom). Drab tone in the LMG's
         // own colorway.
@@ -24394,12 +24670,12 @@ class Player extends Entity {
         // Held magazine or shell in support hand during reload:
         if (_rlCarryMag) {
             ctx.fillStyle = '#7d6f1a';
-            ctx.fillRect(_rlHex - _sh - 2, _rlHey - 1.1, 4, 2.2);
+            ctx.fillRect(_rlHex - _sh - 2, _rlHey - _plantLat - 1.1, 4, 2.2);
             ctx.fillStyle = '#ffd700';
-            ctx.fillRect(_rlHex - _sh + 1, _rlHey - 1.1, 1.2, 2.2);
+            ctx.fillRect(_rlHex - _sh + 1, _rlHey - _plantLat - 1.1, 1.2, 2.2);
         } else if (_rlCarryShell) {
             ctx.fillStyle = this.weapon.color;
-            ctx.fillRect(_rlHex - _sh - 1.6, _rlHey - 0.9, 3.2, 1.8);
+            ctx.fillRect(_rlHex - _sh - 1.6, _rlHey - _plantLat - 0.9, 3.2, 1.8);
         }
 
         // Hands: purple "C" brackets. Rear hand on the grip; front hand on the
@@ -24410,7 +24686,7 @@ class Player extends Entity {
         ctx.arc(G.grip, 7 * _handMixD, 3.1, -0.3, 2.6);
         ctx.stroke();
         ctx.beginPath();
-        if (_rlActive) ctx.arc(_rlHex - _sh, _rlHey, 2.7, -0.3, 2.6);
+        if (_rlActive) ctx.arc(_rlHex - _sh, _rlHey - _plantLat, 2.7, -0.3, 2.6);
         else if (G.fore !== null) ctx.arc(G.fore, foreY, 2.7, -0.3, 2.6);
         else ctx.arc(G.grip + 3, 7 * _handMixD, 2.7, -0.3, 2.6);
         ctx.stroke();
@@ -32056,6 +32332,18 @@ class SpotBoss extends Boss {
         this.droneCooldown = MathUtils.rand(4, 6);
         this.legPhase = 0;
         this.myDrones = [];
+        // Limb-IK step 2: 4 digitigrade legs (non-pooled boss; deviates from
+        // the plan's one-bone plant-lock — same stepLegs gait as the dogs,
+        // rendered two-tone with a rounded knee; disabled = shipped sin lines).
+        this.feet = [
+            { hipX: -this.r * 0.6, hipY: -this.r * 0.8, gaitOff: 0, bendSign: -1, spreadY: -10, l1: 9, l2: 18, l2b: 11 },
+            { hipX:  this.r * 0.6, hipY: -this.r * 0.8, gaitOff: Math.PI, bendSign: -1, spreadY: -10, l1: 9, l2: 18, l2b: 11 },
+            { hipX: -this.r * 0.6, hipY:  this.r * 0.8, gaitOff: 0, bendSign:  1, spreadY:  10, l1: 9, l2: 18, l2b: 11 },
+            { hipX:  this.r * 0.6, hipY:  this.r * 0.8, gaitOff: Math.PI, bendSign:  1, spreadY:  10, l1: 9, l2: 18, l2b: 11 }
+        ];
+        this.feet.phase = 0; this.feet.moveBlend = 0; this.feet.speedScale = 0; this.feet._wasIdle = true;
+        this._limbsOn = true;
+        this._wallScratch = [];
     }
 
     onDeath() {
@@ -32096,9 +32384,18 @@ class SpotBoss extends Boss {
             this.vx += Math.cos(strafeAngle) * this.speed * 0.7 * dt * 3;
             this.vy += Math.sin(strafeAngle) * this.speed * 0.7 * dt * 3;
         }
-        let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+        let nearbyWalls = this._wallScratch || (this._wallScratch = []);
+        {
+            const src = game.map.getWallsNear(this.x, this.y);
+            nearbyWalls.length = 0;
+            for (let i = 0; i < src.length; i++) nearbyWalls.push(src[i]);
+        }
         this.updatePhysics(dt, nearbyWalls);
         this.legPhase += dt * Math.hypot(this.vx, this.vy) * 0.01;
+        this._stridePhase = this.legPhase;
+        if (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && this._limbsOn && this.feet) {
+            stepLegs(this.feet, dt, this.x, this.y, this.vx, this.vy, this.angle, Math.hypot(this.vx, this.vy), nearbyWalls);
+        }
 
         let hasLOS = this.hasLineOfSight(target);
         this.fireCooldown -= dt;
@@ -32150,22 +32447,52 @@ class SpotBoss extends Boss {
         ctx.translate(scx, scy);
         ctx.rotate(this.angle);
 
-        // Four simple articulated legs, phase-offset for a quadruped gait
+        // Four articulated digitigrade legs, phase-offset for a quadruped gait.
+        // Enabled: two-tone thigh/shin with the multi-vertex rounded knee
+        // (read-only consumers of stepLegs' foot struct). Disabled: the
+        // shipped sin-lift lines, byte-identical (caps/join saved + restored
+        // so the disabled path never sees round joins).
         let legReach = this.r * 0.9;
-        ctx.strokeStyle = this.color;
         ctx.lineWidth = 3;
+        const _lc0 = ctx.lineCap, _lj0 = ctx.lineJoin;
+        const _limbs = (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && this._limbsOn && this.feet);
         for (let i = 0; i < 4; i++) {
             let side = i < 2 ? -1 : 1;
             let front = (i % 2 === 0) ? -1 : 1;
-            let phase = this.legPhase + (i % 2 === 0 ? 0 : Math.PI);
-            let lift = Math.max(0, Math.sin(phase)) * 6;
             let lx = front * this.r * 0.6;
             let ly = side * this.r * 0.8;
-            ctx.beginPath();
-            ctx.moveTo(lx, ly);
-            ctx.lineTo(lx + front * 6, ly + side * (10 - lift));
-            ctx.stroke();
+            if (_limbs) {
+                ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                const f = this.feet[i];
+                const k0x = f.k0x !== undefined ? f.k0x : f.ex, k0y = f.k0y !== undefined ? f.k0y : f.ey;
+                const k1x = f.k1x !== undefined ? f.k1x : f.ex, k1y = f.k1y !== undefined ? f.k1y : f.ey;
+                const k2x = f.k2x !== undefined ? f.k2x : f.ex, k2y = f.k2y !== undefined ? f.k2y : f.ey;
+                const k3x = f.k3x !== undefined ? f.k3x : f.ex, k3y = f.k3y !== undefined ? f.k3y : f.ey;
+                ctx.strokeStyle = LIMB_TUNING.BOSS_THIGH_HEX || '#3a4553';
+                ctx.beginPath();
+                ctx.moveTo(lx, ly);
+                ctx.lineTo(k0x, k0y);
+                ctx.lineTo(k1x, k1y);
+                ctx.stroke();
+                ctx.strokeStyle = LIMB_TUNING.BOSS_SHIN_HEX || '#6e8093';
+                ctx.beginPath();
+                ctx.moveTo(k1x, k1y);
+                ctx.lineTo(k2x, k2y);
+                ctx.lineTo(k3x, k3y);
+                ctx.lineTo(f.lx, f.ly);
+                ctx.stroke();
+            } else {
+                ctx.lineCap = _lc0; ctx.lineJoin = _lj0;
+                ctx.strokeStyle = this.color;
+                let phase = this.legPhase + (i % 2 === 0 ? 0 : Math.PI);
+                let lift = Math.max(0, Math.sin(phase)) * 6;
+                ctx.beginPath();
+                ctx.moveTo(lx, ly);
+                ctx.lineTo(lx + front * 6, ly + side * (10 - lift));
+                ctx.stroke();
+            }
         }
+        ctx.lineCap = _lc0; ctx.lineJoin = _lj0;
 
         // Body
         ctx.fillStyle = '#1a1a1a';
@@ -32308,6 +32635,18 @@ class SniperWalkerBoss extends Boss {
         this.mortarCooldown = MathUtils.rand(5, 7);
         this.legPhase = 0;
         this.aimWindup = 0; // brief laser-sight telegraph before each shot
+        // Limb-IK step 2: 6 digitigrade spider legs (non-pooled boss; deviates
+        // from the plan's one-bone plant-lock — same stepLegs gait as the dogs,
+        // rendered two-tone with a rounded knee; disabled = shipped sin lines).
+        this.feet = [];
+        for (let i = 0; i < 6; i++) {
+            const side = i % 2 === 0 ? -1 : 1;
+            const along = (Math.floor(i / 2) - 1) * this.r * 0.6;
+            this.feet.push({ hipX: along, hipY: side * this.r * 0.4, gaitOff: i * 1.1, bendSign: side, spreadY: side * this.r * 0.5, l1: 8, l2: 16, l2b: 10 });
+        }
+        this.feet.phase = 0; this.feet.moveBlend = 0; this.feet.speedScale = 0; this.feet._wasIdle = true;
+        this._limbsOn = true;
+        this._wallScratch = [];
     }
 
     update(dt, player, walls, gameTime, allEnemies) {
@@ -32338,9 +32677,18 @@ class SniperWalkerBoss extends Boss {
             this.vx += Math.cos(strafeAngle) * this.speed * 0.5 * dt * 3;
             this.vy += Math.sin(strafeAngle) * this.speed * 0.5 * dt * 3;
         }
-        let nearbyWalls = game.map.getWallsNear(this.x, this.y);
+        let nearbyWalls = this._wallScratch || (this._wallScratch = []);
+        {
+            const src = game.map.getWallsNear(this.x, this.y);
+            nearbyWalls.length = 0;
+            for (let i = 0; i < src.length; i++) nearbyWalls.push(src[i]);
+        }
         this.updatePhysics(dt, nearbyWalls);
         this.legPhase += dt * Math.hypot(this.vx, this.vy) * 0.012;
+        this._stridePhase = this.legPhase;
+        if (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && this._limbsOn && this.feet) {
+            stepLegs(this.feet, dt, this.x, this.y, this.vx, this.vy, this.angle, Math.hypot(this.vx, this.vy), nearbyWalls);
+        }
 
         let hasLOS = this.hasLineOfSight(target);
 
@@ -32429,19 +32777,48 @@ class SniperWalkerBoss extends Boss {
         ctx.translate(scx, scy);
         ctx.rotate(this.angle);
 
-        // Six thin spider legs, more insectile than SpotBoss's four blocky ones
-        ctx.strokeStyle = this.color;
+        // Six thin spider legs, more insectile than SpotBoss's four blocky
+        // ones. Enabled: two-tone thigh/shin with the multi-vertex rounded
+        // knee (read-only consumers of stepLegs' foot struct). Disabled:
+        // shipped sin-lift lines, byte-identical (caps/join saved + restored).
         ctx.lineWidth = 1.5;
+        const _lc0 = ctx.lineCap, _lj0 = ctx.lineJoin;
+        const _limbs = (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && this._limbsOn && this.feet);
         for (let i = 0; i < 6; i++) {
             let side = i % 2 === 0 ? -1 : 1;
             let along = (Math.floor(i / 2) - 1) * this.r * 0.6;
-            let phase = this.legPhase + i * 1.1;
-            let lift = Math.sin(phase) * 5;
-            ctx.beginPath();
-            ctx.moveTo(along, side * this.r * 0.4);
-            ctx.lineTo(along + lift, side * (this.r * 0.9));
-            ctx.stroke();
+            if (_limbs) {
+                ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                const f = this.feet[i];
+                const k0x = f.k0x !== undefined ? f.k0x : f.ex, k0y = f.k0y !== undefined ? f.k0y : f.ey;
+                const k1x = f.k1x !== undefined ? f.k1x : f.ex, k1y = f.k1y !== undefined ? f.k1y : f.ey;
+                const k2x = f.k2x !== undefined ? f.k2x : f.ex, k2y = f.k2y !== undefined ? f.k2y : f.ey;
+                const k3x = f.k3x !== undefined ? f.k3x : f.ex, k3y = f.k3y !== undefined ? f.k3y : f.ey;
+                ctx.strokeStyle = LIMB_TUNING.BOSS_THIGH_HEX || '#3a4553';
+                ctx.beginPath();
+                ctx.moveTo(along, side * this.r * 0.4);
+                ctx.lineTo(k0x, k0y);
+                ctx.lineTo(k1x, k1y);
+                ctx.stroke();
+                ctx.strokeStyle = LIMB_TUNING.BOSS_SHIN_HEX || '#6e8093';
+                ctx.beginPath();
+                ctx.moveTo(k1x, k1y);
+                ctx.lineTo(k2x, k2y);
+                ctx.lineTo(k3x, k3y);
+                ctx.lineTo(f.lx, f.ly);
+                ctx.stroke();
+            } else {
+                ctx.lineCap = _lc0; ctx.lineJoin = _lj0;
+                ctx.strokeStyle = this.color;
+                let phase = this.legPhase + i * 1.1;
+                let lift = Math.sin(phase) * 5;
+                ctx.beginPath();
+                ctx.moveTo(along, side * this.r * 0.4);
+                ctx.lineTo(along + lift, side * (this.r * 0.9));
+                ctx.stroke();
+            }
         }
+        ctx.lineCap = _lc0; ctx.lineJoin = _lj0;
 
         // Body -- narrow, angular
         ctx.fillStyle = '#1a1a1a';
@@ -74816,6 +75193,13 @@ class Game {
             meleeShovePx = Math.sin(Math.PI * Math.min(1, Math.max(0, mt))) * MELEE_TUNING.SHOVE_PX;
         }
         const gunRe = (p.gunRetractPx || 0) + (p.gunRecoilKickPx || 0) + (p.gunKickPx || 0);
+        // LIMB IK 4a/4b: world-plant reach (draw-only twin of the canvas gun
+        // group translate; blend 0 == byte-identical to the shipped path,
+        // probe P10a). Arms are siblings of shoveC in gunC space, so they get
+        // matching hand offsets below instead of this translate.
+        const _plantBP = (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED) ? (p._gunPlantBlend || 0) : 0;
+        const _plantFwdP = _plantBP > 0 ? (p._gunPlantFwd || 0) : 0;
+        const _plantLatP = _plantBP > 0 ? (p._gunPlantLat || 0) : 0;
         // F2 mount frame: canvas rotates by gun angle THEN translates the mount,
         // so the mount rides along the GUN. gunC lives in bodyC (moveFacing)
         // space, so pre-rotate the offset by the relative angle (exact).
@@ -74832,7 +75216,10 @@ class Game {
         let _slideOffP = 6 * _handMixP - _bakeSideP * 6;
         if (R.gunStatic) { R.gunStatic.visible = _bakeSideP > 0; R.gunStatic.alpha = 1; }
         if (R.gunStaticL) { R.gunStaticL.visible = _bakeSideP < 0; R.gunStaticL.alpha = 1; }
-        R.shoveC.position.set(meleeShovePx, _handDipP + _slideOffP);
+        // Plant mirrors the canvas gun-group translate: +fwd along the barrel,
+        // +lat along the gun's lateral (both gun bakes ride it; blend 0 = as
+        // shipped).
+        R.shoveC.position.set(meleeShovePx + _plantFwdP, _handDipP + _slideOffP + _plantLatP);
         {
             const A = R.armsGfx; A.clear();
             const baseY = 6, foreY = (GG.foreY !== undefined) ? GG.foreY : 5;
@@ -74858,18 +75245,30 @@ class Game {
                 }
             } catch (e) { _pSpread = 0; _pBack = 0; }
             // RESTED-GUN: arms track the sliding hands positionally (draw-only).
+            // Limb-IK 4a/4b: planted hand reaches to the world-pinned seat;
+            // the elbow blends onto a 2-bone solve while engaged (canvas
+            // mirror). Collapses to the shipped tuck at blend 0.
             const sx = -2, sy = 9 * _handMixP;
+            const _hx = GG.grip + sh + _plantFwdP, _hy = 7 * _handMixP + _plantLatP;
             const uel = Math.hypot((GG.grip - 3) - sx, 14 * _handMixP - sy);
             const ua = Math.atan2(14 * _handMixP - sy, (GG.grip - 3) - sx) - (sh / MELEE_TUNING.SHOVE_PX) * 0.55;
-            const _ex = sx + Math.cos(ua) * uel - _pBack;
-            const _ey = sy + Math.sin(ua) * uel + _pSpread * _handMixP;
+            let _ex = sx + Math.cos(ua) * uel - _pBack;
+            let _ey = sy + Math.sin(ua) * uel + _pSpread * _handMixP;
+            if (_plantBP > 0) {
+                const _tSide = _handMixP >= 0 ? 1 : -1;
+                const _fel = Math.hypot(GG.grip - (GG.grip - 3), (7 - 14) * _handMixP);
+                const _out = p._gunPlantTrigElbow || (p._gunPlantTrigElbow = { ex: 0, ey: 0 });
+                solve2Bone(sx, sy, _hx, _hy, uel * 1.15, _fel * 1.15, _tSide, _out);
+                _ex += ((_out.ex - _pBack) - _ex) * _plantBP;
+                _ey += ((_out.ey + _pSpread * _handMixP) - _ey) * _plantBP;
+            }
             A.moveTo(sx, sy); A.lineTo(_ex, _ey);
-            A.lineTo(GG.grip + sh, 7 * _handMixP); A.stroke({ width: 3, color: p.color, join: 'round', cap: 'round' });
+            A.lineTo(_hx, _hy); A.stroke({ width: 3, color: p.color, join: 'round', cap: 'round' });
             // F2 pistol origin: canvas moveTo(0,-4) when fore==null (pistol),
             // (0,-6) otherwise — twin had -6 always (2px support-hand error).
             const _ssx = 0, _ssy = ((GG.fore == null) ? -4 : -6) * _handMixP;
-            const _restX = (GG.fore !== null) ? GG.fore + sh : GG.grip + 2 + sh;
-            const _restY = (GG.fore !== null) ? foreY * _handMixP - 3 * _handMixP : 5 * _handMixP;
+            const _restX = ((GG.fore !== null) ? GG.fore + sh : GG.grip + 2 + sh) + _plantFwdP;
+            const _restY = ((GG.fore !== null) ? foreY * _handMixP - 3 * _handMixP : 5 * _handMixP) + _plantLatP;
             let _hex = _restX, _hey = _restY;
             let _rlActP = false, _rlCarryMagP = false, _rlCarryShellP = false, _rlProgP = 0;
             const _rsP = p.reloadState;
@@ -74877,10 +75276,10 @@ class Game {
             if ((_rsP && _rsP.phase !== 'idle' && _rsP.dur > 0) || _tossTP > 0) {
                 _rlActP = true;
                 _rlProgP = (_rsP && _rsP.dur > 0) ? (1 - Math.max(0, Math.min(1, _rsP.t / _rsP.dur))) : 0;
-                const _wellX = GG.recX + 4 + sh, _wellY = (baseY - 1) * _handMixP;
+                const _wellX = GG.recX + 4 + sh + _plantFwdP, _wellY = (baseY - 1) * _handMixP + _plantLatP;
                 const _vestX = 1, _vestY = -2 * _handMixP;
                 const _tossX = GG.recX + 2, _tossY = -10 * _handMixP;
-                const _boltX = GG.recX + 1 + sh, _boltY = (baseY - 2.5) * _handMixP;
+                const _boltX = GG.recX + 1 + sh + _plantFwdP, _boltY = (baseY - 2.5) * _handMixP + _plantLatP;
                 if (_tossTP > 0) {
                     const _tk = 1 - Math.min(1, _tossTP / 0.22);
                     if (_tk < 0.5) {
@@ -74940,6 +75339,16 @@ class Game {
             if (!_rlActP) {
                 _midx = (_ssx + _hex) * 0.5 - _pBack * 0.7;
                 _midy = (_ssy + _hey) * 0.5 - _pSpread * _handMixP * 0.8;
+                if (_plantBP > 0) {
+                    const _sSide = _handMixP >= 0 ? -1 : 1;
+                    const _r0x = (GG.fore !== null ? GG.fore : GG.grip + 2);
+                    const _r0y = (GG.fore !== null ? foreY * _handMixP - 3 * _handMixP : 5 * _handMixP);
+                    const _sBone = Math.max(8.0, Math.hypot(_r0x - _ssx, _r0y - _ssy) * 0.5 + 2.8);
+                    const _outS = p._gunPlantSupElbow || (p._gunPlantSupElbow = { ex: 0, ey: 0 });
+                    solve2Bone(_ssx, _ssy, _hex, _hey, _sBone, _sBone, _sSide, _outS);
+                    _midx += ((_outS.ex - _pBack * 0.7) - _midx) * _plantBP;
+                    _midy += ((_outS.ey - _pSpread * _handMixP * 0.8) - _midy) * _plantBP;
+                }
             } else {
                 const _dx = _hex - _ssx, _dy = _hey - _ssy;
                 const _d = Math.max(0.01, Math.hypot(_dx, _dy));
@@ -74957,14 +75366,17 @@ class Game {
             } else if (_rlCarryShellP) {
                 A.rect(_hex - 1.6, _hey - 0.9, 3.2, 1.8); A.fill({ color: p.weapon.color });
             }
-            // Front support-hand purple ring (at exact idle foregrip when !_rlActP, or following _hex/_hey during reload):
-            const _fHx = _rlActP ? _hex : ((GG.fore !== null ? GG.fore : GG.grip + 3) + sh);
-            const _fHy = _rlActP ? _hey : ((GG.fore !== null ? foreY * _bakeSideP : 7 * _bakeSideP) + _handDipP + _slideOffP);
+            // Front support-hand purple ring (at exact idle foregrip when
+            // !_rlActP, or following _hex/_hey during reload). Idle ring gets
+            // the same plant offsets as the arm hand; the reload branch is
+            // plant-tracking already via the targets.
+            const _fHx = _rlActP ? _hex : ((GG.fore !== null ? GG.fore : GG.grip + 3) + sh + _plantFwdP);
+            const _fHy = _rlActP ? _hey : ((GG.fore !== null ? foreY * _bakeSideP : 7 * _bakeSideP) + _handDipP + _slideOffP + _plantLatP);
             A.circle(_fHx, _fHy, 2.7); A.stroke({ width: 2, color: 0xa855f7 });
             if (_rsP && _rsP.phase !== 'idle' && _rsP.dur > 0) {
                 const _bCol = _rsP.fumbleT > 0 ? 0xff2a5f : (_rsP.speed ? 0x00e5ff : 0xffb700);
-                A.rect(GG.recX + sh, -13, 14, 2.4); A.fill({ color: 0x000000, alpha: 0.65 });
-                A.rect(GG.recX + sh, -13, 14 * _rlProgP, 2.4); A.fill({ color: _bCol });
+                A.rect(GG.recX + sh + _plantFwdP, -13 + _plantLatP, 14, 2.4); A.fill({ color: 0x000000, alpha: 0.65 });
+                A.rect(GG.recX + sh + _plantFwdP, -13 + _plantLatP, 14 * _rlProgP, 2.4); A.fill({ color: _bCol });
             }
         }
         // Wife dress + flower + fish (wifeMode only; vacuous in parity).
@@ -78431,13 +78843,27 @@ class Game {
             B.rect(r * 0.3, -4, r * 0.9, 8); B.fill({ color: 0x333333 });
         } else if (typeof SpotBoss !== 'undefined' && b instanceof SpotBoss) {
             H.body.alpha = 1;
+            const _limbs = (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && b._limbsOn && b.feet);
             for (let i = 0; i < 4; i++) {
                 const side = i < 2 ? -1 : 1, front = (i % 2 === 0) ? -1 : 1;
-                const phase = (b.legPhase || 0) + (i % 2 === 0 ? 0 : Math.PI);
-                const lift = Math.max(0, Math.sin(phase)) * 6;
                 const lx = front * r * 0.6, ly = side * r * 0.8;
-                B.moveTo(lx, ly); B.lineTo(lx + front * 6, ly + side * (10 - lift));
-                B.stroke({ width: W(3), color: col });
+                if (_limbs) {
+                    const f = b.feet[i];
+                    const k0x = f.k0x !== undefined ? f.k0x : f.ex, k0y = f.k0y !== undefined ? f.k0y : f.ey;
+                    const k1x = f.k1x !== undefined ? f.k1x : f.ex, k1y = f.k1y !== undefined ? f.k1y : f.ey;
+                    const k2x = f.k2x !== undefined ? f.k2x : f.ex, k2y = f.k2y !== undefined ? f.k2y : f.ey;
+                    const k3x = f.k3x !== undefined ? f.k3x : f.ex, k3y = f.k3y !== undefined ? f.k3y : f.ey;
+                    B.moveTo(lx, ly); B.lineTo(k0x, k0y); B.lineTo(k1x, k1y);
+                    B.stroke({ width: W(3), color: LIMB_TUNING.BOSS_THIGH_COL || 0x3a4553, cap: 'round', join: 'round' });
+                    B.moveTo(k1x, k1y); B.lineTo(k2x, k2y); B.lineTo(k3x, k3y); B.lineTo(f.lx, f.ly);
+                    B.stroke({ width: W(3), color: LIMB_TUNING.BOSS_SHIN_COL || 0x6e8093, cap: 'round', join: 'round' });
+                } else {
+                    B.moveTo(lx, ly);
+                    const phase = (b.legPhase || 0) + (i % 2 === 0 ? 0 : Math.PI);
+                    const lift = Math.max(0, Math.sin(phase)) * 6;
+                    B.lineTo(lx + front * 6, ly + side * (10 - lift));
+                    B.stroke({ width: W(3), color: col });
+                }
             }
             // Hull rides the blur-8 bake over the crisp legs; the sensor
             // sits on the top layer (canvas paints it after the hull).
@@ -78458,12 +78884,26 @@ class Game {
                     FX.stroke({ width: 1 * ez, color: col, alpha: 0.5 * prog });
                 }
             }
+            const _limbs = (typeof LIMB_TUNING !== 'undefined' && LIMB_TUNING.ENABLED && b._limbsOn && b.feet);
             for (let i = 0; i < 6; i++) {
                 const side = i % 2 === 0 ? -1 : 1;
                 const along = (Math.floor(i / 2) - 1) * r * 0.6;
-                const lift = Math.sin((b.legPhase || 0) + i * 1.1) * 5;
-                B.moveTo(along, side * r * 0.4); B.lineTo(along + lift, side * r * 0.9);
-                B.stroke({ width: W(1.5), color: col });
+                if (_limbs) {
+                    const f = b.feet[i];
+                    const k0x = f.k0x !== undefined ? f.k0x : f.ex, k0y = f.k0y !== undefined ? f.k0y : f.ey;
+                    const k1x = f.k1x !== undefined ? f.k1x : f.ex, k1y = f.k1y !== undefined ? f.k1y : f.ey;
+                    const k2x = f.k2x !== undefined ? f.k2x : f.ex, k2y = f.k2y !== undefined ? f.k2y : f.ey;
+                    const k3x = f.k3x !== undefined ? f.k3x : f.ex, k3y = f.k3y !== undefined ? f.k3y : f.ey;
+                    B.moveTo(along, side * r * 0.4); B.lineTo(k0x, k0y); B.lineTo(k1x, k1y);
+                    B.stroke({ width: W(1.5), color: LIMB_TUNING.BOSS_THIGH_COL || 0x3a4553, cap: 'round', join: 'round' });
+                    B.moveTo(k1x, k1y); B.lineTo(k2x, k2y); B.lineTo(k3x, k3y); B.lineTo(f.lx, f.ly);
+                    B.stroke({ width: W(1.5), color: LIMB_TUNING.BOSS_SHIN_COL || 0x6e8093, cap: 'round', join: 'round' });
+                } else {
+                    B.moveTo(along, side * r * 0.4);
+                    const lift = Math.sin((b.legPhase || 0) + i * 1.1) * 5;
+                    B.lineTo(along + lift, side * r * 0.9);
+                    B.stroke({ width: W(1.5), color: col });
+                }
             }
             // Hull rides the blur-8 bake over the crisp legs; the barrel
             // sits on the top layer (canvas paints it after the hull).
